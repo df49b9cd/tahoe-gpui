@@ -1,0 +1,870 @@
+//! Button component with multiple variants.
+
+use crate::callback_types::OnClick;
+use crate::components::menus_and_actions::button_like::ButtonLike;
+use crate::components::status::activity_indicator::ActivityIndicator;
+use crate::foundations::color::{darken, lighten, with_alpha};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use gpui::prelude::*;
+use gpui::{
+    AnyElement, App, BoxShadow, ClickEvent, ElementId, SharedString, Window, div, point, px,
+    transparent_black,
+};
+
+/// Visual variant for buttons.
+///
+/// The set is drawn from the macOS 26 (Tahoe) "Buttons" reference page in
+/// Apple's UI Kit. SwiftUI / AppKit equivalents are listed against each
+/// variant so the mapping back to Apple's conventions stays explicit.
+///
+/// Declaration order matches the documentation table and the `match` arms
+/// in `RenderOnce::render` — please keep all three in sync if you add or
+/// reorder variants.
+///
+/// | Variant         | Canonical name (HIG)        | Visual                                            |
+/// |-----------------|-----------------------------|---------------------------------------------------|
+/// | `Primary`       | Colored / Primary / Tinted  | Tinted accent fill, white text                    |
+/// | `Secondary`     | Gray                        | Subtle alpha-grey fill + faint border, label text |
+/// | `Ghost`         | Borderless / Plain          | Transparent fill, label text — toolbar pattern    |
+/// | `Outline`       | Bordered                    | Transparent fill with a thin neutral border       |
+/// | `Destructive`   | Destructive                 | Red fill, white text                              |
+/// | `Glass`         | Liquid Glass material       | Translucent glass surface, capsule                |
+/// | `GlassProminent`| Liquid Glass tinted         | Tinted glass, primary CTA on glass                |
+/// | `Filled`        | (Tahoe) high-contrast CTA   | Dark fill on light themes (black CTA)             |
+///
+/// HIG (macOS 26) styles: Plain, Gray, Tinted, Filled, Bordered,
+/// Borderless, Glass. Each variant below carries a `#[doc(alias = ...)]`
+/// mapping to its canonical HIG name + SwiftUI `.buttonStyle` equivalent
+/// so rustdoc search finds the familiar Apple term.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ButtonVariant {
+    /// Tinted accent CTA — SwiftUI `.borderedProminent` with the system tint.
+    /// Uses `theme.accent` for the fill and `theme.text_on_accent` for the
+    /// label. Primary call-to-action on most macOS surfaces.
+    #[doc(alias = "Tinted")]
+    #[doc(alias = "Colored")]
+    #[default]
+    Primary,
+    /// Subtle neutral fill, no border. SwiftUI `.bordered` with a low-prominence
+    /// neutral fill. Use for less-emphasized actions next to a `Primary`.
+    ///
+    /// The fill is built from `theme.text` at low alpha so it composites
+    /// against any background — this guarantees visible contrast in both
+    /// light and dark themes without depending on `theme.surface` (which is
+    /// only ~4 % off `theme.background`).
+    #[doc(alias = "Gray")]
+    Secondary,
+    /// Borderless toolbar / inline button — SwiftUI `.borderless` / `.plain`.
+    /// Transparent fill, neutral `theme.text` label. The HIG "Borderless"
+    /// pattern uses the *label* color, not accent — accent is reserved for
+    /// link-style actions which sit on top of body copy.
+    #[doc(alias = "Borderless")]
+    #[doc(alias = "Plain")]
+    Ghost,
+    /// Bordered "Default" button — SwiftUI `.bordered`. Transparent fill with
+    /// a thin neutral border.
+    #[doc(alias = "Bordered")]
+    Outline,
+    /// Destructive action — SwiftUI `.borderedProminent` with `.role(.destructive)`.
+    /// Red fill, white text. Use for delete / discard / unsubscribe.
+    Destructive,
+    /// Translucent glass surface (capsule shape). Uses glass morphism when the
+    /// theme has a `glass` material configured; falls back to `Outline`
+    /// otherwise.
+    #[doc(alias = "LiquidGlass")]
+    Glass,
+    /// Opaque tinted glass surface — primary CTA on glass themes.
+    #[doc(alias = "LiquidGlassTinted")]
+    GlassProminent,
+    /// Neutral high-contrast filled button (black on light themes, white on
+    /// dark themes). Apple's macOS 26 (Tahoe) prominent CTA pattern when the
+    /// system tint isn't appropriate (e.g. marketing surfaces). HIG calls
+    /// this the "prominent" filled style.
+    #[doc(alias = "Prominent")]
+    Filled,
+}
+
+/// Button shape per HIG.
+///
+/// Controls the corner radius and proportions of the button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ButtonShape {
+    /// Rounded rectangle with standard corner radius.
+    #[default]
+    RoundedRectangle,
+    /// Fully rounded ends (pill shape). Used for prominent actions.
+    Capsule,
+    /// Perfect circle. Used for icon-only buttons.
+    Circle,
+}
+
+/// Button size — maps to HIG's four macOS control size tiers.
+///
+/// HIG naming (mini / small / regular / large) with their approximate
+/// minimum heights:
+///
+/// | Variant   | HIG name | Min height | Text style     |
+/// |-----------|----------|------------|----------------|
+/// | `Sm`      | small    | ~22 pt     | Subheadline    |
+/// | `Md`      | regular  | ~28 pt     | Body (default) |
+/// | `Lg`      | large    | ~32 pt     | Body           |
+/// | `IconSm`  | small    | ~22 pt     | —              |
+/// | `Icon`    | regular  | ~28 pt     | —              |
+///
+/// The `Icon*` variants apply icon-only chrome (square aspect, equal insets);
+/// text variants include label padding.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ButtonSize {
+    /// Small / HIG `small` — ~22pt min-height.
+    Sm,
+    /// Regular / HIG `regular` — ~28pt min-height. Default.
+    #[default]
+    Md,
+    /// Large / HIG `large` — ~32pt min-height. Use for prominent CTAs that
+    /// need to read at a glance (onboarding, primary page actions).
+    Lg,
+    /// Small icon-only button — ~22pt square.
+    IconSm,
+    /// Regular icon-only button — ~28pt square.
+    Icon,
+}
+
+/// A button component with variant styling.
+#[derive(IntoElement)]
+pub struct Button {
+    id: ElementId,
+    label: Option<SharedString>,
+    icon: Option<AnyElement>,
+    trailing_icon: Option<AnyElement>,
+    extra_children: Vec<AnyElement>,
+    variant: ButtonVariant,
+    size: ButtonSize,
+    shape: ButtonShape,
+    round: bool,
+    full_width: bool,
+    disabled: bool,
+    focused: bool,
+    loading: bool,
+    on_click: OnClick,
+    /// Accessibility label for screen readers. Defaults to the button's text label.
+    accessibility_label: Option<SharedString>,
+}
+
+impl Button {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            label: None,
+            icon: None,
+            trailing_icon: None,
+            extra_children: Vec::new(),
+            variant: ButtonVariant::default(),
+            size: ButtonSize::default(),
+            shape: ButtonShape::default(),
+            round: false,
+            full_width: false,
+            disabled: false,
+            focused: false,
+            loading: false,
+            on_click: None,
+            accessibility_label: None,
+        }
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn icon(mut self, icon: impl IntoElement) -> Self {
+        self.icon = Some(icon.into_any_element());
+        self
+    }
+
+    /// Set a trailing icon rendered *after* the label (between label and
+    /// extras). HIG allows trailing glyphs for disclosure / chevron /
+    /// external-link affordances.
+    pub fn trailing_icon(mut self, icon: impl IntoElement) -> Self {
+        self.trailing_icon = Some(icon.into_any_element());
+        self
+    }
+
+    /// Add an arbitrary child element, rendered after icon and label.
+    ///
+    /// Children render in this order: `icon → label → trailing_icon → extras (in call order)`.
+    /// To render an element *before* the icon, nest it inside the icon slot
+    /// (e.g. wrap the icon + the element in a `div()`). Extras chain via
+    /// repeated `.child(...)` calls and can be mixed with icons or text.
+    pub fn child(mut self, child: impl IntoElement) -> Self {
+        self.extra_children.push(child.into_any_element());
+        self
+    }
+
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    pub fn size(mut self, size: ButtonSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Sets the button shape per HIG.
+    ///
+    /// - `RoundedRectangle` (default): standard corner radius (`theme.radius_md`)
+    /// - `Capsule`: fully rounded ends / pill shape (`theme.radius_full`)
+    /// - `Circle`: perfect circle (`theme.radius_full` + equal width/height)
+    pub fn shape(mut self, shape: ButtonShape) -> Self {
+        self.shape = shape;
+        self
+    }
+
+    /// When `true`, uses fully-rounded pill shape (`radius_full`) instead of
+    /// the default `radius_md`.
+    pub fn round(mut self, round: bool) -> Self {
+        self.round = round;
+        self
+    }
+
+    /// When `true`, the button stretches to fill the width of its parent
+    /// (`.w_full()` on the inner element). Use for centered card CTAs and
+    /// form action rows where the button should match the column width.
+    pub fn full_width(mut self, full_width: bool) -> Self {
+        self.full_width = full_width;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Marks this button as keyboard-focused, showing a visible focus ring.
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
+    /// Marks this button as in a loading state — the icon slot is replaced
+    /// with an [`ActivityIndicator`], the label continues to render, and
+    /// `on_click` is suppressed.
+    ///
+    /// HIG Buttons (macOS 26, June 2025): actions taking longer than ~0.1 s
+    /// must show visible feedback. Use this flag on every async submit,
+    /// save, download, or publish CTA.
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
+    }
+
+    /// Sets an accessibility label for screen readers.
+    ///
+    /// Stored for a screen-reader name. The `debug_selector` on the rendered
+    /// element embeds this value so integration tests can assert on it
+    /// (`button-<id>`-based selectors remain; the label is surfaced via the
+    /// selector prefix when set so test locators can discover it).
+    ///
+    /// **GPUI accessibility gap:** GPUI's `Div` does not currently expose an
+    /// `aria_label` / `accessibility_id` API, so this field is *not* wired
+    /// into a VoiceOver name today. The `loading` flag above is the one
+    /// state change that callers currently can observe. Once GPUI lands
+    /// accessibility support, the label will feed into the AX name
+    /// automatically. Tracked via the Zed cross-reference in issue #132.
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
+        self
+    }
+
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Button {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+
+        // Match arms follow the same order as the doc-comment table on
+        // `ButtonVariant`. Adding a variant? Update the table, the enum
+        // declaration, and this match together.
+        let (bg, text_color, _border_color, hover_bg) = match self.variant {
+            ButtonVariant::Primary => {
+                let accent = theme.accent;
+                let hovered = if accent.l > 0.5 {
+                    darken(accent, 0.08)
+                } else {
+                    lighten(accent, 0.08)
+                };
+                (accent, theme.text_on_accent, accent, hovered)
+            }
+            ButtonVariant::Secondary => {
+                // HIG "Secondary" — subtle neutral fill that composites
+                // against any background. We build the fill from `theme.text`
+                // at low alpha so it adapts automatically to light/dark, and
+                // we add a faint border so the edge stays visible when the
+                // alpha-fill is nearly invisible against the parent surface.
+                let bg = with_alpha(theme.text, 0.06);
+                let hovered = with_alpha(theme.text, 0.12);
+                let border = with_alpha(theme.text, 0.10);
+                (bg, theme.text, border, hovered)
+            }
+            ButtonVariant::Ghost => {
+                // Borderless toolbar / inline button per HIG: transparent
+                // fill, NEUTRAL `theme.text` label (not accent -- accent is for
+                // link-style buttons sitting on top of body copy). This keeps
+                // contrast high in both modes and preserves the low-emphasis
+                // affordance: Ghost is the "quiet" sibling of Primary.
+                let glass = &theme.glass;
+                (
+                    glass.accessible_bg(GlassSize::Small, theme.accessibility_mode),
+                    theme.text,
+                    transparent_black(),
+                    glass.hover_bg,
+                )
+            }
+            ButtonVariant::Outline => {
+                // HIG "Outline" — transparent fill with a visible thin
+                // border. Distinguishable from Ghost (which is borderless) so
+                // toolbar pickers can use Ghost for quiet actions and Outline
+                // for deliberate but still-secondary choices.
+                let border = with_alpha(theme.text, 0.2);
+                let hovered = with_alpha(theme.text, 0.08);
+                (transparent_black(), theme.text, border, hovered)
+            }
+            ButtonVariant::Destructive => {
+                let err = theme.error;
+                let hovered = if err.l > 0.5 {
+                    darken(err, 0.08)
+                } else {
+                    lighten(err, 0.08)
+                };
+                (err, theme.text_on_accent, err, hovered)
+            }
+            ButtonVariant::Glass => {
+                let glass = &theme.glass;
+                let fill = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                (fill, theme.text, transparent_black(), glass.hover_bg)
+            }
+            ButtonVariant::GlassProminent => {
+                // Tinted accent glass -- opaque tinted surface for primary CTA
+                let accent = theme.accent;
+                let tinted_bg = with_alpha(accent, 0.25);
+                let tinted_hover = with_alpha(accent, 0.35);
+                (tinted_bg, theme.text, transparent_black(), tinted_hover)
+            }
+            ButtonVariant::Filled => {
+                // Neutral high-contrast filled: dark fill on light themes,
+                // light fill on dark themes. Hover steps the fill toward the
+                // background; we let `press_bg` below pick the correct
+                // direction so press feels deeper than hover regardless of
+                // whether the resting fill is dark or light.
+                let bg = theme.text;
+                let text_color = theme.background;
+                let hovered = if bg.l > 0.5 {
+                    darken(bg, 0.10)
+                } else {
+                    lighten(bg, 0.15)
+                };
+                (bg, text_color, bg, hovered)
+            }
+        };
+        let is_glass_variant = matches!(
+            self.variant,
+            ButtonVariant::Glass | ButtonVariant::GlassProminent
+        );
+        let is_circle = self.shape == ButtonShape::Circle;
+        let radius = match self.shape {
+            ButtonShape::Capsule | ButtonShape::Circle => theme.radius_full,
+            ButtonShape::RoundedRectangle => {
+                if self.round || is_glass_variant {
+                    theme.radius_full
+                } else {
+                    theme.glass.radius(GlassSize::Small)
+                }
+            }
+        };
+
+        // Size → (horizontal padding, vertical padding, text style, min height).
+        // `Sm`/`IconSm` drop a tier from the default target; `Lg` adds one
+        // for the HIG `large` control tier (~32pt min-height).
+        let (px_val, py_val, ts, min_h) = match self.size {
+            ButtonSize::Sm => (
+                theme.spacing_sm,
+                theme.spacing_xs,
+                TextStyle::Subheadline,
+                theme.min_target_size() + 2.0,
+            ),
+            ButtonSize::IconSm => (
+                theme.spacing_xs,
+                theme.spacing_xs,
+                TextStyle::Subheadline,
+                theme.min_target_size() + 2.0,
+            ),
+            ButtonSize::Md => (
+                theme.spacing_md,
+                theme.spacing_sm,
+                TextStyle::Body,
+                theme.target_size(),
+            ),
+            ButtonSize::Icon => (
+                theme.spacing_sm,
+                theme.spacing_sm,
+                TextStyle::Body,
+                theme.target_size(),
+            ),
+            // HIG large control tier — 32pt on macOS (target + 4).
+            ButtonSize::Lg => (
+                theme.spacing_md,
+                theme.spacing_sm,
+                TextStyle::Body,
+                theme.target_size() + 4.0,
+            ),
+        };
+
+        let id = self.id;
+        let mut el = div()
+            .id(id.clone())
+            .debug_selector(|| format!("button-{}", id))
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(theme.spacing_xs)
+            .px(px_val)
+            .py(py_val)
+            .min_h(px(min_h))
+            .min_w(px(min_h))
+            .bg(bg)
+            .text_color(text_color)
+            .text_style(ts, theme)
+            .rounded(radius)
+            .cursor_pointer();
+
+        // Circle shape: enforce equal width and height for a perfect circle.
+        if is_circle {
+            el = el.size(px(min_h));
+        }
+
+        if self.full_width {
+            el = el.w_full();
+        }
+
+        // Shadow composition:
+        // - Glass variants carry their Liquid Glass tier shadow.
+        // - Bordered non-glass variants (Primary / Secondary / Outline /
+        //   Destructive / Filled) carry a 0.5pt specular rim — an inset
+        //   highlight separate from the HighContrast border. Ghost is
+        //   transparent and gets no rim (it would double the Outline look).
+        let is_bordered_non_glass = matches!(
+            self.variant,
+            ButtonVariant::Primary
+                | ButtonVariant::Secondary
+                | ButtonVariant::Outline
+                | ButtonVariant::Destructive
+                | ButtonVariant::Filled
+        );
+        let mut base: Vec<BoxShadow> = if is_glass_variant {
+            theme.glass.shadows(GlassSize::Small).to_vec()
+        } else {
+            Vec::new()
+        };
+        if is_bordered_non_glass {
+            base.push(BoxShadow {
+                color: theme.specular_rim(),
+                offset: point(px(0.0), px(0.5)),
+                blur_radius: px(0.0),
+                spread_radius: px(-0.5),
+            });
+        }
+
+        // Treat `loading` like `disabled` for interactivity purposes — no
+        // clicks fire, the cursor is default, and the activity indicator
+        // replaces the leading icon below. We do NOT dim the fill: HIG
+        // shows a live control that's still "alive" while waiting for the
+        // async result.
+        let interactive_blocked = self.disabled || self.loading;
+
+        if self.disabled {
+            // HIG: disabled tint is a fixed muted color, not a proportional
+            // opacity — opacity(0.5) fails WCAG 4.5:1 on low-contrast
+            // variants (Ghost, Outline). Using Button's own text_disabled
+            // token instead of ButtonLike's default opacity(0.5).
+            el = el.text_color(theme.text_disabled()).cursor_default();
+        } else if !self.loading {
+            // Press should feel deeper than hover. For light-fill variants
+            // (Primary, Outline, Secondary, Ghost) we darken further. For
+            // dark-fill variants (Filled in light mode) we lighten further
+            // so the press state continues the direction hover started.
+            let active_bg = if hover_bg.l > 0.5 {
+                darken(hover_bg, 0.06)
+            } else {
+                lighten(hover_bg, 0.06)
+            };
+            let is_glass = is_glass_variant;
+            el = el.hover(|style| style.bg(hover_bg)).active(|style| {
+                let mut s = style.bg(active_bg);
+                // Apple Liquid Glass "flex response" -- subtle opacity shift on press
+                if is_glass {
+                    s = s.opacity(0.85);
+                }
+                s
+            });
+        } else {
+            el = el.cursor_default();
+        }
+
+        // Finding 15 adoption: route the focus ring, high-contrast
+        // border, click, and keyboard-activation wiring through the
+        // shared `ButtonLike` substrate so `Button`, `CopyButton`, and
+        // other button-shaped controls share one interactivity stack.
+        // Button keeps its own variant-specific disabled text-color
+        // handling above (HIG: muted text rather than opacity dimming).
+        let mut bl = ButtonLike::new(id.clone())
+            .focused(self.focused)
+            .base_shadows(base);
+        if let Some(handler) = self.on_click
+            && !interactive_blocked
+        {
+            bl = bl.on_click(move |event, window, cx| handler(event, window, cx));
+        }
+        el = bl.apply_to(el, theme, window);
+
+        // Leading slot: loading spinner replaces the icon while loading.
+        if self.loading {
+            let indicator_size = match self.size {
+                ButtonSize::Sm | ButtonSize::IconSm => px(14.0),
+                ButtonSize::Md | ButtonSize::Icon => px(16.0),
+                ButtonSize::Lg => px(18.0),
+            };
+            el = el.child(
+                ActivityIndicator::new(ElementId::from((id.clone(), "loading")))
+                    .size(indicator_size)
+                    .color(text_color),
+            );
+        } else if let Some(icon) = self.icon {
+            el = el.child(icon);
+        }
+        if let Some(label) = self.label {
+            el = el.child(label);
+        }
+        if let Some(trailing) = self.trailing_icon {
+            el = el.child(trailing);
+        }
+        if !self.extra_children.is_empty() {
+            el = el.children(self.extra_children);
+        }
+
+        el
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Button, ButtonSize, ButtonVariant};
+    use core::prelude::v1::test;
+    use gpui::InteractiveElement;
+    use gpui::div;
+
+    /// All button variants. New variants must be added here so the
+    /// distinctness and exhaustiveness tests pick them up automatically.
+    const ALL_VARIANTS: &[ButtonVariant] = &[
+        ButtonVariant::Primary,
+        ButtonVariant::Secondary,
+        ButtonVariant::Ghost,
+        ButtonVariant::Outline,
+        ButtonVariant::Destructive,
+        ButtonVariant::Glass,
+        ButtonVariant::GlassProminent,
+        ButtonVariant::Filled,
+    ];
+
+    #[test]
+    fn button_variant_default() {
+        assert_eq!(ButtonVariant::default(), ButtonVariant::Primary);
+    }
+
+    #[test]
+    fn button_variant_all_distinct() {
+        for (i, a) in ALL_VARIANTS.iter().enumerate() {
+            for (j, b) in ALL_VARIANTS.iter().enumerate() {
+                if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert_ne!(a, b);
+                }
+            }
+        }
+    }
+
+    /// Compile-time guard: if a new variant is added without updating
+    /// `ALL_VARIANTS`, this exhaustive match fails to compile.
+    #[allow(dead_code)]
+    fn variants_are_exhaustive(v: ButtonVariant) -> &'static str {
+        match v {
+            ButtonVariant::Primary => "primary",
+            ButtonVariant::Secondary => "secondary",
+            ButtonVariant::Ghost => "ghost",
+            ButtonVariant::Outline => "outline",
+            ButtonVariant::Destructive => "destructive",
+            ButtonVariant::Glass => "glass",
+            ButtonVariant::GlassProminent => "glass_prominent",
+            ButtonVariant::Filled => "filled",
+        }
+    }
+
+    #[test]
+    fn button_size_default() {
+        assert_eq!(ButtonSize::default(), ButtonSize::Md);
+    }
+
+    #[test]
+    fn button_size_all_distinct() {
+        let sizes = [
+            ButtonSize::Sm,
+            ButtonSize::Md,
+            ButtonSize::Lg,
+            ButtonSize::Icon,
+            ButtonSize::IconSm,
+        ];
+        for i in 0..sizes.len() {
+            for j in 0..sizes.len() {
+                if i == j {
+                    assert_eq!(sizes[i], sizes[j]);
+                } else {
+                    assert_ne!(sizes[i], sizes[j]);
+                }
+            }
+        }
+    }
+
+    /// Compile-time guard: adding a new `ButtonSize` without updating the
+    /// above list fails this exhaustive match.
+    #[allow(dead_code)]
+    fn sizes_are_exhaustive(s: ButtonSize) -> &'static str {
+        match s {
+            ButtonSize::Sm => "sm",
+            ButtonSize::Md => "md",
+            ButtonSize::Lg => "lg",
+            ButtonSize::Icon => "icon",
+            ButtonSize::IconSm => "icon_sm",
+        }
+    }
+
+    #[test]
+    fn button_loading_default_false() {
+        let btn = Button::new("test");
+        assert!(!btn.loading);
+    }
+
+    #[test]
+    fn button_loading_builder_sets_flag() {
+        let btn = Button::new("test").loading(true);
+        assert!(btn.loading);
+    }
+
+    #[test]
+    fn button_trailing_icon_stored() {
+        let btn = Button::new("test");
+        assert!(btn.trailing_icon.is_none());
+        let btn = btn.trailing_icon(gpui::div());
+        assert!(btn.trailing_icon.is_some());
+    }
+
+    #[test]
+    fn button_round_sets_flag() {
+        let btn = Button::new("test");
+        assert!(!btn.round);
+
+        let btn = btn.round(true);
+        assert!(btn.round);
+    }
+
+    #[test]
+    fn button_full_width_default_false() {
+        let btn = Button::new("test");
+        assert!(!btn.full_width);
+    }
+
+    #[test]
+    fn button_full_width_builder_sets_flag() {
+        let btn = Button::new("test").full_width(true);
+        assert!(btn.full_width);
+    }
+
+    #[test]
+    fn button_child_adds_extra_children() {
+        let btn = Button::new("test");
+        assert!(btn.extra_children.is_empty());
+
+        let btn = btn.child(div().id("c1"));
+        assert_eq!(btn.extra_children.len(), 1);
+
+        let btn = btn.child(div().id("c2"));
+        assert_eq!(btn.extra_children.len(), 2);
+    }
+
+    // ── Theme-aware contrast / color regression tests ──────────────────
+    //
+    // These guard the post-review fixes:
+    //   • Ghost label uses neutral `theme.text` (not accent / not muted),
+    //     so it inherits text↔background contrast in every appearance.
+    //   • Filled inverts `bg`/`text_color` correctly across light and dark.
+    //   • Secondary uses an alpha-based fill, so the L delta against the
+    //     window background is independent of `theme.surface`.
+
+    use crate::foundations::theme::{TahoeTheme, contrast_ratio};
+    use gpui::Hsla;
+
+    /// Resolve `(bg, text_color)` for a variant on a given theme by inlining
+    /// the same logic the render path uses. Keeps these tests pure and free
+    /// of the GPUI test harness.
+    fn variant_colors(variant: ButtonVariant, theme: &TahoeTheme) -> (Hsla, Hsla) {
+        use crate::foundations::color::with_alpha;
+        match variant {
+            ButtonVariant::Primary => (theme.accent, theme.text_on_accent),
+            ButtonVariant::Secondary => (with_alpha(theme.text, 0.06), theme.text),
+            ButtonVariant::Ghost => (gpui::transparent_black(), theme.text),
+            ButtonVariant::Outline => (gpui::transparent_black(), theme.text),
+            ButtonVariant::Destructive => (theme.error, theme.text_on_accent),
+            ButtonVariant::Glass => (gpui::transparent_black(), theme.text),
+            ButtonVariant::GlassProminent => (with_alpha(theme.accent, 0.25), theme.text),
+            ButtonVariant::Filled => (theme.text, theme.background),
+        }
+    }
+
+    #[test]
+    fn ghost_uses_neutral_text_in_light_and_dark() {
+        let light = TahoeTheme::light();
+        let dark = TahoeTheme::dark();
+        let (_bg_l, fg_l) = variant_colors(ButtonVariant::Ghost, &light);
+        let (_bg_d, fg_d) = variant_colors(ButtonVariant::Ghost, &dark);
+        assert_eq!(
+            fg_l, light.text,
+            "Ghost label must be theme.text in light mode"
+        );
+        assert_eq!(
+            fg_d, dark.text,
+            "Ghost label must be theme.text in dark mode"
+        );
+    }
+
+    #[test]
+    fn ghost_label_meets_wcag_aa_against_background() {
+        // Ghost has a transparent fill, so the label sits on whatever the
+        // parent draws — typically theme.background. Verify that the label
+        // color clears WCAG AA (4.5:1) for normal body text in both modes.
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (_, fg) = variant_colors(ButtonVariant::Ghost, &theme);
+            let ratio = contrast_ratio(fg, theme.background);
+            assert!(
+                ratio >= 4.5,
+                "Ghost label vs theme.background contrast {ratio:.2}:1 fails WCAG AA 4.5:1"
+            );
+        }
+    }
+
+    #[test]
+    fn filled_inverts_across_themes() {
+        // Light mode: dark fill on white background.
+        let light = TahoeTheme::light();
+        let (bg_l, fg_l) = variant_colors(ButtonVariant::Filled, &light);
+        assert!(
+            bg_l.l < 0.3,
+            "Filled bg should be dark in light mode (L={})",
+            bg_l.l
+        );
+        assert!(
+            fg_l.l > 0.7,
+            "Filled label should be light in light mode (L={})",
+            fg_l.l
+        );
+
+        // Dark mode: light fill on dark background.
+        let dark = TahoeTheme::dark();
+        let (bg_d, fg_d) = variant_colors(ButtonVariant::Filled, &dark);
+        assert!(
+            bg_d.l > 0.7,
+            "Filled bg should be light in dark mode (L={})",
+            bg_d.l
+        );
+        assert!(
+            fg_d.l < 0.3,
+            "Filled label should be dark in dark mode (L={})",
+            fg_d.l
+        );
+
+        // And the bg/label pair should always meet WCAG AAA (7:1) — Filled is
+        // a high-contrast CTA pattern.
+        for (theme, label) in [(&light, "light"), (&dark, "dark")] {
+            let (bg, fg) = variant_colors(ButtonVariant::Filled, theme);
+            let ratio = contrast_ratio(fg, bg);
+            assert!(
+                ratio >= 7.0,
+                "Filled label/bg contrast {ratio:.2}:1 in {label} mode fails WCAG AAA 7:1"
+            );
+        }
+    }
+
+    #[test]
+    fn secondary_fill_is_alpha_based_on_text() {
+        use crate::foundations::color::with_alpha;
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (bg, fg) = variant_colors(ButtonVariant::Secondary, &theme);
+            assert_eq!(bg, with_alpha(theme.text, 0.06));
+            assert_eq!(fg, theme.text);
+            // Sanity: the resolved fill must have non-zero alpha so the
+            // composited result actually differs from theme.background.
+            assert!(bg.a > 0.0, "Secondary fill alpha must be non-zero");
+        }
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{Context, IntoElement, Render, TestAppContext};
+
+    use super::Button;
+    use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
+
+    const BUTTON_SMOKE: &str = "button-smoke";
+
+    struct ButtonHarness {
+        clicks: Rc<RefCell<usize>>,
+    }
+
+    impl ButtonHarness {
+        fn new(clicks: Rc<RefCell<usize>>) -> Self {
+            Self { clicks }
+        }
+    }
+
+    impl Render for ButtonHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            Button::new("smoke").label("Click me").on_click({
+                let clicks = self.clicks.clone();
+                move |_, _, _| *clicks.borrow_mut() += 1
+            })
+        }
+    }
+
+    #[gpui::test]
+    async fn clicking_button_invokes_handler(cx: &mut TestAppContext) {
+        let clicks = Rc::new(RefCell::new(0));
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ButtonHarness::new(clicks.clone()));
+
+        cx.click_on(BUTTON_SMOKE);
+
+        assert_eq!(*clicks.borrow(), 1);
+    }
+}

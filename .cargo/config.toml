@@ -1,0 +1,3 @@
+[build]
+# Use all available cores for compilation
+jobs = -1

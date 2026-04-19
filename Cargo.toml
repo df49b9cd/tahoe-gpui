@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tahoe-gpui",
+    "crates/remend",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.1"
+authors = ["Soeren Magnus Olesen"]
+license = "Apache-2.0"
+repository = "https://github.com/df49b9cd/tahoe-gpui"
+description = "Tahoe HIG-aligned UI components for GPUI"
+
+[workspace.dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+proptest = "1.11.0"
+
+# UI / visual regression testing — single workspace pin so `test-support`
+# features cannot drift into duplicate compiles of `image`.
+image = "0.25"
+

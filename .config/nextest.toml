@@ -1,0 +1,14 @@
+[profile.default]
+# Use 4 parallel test jobs
+parallel = 4
+
+# Don't retry failed tests immediately
+retry = { "0" = { delay = 100, exit-code = "all" } }
+
+# Slow tests threshold: warn if a test takes longer than this
+slow-tests-threshold = "60s"
+
+[profile.ci]
+# More aggressive retries in CI
+parallel = 8
+retry = { "0" = { delay = 50, exit-code = "all" } }

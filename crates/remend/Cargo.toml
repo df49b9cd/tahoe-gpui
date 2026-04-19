@@ -1,0 +1,9 @@
+[package]
+name = "remend"
+description = "Streaming markdown preprocessor — auto-completes incomplete syntax during token-by-token streaming"
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true

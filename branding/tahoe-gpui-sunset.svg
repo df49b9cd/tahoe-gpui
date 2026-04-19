@@ -1,0 +1,157 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="tahoe-gpui">
+  <defs>
+    <!-- Sunset sky: indigo → plum → rose → warm peach -->
+    <linearGradient id="sunsetSky" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#1b0d3d"/>
+      <stop offset="32%"  stop-color="#5c2863"/>
+      <stop offset="62%"  stop-color="#c15860"/>
+      <stop offset="86%"  stop-color="#ee8a55"/>
+      <stop offset="100%" stop-color="#f7b57a"/>
+    </linearGradient>
+
+    <!-- Big warm halo around the sun -->
+    <radialGradient id="sunHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#fff1c9" stop-opacity="0.85"/>
+      <stop offset="35%"  stop-color="#ffc878" stop-opacity="0.45"/>
+      <stop offset="75%"  stop-color="#ff8a5c" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ff8a5c" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Sun disk bright core -->
+    <radialGradient id="sunCore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="45%" stop-color="#ffecb0" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#ffb560" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Front peak: warm-tinted silhouette, translucent top, opaque base -->
+    <linearGradient id="sunsetPeak" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#4d2550" stop-opacity="0.55"/>
+      <stop offset="55%"  stop-color="#2b1238" stop-opacity="0.82"/>
+      <stop offset="100%" stop-color="#0e0520" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- Back range: very translucent warm purple -->
+    <linearGradient id="sunsetBackPeak" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#6a3a6a" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#2b1238" stop-opacity="0.62"/>
+    </linearGradient>
+
+    <!-- Water: warm reflection surface -->
+    <linearGradient id="sunsetWater" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#e5764a" stop-opacity="0.55"/>
+      <stop offset="55%"  stop-color="#6f2540" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#0b0418" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Reflection of peak in water -->
+    <linearGradient id="sunsetReflection" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#6d2e4c" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#1a0818" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Sun glint on water (vertical bright column) -->
+    <linearGradient id="sunGlint" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#ffecb0" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#ffecb0" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sunGlintCore" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Subtle top sheen -->
+    <linearGradient id="sunsetSheen" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <clipPath id="iconClipSunset">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+    <clipPath id="waterClipSunset">
+      <rect x="0" y="340" width="512" height="172"/>
+    </clipPath>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect width="512" height="512" rx="112" fill="url(#sunsetSky)"/>
+
+  <g clip-path="url(#iconClipSunset)">
+    <!-- Warm atmospheric horizon band -->
+    <rect x="0" y="240" width="512" height="180" fill="url(#sunHalo)" opacity="0.35"/>
+
+    <!-- Large halo (whole sky warms around sun) -->
+    <circle cx="380" cy="250" r="200" fill="url(#sunHalo)"/>
+
+    <!-- Back mountain range -->
+    <path d="M 0 340
+             L 60 268
+             L 132 296
+             L 210 238
+             L 284 280
+             L 360 244
+             L 440 284
+             L 512 252
+             L 512 340 Z"
+          fill="url(#sunsetBackPeak)"/>
+
+    <!-- Sun disc: positioned to be partially occluded by peak's right shoulder -->
+    <circle cx="395" cy="218" r="38" fill="url(#sunCore)"/>
+
+    <!-- Front alpine peak (silhouette, draws over lower half of sun) -->
+    <path d="M 40 340
+             L 170 220
+             L 230 150
+             L 300 240
+             L 370 180
+             L 470 340 Z"
+          fill="url(#sunsetPeak)"/>
+
+    <!-- Snow cap: warm peach catching the sunset light -->
+    <path d="M 214 175 L 230 150 L 252 184 L 240 196 L 222 190 Z"
+          fill="#ffdcb0" opacity="0.88"/>
+
+    <!-- Gold specular on lit left-facing slopes -->
+    <path d="M 170 220 L 230 150"
+          stroke="#ffd68a" stroke-opacity="0.95"
+          stroke-width="2.5" stroke-linecap="round" fill="none"/>
+    <path d="M 300 240 L 370 180"
+          stroke="#ffd68a" stroke-opacity="0.8"
+          stroke-width="2" stroke-linecap="round" fill="none"/>
+
+    <!-- Warm horizon line -->
+    <line x1="0" y1="340" x2="512" y2="340"
+          stroke="#ffcfa0" stroke-opacity="0.6" stroke-width="1.2"/>
+
+    <!-- Lake body -->
+    <rect x="0" y="340" width="512" height="172" fill="url(#sunsetWater)"/>
+
+    <!-- Sun glint column on water (directly below sun) -->
+    <rect x="372" y="340" width="46" height="150" fill="url(#sunGlint)"/>
+    <rect x="386" y="340" width="18" height="150" fill="url(#sunGlintCore)"/>
+
+    <!-- Peak reflection in water -->
+    <g clip-path="url(#waterClipSunset)" opacity="0.55">
+      <path d="M 40 340
+               L 170 460
+               L 230 530
+               L 300 440
+               L 370 500
+               L 470 340 Z"
+            fill="url(#sunsetReflection)"/>
+    </g>
+
+    <!-- Warm-tinted ripples -->
+    <g stroke="#ffd6a4" stroke-linecap="round" fill="none">
+      <line x1="70"  y1="378" x2="178" y2="378" stroke-opacity="0.3"  stroke-width="1"/>
+      <line x1="200" y1="394" x2="306" y2="394" stroke-opacity="0.22" stroke-width="1"/>
+      <line x1="140" y1="418" x2="268" y2="418" stroke-opacity="0.18" stroke-width="1"/>
+      <line x1="40"  y1="444" x2="138" y2="444" stroke-opacity="0.14" stroke-width="1"/>
+      <line x1="430" y1="466" x2="502" y2="466" stroke-opacity="0.12" stroke-width="1"/>
+    </g>
+
+    <!-- Top sheen -->
+    <rect x="0" y="0" width="512" height="220" fill="url(#sunsetSheen)"/>
+  </g>
+</svg>

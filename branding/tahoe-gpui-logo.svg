@@ -1,0 +1,126 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="tahoe-gpui">
+  <defs>
+    <!-- Twilight sky, Tahoe blue → deep navy -->
+    <linearGradient id="sky" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#23406b"/>
+      <stop offset="50%" stop-color="#0e1c36"/>
+      <stop offset="100%" stop-color="#040819"/>
+    </linearGradient>
+
+    <!-- Soft light source (moon) behind the peak -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="55%" stop-color="#a8c8ff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Front peak: Liquid Glass, bright at top, translucent at base -->
+    <linearGradient id="peakGlass" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#dfe7f4" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.20"/>
+    </linearGradient>
+
+    <!-- Back range: distant, more translucent -->
+    <linearGradient id="backPeak" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+
+    <!-- Lake water: Tahoe blue dissolving to black -->
+    <linearGradient id="water" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#3a7ab8" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#060e20" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Mirrored reflection: softer, refracted feel -->
+    <linearGradient id="reflection" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Top-of-icon specular sheen -->
+    <linearGradient id="sheen" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <clipPath id="iconClip">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+    <clipPath id="waterClip">
+      <rect x="0" y="340" width="512" height="172"/>
+    </clipPath>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+
+  <g clip-path="url(#iconClip)">
+    <!-- Moonglow behind peak, offset left so the lit side reads clearly -->
+    <circle cx="180" cy="170" r="170" fill="url(#glow)"/>
+
+    <!-- Distant mountain range (depth layer) -->
+    <path d="M 0 340
+             L 60 268
+             L 132 296
+             L 210 238
+             L 284 280
+             L 360 244
+             L 440 284
+             L 512 252
+             L 512 340 Z"
+          fill="url(#backPeak)"/>
+
+    <!-- Front alpine peak: dominant apex left-of-center + secondary peak right -->
+    <path d="M 40 340
+             L 170 220
+             L 230 150
+             L 300 240
+             L 370 180
+             L 470 340 Z"
+          fill="url(#peakGlass)"/>
+
+    <!-- Snow cap on main summit -->
+    <path d="M 214 175 L 230 150 L 252 184 L 240 196 L 222 190 Z"
+          fill="#ffffff" opacity="0.95"/>
+
+    <!-- Specular highlights on the lit (left-facing) slopes — Liquid Glass edge -->
+    <path d="M 170 220 L 230 150"
+          stroke="#ffffff" stroke-opacity="0.9"
+          stroke-width="2.5" stroke-linecap="round" fill="none"/>
+    <path d="M 300 240 L 370 180"
+          stroke="#ffffff" stroke-opacity="0.7"
+          stroke-width="2" stroke-linecap="round" fill="none"/>
+
+    <!-- Crisp waterline -->
+    <line x1="0" y1="340" x2="512" y2="340"
+          stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.2"/>
+
+    <!-- Lake body -->
+    <rect x="0" y="340" width="512" height="172" fill="url(#water)"/>
+
+    <!-- Inverted reflection of peak, softened -->
+    <g clip-path="url(#waterClip)" opacity="0.5">
+      <path d="M 40 340
+               L 170 460
+               L 230 530
+               L 300 440
+               L 370 500
+               L 470 340 Z"
+            fill="url(#reflection)"/>
+    </g>
+
+    <!-- Water ripples: horizontal disruptions -->
+    <g stroke="#ffffff" stroke-linecap="round" fill="none">
+      <line x1="70"  y1="378" x2="178" y2="378" stroke-opacity="0.22" stroke-width="1"/>
+      <line x1="340" y1="394" x2="446" y2="394" stroke-opacity="0.18" stroke-width="1"/>
+      <line x1="140" y1="418" x2="268" y2="418" stroke-opacity="0.15" stroke-width="1"/>
+      <line x1="300" y1="444" x2="398" y2="444" stroke-opacity="0.12" stroke-width="1"/>
+      <line x1="60"  y1="466" x2="154" y2="466" stroke-opacity="0.1"  stroke-width="1"/>
+    </g>
+
+    <!-- Top sheen on the icon surface -->
+    <rect x="0" y="0" width="512" height="220" fill="url(#sheen)"/>
+  </g>
+</svg>
