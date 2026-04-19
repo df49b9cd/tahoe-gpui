@@ -1,11 +1,8 @@
 //! Copy button with visual feedback (checkmark state).
 //!
-//! Renders `IconName::Copy`, which maps to the canonical SF Symbol
-//! `document.on.document` (the SF Symbols 7 name for the glyph
-//! historically known as `doc.on.doc`) via `IconName::sf_asset_path`.
-//! The SF Symbol path takes priority over the custom Lucide-derived
-//! fallback SVG at `icons/ai-sdk/copy.svg`, so the rendered glyph matches
-//! the macOS Edit menu's Copy item.
+//! Renders `IconName::Copy`, which maps to the canonical SF-Symbols-aligned
+//! `document-on-document` glyph (the macOS Edit-menu Copy item, SF Symbols 7
+//! name `document.on.document`) via `IconName::bundled_asset_path`.
 //!
 //! On state change the icon performs a brief opacity cross-fade
 //! controlled by [`crate::foundations::motion::MotionRamp::Short`] (HIG
