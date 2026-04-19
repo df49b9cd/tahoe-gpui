@@ -1,6 +1,19 @@
-# tahoe-gpui
+<p align="center">
+  <img src="branding/tahoe-gpui-logo.svg" alt="tahoe-gpui" width="160" />
+</p>
 
-**Human Interface Guidelines components for GPUI.**
+<h1 align="center">tahoe-gpui</h1>
+
+<p align="center">
+  <strong>Human Interface Guidelines components for GPUI.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/df49b9cd/tahoe-gpui/actions/workflows/ci.yml"><img src="https://github.com/df49b9cd/tahoe-gpui/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0" /></a>
+  <img src="https://img.shields.io/badge/rust-1.94.1%2B-orange" alt="rust 1.94.1+" />
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="macOS" />
+</p>
 
 A component library that brings Apple's macOS Tahoe HIG (San Francisco typography, SF Symbols, Liquid Glass materials, Dynamic Type, spring motion) to applications built on [Zed's GPUI framework][gpui]. Standalone — no AI SDK dependency required.
 
