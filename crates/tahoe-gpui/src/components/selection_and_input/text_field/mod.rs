@@ -9,6 +9,7 @@ pub use validation::TextFieldValidation;
 
 mod boundaries;
 
+use crate::foundations::layout::SPACING_4;
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::time::Instant;
@@ -1168,7 +1169,7 @@ impl Render for TextField {
                 .flex_row()
                 .items_center()
                 .gap(theme.spacing_xs)
-                .pt(px(4.0))
+                .pt(px(SPACING_4))
                 .text_style(TextStyle::Callout, theme)
                 .text_color(theme.error);
             if include_icon {

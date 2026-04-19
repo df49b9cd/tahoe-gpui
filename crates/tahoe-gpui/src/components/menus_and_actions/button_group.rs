@@ -117,6 +117,7 @@ impl RenderOnce for ButtonGroup {
 #[cfg(test)]
 mod tests {
     use super::ButtonGroup;
+    use crate::foundations::layout::SPACING_4;
     use core::prelude::v1::test;
     use gpui::px;
 
@@ -144,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_gap_stores_value() {
-        let group = ButtonGroup::new("test").gap(px(4.0));
+        let group = ButtonGroup::new("test").gap(px(SPACING_4));
         assert_eq!(group.gap, Some(px(4.0)));
     }
 

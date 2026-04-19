@@ -224,24 +224,20 @@ impl RenderOnce for PopupButton {
 
         trigger = trigger.child(trigger_content);
 
-        if !disabled {
-            if let Some(handler) = toggle_for_trigger {
-                trigger = trigger.on_click(move |_event, window, cx| {
-                    handler(!is_open, window, cx);
-                });
-            }
+        if !disabled && let Some(handler) = toggle_for_trigger {
+            trigger = trigger.on_click(move |_event, window, cx| {
+                handler(!is_open, window, cx);
+            });
         }
 
         // Trigger keyboard activation: Enter/Space opens the dropdown.
-        if !disabled {
-            if let Some(handler) = trigger_key_toggle {
-                trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    if crate::foundations::keyboard::is_activation_key(event) && !is_open {
-                        cx.stop_propagation();
-                        handler(true, window, cx);
-                    }
-                });
-            }
+        if !disabled && let Some(handler) = trigger_key_toggle {
+            trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if crate::foundations::keyboard::is_activation_key(event) && !is_open {
+                    cx.stop_propagation();
+                    handler(true, window, cx);
+                }
+            });
         }
 
         // ── Container (trigger + optional dropdown) ─────────────────────────
@@ -327,14 +323,14 @@ impl RenderOnce for PopupButton {
                     }
                     "enter" => {
                         cx.stop_propagation();
-                        if let Some(idx) = highlighted {
-                            if let Some(value) = values.get(idx) {
-                                if let Some(handler) = &key_change {
-                                    handler(value, window, cx);
-                                }
-                                if let Some(handler) = &key_toggle {
-                                    handler(false, window, cx);
-                                }
+                        if let Some(idx) = highlighted
+                            && let Some(value) = values.get(idx)
+                        {
+                            if let Some(handler) = &key_change {
+                                handler(value, window, cx);
+                            }
+                            if let Some(handler) = &key_toggle {
+                                handler(false, window, cx);
                             }
                         }
                     }

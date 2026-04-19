@@ -163,12 +163,12 @@ impl HoverCard {
             // Respect the hover-in delay: if the trigger just entered,
             // defer open until `open_delay` has elapsed. Close events
             // are applied immediately to avoid lingering cards.
-            if should_open && self.open_delay > Duration::ZERO {
-                if let Some(entered_at) = self.trigger_entered_at {
-                    if entered_at.elapsed() < self.open_delay {
-                        return;
-                    }
-                }
+            if should_open
+                && self.open_delay > Duration::ZERO
+                && let Some(entered_at) = self.trigger_entered_at
+                && entered_at.elapsed() < self.open_delay
+            {
+                return;
             }
             self.is_open = should_open;
             cx.notify();

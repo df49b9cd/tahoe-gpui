@@ -6,7 +6,11 @@
 use gpui::Animation;
 use std::time::Duration;
 
-pub use super::super::components::status::shimmer::{Shimmer, ShimmerEasing, SweepDirection};
+// Note: `Shimmer`/`ShimmerEasing`/`SweepDirection` live in
+// `components::status::shimmer` and are re-exported from the crate prelude.
+// Foundations must not import from `components::` — doing so inverts the
+// layering. Consumers should use `crate::components::status::{...}` directly
+// or the crate prelude.
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Duration ramps
@@ -57,6 +61,11 @@ impl MotionRamp {
 /// question #1 on the internal tracker).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpringPreset {
+    /// SwiftUI `.spring` default — `response=0.55, damping=0.825, bounce=0.0`.
+    /// This is the implicit spring used by every unqualified `.animation(.spring)`
+    /// call in SwiftUI and the closest match to the "general purpose" system
+    /// spring on macOS Tahoe.
+    Default,
     /// SwiftUI `.smooth` — no bounce, slow settle. `response=0.5, damping=1.0`.
     Smooth,
     /// SwiftUI `.snappy` — fast, no bounce. `response=0.3, damping=0.9`.
@@ -73,6 +82,7 @@ impl SpringPreset {
     /// `(damping, response_seconds, bounce)` tuple for this preset.
     pub const fn params(self) -> (f32, f32, f32) {
         match self {
+            SpringPreset::Default => (0.825, 0.55, 0.0),
             SpringPreset::Smooth => (1.0, 0.5, 0.0),
             SpringPreset::Snappy => (0.9, 0.3, 0.0),
             SpringPreset::Bouncy => (0.7, 0.5, 0.15),
@@ -235,7 +245,11 @@ impl MorphState {
 /// and every caller inherits the upgrade.
 pub fn spring_animation(tokens: &MotionTokens) -> Animation {
     let duration = Duration::from_millis(tokens.spring_duration_ms());
-    Animation::new(duration).with_easing(spring_easing(tokens.spring_damping, tokens.spring_bounce))
+    Animation::new(duration).with_easing(spring_easing(
+        tokens.spring_damping,
+        tokens.spring_response,
+        tokens.spring_bounce,
+    ))
 }
 
 /// Reduce-Motion-aware spring animation.
@@ -293,6 +307,43 @@ pub fn accessible_transition_animation(
 /// remaining above the ~120ms visual-continuity floor.
 pub const REDUCE_MOTION_CROSSFADE: Duration = Duration::from_millis(150);
 
+/// Read the current accessibility preference for Reduce Motion.
+///
+/// Reads `TahoeTheme::accessibility_mode` and returns `true` when the
+/// `REDUCE_MOTION` flag is set. Components that gate animations on the
+/// system preference should call this instead of threading a `bool`
+/// parameter — centralising the lookup here makes it trivial to swap the
+/// source (today the theme-owned flag; tomorrow a GPUI-native
+/// `Window::prefers_reduced_motion()` when that API lands).
+///
+/// Example:
+///
+/// ```ignore
+/// use tahoe_gpui::foundations::motion::prefers_reduced_motion;
+///
+/// if prefers_reduced_motion(cx) {
+///     // render the static fallback
+/// }
+/// ```
+pub fn prefers_reduced_motion(cx: &gpui::App) -> bool {
+    use crate::foundations::theme::ActiveTheme;
+    cx.theme().accessibility_mode.reduce_motion()
+}
+
+/// Read the current accessibility preference for Prefer Cross-Fade
+/// Transitions.
+///
+/// Distinct from [`prefers_reduced_motion`] — callers that drive
+/// sheet/modal/popover transitions should read this flag to decide
+/// whether to collapse a translation animation into a pure opacity
+/// cross-fade while keeping the natural duration.
+pub fn prefers_cross_fade_transitions(cx: &gpui::App) -> bool {
+    use crate::foundations::theme::ActiveTheme;
+    cx.theme()
+        .accessibility_mode
+        .prefer_cross_fade_transitions()
+}
+
 /// Substitute a short cross-fade for `base` when Reduce Motion is set.
 ///
 /// Finding 22 in the Zed cross-reference audit
@@ -335,18 +386,30 @@ pub fn reduce_motion_substitute(
 
 /// Spring easing function.
 ///
-/// Creates an easing curve that mimics a damped spring:
+/// Creates an easing curve that approximates an underdamped spring:
 /// - damping < 1.0: underdamped (oscillates before settling)
 /// - damping = 1.0: critically damped (fastest settle without overshoot)
 /// - damping > 1.0: overdamped (slow exponential settle)
 ///
-/// The bounce parameter adds overshoot (0.0 = none, higher = more).
+/// `response` is the spring's perceived period in seconds (SwiftUI's
+/// `response` / `dampingFraction`). It controls the natural frequency
+/// `ωₙ = 2π / response`, so shorter response → stiffer spring → tighter
+/// oscillation cycles across the same normalized `t ∈ [0, 1]` window. With
+/// the previous formula every spring of the same damping looked identical
+/// regardless of response — visual feel only changed via `Animation::duration`.
+///
+/// The `bounce` parameter adds overshoot (0.0 = none, higher = more).
 ///
 /// This is an analytical approximation, not SwiftUI's physical solver.
 /// For interactive spring feel that matches tactile expectations, use
 /// [`SpringPreset`] constants and note GPUI's missing velocity-preserving
 /// interruption (open question #1 on the internal tracker).
-pub fn spring_easing(damping: f32, bounce: f32) -> impl Fn(f32) -> f32 {
+pub fn spring_easing(damping: f32, response: f32, bounce: f32) -> impl Fn(f32) -> f32 {
+    // Total animation spans ~`4 * response` seconds (see `spring_duration_ms`),
+    // so `t ∈ [0, 1]` already covers four response periods. Scale oscillation
+    // frequency so shorter response yields tighter wobble, matching SwiftUI.
+    let response = response.max(1e-3);
+    let periods = (4.0 / response).clamp(1.0, 12.0);
     move |t: f32| {
         if t >= 1.0 {
             return 1.0;
@@ -354,10 +417,12 @@ pub fn spring_easing(damping: f32, bounce: f32) -> impl Fn(f32) -> f32 {
         if t <= 0.0 {
             return 0.0;
         }
-        // Approximate spring with exponential decay + optional overshoot
-        let decay = (-damping * t * 6.0).exp();
+        // Approximate spring with exponential decay + optional overshoot.
+        // Decay rate scales with `periods` so shorter response settles within
+        // the same normalized window.
+        let decay = (-damping * t * (periods + 2.0)).exp();
         let oscillation = if bounce > 0.0 {
-            (t * std::f32::consts::PI * (2.0 + bounce * 2.0)).sin()
+            (t * std::f32::consts::PI * (periods + bounce * 2.0)).sin()
         } else {
             0.0
         };
@@ -434,6 +499,16 @@ mod tests {
         let (damping, response, bounce) = SpringPreset::Interactive.params();
         assert!((damping - 0.85).abs() < f32::EPSILON);
         assert!((response - 0.35).abs() < f32::EPSILON);
+        assert!(bounce.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn spring_preset_default_matches_swiftui_spring() {
+        // SwiftUI's documented `.spring` defaults for an unqualified
+        // `.animation(.spring)` call.
+        let (damping, response, bounce) = SpringPreset::Default.params();
+        assert!((damping - 0.825).abs() < f32::EPSILON);
+        assert!((response - 0.55).abs() < f32::EPSILON);
         assert!(bounce.abs() < f32::EPSILON);
     }
 

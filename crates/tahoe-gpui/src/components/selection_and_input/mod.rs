@@ -4,6 +4,7 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/components/selection-and-input>
 
+pub mod checkbox;
 pub mod color_well;
 pub mod combo_box;
 pub mod date_picker;
@@ -18,6 +19,7 @@ pub mod time_picker;
 pub mod toggle;
 pub mod virtual_keyboard;
 
+pub use checkbox::{Checkbox, CheckboxState};
 pub use color_well::ColorWell;
 pub use combo_box::ComboBox;
 pub use date_picker::{DatePicker, SimpleDate};

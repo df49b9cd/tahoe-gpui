@@ -6,7 +6,7 @@
 use crate::foundations::materials::{SurfaceContext, glass_or_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, SharedString, Window, div};
+use gpui::{AnyElement, AnyView, App, ElementId, SharedString, Window, div};
 
 /// HIG hover-to-tooltip delay (500 ms). Apple documents a
 /// ~500 ms delay before a tooltip appears; GPUI's `.tooltip()`
@@ -126,17 +126,29 @@ impl Tooltip {
 
 impl RenderOnce for Tooltip {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let text = self.text;
-        let key_binding = self.key_binding;
-
         div()
             .id(self.id)
             .child(self.child)
-            .tooltip(move |_window, cx| {
-                let text = text.clone();
-                let key_binding = key_binding.clone();
-                cx.new(|_cx| TooltipView { text, key_binding }).into()
-            })
+            .tooltip(text_tooltip_view(self.text, self.key_binding))
+    }
+}
+
+/// Returns a `.tooltip(...)` closure that renders the canonical tahoe
+/// tooltip surface for the given text and optional keybinding glyph.
+///
+/// Exposed so component builders (e.g.
+/// [`Button::tooltip`][crate::components::menus_and_actions::button::Button::tooltip])
+/// can attach the canonical tahoe tooltip style without wrapping their
+/// element in a full [`Tooltip`] component (which would introduce an extra
+/// `div` layer and break ID-based targeting).
+pub fn text_tooltip_view(
+    text: SharedString,
+    key_binding: Option<SharedString>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    move |_window, cx| {
+        let text = text.clone();
+        let key_binding = key_binding.clone();
+        cx.new(|_cx| TooltipView { text, key_binding }).into()
     }
 }
 

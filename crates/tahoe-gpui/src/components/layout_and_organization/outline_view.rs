@@ -348,10 +348,9 @@ impl RenderOnce for OutlineView {
                             } else if entry.has_children
                                 && entry.is_expanded
                                 && i + 1 < flat_for_keys.len()
+                                && let Some(cb) = &focus_cb
                             {
-                                if let Some(cb) = &focus_cb {
-                                    cb(Some(flat_for_keys[i + 1].id.clone()), window, cx);
-                                }
+                                cb(Some(flat_for_keys[i + 1].id.clone()), window, cx);
                             }
                         }
                     }
@@ -363,10 +362,10 @@ impl RenderOnce for OutlineView {
                                 if let Some(cb) = &toggle_cb {
                                     cb(entry.id.as_ref(), window, cx);
                                 }
-                            } else if let Some(parent) = &entry.parent_id {
-                                if let Some(cb) = &focus_cb {
-                                    cb(Some(parent.clone()), window, cx);
-                                }
+                            } else if let Some(parent) = &entry.parent_id
+                                && let Some(cb) = &focus_cb
+                            {
+                                cb(Some(parent.clone()), window, cx);
                             }
                         }
                     }

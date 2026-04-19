@@ -366,22 +366,30 @@ impl RenderOnce for ComboBox {
                         }
                     }
                     "enter" => {
-                        if let Some(idx) = highlighted_index {
-                            if idx < item_count {
-                                cx.stop_propagation();
-                                if let Some(ref handler) = key_select {
-                                    handler(&key_filtered[idx], window, cx);
-                                }
-                                if let Some(ref handler) = key_toggle {
-                                    handler(false, window, cx);
-                                }
+                        if let Some(idx) = highlighted_index
+                            && idx < item_count
+                        {
+                            cx.stop_propagation();
+                            if let Some(ref handler) = key_select {
+                                handler(&key_filtered[idx], window, cx);
+                            }
+                            if let Some(ref handler) = key_toggle {
+                                handler(false, window, cx);
                             }
                         }
                     }
                     "backspace" => {
                         if let Some(ref handler) = key_input {
+                            // UTF-8-safe pop: remove the last grapheme cluster
+                            // so we don't split a multi-byte char (e.g. `ä`,
+                            // an emoji, or a CJK glyph) and produce invalid
+                            // UTF-8. `String::pop` would drop a single `char`,
+                            // which is still wrong for emoji ZWJ sequences.
+                            use unicode_segmentation::UnicodeSegmentation;
                             let mut text = current_value.to_string();
-                            text.pop();
+                            if let Some((idx, _)) = text.grapheme_indices(true).next_back() {
+                                text.truncate(idx);
+                            }
                             handler(SharedString::from(text), window, cx);
                         }
                     }
@@ -393,12 +401,12 @@ impl RenderOnce for ComboBox {
                             .key_char
                             .as_deref()
                             .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()));
-                        if let Some(text) = typed {
-                            if let Some(ref handler) = key_input {
-                                let mut buf = current_value.to_string();
-                                buf.push_str(text);
-                                handler(SharedString::from(buf), window, cx);
-                            }
+                        if let Some(text) = typed
+                            && let Some(ref handler) = key_input
+                        {
+                            let mut buf = current_value.to_string();
+                            buf.push_str(text);
+                            handler(SharedString::from(buf), window, cx);
                         }
                     }
                 }

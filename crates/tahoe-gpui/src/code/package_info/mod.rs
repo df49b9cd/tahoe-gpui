@@ -48,6 +48,7 @@ pub use types::{ChangeType, Dependency};
 use crate::components::content::badge::{Badge, BadgeVariant};
 use crate::components::layout_and_organization::FlexHeader;
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::SPACING_4;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, FontWeight, SharedString, Window, div, px};
@@ -161,7 +162,13 @@ impl RenderOnce for PackageInfoDependencies {
                     .text_color(theme.text_muted)
                     .child(self.label),
             )
-            .child(div().flex().flex_col().gap(px(4.0)).children(self.children))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(SPACING_4))
+                    .children(self.children),
+            )
     }
 }
 
@@ -374,7 +381,7 @@ impl RenderOnce for PackageInfoChangeType {
         div()
             .flex()
             .items_center()
-            .gap(px(4.0))
+            .gap(px(SPACING_4))
             .px(theme.spacing_sm)
             .py(px(2.0))
             .rounded(theme.radius_full)

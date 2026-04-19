@@ -225,6 +225,18 @@ impl Icon {
         self
     }
 
+    /// Set the icon stroke weight.
+    ///
+    /// # Pending GPUI support
+    ///
+    /// GPUI's `svg()` element does not currently expose a per-instance
+    /// stroke-width setter, so this builder stores the value but does
+    /// not affect visual rendering today — the weight baked into the
+    /// SVG asset wins. The weight is still carried through the render
+    /// pipeline so that once GPUI lands stroke-width, every caller of
+    /// `weight(...)` picks up the behaviour without a code change, and
+    /// so host apps on the native AppKit backend can map the weight
+    /// onto `NSImage.symbolConfiguration(weight:)` in the meantime.
     pub fn weight(mut self, weight: FontWeight) -> Self {
         self.weight = Some(weight);
         self

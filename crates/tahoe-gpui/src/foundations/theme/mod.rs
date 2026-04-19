@@ -1453,17 +1453,34 @@ impl TahoeTheme {
     /// [`TahoeTheme::font_scale_factor`]. Equivalent to reading
     /// `style.attrs().size` scaled by the current user preferences.
     ///
-    /// Components migrating off raw `px(14.)` should call this helper
-    /// instead of `style.attrs().size` so they pick up the user's
-    /// Dynamic Type preference without a per-caller multiplication.
+    /// # Single source of truth
+    ///
+    /// Platform-aware so the output stays consistent with the explicit
+    /// [`TextStyle::ios_attrs`] and [`TextStyle::attrs`] tables — callers
+    /// that mix `text_size_for` with direct `style.ios_attrs(level).size`
+    /// reads see identical values.
+    ///
+    /// * On iOS / iPadOS / visionOS / watchOS Dynamic Type is a first-class
+    ///   system feature; we route through [`TextStyle::ios_attrs`] so every
+    ///   style × level combination matches Apple's published HIG table
+    ///   exactly.
+    /// * On macOS / tvOS there is no native Dynamic Type; we instead scale
+    ///   the macOS baseline ([`TextStyle::attrs`]) by an iOS-style
+    ///   multiplier so hosts exposing a "text size" slider still get
+    ///   proportional sizing.
+    ///
+    /// In both branches the result is multiplied by `font_scale_factor`
+    /// so the accessibility "Text Size" preference flows through uniformly.
     pub fn text_size_for(&self, style: TextStyle) -> Pixels {
-        // The type scale multiplier is the ratio between the target
-        // level's body size and the default Large body size. We derive
-        // it from `DynamicTypeSize::body_size_multiplier` so the logic
-        // stays co-located with the type-scale definition.
-        let base: f32 = style.attrs().size.into();
-        let dynamic_scale = dynamic_type_multiplier(self.dynamic_type_size);
-        Pixels::from(base * dynamic_scale * self.font_scale_factor)
+        let base_pt: f32 = match self.platform {
+            Platform::IOS | Platform::VisionOS | Platform::WatchOS => {
+                f32::from(style.ios_attrs(self.dynamic_type_size).size)
+            }
+            Platform::MacOS | Platform::TvOS => {
+                f32::from(style.attrs().size) * dynamic_type_multiplier(self.dynamic_type_size)
+            }
+        };
+        Pixels::from(base_pt * self.font_scale_factor)
     }
 
     /// Replace the theme's accent colour and propagate it through the
@@ -1495,6 +1512,41 @@ impl Default for TahoeTheme {
 }
 
 impl gpui::Global for TahoeTheme {}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Architectural plan: Arc-wrap the global to make theme swaps cheap.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// `TahoeTheme` is ~1 KiB (`SystemPalette` + `SemanticColors` + `SyntaxColors`
+// + `AnsiColors` + `GlassStyle` + ~30 tokens). `cx.set_global(self)` above
+// stores the whole value, so every `apply()` call copies the struct.
+//
+// Zed solves this by wrapping the theme in `GlobalTheme(Arc<Theme>)`.
+// We can adopt the same pattern *without* touching the 112 call sites that
+// currently read `cx.global::<TahoeTheme>()` by restructuring as:
+//
+// ```rust
+// pub struct TahoeTheme { inner: Arc<TahoeThemeData> }
+// pub struct TahoeThemeData { /* all current pub fields */ }
+// impl Deref for TahoeTheme { type Target = TahoeThemeData; ... }
+// impl gpui::Global for TahoeTheme {}
+// ```
+//
+// `cx.global::<TahoeTheme>().background` continues to compile via
+// `Deref<Target = TahoeThemeData>`. `cx.set_global(theme)` stores ~8
+// bytes (Arc pointer) instead of the full struct. Mutating builders
+// (`with_accent_color`, `…`) take `Arc::make_mut(&mut self.inner)` — the
+// only invasive change is in the methods that assign fields.
+//
+// Tracked here rather than landed because the refactor needs to walk
+// every `TahoeTheme::*` method and rewrite `mut self`-style builders to
+// thread `Arc::make_mut`; doing it in the same PR as the present sweep
+// would risk subtle perf or aliasing regressions. Acceptance criteria
+// for the follow-up:
+//   1. `cx.global::<TahoeTheme>()` and `cx.theme()` keep returning the
+//      same data through the Deref shim (no call-site changes).
+//   2. `mem::size_of::<TahoeTheme>() <= 16` (Arc pointer + niche).
+//   3. `apply()` cost is one `Arc::clone` + one `cx.refresh_windows()`.
 
 /// Multiplier applied to the default Large body size for each Dynamic
 /// Type level.

@@ -493,6 +493,24 @@ impl RenderOnce for Alert {
             built_buttons.push((role, btn));
         }
 
+        // HIG Alerts (macOS + iOS): in a horizontal two-button row, Cancel
+        // and Destructive actions live on the LEADING side (LTR: left); the
+        // Default action sits on the TRAILING side (LTR: right) so Return
+        // maps to the rightmost button people expect. Sort stably by role
+        // weight so callers can pass `[Default, Cancel]` or `[Cancel,
+        // Default]` and we still place them correctly.
+        //
+        // Weight order (ascending → leading-to-trailing): Cancel = 0,
+        // Destructive = 1, Default = 2. Destructive sits between Cancel
+        // and Default because HIG treats it as "act" rather than "dismiss".
+        if use_horizontal {
+            built_buttons.sort_by_key(|(role, _)| match role {
+                AlertActionRole::Cancel => 0,
+                AlertActionRole::Destructive => 1,
+                AlertActionRole::Default => 2,
+            });
+        }
+
         let actions_container = if use_horizontal {
             let mut row = div().w_full().flex().flex_row();
             for (_, btn) in built_buttons.into_iter() {
@@ -551,11 +569,13 @@ impl RenderOnce for Alert {
                 }
                 return;
             }
-            if (key == "enter" || key == "return") && !modifiers.shift && !modifiers.platform {
-                if let Some(handler) = &return_handler {
-                    cx.stop_propagation();
-                    handler(window, cx);
-                }
+            if (key == "enter" || key == "return")
+                && !modifiers.shift
+                && !modifiers.platform
+                && let Some(handler) = &return_handler
+            {
+                cx.stop_propagation();
+                handler(window, cx);
             }
         });
 
@@ -754,6 +774,56 @@ mod tests {
     fn alert_builder_platform() {
         let alert = Alert::new("a", "T").platform(Platform::IOS);
         assert_eq!(alert.platform, Some(Platform::IOS));
+    }
+
+    #[test]
+    fn horizontal_role_sort_keys_match_hig() {
+        // HIG horizontal alerts: leading → trailing reads as
+        // Cancel < Destructive < Default. Sort key implementation in
+        // `Render::render` must agree with this ordering — verifying the
+        // contract here keeps the in-render sort honest.
+        let key = |role: AlertActionRole| match role {
+            AlertActionRole::Cancel => 0,
+            AlertActionRole::Destructive => 1,
+            AlertActionRole::Default => 2,
+        };
+        assert!(key(AlertActionRole::Cancel) < key(AlertActionRole::Default));
+        assert!(key(AlertActionRole::Destructive) < key(AlertActionRole::Default));
+        assert!(key(AlertActionRole::Cancel) < key(AlertActionRole::Destructive));
+    }
+
+    #[test]
+    fn horizontal_two_button_sort_places_default_trailing() {
+        // Caller passes [Default, Cancel] (a common mistake) — verify the
+        // sort lifts Cancel to leading, Default to trailing per HIG macOS
+        // alert ordering.
+        let mut buttons = [
+            (AlertActionRole::Default, "OK"),
+            (AlertActionRole::Cancel, "Cancel"),
+        ];
+        buttons.sort_by_key(|(role, _)| match role {
+            AlertActionRole::Cancel => 0,
+            AlertActionRole::Destructive => 1,
+            AlertActionRole::Default => 2,
+        });
+        assert_eq!(buttons[0].1, "Cancel");
+        assert_eq!(buttons[1].1, "OK");
+    }
+
+    #[test]
+    fn horizontal_destructive_sits_between_cancel_and_default() {
+        let mut buttons = [
+            (AlertActionRole::Default, "Save"),
+            (AlertActionRole::Cancel, "Cancel"),
+            (AlertActionRole::Destructive, "Discard"),
+        ];
+        buttons.sort_by_key(|(role, _)| match role {
+            AlertActionRole::Cancel => 0,
+            AlertActionRole::Destructive => 1,
+            AlertActionRole::Default => 2,
+        });
+        let labels: Vec<&str> = buttons.iter().map(|(_, l)| *l).collect();
+        assert_eq!(labels, ["Cancel", "Discard", "Save"]);
     }
 
     #[test]

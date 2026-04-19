@@ -134,6 +134,17 @@ pub enum ButtonVariant {
     /// line with SwiftUI `Button(role: .link)` and AppKit `NSHyperlink`.
     #[doc(alias = "Hyperlink")]
     Link,
+    /// HIG §Buttons — Cancel role: neutral dismissal control.
+    ///
+    /// SwiftUI `Button(role: .cancel)`. Distinct from [`Destructive`]: Cancel
+    /// is "get me out of here without changing anything" while Destructive is
+    /// "discard work now." Rendered with a neutral alpha fill and `theme.text`
+    /// label — visually secondary to Primary but *not* red. Parent alerts /
+    /// sheets should bind Escape / ⌘. to the Cancel action per HIG.
+    ///
+    /// [`Destructive`]: ButtonVariant::Destructive
+    #[doc(alias = "CancelRole")]
+    Cancel,
 }
 
 /// Button shape per HIG.
@@ -157,6 +168,7 @@ pub enum ButtonShape {
 ///
 /// | Variant   | HIG name | Min height | Text style     |
 /// |-----------|----------|------------|----------------|
+/// | `Mini`    | mini     | ~16 pt     | Caption1       |
 /// | `Sm`      | small    | ~22 pt     | Subheadline    |
 /// | `Md`      | regular  | ~28 pt     | Body (default) |
 /// | `Lg`      | large    | ~32 pt     | Body           |
@@ -167,6 +179,10 @@ pub enum ButtonShape {
 /// text variants include label padding.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ButtonSize {
+    /// Mini / HIG `mini` — ~16pt min-height. Use inside dense inspectors,
+    /// color-well labels, and toolbar palette items where the full `Sm`
+    /// control tier is still too tall.
+    Mini,
     /// Small / HIG `small` — ~22pt min-height.
     Sm,
     /// Regular / HIG `regular` — ~28pt min-height. Default.
@@ -200,6 +216,13 @@ pub struct Button {
     on_click: OnClick,
     /// Accessibility label for screen readers. Defaults to the button's text label.
     accessibility_label: Option<SharedString>,
+    /// Pointer-hover tooltip. Attached via GPUI's `.tooltip()` so the hover
+    /// delay matches HIG (~500 ms). Also used as a VoiceOver hint when
+    /// `accessibility_label` is absent on icon-only buttons.
+    tooltip: Option<SharedString>,
+    /// Optional keyboard-shortcut glyph shown inside the tooltip
+    /// (e.g. `"⌘C"`). Ignored when `tooltip` is `None`.
+    tooltip_key_binding: Option<SharedString>,
 }
 
 impl Button {
@@ -220,6 +243,8 @@ impl Button {
             loading: false,
             on_click: None,
             accessibility_label: None,
+            tooltip: None,
+            tooltip_key_binding: None,
         }
     }
 
@@ -328,6 +353,27 @@ impl Button {
     /// automatically. Tracked via the Zed cross-reference in issue #132.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
+        self
+    }
+
+    /// Pointer-hover tooltip text.
+    ///
+    /// Attached via GPUI's `.tooltip()` so the hover delay honours the HIG
+    /// ~500 ms reveal (see `TOOLTIP_SHOW_DELAY_MS`). Icon-only buttons —
+    /// `ButtonSize::Icon` and `ButtonSize::IconSm` — should always carry a
+    /// tooltip so pointer users and VoiceOver have a discoverable name per
+    /// HIG *Buttons > Tooltips*.
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
+
+    /// Attach a pre-formatted keyboard shortcut glyph (e.g. `"⌘C"`) that
+    /// renders next to the tooltip text. Ignored when no [`tooltip`] is set.
+    ///
+    /// [`tooltip`]: Self::tooltip
+    pub fn tooltip_key_binding(mut self, binding: impl Into<SharedString>) -> Self {
+        self.tooltip_key_binding = Some(binding.into());
         self
     }
 
@@ -475,6 +521,16 @@ impl RenderOnce for Button {
                 let hovered = with_alpha(theme.accent, 0.08);
                 (transparent_black(), theme.accent, theme.accent, hovered)
             }
+            ButtonVariant::Cancel => {
+                // HIG Cancel role: neutral alpha-composited fill — visually
+                // close to `Secondary` so it reads as a quiet dismissal
+                // control rather than a red Destructive action. Parent
+                // alerts / sheets should bind Escape and ⌘. to the same
+                // handler per HIG *Alerts > Keyboard*.
+                let bg = with_alpha(theme.text, 0.08);
+                let hovered = with_alpha(theme.text, 0.14);
+                (bg, theme.text, transparent_black(), hovered)
+            }
         };
         let is_glass_variant = matches!(
             self.variant,
@@ -501,9 +557,15 @@ impl RenderOnce for Button {
         };
 
         // Size → (horizontal padding, vertical padding, text style, min height).
-        // `Sm`/`IconSm` drop a tier from the default target; `Lg` adds one
+        // `Mini`/`Sm`/`IconSm` drop a tier from the default target; `Lg` adds one
         // for the HIG `large` control tier (~32pt min-height).
         let (px_val, py_val, ts, min_h) = match self.size {
+            ButtonSize::Mini => (
+                theme.spacing_xs,
+                px(1.0),
+                TextStyle::Caption1,
+                theme.min_target_size() - 4.0,
+            ),
             ButtonSize::Sm => (
                 theme.spacing_sm,
                 theme.spacing_xs,
@@ -615,6 +677,7 @@ impl RenderOnce for Button {
                 | ButtonVariant::Outline
                 | ButtonVariant::Destructive
                 | ButtonVariant::Filled
+                | ButtonVariant::Cancel
         );
         let mut base: Vec<BoxShadow> = if is_glass_variant {
             theme.glass.shadows(GlassSize::Small).to_vec()
@@ -685,6 +748,7 @@ impl RenderOnce for Button {
         // Leading slot: loading spinner replaces the icon while loading.
         if self.loading {
             let indicator_size = match self.size {
+                ButtonSize::Mini => px(10.0),
                 ButtonSize::Sm | ButtonSize::IconSm => px(14.0),
                 ButtonSize::Md | ButtonSize::Icon => px(16.0),
                 ButtonSize::Lg => px(18.0),
@@ -705,6 +769,16 @@ impl RenderOnce for Button {
         }
         if !self.extra_children.is_empty() {
             el = el.children(self.extra_children);
+        }
+
+        // HIG tooltips: pointer hover reveal after ~500 ms (GPUI default).
+        // Icon-only buttons and toolbar actions rely on these for both
+        // pointer discoverability and VoiceOver name fallback.
+        if let Some(text) = self.tooltip {
+            el = el.tooltip(crate::components::presentation::tooltip::text_tooltip_view(
+                text,
+                self.tooltip_key_binding,
+            ));
         }
 
         el
@@ -733,6 +807,7 @@ mod tests {
         ButtonVariant::Disclosure,
         ButtonVariant::Gradient,
         ButtonVariant::Link,
+        ButtonVariant::Cancel,
     ];
 
     #[test]
@@ -770,6 +845,7 @@ mod tests {
             ButtonVariant::Disclosure => "disclosure",
             ButtonVariant::Gradient => "gradient",
             ButtonVariant::Link => "link",
+            ButtonVariant::Cancel => "cancel",
         }
     }
 
@@ -781,6 +857,7 @@ mod tests {
     #[test]
     fn button_size_all_distinct() {
         let sizes = [
+            ButtonSize::Mini,
             ButtonSize::Sm,
             ButtonSize::Md,
             ButtonSize::Lg,
@@ -803,6 +880,7 @@ mod tests {
     #[allow(dead_code)]
     fn sizes_are_exhaustive(s: ButtonSize) -> &'static str {
         match s {
+            ButtonSize::Mini => "mini",
             ButtonSize::Sm => "sm",
             ButtonSize::Md => "md",
             ButtonSize::Lg => "lg",
@@ -902,6 +980,7 @@ mod tests {
                 (mid, theme.text)
             }
             ButtonVariant::Link => (gpui::transparent_black(), theme.accent),
+            ButtonVariant::Cancel => (with_alpha(theme.text, 0.08), theme.text),
         }
     }
 

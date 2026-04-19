@@ -23,3 +23,21 @@ proptest = "1.11.0"
 # features cannot drift into duplicate compiles of `image`.
 image = "0.25"
 
+# Workspace-wide lint levels. Each crate inherits via `lints.workspace = true`
+# in its Cargo.toml so MSRV / clippy configuration lives in one place.
+#
+# Only escalate lints that shouldn't regress silently. Existing violations get
+# addressed crate-by-crate rather than via a global unwrap audit here.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unexpected_cfgs = "warn"
+
+[workspace.lints.clippy]
+# Intentional style guidance, not hard errors.
+too_many_arguments = "allow"
+type_complexity = "allow"
+# Footguns that tend to hide real bugs. `println!` / `eprintln!` are fine in
+# example binaries and one-shot dev diagnostics, so they stay unlinted here.
+dbg_macro = "warn"
+todo = "warn"
+

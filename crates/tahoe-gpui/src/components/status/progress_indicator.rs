@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::icons::{AnimatedIcon, IconAnimation, IconName};
+use crate::foundations::icons::{AnimatedIcon, Icon, IconAnimation, IconName};
 use crate::foundations::materials::{GlassSize, glass_surface};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
@@ -230,7 +230,7 @@ impl RenderOnce for ProgressIndicator {
             .into_any_element(),
             ProgressIndicatorValue::Indeterminate => {
                 let id = self.id.clone().unwrap_or_else(|| "progress-spinner".into());
-                render_spinner(id, self.hig_size, color).into_any_element()
+                render_spinner(id, self.hig_size, color, reduce_motion).into_any_element()
             }
             ProgressIndicatorValue::IndeterminateBar => {
                 let id = self
@@ -315,19 +315,34 @@ fn render_bar(
     )
 }
 
-fn render_spinner(id: ElementId, hig_size: ProgressIndicatorSize, color: Hsla) -> impl IntoElement {
+fn render_spinner(
+    id: ElementId,
+    hig_size: ProgressIndicatorSize,
+    color: Hsla,
+    reduce_motion: bool,
+) -> gpui::AnyElement {
     // HIG: the macOS indeterminate spinner is a 12-tick radial
-    // `NSProgressIndicator.style = .spinning`. `AnimatedIcon::Spin` handles
-    // the rotation and the REDUCE_MOTION fallback to a static render.
-    AnimatedIcon::new(
-        id,
-        IconName::ProgressSpinner,
-        IconAnimation::Spin {
-            duration: Duration::from_millis(1200),
-        },
-    )
-    .size(hig_size.spinner_diameter())
-    .color(color)
+    // `NSProgressIndicator.style = .spinning`. Under Reduce Motion, HIG
+    // requires halting the rotation — Apple's own `UIActivityIndicatorView`
+    // freezes. Mirror that by rendering a static Icon. (`AnimatedIcon::Spin`
+    // does not internally honour Reduce Motion, so the caller must gate.)
+    if reduce_motion {
+        Icon::new(IconName::ProgressSpinner)
+            .size(hig_size.spinner_diameter())
+            .color(color)
+            .into_any_element()
+    } else {
+        AnimatedIcon::new(
+            id,
+            IconName::ProgressSpinner,
+            IconAnimation::Spin {
+                duration: Duration::from_millis(1200),
+            },
+        )
+        .size(hig_size.spinner_diameter())
+        .color(color)
+        .into_any_element()
+    }
 }
 
 /// Return the stripe position (as fraction of the track width to the

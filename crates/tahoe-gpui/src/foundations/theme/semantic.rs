@@ -97,7 +97,11 @@ impl SemanticColors {
             tertiary_system_fill: hsla(0.0, 0.0, 0.46, 0.24),
             quaternary_system_fill: hsla(0.0, 0.0, 0.46, 0.18),
             quinary_system_fill: hsla(0.0, 0.0, 0.44, 0.12),
-            system_grouped_background: hsla(0.0, 0.0, 0.0, 1.0),
+            // macOS substrate rule (see dark_mode.rs:20-27): never pure black.
+            // Matches `system_background` (L=0.07) so the grouped primary
+            // doesn't clip into wallpaper when a window floats over the
+            // desktop.
+            system_grouped_background: hsla(0.0, 0.0, 0.07, 1.0),
             secondary_system_grouped_background: hsla(0.0, 0.0, 0.11, 1.0),
             tertiary_system_grouped_background: hsla(0.0, 0.0, 0.17, 1.0),
             elevated_system_background: hsla(0.0, 0.0, 0.11, 1.0),

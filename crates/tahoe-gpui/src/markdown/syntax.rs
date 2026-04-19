@@ -3,11 +3,81 @@
 use crate::foundations::theme::SyntaxColors;
 use gpui::{FontWeight, HighlightStyle, Hsla, SharedString};
 use std::cell::RefCell;
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 thread_local! {
     static HIGHLIGHTER: RefCell<Highlighter> = RefCell::new(Highlighter::new());
+}
+
+// ─── Highlight result cache ─────────────────────────────────────────────────
+//
+// Streaming markdown re-renders code blocks on every token append, so calling
+// `tree_sitter_highlight::Highlighter::highlight` per paint grows total work
+// quadratically in the code length. The cache below memoises the parsed
+// span list by `(language, fnv(code))`, so an unchanged code string costs a
+// hash + a `HashMap` probe instead of a full tree-sitter parse.
+//
+// `Arc<Vec<HighlightedSpan>>` — cloning an `Arc` is a refcount bump, so we
+// can hand out shared references without re-allocating the span list on
+// every cache hit (the list can have hundreds of spans).
+
+/// Cache key — hash of the language name + hash of the code content. Using
+/// hashes (rather than the source strings themselves) keeps the key `Copy`
+/// with no lifetime constraints so non-static `&str`s work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct HighlightCacheKey {
+    language_hash: u64,
+    content_hash: u64,
+}
+
+type HighlightCache = HashMap<HighlightCacheKey, Arc<Vec<HighlightedSpan>>>;
+
+fn highlight_cache() -> &'static Mutex<HighlightCache> {
+    static CACHE: OnceLock<Mutex<HighlightCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Upper bound on cached highlight results. When exceeded the cache is
+/// cleared wholesale; tree-sitter re-parse after eviction is cheap enough
+/// (single-digit ms for the code sizes we serve) that a true LRU would
+/// add complexity without a matching win.
+const HIGHLIGHT_CACHE_CAP: usize = 256;
+
+fn cap_highlight_cache(cache: &mut HighlightCache) {
+    if cache.len() >= HIGHLIGHT_CACHE_CAP {
+        cache.clear();
+    }
+}
+
+fn fnv_hash(s: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Return a cached span list for `(language, code)`, parsing + caching on
+/// miss. Use this from render hot paths; only call [`highlight_code`]
+/// directly when ownership of the `Vec` is needed.
+pub fn cached_highlight_code(code: &str, language: &str) -> Arc<Vec<HighlightedSpan>> {
+    let key = HighlightCacheKey {
+        language_hash: fnv_hash(language),
+        content_hash: fnv_hash(code),
+    };
+    if let Ok(guard) = highlight_cache().lock()
+        && let Some(hit) = guard.get(&key)
+    {
+        return hit.clone();
+    }
+
+    let spans = Arc::new(highlight_code_uncached(code, language));
+    if let Ok(mut guard) = highlight_cache().lock() {
+        cap_highlight_cache(&mut guard);
+        guard.insert(key, spans.clone());
+    }
+    spans
 }
 
 /// Recognized highlight names that map to theme colors.
@@ -56,6 +126,7 @@ pub fn highlight_color(index: usize, syntax: &SyntaxColors) -> Option<Hsla> {
 }
 
 /// A span of highlighted text.
+#[derive(Clone)]
 pub struct HighlightedSpan {
     pub text: String,
     pub highlight_index: Option<usize>,
@@ -64,7 +135,19 @@ pub struct HighlightedSpan {
 /// Highlight source code with the given language name.
 /// Returns spans of text with optional highlight indices (mapping to HIGHLIGHT_NAMES).
 /// Falls back to a single unhighlighted span if the language is unknown.
+///
+/// # Caching
+///
+/// This variant bypasses the shared highlight cache; every call re-runs
+/// tree-sitter. Streaming-heavy render hot paths should prefer
+/// [`cached_highlight_code`], which keys on `(language, fnv(code))` and
+/// reuses results across paints.
 pub fn highlight_code(code: &str, language: &str) -> Vec<HighlightedSpan> {
+    highlight_code_uncached(code, language)
+}
+
+/// Inner parse — never consults or populates the cache.
+fn highlight_code_uncached(code: &str, language: &str) -> Vec<HighlightedSpan> {
     let config = match get_language_config(language) {
         Some(c) => c,
         None => {
@@ -122,16 +205,20 @@ pub fn highlight_code(code: &str, language: &str) -> Vec<HighlightedSpan> {
 
 /// Build GPUI highlight styles from code spans + syntax colors.
 /// Returns (full_text, highlight_ranges) suitable for StyledText.
+///
+/// Consults the shared [`cached_highlight_code`] cache so repeated renders
+/// of the same `(language, code)` pair (the streaming-markdown hot path)
+/// skip tree-sitter entirely.
 pub fn build_styled_highlights(
     code: &str,
     language: &str,
     syntax: &SyntaxColors,
 ) -> (SharedString, Vec<(std::ops::Range<usize>, HighlightStyle)>) {
-    let spans = highlight_code(code, language);
+    let spans = cached_highlight_code(code, language);
     let mut full_text = String::new();
     let mut highlights = Vec::new();
 
-    for span in &spans {
+    for span in spans.iter() {
         let start = full_text.len();
         full_text.push_str(&span.text);
         let end = full_text.len();

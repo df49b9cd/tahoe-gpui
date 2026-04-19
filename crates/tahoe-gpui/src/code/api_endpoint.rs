@@ -4,6 +4,7 @@
 //! highlighting, and collapsible sections for parameters, request body,
 //! and response body schemas.
 
+use crate::foundations::layout::SPACING_4;
 use std::collections::HashSet;
 
 use crate::components::content::badge::{Badge, BadgeVariant};
@@ -309,7 +310,7 @@ impl ApiEndpointView {
                 PathSegment::Param(name) => {
                     row = row.child(
                         div()
-                            .px(px(4.0))
+                            .px(px(SPACING_4))
                             .rounded(theme.radius_sm)
                             .bg(theme.code_bg)
                             .text_color(theme.accent)

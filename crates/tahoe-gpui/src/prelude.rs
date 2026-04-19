@@ -14,12 +14,18 @@
 pub use crate::foundations::blink_manager::{
     BlinkManager, BlinkPhaseChanged, CURSOR_BLINK_INTERVAL_MS,
 };
-pub use crate::foundations::icons::IconLayoutBehavior;
+pub use crate::foundations::color::HslaAlphaExt;
+pub use crate::foundations::icons::{
+    AnimatedIcon, EmbeddedIconAssets, Icon, IconAnimation, IconLayoutBehavior, IconName,
+    IconRenderMode, IconScale, IconStyle,
+};
 pub use crate::foundations::layout::{
     DROPDOWN_SNAP_MARGIN, FlexExt, h_flex, snap_to_window_margin, v_flex,
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
-pub use crate::foundations::theme::{ActiveTheme, TahoeTheme};
+pub use crate::foundations::theme::{
+    ActiveTheme, GlassSize, SurfaceContext, TahoeTheme, TextStyle, TextStyledExt,
+};
 
 // ── Components > Content ───────────────────────────────────────────────────
 
@@ -44,8 +50,9 @@ pub use crate::components::menus_and_actions::{
 // ── Components > Navigation and search ─────────────────────────────────────
 
 pub use crate::components::navigation_and_search::{
-    NavigationBarIOS, PathControl, PathControlStyle, PathSegment, SearchBar, SearchField, Sidebar,
-    SidebarItem, SidebarPosition, SidebarSection, TabBar, TabItem, TokenField, TokenItem, Toolbar,
+    NavigationBarIOS, NavigationSplitView, PathControl, PathControlStyle, PathSegment, SearchBar,
+    SearchField, Sidebar, SidebarItem, SidebarPosition, SidebarSection, TabBar, TabItem,
+    TokenField, TokenItem, Toolbar,
 };
 
 // ── Components > Presentation ──────────────────────────────────────────────
@@ -59,9 +66,9 @@ pub use crate::components::presentation::{
 // ── Components > Selection and input ───────────────────────────────────────
 
 pub use crate::components::selection_and_input::{
-    ColorWell, ComboBox, DatePicker, DigitEntry, ImageWell, Picker, PickerItem, SegmentItem,
-    SegmentedControl, SimpleDate, Slider, Stepper, TextField, TextFieldValidation, TimePicker,
-    Toggle,
+    Checkbox, CheckboxState, ColorWell, ComboBox, DatePicker, DigitEntry, ImageWell, Picker,
+    PickerItem, SegmentItem, SegmentedControl, SimpleDate, Slider, Stepper, TextField,
+    TextFieldValidation, TimePicker, Toggle,
 };
 
 // ── Components > Status ────────────────────────────────────────────────────
@@ -81,6 +88,16 @@ pub use crate::components::status::{
 // ── Components > System experiences ────────────────────────────────────────
 // Stub-only today: Widgets, Notifications, Live Activities, App Shortcuts,
 // Controls, Status bars, Complications, Top Shelf, Watch faces.
+
+// ── Markdown ───────────────────────────────────────────────────────────────
+
+pub use crate::markdown::{
+    IncrementalMarkdownParser, InlineContent, MarkdownBlock, StreamSettings, TableAlignment,
+};
+
+// ── Citations ──────────────────────────────────────────────────────────────
+
+pub use crate::citation::{CitationSource, InlineCitation};
 
 // ── Keybindings ────────────────────────────────────────────────────────────
 

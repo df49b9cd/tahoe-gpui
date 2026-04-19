@@ -268,52 +268,51 @@ impl RenderOnce for Sidebar {
         // when both `min_width` and `max_width` are supplied.
         if let (Some(min), Some(max), Some(on_resize)) =
             (self.min_width, self.max_width, self.on_resize)
+            && !self.collapsed
         {
-            if !self.collapsed {
-                let on_resize = Rc::new(on_resize);
-                let handle_id = ElementId::from((self.id, "resize-handle"));
-                let drag_state: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+            let on_resize = Rc::new(on_resize);
+            let handle_id = ElementId::from((self.id, "resize-handle"));
+            let drag_state: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
 
-                let drag_state_down = drag_state.clone();
-                let drag_state_move = drag_state.clone();
-                let drag_state_up = drag_state.clone();
-                let resize_move = on_resize.clone();
+            let drag_state_down = drag_state.clone();
+            let drag_state_move = drag_state.clone();
+            let drag_state_up = drag_state.clone();
+            let resize_move = on_resize.clone();
 
-                let handle = div()
-                    .id(handle_id)
-                    .debug_selector(|| "sidebar-resize-handle".into())
-                    .absolute()
-                    .top_0()
-                    .bottom_0()
-                    .right(px(-3.0))
-                    .w(px(6.0))
-                    .cursor_col_resize()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        move |_event: &MouseDownEvent, _window, _cx| {
-                            drag_state_down.set(true);
-                        },
-                    )
-                    .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
-                        if drag_state_move.get() {
-                            // Clamp to caller-supplied [min, max], never
-                            // below the HIG floor (SIDEBAR_MIN_WIDTH).
-                            let effective_min = f32::from(min).max(SIDEBAR_MIN_WIDTH);
-                            let new_width = f32::from(event.position.x)
-                                .max(effective_min)
-                                .min(f32::from(max));
-                            resize_move(px(new_width), window, cx);
-                        }
-                    })
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        move |_event: &MouseUpEvent, _window, _cx| {
-                            drag_state_up.set(false);
-                        },
-                    );
+            let handle = div()
+                .id(handle_id)
+                .debug_selector(|| "sidebar-resize-handle".into())
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right(px(-3.0))
+                .w(px(6.0))
+                .cursor_col_resize()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    move |_event: &MouseDownEvent, _window, _cx| {
+                        drag_state_down.set(true);
+                    },
+                )
+                .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
+                    if drag_state_move.get() {
+                        // Clamp to caller-supplied [min, max], never
+                        // below the HIG floor (SIDEBAR_MIN_WIDTH).
+                        let effective_min = f32::from(min).max(SIDEBAR_MIN_WIDTH);
+                        let new_width = f32::from(event.position.x)
+                            .max(effective_min)
+                            .min(f32::from(max));
+                        resize_move(px(new_width), window, cx);
+                    }
+                })
+                .on_mouse_up(
+                    MouseButton::Left,
+                    move |_event: &MouseUpEvent, _window, _cx| {
+                        drag_state_up.set(false);
+                    },
+                );
 
-                el = el.relative().child(handle);
-            }
+            el = el.relative().child(handle);
         }
 
         el

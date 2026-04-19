@@ -316,10 +316,10 @@ fn render_bottom_drawer(
         if has_focus {
             let on_cancel = on_cancel_rc;
             cancel_only = cancel_only.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if crate::foundations::keyboard::is_escape_key(event) {
-                    if let Some(handler) = &on_cancel {
-                        handler(window, cx);
-                    }
+                if crate::foundations::keyboard::is_escape_key(event)
+                    && let Some(handler) = &on_cancel
+                {
+                    handler(window, cx);
                 }
             });
         }
@@ -353,10 +353,10 @@ fn render_bottom_drawer(
     if has_focus {
         let on_cancel = on_cancel_rc;
         container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event) {
-                if let Some(handler) = &on_cancel {
-                    handler(window, cx);
-                }
+            if crate::foundations::keyboard::is_escape_key(event)
+                && let Some(handler) = &on_cancel
+            {
+                handler(window, cx);
             }
         });
     }
@@ -399,10 +399,10 @@ fn render_centered(
     if focus_handle.is_some() {
         let on_cancel = on_cancel_rc;
         panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event) {
-                if let Some(handler) = &on_cancel {
-                    handler(window, cx);
-                }
+            if crate::foundations::keyboard::is_escape_key(event)
+                && let Some(handler) = &on_cancel
+            {
+                handler(window, cx);
             }
         });
     }

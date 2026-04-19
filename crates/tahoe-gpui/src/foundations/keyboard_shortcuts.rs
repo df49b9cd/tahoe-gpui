@@ -612,11 +612,11 @@ impl MenuShortcut {
             out.push_str(m.symbol());
         }
         // Upper-case single-letter ASCII keys; leave named keys as-is.
-        if self.key.chars().count() == 1 {
-            if let Some(c) = self.key.chars().next() {
-                out.extend(c.to_uppercase());
-                return out;
-            }
+        if self.key.chars().count() == 1
+            && let Some(c) = self.key.chars().next()
+        {
+            out.extend(c.to_uppercase());
+            return out;
         }
         out.push_str(&self.key);
         out

@@ -284,30 +284,28 @@ impl RenderOnce for RatingIndicator {
             }
         }
 
-        if interactive {
-            if let Some(handler) = on_change {
-                let max_f32 = max as f32;
-                row = row.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    let key = event.keystroke.key.as_str();
-                    match key {
-                        "left" => {
-                            let new_value = (value - 0.5).max(0.0);
-                            handler(new_value, window, cx);
-                        }
-                        "right" => {
-                            let new_value = (value + 0.5).min(max_f32);
-                            handler(new_value, window, cx);
-                        }
-                        "home" => {
-                            handler(0.0, window, cx);
-                        }
-                        "end" => {
-                            handler(max_f32, window, cx);
-                        }
-                        _ => {}
+        if interactive && let Some(handler) = on_change {
+            let max_f32 = max as f32;
+            row = row.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                match key {
+                    "left" => {
+                        let new_value = (value - 0.5).max(0.0);
+                        handler(new_value, window, cx);
                     }
-                });
-            }
+                    "right" => {
+                        let new_value = (value + 0.5).min(max_f32);
+                        handler(new_value, window, cx);
+                    }
+                    "home" => {
+                        handler(0.0, window, cx);
+                    }
+                    "end" => {
+                        handler(max_f32, window, cx);
+                    }
+                    _ => {}
+                }
+            });
         }
 
         row

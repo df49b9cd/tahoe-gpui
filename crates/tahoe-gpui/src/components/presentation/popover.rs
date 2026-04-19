@@ -137,16 +137,15 @@ impl RenderOnce for Popover {
                     .child(self.trigger),
             );
 
-        if self.is_visible {
+        if self.is_visible
+            && let Some(ref handle) = self.focus_handle
+            && !handle.is_focused(window)
+        {
             // Auto-focus the content surface on open so Escape-dismiss
             // fires without a prior click, matching Alert/Modal. Done
             // before re-borrowing the theme below so the mutable-borrow
             // on `cx` is released before the immutable global read.
-            if let Some(ref handle) = self.focus_handle {
-                if !handle.is_focused(window) {
-                    handle.focus(window, cx);
-                }
-            }
+            handle.focus(window, cx);
         }
 
         let theme = cx.theme();

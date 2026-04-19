@@ -646,7 +646,12 @@ impl RenderOnce for DatePicker {
             // ── Day-of-week row ────────────────────────────────────────────
             // Base labels start on Sunday. Rotate left by `first_weekday`
             // so the row leads with the locale's first day of the week.
-            let base_labels = ["S", "M", "T", "W", "T", "F", "S"];
+            // Two-letter abbreviations starting Sunday. HIG macOS `NSCalendarView`
+            // renders "Sun/Mon/..." at wide cells and the iOS compact calendar
+            // uses single letters ("S M T W T F S") which collide on Tuesday
+            // vs Thursday. Two letters resolve the collision while keeping a
+            // uniform cell width across all seven columns.
+            let base_labels = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
             let mut dow_row = div().flex().flex_row();
             for i in 0..7 {
                 let idx = (i + first_weekday as usize) % 7;
@@ -1053,7 +1058,9 @@ fn build_inline_calendar(
         .child(next_btn);
 
     // ── Day-of-week row ──────────────────────────────────────────────────
-    let base_labels = ["S", "M", "T", "W", "T", "F", "S"];
+    // Two-letter abbreviations disambiguate Tuesday/Thursday (both "T" in
+    // 1-letter form). Matches the Compact popover at date_picker.rs:649.
+    let base_labels = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
     let mut dow_row = div().flex().flex_row();
     for i in 0..7 {
         let idx = (i + first_weekday as usize) % 7;

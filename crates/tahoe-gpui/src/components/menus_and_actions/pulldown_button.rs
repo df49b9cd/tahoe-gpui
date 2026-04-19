@@ -18,6 +18,7 @@ use gpui::{
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
     SurfaceContext, apply_standard_control_styling, glass_surface,
@@ -76,6 +77,11 @@ pub struct PulldownItem {
     pub icon: Option<IconName>,
     /// Visual style.
     pub style: PulldownItemStyle,
+    /// Optional keyboard-shortcut glyph (e.g. `⌘S`, `⇧⌘K`) rendered
+    /// right-aligned on the same row — matches the `ContextMenuItem`
+    /// shortcut slot so pull-down action menus can surface keybindings
+    /// too (HIG *Menus > Keyboard shortcuts*).
+    pub shortcut: Option<MenuShortcut>,
     /// Click handler invoked when the item is activated.
     pub on_click: OnMutCallback,
 }
@@ -87,6 +93,7 @@ impl PulldownItem {
             label: label.into(),
             icon: None,
             style: PulldownItemStyle::Default,
+            shortcut: None,
             on_click: None,
         }
     }
@@ -100,6 +107,14 @@ impl PulldownItem {
     /// Set the visual style.
     pub fn style(mut self, style: PulldownItemStyle) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Attach a keyboard-shortcut glyph displayed on the trailing edge of
+    /// the row (e.g. `⌘S` for Save). The caller is still responsible for
+    /// wiring the actual shortcut — this is a display-only affordance.
+    pub fn shortcut(mut self, shortcut: MenuShortcut) -> Self {
+        self.shortcut = Some(shortcut);
         self
     }
 
@@ -279,24 +294,20 @@ impl RenderOnce for PulldownButton {
 
         trigger = trigger.child(trigger_content);
 
-        if !disabled {
-            if let Some(handler) = toggle_for_trigger {
-                trigger = trigger.on_click(move |_event, window, cx| {
-                    handler(!is_open, window, cx);
-                });
-            }
+        if !disabled && let Some(handler) = toggle_for_trigger {
+            trigger = trigger.on_click(move |_event, window, cx| {
+                handler(!is_open, window, cx);
+            });
         }
 
         // Trigger keyboard activation: Enter/Space opens the dropdown.
-        if !disabled {
-            if let Some(handler) = trigger_key_toggle {
-                trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    if crate::foundations::keyboard::is_activation_key(event) && !is_open {
-                        cx.stop_propagation();
-                        handler(true, window, cx);
-                    }
-                });
-            }
+        if !disabled && let Some(handler) = trigger_key_toggle {
+            trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if crate::foundations::keyboard::is_activation_key(event) && !is_open {
+                    cx.stop_propagation();
+                    handler(true, window, cx);
+                }
+            });
         }
 
         // ── Container (trigger + optional dropdown) ─────────────────────────
@@ -319,6 +330,7 @@ impl RenderOnce for PulldownButton {
                 label: SharedString,
                 icon: Option<IconName>,
                 style: PulldownItemStyle,
+                shortcut: Option<MenuShortcut>,
                 on_click: Option<PulldownHandlerRc>,
             }
             let items: Vec<PreparedItem> = self
@@ -331,6 +343,7 @@ impl RenderOnce for PulldownButton {
                         label: action.label,
                         icon: action.icon,
                         style: action.style,
+                        shortcut: action.shortcut,
                         on_click,
                     }
                 })
@@ -523,6 +536,17 @@ impl RenderOnce for PulldownButton {
                 }
 
                 row = row.child(div().flex_1().child(action.label));
+
+                // Trailing keyboard-shortcut glyph. Uses the secondary-label
+                // color so it reads as annotation, matching ContextMenuItem.
+                if let Some(shortcut) = action.shortcut {
+                    let shortcut_color = theme.secondary_label_color(SurfaceContext::GlassDim);
+                    row = row.child(
+                        div()
+                            .text_color(shortcut_color)
+                            .child(SharedString::from(shortcut.render())),
+                    );
+                }
 
                 if !is_disabled {
                     let on_toggle = on_toggle.clone();

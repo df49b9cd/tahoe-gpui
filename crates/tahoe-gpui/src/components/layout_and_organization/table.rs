@@ -23,6 +23,7 @@
 //! highlighted row. Passing a [`UniformListScrollHandle`] to
 //! [`Table::scroll_handle`] auto-reveals the highlighted row.
 
+use crate::foundations::layout::SPACING_4;
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -577,7 +578,7 @@ impl RenderOnce for Table {
             let mut label_row = div()
                 .flex()
                 .items_center()
-                .gap(px(4.0))
+                .gap(px(SPACING_4))
                 .child(col.label.clone());
 
             // Sort indicator
@@ -624,23 +625,24 @@ impl RenderOnce for Table {
             // owner of column widths) installs its own move/up listeners
             // to finish the drag — `Table` is `RenderOnce` and can't
             // keep drag state across renders.
-            if col.resizable && col_idx < last_col_idx {
-                if let Some(ref handler) = on_column_resize {
-                    let h = handler.clone();
-                    let col_id = col.id.clone();
-                    let resize_handle = div()
-                        .id(ElementId::Name(format!("th-resize-{}", col.id).into()))
-                        .w(px(6.0))
-                        .h_full()
-                        .cursor(CursorStyle::ResizeLeftRight)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            move |event: &MouseDownEvent, window, cx| {
-                                h(col_id.clone(), f32::from(event.position.x), window, cx);
-                            },
-                        );
-                    header_cell = header_cell.child(resize_handle);
-                }
+            if col.resizable
+                && col_idx < last_col_idx
+                && let Some(ref handler) = on_column_resize
+            {
+                let h = handler.clone();
+                let col_id = col.id.clone();
+                let resize_handle = div()
+                    .id(ElementId::Name(format!("th-resize-{}", col.id).into()))
+                    .w(px(6.0))
+                    .h_full()
+                    .cursor(CursorStyle::ResizeLeftRight)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        move |event: &MouseDownEvent, window, cx| {
+                            h(col_id.clone(), f32::from(event.position.x), window, cx);
+                        },
+                    );
+                header_cell = header_cell.child(resize_handle);
             }
 
             header_row = header_row.child(header_cell);

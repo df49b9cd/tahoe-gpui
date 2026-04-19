@@ -622,10 +622,10 @@ impl WorkflowCanvas {
                 if let Some(ref handler) = self.on_nodes_restore {
                     handler(&entities, window, cx);
                 }
-                if !conns.is_empty() {
-                    if let Some(ref handler) = self.on_edges_restore {
-                        handler(&conns, window, cx);
-                    }
+                if !conns.is_empty()
+                    && let Some(ref handler) = self.on_edges_restore
+                {
+                    handler(&conns, window, cx);
                 }
                 CanvasCommand::DeleteNodes { nodes, edges }
             }
@@ -1281,8 +1281,8 @@ impl Render for WorkflowCanvas {
                     //    it back. A zero-delta "drag" (pure click for
                     //    selection) is filtered out by
                     //    MOVE_COMMIT_THRESHOLD.
-                    if let Some((id, start)) = this.drag_initial_pos.take() {
-                        if let Some((_, end)) = this
+                    if let Some((id, start)) = this.drag_initial_pos.take()
+                        && let Some((_, end)) = this
                             .nodes
                             .iter()
                             .map(|e| {
@@ -1290,23 +1290,22 @@ impl Render for WorkflowCanvas {
                                 (n.id().to_string(), n.position())
                             })
                             .find(|(nid, _)| *nid == id)
-                        {
-                            let dx = start.0 - end.0;
-                            let dy = start.1 - end.1;
-                            let moved = dx.abs() > MOVE_COMMIT_THRESHOLD
-                                || dy.abs() > MOVE_COMMIT_THRESHOLD;
-                            if moved && event.modifiers.alt {
-                                // Restore the original position — the drag
-                                // was a copy-gesture, not a move.
-                                this.set_node_position_by_id(&id, start, cx);
-                                this.duplicate_node_at(&id, end, window, cx);
-                            } else if moved {
-                                this.history.push(CanvasCommand::Move {
-                                    node_id: id,
-                                    from: start,
-                                    to: end,
-                                });
-                            }
+                    {
+                        let dx = start.0 - end.0;
+                        let dy = start.1 - end.1;
+                        let moved =
+                            dx.abs() > MOVE_COMMIT_THRESHOLD || dy.abs() > MOVE_COMMIT_THRESHOLD;
+                        if moved && event.modifiers.alt {
+                            // Restore the original position — the drag
+                            // was a copy-gesture, not a move.
+                            this.set_node_position_by_id(&id, start, cx);
+                            this.duplicate_node_at(&id, end, window, cx);
+                        } else if moved {
+                            this.history.push(CanvasCommand::Move {
+                                node_id: id,
+                                from: start,
+                                to: end,
+                            });
                         }
                     }
                     this.selection_start = None;
@@ -1401,25 +1400,24 @@ impl Render for WorkflowCanvas {
                 // predictable even on fast drags.
                 if this.drag_initial_pos.is_some()
                     && event.pressed_button == Some(MouseButton::Left)
+                    && let Some((vw, vh)) = this.viewport_size
                 {
-                    if let Some((vw, vh)) = this.viewport_size {
-                        let mut dx = 0.0_f32;
-                        let mut dy = 0.0_f32;
-                        if mx < AUTO_PAN_MARGIN {
-                            dx = AUTO_PAN_STEP;
-                        } else if mx > vw - AUTO_PAN_MARGIN {
-                            dx = -AUTO_PAN_STEP;
-                        }
-                        if my < AUTO_PAN_MARGIN {
-                            dy = AUTO_PAN_STEP;
-                        } else if my > vh - AUTO_PAN_MARGIN {
-                            dy = -AUTO_PAN_STEP;
-                        }
-                        if dx != 0.0 || dy != 0.0 {
-                            this.pan_offset.0 += dx;
-                            this.pan_offset.1 += dy;
-                            cx.notify();
-                        }
+                    let mut dx = 0.0_f32;
+                    let mut dy = 0.0_f32;
+                    if mx < AUTO_PAN_MARGIN {
+                        dx = AUTO_PAN_STEP;
+                    } else if mx > vw - AUTO_PAN_MARGIN {
+                        dx = -AUTO_PAN_STEP;
+                    }
+                    if my < AUTO_PAN_MARGIN {
+                        dy = AUTO_PAN_STEP;
+                    } else if my > vh - AUTO_PAN_MARGIN {
+                        dy = -AUTO_PAN_STEP;
+                    }
+                    if dx != 0.0 || dy != 0.0 {
+                        this.pan_offset.0 += dx;
+                        this.pan_offset.1 += dy;
+                        cx.notify();
                     }
                 }
 
@@ -1708,31 +1706,30 @@ impl Render for WorkflowCanvas {
         // Keynote and Freeform both suppress handles in the same case.
         if let Some(&idx) = self.selected_nodes.iter().next()
             && self.selected_nodes.len() == 1
+            && let Some(entity) = self.nodes.get(idx)
         {
-            if let Some(entity) = self.nodes.get(idx) {
-                let node = entity.read(cx);
-                let pos = node.position();
-                let (ew, eh) = node.effective_size();
-                let sx = pos.0 * zoom + pan.0;
-                let sy = pos.1 * zoom + pan.1;
-                let sw = ew * zoom;
-                let sh = eh * zoom;
-                let handle_half = HANDLE_VISUAL_SIZE / 2.0;
-                let _ = HANDLE_HIT_RADIUS; // tied here so imports stay live
-                for handle in ResizeHandle::ALL {
-                    let (hx, hy) = handle.centre(sx, sy, sw, sh);
-                    container = container.child(
-                        div()
-                            .absolute()
-                            .left(px(hx - handle_half))
-                            .top(px(hy - handle_half))
-                            .size(px(HANDLE_VISUAL_SIZE))
-                            .bg(theme.surface)
-                            .border_1()
-                            .border_color(theme.accent)
-                            .rounded(px(2.0)),
-                    );
-                }
+            let node = entity.read(cx);
+            let pos = node.position();
+            let (ew, eh) = node.effective_size();
+            let sx = pos.0 * zoom + pan.0;
+            let sy = pos.1 * zoom + pan.1;
+            let sw = ew * zoom;
+            let sh = eh * zoom;
+            let handle_half = HANDLE_VISUAL_SIZE / 2.0;
+            let _ = HANDLE_HIT_RADIUS; // tied here so imports stay live
+            for handle in ResizeHandle::ALL {
+                let (hx, hy) = handle.centre(sx, sy, sw, sh);
+                container = container.child(
+                    div()
+                        .absolute()
+                        .left(px(hx - handle_half))
+                        .top(px(hy - handle_half))
+                        .size(px(HANDLE_VISUAL_SIZE))
+                        .bg(theme.surface)
+                        .border_1()
+                        .border_color(theme.accent)
+                        .rounded(px(2.0)),
+                );
             }
         }
 
