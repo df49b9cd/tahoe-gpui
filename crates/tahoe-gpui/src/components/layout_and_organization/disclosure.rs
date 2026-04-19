@@ -86,10 +86,12 @@ impl RenderOnce for Disclosure {
 
         let base = glass_interactive_hover(base, theme);
 
+        // HIG disclosure triangle glyph uses the inline-icon size token so
+        // both `Disclosure` and `DisclosureGroup` render at the same scale.
         let mut el = base
             .id(self.id)
             .focusable()
-            .child(Icon::new(icon_name).size(px(16.0)));
+            .child(Icon::new(icon_name).size(theme.icon_size_inline));
 
         if let Some(handler) = self.on_toggle {
             let handler = std::rc::Rc::new(handler);

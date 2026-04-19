@@ -387,11 +387,11 @@ const YELLOW_LIGHT: Hsla = Hsla {
     a: 1.0,
 }; // rgb(255, 204, 0)
 const YELLOW_DARK: Hsla = Hsla {
-    h: 0.1399,
+    h: 0.1388,
     s: 1.0,
-    l: 0.5,
+    l: 0.5196,
     a: 1.0,
-}; // rgb(255, 214, 0)
+}; // #FFD60A = rgb(255, 214, 10)
 const YELLOW_LIGHT_HC: Hsla = Hsla {
     h: 0.1097,
     s: 1.0,
@@ -926,7 +926,7 @@ pub fn lighten(color: Hsla, amount: f32) -> Hsla {
 /// yields ~4.3:1.
 ///
 /// If `bg.l` is NaN, the comparison `> 0.55` is false, so white is
-/// returned u2014 the conservative default for unknown backgrounds.
+/// returned — the conservative default for unknown backgrounds.
 pub fn text_on_background(bg: Hsla) -> Hsla {
     if bg.l > 0.55 {
         Hsla {

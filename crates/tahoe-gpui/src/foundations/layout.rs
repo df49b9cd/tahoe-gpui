@@ -316,11 +316,32 @@ pub const READABLE_MAX_WIDTH: f32 = 672.0;
 // Sidebar / Panel sizing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// macOS sidebar minimum width (200 pt).
+/// macOS sidebar minimum floor (180 pt).
 ///
-/// HIG / `NSSplitViewController` reference value. Primary/sidebar
-/// panes in a split view should not shrink below this.
-pub const SIDEBAR_MIN_WIDTH: f32 = 200.0;
+/// HIG macOS Tahoe: sidebar / source-list panes should not shrink below
+/// 180 pt — the point at which row labels begin to truncate on the
+/// default body-size Dynamic Type settings. Matches the `NSSplitView`
+/// auto-collapse threshold observed in Mail, Finder, and System
+/// Settings. Callers extending this floor (e.g. rich media browsers)
+/// should pass a larger value to `Sidebar::min_width` in
+/// `components::navigation_and_search`.
+pub const SIDEBAR_MIN_WIDTH: f32 = 180.0;
+
+/// macOS sidebar default width (220 pt).
+///
+/// HIG macOS Tahoe: the stock `NSSplitViewController` primary column
+/// opens at 220 pt — the midpoint of the 180–320 pt typical range.
+/// Exposed as a free constant so layout-layer code (split views,
+/// three-column shells) can pick the same default without reaching
+/// into `TahoeTheme`.
+pub const SIDEBAR_DEFAULT_WIDTH: f32 = 220.0;
+
+/// Inspector panel default width (250 pt).
+///
+/// HIG macOS Tahoe: Notes / Mail-style inspector columns open at
+/// 250 pt. Separate from [`INSPECTOR_PANEL_WIDTH`] (320 pt), which
+/// covers Xcode's Attributes Inspector — the wider Pro-app variant.
+pub const INSPECTOR_DEFAULT_WIDTH: f32 = 250.0;
 
 /// Inspector panel default width (320 pt).
 ///
@@ -655,7 +676,26 @@ mod tests {
 
     #[test]
     fn sidebar_min_width_matches_hig() {
-        assert!((SIDEBAR_MIN_WIDTH - 200.0).abs() < f32::EPSILON);
+        // HIG macOS Tahoe — sidebar floor is 180pt (truncation limit at
+        // default Dynamic Type). Lowered from 200pt once Tahoe shipped
+        // Liquid Glass source-list styling.
+        assert!((SIDEBAR_MIN_WIDTH - 180.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn sidebar_default_width_matches_hig() {
+        // HIG macOS Tahoe — primary column default is 220pt (midpoint of
+        // the 180–320pt typical range).
+        assert!((super::SIDEBAR_DEFAULT_WIDTH - 220.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn inspector_default_width_matches_hig() {
+        // HIG macOS Tahoe — standard inspector column default is 250pt;
+        // Pro-app variants (Xcode) use the wider INSPECTOR_PANEL_WIDTH (320pt).
+        assert!((super::INSPECTOR_DEFAULT_WIDTH - 250.0).abs() < f32::EPSILON);
+        assert!(super::INSPECTOR_DEFAULT_WIDTH < super::INSPECTOR_PANEL_WIDTH);
     }
 
     #[test]

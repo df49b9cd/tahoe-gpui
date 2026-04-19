@@ -978,7 +978,7 @@ mod tests {
     /// `theme.accessibility_mode.reduce_motion()` and freeze its drawing
     /// parameter when the user has Reduce Motion enabled. This guards
     /// against regressions where the canvas frame timer runs
-    /// unconditionally (the original bug in audit #139 finding #10).
+    /// unconditionally.
     #[test]
     fn theme_reduce_motion_is_detectable() {
         let mut theme = TahoeTheme::dark();

@@ -160,8 +160,10 @@ pub struct TahoeTheme {
     /// on standard displays; consumers that want sub-pixel hairlines on
     /// Retina can override this.
     pub separator_thickness: Pixels,
-    /// Default width for a macOS sidebar (HIG 200–260pt). Used by
-    /// `Sidebar::new` when no explicit width is set.
+    /// Default width for a macOS sidebar (HIG macOS Tahoe: 180–320pt
+    /// typical range, 220pt default). Used by `Sidebar::new` when no
+    /// explicit width is set. Aligned with
+    /// `foundations::layout::SIDEBAR_DEFAULT_WIDTH`.
     pub sidebar_width_default: Pixels,
     /// Track width for the `Toggle` switch. HIG macOS toggles are
     /// ~36pt wide.
@@ -610,7 +612,11 @@ impl TahoeTheme {
             icon_size_xs: px(10.0),
             dropdown_offset: px(4.0),
             separator_thickness: px(1.0),
-            sidebar_width_default: px(260.0),
+            // HIG macOS Tahoe: sidebar default width is ~220pt
+            // (`foundations/layout.rs::SIDEBAR_DEFAULT_WIDTH`). AppKit's
+            // `NSSplitViewController` picks 220pt for the primary column
+            // when the caller doesn't override it.
+            sidebar_width_default: px(220.0),
             toggle_track_width: px(36.0),
             toggle_track_height: px(20.0),
             menu_inset: px(6.0),
@@ -1063,6 +1069,14 @@ impl TahoeTheme {
     /// Tertiary system fill.
     pub fn tertiary_system_fill(&self) -> Hsla {
         self.semantic.tertiary_system_fill
+    }
+
+    /// Muted surface tint for subtle fills — e.g. zebra-striped rows in
+    /// a bordered list/table. Maps to the quinary system fill (lightest
+    /// of the HIG semantic fill ladder) so alternating rows stay legible
+    /// without competing with selection or hover states.
+    pub fn surface_muted(&self) -> Hsla {
+        self.semantic.quinary_system_fill
     }
 
     /// Resolve primary label color for the given surface context.

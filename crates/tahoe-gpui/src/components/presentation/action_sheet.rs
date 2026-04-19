@@ -5,11 +5,14 @@
 //! `#action-sheets`; the *chrome* varies by platform:
 //!
 //! - **iOS / iPadOS / watchOS** — springs from the bottom of the screen
-//!   as a drawer. Cancel renders in its own grouped surface.
-//! - **macOS / visionOS** — HIG: "No additional considerations for
-//!   macOS" — renders as a centered confirmation dialog (no bottom
-//!   anchoring, no drawer). Use [`ActionSheetPresentation::Centered`]
-//!   to request this chrome explicitly.
+//!   as a drawer. Cancel renders in its own grouped surface. Modal: a
+//!   translucent backdrop dims the parent UI.
+//! - **macOS / visionOS** — HIG: macOS action sheets are **non-modal** —
+//!   rendered as a centered confirmation dialog (no bottom anchoring,
+//!   no drawer, no dim backdrop, no outside-click dismissal). The sheet
+//!   coexists with the parent UI; the user dismisses with Cancel or
+//!   Escape. Use [`ActionSheetPresentation::Centered`] to request this
+//!   chrome explicitly.
 //!
 //! The `presentation` is auto-selected from the active
 //! [`TahoeTheme::platform`] unless [`ActionSheet::presentation`] is
@@ -20,15 +23,12 @@
 //! <https://developer.apple.com/design/human-interface-guidelines/action-sheets>
 
 use gpui::prelude::*;
-use gpui::{
-    App, ClickEvent, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window,
-    div, px,
-};
+use gpui::{App, ClickEvent, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 use std::rc::Rc;
 
 use crate::callback_types::OnMutCallback;
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
+use crate::foundations::materials::{SurfaceContext, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Where the action sheet attaches on screen. Choose
@@ -365,9 +365,10 @@ fn render_bottom_drawer(
 }
 
 /// macOS centered confirmation-dialog chrome. HIG `#action-sheets`:
-/// "No additional considerations for macOS" — the component structure
-/// still applies, but the panel is centered over its parent with a
-/// translucent backdrop rather than sliding from the bottom.
+/// macOS action sheets are **non-modal** — they do not dim the parent
+/// window and do not dismiss on an outside click. The panel is centered
+/// in a transparent full-viewport container; dismissal is via Cancel
+/// button or Escape key only.
 fn render_centered(
     id: ElementId,
     theme: &TahoeTheme,
@@ -396,7 +397,7 @@ fn render_centered(
         panel = panel.track_focus(handle);
     }
     if focus_handle.is_some() {
-        let on_cancel = on_cancel_rc.clone();
+        let on_cancel = on_cancel_rc;
         panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
             if crate::foundations::keyboard::is_escape_key(event) {
                 if let Some(handler) = &on_cancel {
@@ -405,14 +406,12 @@ fn render_centered(
             }
         });
     }
-    if let Some(handler) = on_cancel_rc.clone() {
-        panel = panel.on_mouse_down_out(move |_event: &MouseDownEvent, window, cx| {
-            handler(window, cx);
-        });
-    }
 
-    backdrop_overlay(theme)
+    // Non-modal: transparent full-viewport container, no backdrop, no
+    // outside-click dismissal. The sheet coexists with the parent UI.
+    div()
         .id(id)
+        .size_full()
         .flex()
         .items_center()
         .justify_center()

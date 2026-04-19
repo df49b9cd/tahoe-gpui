@@ -65,7 +65,8 @@ pub struct BlinkManager {
     /// secondary cursor in a split view).
     interval: Duration,
     /// `true` silences blinking — the caret stays permanently visible.
-    /// Mirrors the macOS accessibility setting. Set by [`with_reduce_motion`].
+    /// Mirrors the macOS accessibility setting. Set via
+    /// [`BlinkManager::set_accessibility_mode`].
     reduce_motion: bool,
 }
 

@@ -140,10 +140,10 @@ impl VoiceAccent {
             Self::Australian => "\u{1F1E6}\u{1F1FA}", // 🇦🇺
             Self::Canadian => "\u{1F1E8}\u{1F1E6}",   // 🇨🇦
             Self::Irish => "\u{1F1EE}\u{1F1EA}",      // 🇮🇪
-            // Issue #148 F20: The stable Scotland ZWJ sequence
-            // `🏴󠁧󠁢󠁳󠁣󠁴󠁿` is not yet reliably supported in macOS bundled fonts.
-            // Ship the generic black flag `🏴` as a cross-platform
-            // fallback; update once Apple adds the subdivision variant.
+            // The stable Scotland ZWJ sequence `🏴󠁧󠁢󠁳󠁣󠁴󠁿` is not yet reliably
+            // supported in macOS bundled fonts. Ship the generic black flag
+            // `🏴` as a cross-platform fallback; update once Apple adds the
+            // subdivision variant.
             Self::Scottish => "\u{1F3F4}",
             Self::Indian => "\u{1F1EE}\u{1F1F3}",       // 🇮🇳
             Self::SouthAfrican => "\u{1F1FF}\u{1F1E6}", // 🇿🇦
@@ -193,7 +193,7 @@ pub struct VoiceOption {
     pub name: SharedString,
     /// Locale-specific display name used in the trigger label, dropdown
     /// rows, and any future Siri vocabulary registration. Falls back to
-    /// [`VoiceOption::name`] when `None`. Issue #148 F18.
+    /// [`VoiceOption::name`] when `None`.
     pub localized_name: Option<SharedString>,
     pub description: Option<SharedString>,
     pub gender: Option<VoiceGender>,
@@ -204,7 +204,6 @@ pub struct VoiceOption {
     /// Additional terms Siri should accept for this voice
     /// (e.g. pronunciations, nicknames). Feeds
     /// `INVocabulary.setVocabularyStrings(...)` when the Siri intent lands.
-    /// Issue #148 F17/F18.
     pub siri_vocabulary: Vec<SharedString>,
 }
 
@@ -254,13 +253,13 @@ impl VoiceOption {
         self
     }
 
-    /// Set the locale-specific display name (issue #148 F18).
+    /// Set the locale-specific display name.
     pub fn localized_name(mut self, name: impl Into<SharedString>) -> Self {
         self.localized_name = Some(name.into());
         self
     }
 
-    /// Replace the Siri vocabulary list (issue #148 F17/F18).
+    /// Replace the Siri vocabulary list.
     pub fn siri_vocabulary<I, S>(mut self, terms: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -485,9 +484,8 @@ impl VoiceSelectorView {
                         || v.group
                             .as_ref()
                             .is_some_and(|g| g.to_lowercase().contains(&filter_lower))
-                        // Issue #148 F18: searching vocabulary terms lets
-                        // users find a voice by any of the terms that Siri
-                        // will accept for it.
+                        // Searching vocabulary terms lets users find a voice
+                        // by any of the terms that Siri will accept for it.
                         || v.siri_vocabulary
                             .iter()
                             .any(|t| t.to_lowercase().contains(&filter_lower))
@@ -560,8 +558,8 @@ impl Render for VoiceSelectorView {
                 }
             }));
 
-        // Trigger button — display the localized name when provided
-        // (issue #148 F18) so Siri vocabulary and UI labels stay in sync.
+        // Trigger button — display the localized name when provided so Siri
+        // vocabulary and UI labels stay in sync.
         let current_label = self
             .selected()
             .map(|v| v.display_name().clone())
@@ -694,7 +692,7 @@ impl Render for VoiceSelectorView {
                     // Voice info column (name + metadata + description)
                     let mut info_col = div().flex().flex_col().flex_1().gap(px(2.0));
 
-                    // Name — prefer the localized variant (issue #148 F18).
+                    // Name — prefer the localized variant.
                     info_col = info_col.child(
                         div()
                             .text_style(TextStyle::Subheadline, theme)
@@ -837,10 +835,10 @@ impl Render for VoiceSelectorView {
 
             match self.variant {
                 VoiceSelectorVariant::Dropdown => {
-                    // Issue #148 F19: Liquid Glass surface for the floating
-                    // dropdown to match macOS 26 Tahoe HIG. Falls back to
-                    // the translucent fill + shadows used by glass_surface
-                    // on non-glass themes.
+                    // Liquid Glass surface for the floating dropdown to
+                    // match macOS 26 Tahoe HIG. Falls back to the
+                    // translucent fill + shadows used by glass_surface on
+                    // non-glass themes.
                     let glass_panel = glass_surface(
                         div()
                             .absolute()

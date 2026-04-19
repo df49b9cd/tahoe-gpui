@@ -31,7 +31,7 @@
 //! # Modifier Key Ordering
 //!
 //! When listing modifier keys in a shortcut, always use this order per HIG:
-//! **Control, Option, Shift, Command** (symbols: `$\u{2303}$\u{2325}$\u{21E7}$\u{2318}`).
+//! **Control, Option, Shift, Command** (symbols: `⌃⌥⇧⌘`).
 //!
 //! # Standard shortcuts (HIG: Keyboards)
 //!

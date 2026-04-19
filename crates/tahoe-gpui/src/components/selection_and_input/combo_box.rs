@@ -244,7 +244,9 @@ impl RenderOnce for ComboBox {
             .gap(theme.spacing_sm)
             .child(trigger_label)
             .child(
-                Icon::new(IconName::ChevronDown)
+                // HIG: combo box uses the double-chevron indicator
+                // (`chevron.up.chevron.down`) — same as the pop-up button.
+                Icon::new(IconName::ChevronsUpDown)
                     .size(px(12.0))
                     .color(theme.text_muted),
             );

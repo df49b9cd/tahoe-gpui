@@ -572,7 +572,7 @@ mod tests {
     fn lerp_color_extrapolates_beyond_unit_range() {
         let a = color(0.0, 0.0, 0.0, 1.0);
         let b = color(1.0, 1.0, 1.0, 1.0);
-        // lerp_color does NOT clamp s/l/a u2014 callers must clamp t themselves.
+        // lerp_color does NOT clamp s/l/a — callers must clamp t themselves.
         // Hue wraps via rem_euclid so it stays in 0..1.
         let result = lerp_color(a, b, 1.5);
         assert!(result.h >= 0.0 && result.h < 1.0); // hue wraps

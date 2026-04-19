@@ -54,6 +54,19 @@ pub enum ToolbarStyle {
 /// Renders a flex row with leading elements on the left, an optional centered
 /// title, and trailing elements on the right. Uses glass surface styling when
 /// a glass theme is active, falling back to bordered surface otherwise.
+///
+/// # Height
+///
+/// The toolbar's minimum height is driven by
+/// [`TahoeTheme::target_size`](crate::foundations::theme::TahoeTheme::target_size)
+/// — 28 pt on macOS, 44 pt on iOS — which matches the HIG control metric for
+/// an in-content action bar. Callers that need to render a full-chrome
+/// unified toolbar (title bar + toolbar as one region) should size the
+/// enclosing container to
+/// [`MACOS_TOOLBAR_UNIFIED_HEIGHT`](crate::foundations::layout::MACOS_TOOLBAR_UNIFIED_HEIGHT)
+/// (52 pt) and place this `Toolbar` inside it; this component deliberately
+/// does not claim that region for itself because it is not limited to the
+/// window chrome.
 #[derive(IntoElement)]
 pub struct Toolbar {
     id: ElementId,

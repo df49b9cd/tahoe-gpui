@@ -18,12 +18,37 @@ use crate::foundations::icons::{AnimatedIcon, Icon, IconAnimation, IconName};
 use crate::foundations::materials::{GlassSize, glass_surface};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
-/// Default indicator size in logical pixels (matches
-/// `NSProgressIndicator` regular spinner).
-const DEFAULT_SIZE: Pixels = px(20.0);
-
 /// Default spin animation duration.
 const SPIN_DURATION: std::time::Duration = std::time::Duration::from_millis(1200);
+
+/// HIG-aligned size variant for [`ActivityIndicator`]. Small / Regular /
+/// Large map to `NSProgressIndicator.controlSize` of `.small`,
+/// `.regular`, and `.large` — 16pt, 24pt, and 32pt respectively.
+///
+/// Marked `#[non_exhaustive]` so we can add additional sizes (e.g. an
+/// `ExtraLarge` for watch faces) without breaking downstream callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum ActivityIndicatorSize {
+    /// 16pt — dense list rows, inline toolbar glyphs.
+    Small,
+    /// 24pt — default control size.
+    #[default]
+    Regular,
+    /// 32pt — prominent empty-state / full-width progress panels.
+    Large,
+}
+
+impl ActivityIndicatorSize {
+    /// Resolve the variant to its logical-pixel diameter.
+    pub fn diameter(self) -> Pixels {
+        match self {
+            ActivityIndicatorSize::Small => px(16.0),
+            ActivityIndicatorSize::Regular => px(24.0),
+            ActivityIndicatorSize::Large => px(32.0),
+        }
+    }
+}
 
 /// Activity indicator style per HIG.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -56,6 +81,9 @@ pub struct ActivityIndicator {
     label: Option<SharedString>,
     style: ActivityIndicatorStyle,
     size: Option<Pixels>,
+    /// HIG size token. Controls the fallback diameter when an explicit
+    /// `size(Pixels)` override is not provided. Defaults to `Regular`.
+    hig_size: ActivityIndicatorSize,
     color: Option<Hsla>,
     stopped: bool,
     glass: bool,
@@ -68,6 +96,7 @@ impl ActivityIndicator {
             label: None,
             style: ActivityIndicatorStyle::default(),
             size: None,
+            hig_size: ActivityIndicatorSize::default(),
             color: None,
             stopped: false,
             glass: false,
@@ -87,9 +116,23 @@ impl ActivityIndicator {
         self
     }
 
-    /// Custom indicator size (default 20pt — `NSProgressIndicator` regular).
+    /// Custom indicator size in explicit pixels. When both this override
+    /// and [`ActivityIndicator::hig_size`] are set, the pixel override
+    /// wins. Preserved for back-compat with callers that want off-HIG
+    /// diameters (e.g. voice-player inline controls).
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = Some(size);
+        self
+    }
+
+    /// HIG-aligned size token. Default = [`ActivityIndicatorSize::Regular`]
+    /// (24pt, matching `NSProgressIndicator.controlSize = .regular`).
+    ///
+    /// Prefer this over [`ActivityIndicator::size`] whenever a HIG size
+    /// applies — it keeps layout consistent across the app and scales
+    /// with any future Dynamic Type or `#[non_exhaustive]` additions.
+    pub fn hig_size(mut self, size: ActivityIndicatorSize) -> Self {
+        self.hig_size = size;
         self
     }
 
@@ -126,7 +169,11 @@ impl RenderOnce for ActivityIndicator {
             return div().into_any_element();
         }
 
-        let size = self.size.unwrap_or(DEFAULT_SIZE);
+        // Prefer the explicit pixel override if provided; otherwise fall
+        // back to the HIG size token. Literal defaults moved into
+        // `ActivityIndicatorSize::diameter()` so the internal
+        // `DEFAULT_SIZE` constant is no longer needed.
+        let size = self.size.unwrap_or_else(|| self.hig_size.diameter());
         let color = self.color.unwrap_or(theme.text_muted);
         let glass_enabled = self.glass;
 
@@ -196,7 +243,7 @@ impl RenderOnce for ActivityIndicator {
 #[cfg(test)]
 mod tests {
     use crate::components::status::activity_indicator::{
-        ActivityIndicator, ActivityIndicatorStyle,
+        ActivityIndicator, ActivityIndicatorSize, ActivityIndicatorStyle,
     };
     use core::prelude::v1::test;
     use gpui::px;
@@ -210,6 +257,7 @@ mod tests {
         assert!(!indicator.stopped);
         assert!(!indicator.glass);
         assert_eq!(indicator.style, ActivityIndicatorStyle::Spinning);
+        assert_eq!(indicator.hig_size, ActivityIndicatorSize::Regular);
     }
 
     #[test]
@@ -256,5 +304,20 @@ mod tests {
     fn glass_flag_toggles() {
         let indicator = ActivityIndicator::new("test").glass(true);
         assert!(indicator.glass);
+    }
+
+    /// HIG diameters: Small = 16pt, Regular = 24pt, Large = 32pt.
+    #[test]
+    fn hig_size_diameter_mapping_matches_hig() {
+        assert_eq!(ActivityIndicatorSize::Small.diameter(), px(16.0));
+        assert_eq!(ActivityIndicatorSize::Regular.diameter(), px(24.0));
+        assert_eq!(ActivityIndicatorSize::Large.diameter(), px(32.0));
+    }
+
+    /// `.hig_size(..)` flows into the struct and overrides the default.
+    #[test]
+    fn hig_size_builder_stores_variant() {
+        let indicator = ActivityIndicator::new("test").hig_size(ActivityIndicatorSize::Large);
+        assert_eq!(indicator.hig_size, ActivityIndicatorSize::Large);
     }
 }

@@ -26,7 +26,7 @@ pub use super::AudioDevice;
 
 /// macOS URL for opening **System Settings → Privacy & Security → Microphone**
 /// directly. Hosts pass this to `NSWorkspace.shared.open(_:)` from the
-/// `on_open_privacy_settings` callback (issue #148 F3).
+/// `on_open_privacy_settings` callback.
 pub const PRIVACY_MICROPHONE_SETTINGS_URL: &str =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 
@@ -124,13 +124,13 @@ pub struct MicSelectorView {
     state: MicSelectorState,
     permission: MicPermission,
     dropdown_width: Option<Pixels>,
-    /// Optional transparency copy about AI audio processing (issue #148 F15).
+    /// Optional transparency copy about AI audio processing.
     ai_disclosure: Option<SharedString>,
     on_select: Option<Box<dyn Fn(&AudioDevice, &mut Window, &mut App) + 'static>>,
     on_value_change: OnStrChange,
     on_open_change: OnToggle,
     /// Callback for the "Open Privacy Settings" button shown under
-    /// [`MicPermission::Denied`] (issue #148 F3). Hosts open
+    /// [`MicPermission::Denied`]. Hosts open
     /// [`PRIVACY_MICROPHONE_SETTINGS_URL`] via `NSWorkspace`.
     on_open_privacy_settings: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
 }
@@ -158,7 +158,7 @@ impl MicSelectorView {
 
     /// Set transparency copy displayed at the top of the dropdown. When
     /// set, users see a short disclosure about how the audio captured by
-    /// the selected device will be used (issue #148 F15).
+    /// the selected device will be used.
     pub fn set_ai_disclosure(
         &mut self,
         disclosure: Option<impl Into<SharedString>>,
@@ -169,7 +169,7 @@ impl MicSelectorView {
     }
 
     /// Register a callback for the "Open Privacy Settings" action shown
-    /// while [`MicPermission::Denied`] (issue #148 F3). Hosts open
+    /// while [`MicPermission::Denied`]. Hosts open
     /// [`PRIVACY_MICROPHONE_SETTINGS_URL`] via `NSWorkspace.shared.open(_:)`.
     pub fn set_on_open_privacy_settings(
         &mut self,
@@ -450,11 +450,10 @@ impl Render for MicSelectorView {
 
         // Dropdown
         if is_open {
-            // Issue #148 F19: on macOS 26 Tahoe the HIG calls out Liquid
-            // Glass for floating panels like this dropdown. `glass_surface`
-            // degrades cleanly on non-glass themes by falling back to the
-            // same translucent fill + shadows the previous implementation
-            // used directly.
+            // On macOS 26 Tahoe the HIG calls out Liquid Glass for floating
+            // panels like this dropdown. `glass_surface` degrades cleanly on
+            // non-glass themes by falling back to the same translucent fill
+            // + shadows the previous implementation used directly.
             let glass_panel = glass_surface(
                 div()
                     .absolute()
@@ -481,9 +480,9 @@ impl Render for MicSelectorView {
                 dropdown.w_full().min_w(px(200.0))
             };
 
-            // Issue #148 F15: optional AI disclosure at the top of the
-            // dropdown — gives hosts a stable place to communicate how
-            // captured audio will be processed.
+            // Optional AI disclosure at the top of the dropdown — gives
+            // hosts a stable place to communicate how captured audio will
+            // be processed.
             if let Some(ref disclosure) = self.ai_disclosure {
                 dropdown = dropdown.child(
                     div()
@@ -582,9 +581,9 @@ impl Render for MicSelectorView {
                     );
                 }
                 MicSelectorState::Idle if self.permission == MicPermission::Denied => {
-                    // Issue #148 F3: Pair the denied state with an explicit
-                    // remediation path. The Privacy & Security deep-link is
-                    // documented by Apple for exactly this pattern.
+                    // Pair the denied state with an explicit remediation
+                    // path. The Privacy & Security deep-link is documented
+                    // by Apple for exactly this pattern.
                     list =
                         list.child(
                             div()
@@ -640,9 +639,9 @@ impl Render for MicSelectorView {
                         );
                 }
                 MicSelectorState::Idle if self.permission == MicPermission::Unknown => {
-                    // Issue #148 F3: when permission has not yet been
-                    // granted, explain why mic access is needed before the
-                    // system prompt or re-enumeration can populate the list.
+                    // When permission has not yet been granted, explain why
+                    // mic access is needed before the system prompt or
+                    // re-enumeration can populate the list.
                     list = list.child(
                         div()
                             .flex()

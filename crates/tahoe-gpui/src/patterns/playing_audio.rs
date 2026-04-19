@@ -7,7 +7,7 @@
 //!
 //! # See also
 //!
-//! - [`crate::voice`] (requires `voice` feature) — persona / microphone
+//! - `crate::voice` (requires `voice` feature) — persona / microphone
 //!   UI + realtime voice session primitives.
 //! - [`crate::foundations::icons::IconName::Play`] /
 //!   [`crate::foundations::icons::IconName::Pause`] /

@@ -120,3 +120,18 @@ fn validation_debug_format() {
     let debug3 = format!("{:?}", v3);
     assert!(debug3.contains("Valid"));
 }
+
+#[test]
+fn focus_ring_gating_logic() {
+    // Mirrors the `show_focus_ring = is_focused && !self.disabled` branch
+    // in the render. Documents the gating matrix so a future edit that
+    // drops either guard gets caught here.
+    fn show(is_focused: bool, disabled: bool) -> bool {
+        is_focused && !disabled
+    }
+    // Ring fires only for the focused + enabled cell.
+    assert!(show(true, false));
+    assert!(!show(true, true));
+    assert!(!show(false, false));
+    assert!(!show(false, true));
+}

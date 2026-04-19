@@ -34,6 +34,7 @@ use crate::components::selection_and_input::text_field::TextField;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
+use crate::text_actions::{Backspace, Delete, SelectAll};
 
 /// Default keys that commit the current input text as a new token. Matches
 /// the HIG default ("text people enter turns into a token whenever they
@@ -121,6 +122,11 @@ pub struct TokenField {
     on_context_menu_items: OnContextMenuItems,
     on_context_menu_action: OnContextMenuAction,
     context_open_for: Option<SharedString>,
+    /// When true, every token is in the "selected" state drawn with the
+    /// accent tint. Toggled on by Cmd+A when the embedded text field is
+    /// empty and focused; cleared on Backspace/Delete (after removing
+    /// tokens), any other keystroke, or an outside click.
+    all_tokens_selected: bool,
 }
 
 impl TokenField {
@@ -144,6 +150,7 @@ impl TokenField {
             on_context_menu_items: None,
             on_context_menu_action: None,
             context_open_for: None,
+            all_tokens_selected: false,
         }
     }
 
@@ -358,6 +365,66 @@ impl TokenField {
         self.context_open_for = None;
         cx.notify();
     }
+
+    /// Returns true when the embedded TextField is present, focused, and
+    /// holds no text — the state in which Cmd+A should target the chip
+    /// row rather than the inner text.
+    fn text_field_is_empty_and_focused(&self, window: &Window, cx: &App) -> bool {
+        let Some(ref tf) = self.text_field else {
+            // No embedded field. Fall back to the manual accumulator.
+            return self.input_text.is_empty() && self.focus_handle.is_focused(window);
+        };
+        let field = tf.read(cx);
+        field.text().is_empty() && field.focus_handle(cx).is_focused(window)
+    }
+
+    /// Returns `true` if there is currently at least one removable token
+    /// in the selected-all state.
+    #[cfg(test)]
+    pub fn all_tokens_selected(&self) -> bool {
+        self.all_tokens_selected
+    }
+
+    /// Select every token. Does not affect the embedded TextField text.
+    fn select_all_tokens(&mut self, cx: &mut Context<Self>) {
+        if self.tokens.is_empty() {
+            return;
+        }
+        self.all_tokens_selected = true;
+        cx.notify();
+    }
+
+    /// Clear the token selection without removing anything.
+    fn deselect_all_tokens(&mut self, cx: &mut Context<Self>) {
+        if !self.all_tokens_selected {
+            return;
+        }
+        self.all_tokens_selected = false;
+        cx.notify();
+    }
+
+    /// Remove every currently-selected token by firing `on_remove` for
+    /// each removable id, then collapsing the selection state.
+    fn remove_selected_tokens(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.all_tokens_selected {
+            return;
+        }
+        // Snapshot ids before firing callbacks so the host can mutate
+        // `self.tokens` via `set_tokens` without us iterating a stale view.
+        let ids: Vec<SharedString> = self
+            .tokens
+            .iter()
+            .filter(|t| t.removable)
+            .map(|t| t.id.clone())
+            .collect();
+        if let Some(on_remove) = &self.on_remove {
+            for id in &ids {
+                on_remove(id.as_ref(), window, cx);
+            }
+        }
+        self.all_tokens_selected = false;
+        cx.notify();
+    }
 }
 
 impl Focusable for TokenField {
@@ -386,10 +453,19 @@ impl Render for TokenField {
 
         // Build token chips
         let mut chips: Vec<gpui::AnyElement> = Vec::new();
+        let selection_active = self.all_tokens_selected && !self.tokens.is_empty();
         for token in &self.tokens {
             let label = token.label.clone();
             let id = token.id.clone();
             let removable = token.removable;
+
+            let chip_bg = if selection_active {
+                // HIG: selected tokens pick up the accent tint fill used
+                // for Finder row selection.
+                theme.selected_bg
+            } else {
+                theme.semantic.quaternary_system_fill
+            };
 
             let mut chip = div()
                 .id(ElementId::from(SharedString::from(format!(
@@ -398,7 +474,14 @@ impl Render for TokenField {
                 ))))
                 .debug_selector({
                     let id = id.clone();
-                    move || format!("token-chip-{id}")
+                    let selected = selection_active;
+                    move || {
+                        if selected {
+                            format!("token-chip-{id}-selected")
+                        } else {
+                            format!("token-chip-{id}")
+                        }
+                    }
                 })
                 .flex()
                 .flex_row()
@@ -408,13 +491,18 @@ impl Render for TokenField {
                 .py(theme.spacing_xs)
                 .rounded(theme.radius_full)
                 .min_h(px(theme.target_size()))
-                .bg(theme.semantic.quaternary_system_fill)
+                .bg(chip_bg)
                 .child(
                     div()
                         .text_style(TextStyle::Body, theme)
                         .text_color(theme.text)
                         .child(label),
                 );
+
+            // Selected-all marker: 1pt accent border per spec.
+            if selection_active {
+                chip = chip.border_1().border_color(theme.accent);
+            }
 
             // Right-click → open context menu for this token.
             if self.on_context_menu_items.is_some() {
@@ -510,7 +598,68 @@ impl Render for TokenField {
             .id(self.element_id.clone())
             .debug_selector(|| "token-field-root".into())
             .track_focus(&self.focus_handle)
-            .on_key_down(cx.listener(Self::handle_key_down));
+            // Capture-phase hooks intercept Cmd+A / Backspace / Delete
+            // BEFORE the embedded TextField (focused descendant) receives
+            // them via its own on_action bindings. This is the only way to
+            // "borrow" those shortcuts for chip-row selection without
+            // having to rebind them at the host's keybinding layer.
+            .capture_action(cx.listener(
+                |this: &mut Self, _action: &SelectAll, window: &mut Window, cx| {
+                    if this.text_field_is_empty_and_focused(window, cx) && !this.tokens.is_empty() {
+                        this.select_all_tokens(cx);
+                        cx.stop_propagation();
+                    }
+                },
+            ))
+            .capture_action(cx.listener(
+                |this: &mut Self, _action: &Backspace, window: &mut Window, cx| {
+                    if this.all_tokens_selected {
+                        this.remove_selected_tokens(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            ))
+            .capture_action(cx.listener(
+                |this: &mut Self, _action: &Delete, window: &mut Window, cx| {
+                    if this.all_tokens_selected {
+                        this.remove_selected_tokens(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            ))
+            .on_key_down(cx.listener(Self::handle_key_down))
+            // Bubble-phase: any key that wasn't handled above dismisses
+            // the selected-all state before it reaches the TextField's
+            // text-editing logic. Typing a character when all tokens are
+            // selected feels like "replace the selection" — clearing the
+            // highlight lets the TextField's normal insert path take over.
+            .on_key_down(
+                cx.listener(|this: &mut Self, event: &KeyDownEvent, _window, cx| {
+                    if !this.all_tokens_selected {
+                        return;
+                    }
+                    let key = event.keystroke.key.as_str();
+                    let mods = &event.keystroke.modifiers;
+                    // Bare modifier-only presses (cmd / shift / alt)
+                    // shouldn't cancel the selection — the user is likely
+                    // preparing a shortcut.
+                    if matches!(key, "cmd" | "platform" | "shift" | "alt" | "control") {
+                        return;
+                    }
+                    // Cmd+A / Backspace / Delete were handled in the
+                    // capture phase; leave the selection as-is.
+                    let is_cmd_a = mods.platform && key.eq_ignore_ascii_case("a");
+                    if is_cmd_a || key == "backspace" || key == "delete" {
+                        return;
+                    }
+                    this.deselect_all_tokens(cx);
+                }),
+            )
+            .on_mouse_down_out(cx.listener(
+                |this: &mut Self, _event: &MouseDownEvent, _window, cx| {
+                    this.deselect_all_tokens(cx);
+                },
+            ));
 
         let mut field_row = div()
             .flex()
@@ -905,5 +1054,122 @@ mod interaction_tests {
             &*actions.borrow(),
             &[("rust".to_string(), "Edit".to_string())]
         );
+    }
+
+    // ── Cmd+A select-all-tokens ────────────────────────────────────────
+
+    use gpui::{AppContext, Focusable};
+
+    use crate::components::selection_and_input::text_field::TextField;
+
+    fn embed_text_field(
+        token_field: &gpui::Entity<TokenField>,
+        cx: &mut gpui::VisualTestContext,
+    ) -> gpui::Entity<TextField> {
+        let tf = token_field.update_in(cx, |_tok, _window, cx| cx.new(TextField::new));
+        token_field.update_in(cx, |tok, _window, cx| {
+            tok.set_text_field(tf.clone(), cx);
+        });
+        tf
+    }
+
+    fn focus_inner_text_field(field: &gpui::Entity<TextField>, cx: &mut gpui::VisualTestContext) {
+        field.update_in(cx, |field, window, cx| {
+            let handle = field.focus_handle(cx);
+            handle.focus(window, cx);
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_a_on_empty_input_selects_all_tokens(cx: &mut TestAppContext) {
+        let added = Rc::new(RefCell::new(Vec::new()));
+        let removed = Rc::new(RefCell::new(Vec::new()));
+        let (field, cx) = setup_test_window(cx, |_window, cx| TokenField::new(cx));
+
+        wire_callbacks(&field, cx, added, removed);
+        field.update_in(cx, |field, _window, cx| {
+            field.set_tokens(
+                vec![TokenItem::new("Rust", "rust"), TokenItem::new("Go", "go")],
+                cx,
+            );
+        });
+        let tf = embed_text_field(&field, cx);
+        focus_inner_text_field(&tf, cx);
+
+        // Input is empty → Cmd+A should put the chip row into the
+        // "selected-all" state.
+        cx.press("cmd-a");
+
+        field.update_in(cx, |field, _window, _cx| {
+            assert!(field.all_tokens_selected());
+        });
+        // The inner TextField should NOT have any text selected (nothing
+        // was typed), and the outer should have intercepted the shortcut
+        // — i.e. the TextField's content is still empty.
+        tf.update_in(cx, |t, _window, _cx| {
+            assert!(t.text().is_empty());
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_a_on_non_empty_input_defers_to_text_field(cx: &mut TestAppContext) {
+        let added = Rc::new(RefCell::new(Vec::new()));
+        let removed = Rc::new(RefCell::new(Vec::new()));
+        let (field, cx) = setup_test_window(cx, |_window, cx| TokenField::new(cx));
+
+        wire_callbacks(&field, cx, added, removed);
+        field.update_in(cx, |field, _window, cx| {
+            field.set_tokens(vec![TokenItem::new("Rust", "rust")], cx);
+        });
+        let tf = embed_text_field(&field, cx);
+        focus_inner_text_field(&tf, cx);
+        tf.update_in(cx, |t, _window, cx| t.set_text("hello", cx));
+
+        cx.press("cmd-a");
+
+        field.update_in(cx, |field, _window, _cx| {
+            assert!(
+                !field.all_tokens_selected(),
+                "non-empty input must let TextField handle Cmd+A"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn backspace_with_selected_tokens_clears_them(cx: &mut TestAppContext) {
+        let added = Rc::new(RefCell::new(Vec::new()));
+        let removed = Rc::new(RefCell::new(Vec::new()));
+        let (field, cx) = setup_test_window(cx, |_window, cx| TokenField::new(cx));
+
+        wire_callbacks(&field, cx, added, removed.clone());
+        field.update_in(cx, |field, _window, cx| {
+            field.set_tokens(
+                vec![
+                    TokenItem::fixed("Required", "req"),
+                    TokenItem::new("Rust", "rust"),
+                    TokenItem::new("Go", "go"),
+                ],
+                cx,
+            );
+        });
+        let tf = embed_text_field(&field, cx);
+        focus_inner_text_field(&tf, cx);
+
+        cx.press("cmd-a");
+        field.update_in(cx, |field, _window, _cx| {
+            assert!(field.all_tokens_selected());
+        });
+
+        cx.press("backspace");
+
+        // Both removable tokens should have been targeted by on_remove.
+        // The fixed token's id should not appear.
+        let ids: Vec<String> = removed.borrow().clone();
+        assert!(ids.iter().any(|id| id == "rust"));
+        assert!(ids.iter().any(|id| id == "go"));
+        assert!(!ids.iter().any(|id| id == "req"));
+        field.update_in(cx, |field, _window, _cx| {
+            assert!(!field.all_tokens_selected());
+        });
     }
 }

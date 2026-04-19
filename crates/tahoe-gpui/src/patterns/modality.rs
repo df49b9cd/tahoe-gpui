@@ -32,6 +32,41 @@
 //! let _active = guard.present();  // `_active` drops → guard decrements
 //! ```
 //!
+//! ## Integrating with stateless builders
+//!
+//! [`Alert`](crate::components::presentation::alert::Alert),
+//! [`Sheet`](crate::components::presentation::sheet::Sheet),
+//! [`Modal`](crate::components::presentation::modal::Modal), and
+//! [`ActionSheet`](crate::components::presentation::action_sheet::ActionSheet)
+//! are stateless builders — they do not own `is_open` or the
+//! [`ActiveModal`] slot themselves. Store both on the parent entity
+//! that renders the presenter, and acquire / drop the guard in the
+//! same `open` / `close` handlers that flip `is_open`:
+//!
+//! ```ignore
+//! struct MyDialogHost {
+//!     is_open: bool,
+//!     modal_guard: Option<ActiveModal>,
+//! }
+//!
+//! impl MyDialogHost {
+//!     fn open(&mut self, _cx: &mut Context<Self>) {
+//!         if self.modal_guard.is_none() {
+//!             self.modal_guard = Some(ModalGuard::global().present());
+//!             self.is_open = true;
+//!         }
+//!     }
+//!
+//!     fn close(&mut self, _cx: &mut Context<Self>) {
+//!         self.is_open = false;
+//!         self.modal_guard = None; // drops ActiveModal → decrements depth
+//!     }
+//! }
+//! ```
+//!
+//! The example is marked `ignore` so it documents the pattern without
+//! forcing a full GPUI test context into doctest compilation.
+//!
 //! # See also
 //!
 //! - [`crate::components::presentation::alert::Alert`] — modal dialogs
@@ -87,8 +122,14 @@ impl ModalGuard {
     /// so a bug doesn't trap the user.
     #[must_use = "drop the ActiveModal to release the depth counter"]
     pub fn present(&self) -> ActiveModal {
+        // Construct the drop-guard BEFORE debug_assert! so a debug-build
+        // panic on nested presentation unwinds through ActiveModal::drop,
+        // decrementing the counter instead of leaking it.
+        let active = ActiveModal {
+            depth: self.depth.clone(),
+        };
         let new_depth = {
-            let mut depth = self
+            let mut depth = active
                 .depth
                 .lock()
                 .expect("ModalGuard mutex poisoned — a previous `present()` panicked");
@@ -101,9 +142,7 @@ impl ModalGuard {
              Dismiss the existing modal before presenting another — stacking \
              modals traps the user."
         );
-        ActiveModal {
-            depth: self.depth.clone(),
-        }
+        active
     }
 
     /// Current presentation depth. Useful for tests and diagnostics.
@@ -197,6 +236,24 @@ mod tests {
         let guard = ModalGuard::new();
         let _outer = guard.present();
         let _inner = guard.present();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn nested_present_debug_panic_does_not_leak_depth() {
+        use std::panic;
+        let guard = ModalGuard::new();
+        let _outer = guard.present();
+        // Catch the debug_assert! panic triggered by the nested present.
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let _inner = guard.present();
+        }));
+        assert!(result.is_err(), "nested present should panic in debug");
+        // Outer is still active; inner unwound and decremented — depth
+        // must be back to 1, not 2.
+        assert_eq!(guard.depth(), 1);
+        drop(_outer);
+        assert_eq!(guard.depth(), 0);
     }
 
     #[test]

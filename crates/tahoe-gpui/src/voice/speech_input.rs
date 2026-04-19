@@ -4,22 +4,22 @@
 //! transcription integration. Matches the web AI SDK Elements SpeechInput
 //! component API (Firefox/Safari path: record + server-side transcription).
 //!
-//! # HIG alignment (issue #148)
+//! # HIG alignment
 //!
-//! * F2 — `SpeechInputState::PermissionRequired` and `PermissionDenied`
+//! * `SpeechInputState::PermissionRequired` and `PermissionDenied`
 //!   distinguish "never prompted" from "user denied" so the UI can render
 //!   explanatory copy plus an "Open Privacy Settings" affordance.
-//! * F5 — The listening pulse rings check
+//! * The listening pulse rings check
 //!   `TahoeTheme::accessibility_mode.reduce_motion()` and fall back to a
 //!   static red border indicator.
-//! * F10 — The `Disabled` state renders the mic-slash glyph
+//! * The `Disabled` state renders the mic-slash glyph
 //!   ([`IconName::MicOff`]) instead of sharing the idle microphone icon at
 //!   reduced opacity.
-//! * F14 — [`SpeechInputView::show_menu_bar_tip`] surfaces a first-use
+//! * [`SpeechInputView::show_menu_bar_tip`] surfaces a first-use
 //!   tooltip explaining the macOS 26 orange menu-bar dot.
-//! * F15 — [`SpeechInputView::set_ai_disclosure`] renders an optional info
+//! * [`SpeechInputView::set_ai_disclosure`] renders an optional info
 //!   affordance for transparency about AI processing.
-//! * F16 — Elapsed recording time is rendered as `mm:ss` next to the
+//! * Elapsed recording time is rendered as `mm:ss` next to the
 //!   button while `SpeechInputState::Listening`.
 
 use std::future::Future;
@@ -105,7 +105,7 @@ pub struct SpeechInputView {
     /// task during recording. Retained for planned audio-reactive ring animation.
     audio_level: f32,
     /// Elapsed recording time in seconds. Updated by the timer task during
-    /// recording. Rendered as `mm:ss` while `Listening` (issue #148 F16).
+    /// recording. Rendered as `mm:ss` while `Listening`.
     elapsed_secs: f32,
     lang: SharedString,
     size: ButtonSize,
@@ -114,11 +114,10 @@ pub struct SpeechInputView {
     /// for the mapping to `AVCaptureDevice.authorizationStatus`.
     permission: PermissionHint,
     /// Optional transparency copy displayed next to the button. When set,
-    /// renders an info glyph + tooltip disclosing how audio is processed
-    /// (issue #148 F15).
+    /// renders an info glyph + tooltip disclosing how audio is processed.
     ai_disclosure: Option<SharedString>,
     /// Whether the first-use tooltip about the macOS orange menu-bar
-    /// microphone indicator has been dismissed (issue #148 F14).
+    /// microphone indicator has been dismissed.
     menu_bar_tip_visible: bool,
     on_transcription_change: OnStringChange,
     on_audio_recorded: Option<Box<dyn Fn(CapturedAudio, &mut Window, &mut App) + 'static>>,
@@ -191,9 +190,8 @@ impl SpeechInputView {
         self.permission
     }
 
-    /// Set optional transparency copy disclosing how audio is used by AI
-    /// (issue #148 F15). When set, a tooltip-bearing info glyph is rendered
-    /// next to the button.
+    /// Set optional transparency copy disclosing how audio is used by AI.
+    /// When set, a tooltip-bearing info glyph is rendered next to the button.
     pub fn set_ai_disclosure(
         &mut self,
         disclosure: Option<impl Into<SharedString>>,
@@ -223,7 +221,7 @@ impl SpeechInputView {
     }
 
     /// Show or hide the first-use tooltip explaining the macOS 26 orange
-    /// menu-bar microphone-in-use indicator (issue #148 F14). Hosts call
+    /// menu-bar microphone-in-use indicator. Hosts call
     /// `show_menu_bar_tip(true, …)` on the first record and persist the
     /// dismissal in `UserDefaults` when `on_menu_bar_tip_dismissed` fires.
     pub fn show_menu_bar_tip(&mut self, visible: bool, cx: &mut Context<Self>) {
@@ -373,7 +371,7 @@ impl SpeechInputView {
         // callback. The view does not wire an internal callback here
         // because marshalling a cpal thread error back into
         // `Context<Self>` requires a bounded channel the consumer should
-        // own — issue #148 F13. Consumers that care call
+        // own. Consumers that care call
         // `AudioCapture::start_with_permission` directly, or relay via
         // their own channel after observing state transitions.
 
@@ -443,10 +441,10 @@ impl SpeechInputView {
     }
 
     fn start_timer(&mut self, cx: &mut Context<Self>) {
-        // Tracks elapsed_secs and audio_level. Issue #148 F16: the elapsed
-        // display is now rendered, so notify the UI once per whole-second
-        // transition (avoiding 20 Hz redraws while still keeping the
-        // `mm:ss` text accurate).
+        // Tracks elapsed_secs and audio_level. The elapsed display is
+        // rendered, so notify the UI once per whole-second transition
+        // (avoiding 20 Hz redraws while still keeping the `mm:ss` text
+        // accurate).
         self.timer_task = Some(cx.spawn(async |this, cx| {
             let interval = Duration::from_millis(50);
             loop {
@@ -473,8 +471,8 @@ impl SpeechInputView {
 
     /// Returns the icon for a given state.
     ///
-    /// Issue #148 F10: `Disabled` uses [`IconName::MicOff`] so disabled and
-    /// idle states are distinguishable by shape, not just opacity.
+    /// `Disabled` uses [`IconName::MicOff`] so disabled and idle states are
+    /// distinguishable by shape, not just opacity.
     fn icon_for_state(state: SpeechInputState) -> IconName {
         match state {
             SpeechInputState::Idle => IconName::Mic,
@@ -541,7 +539,7 @@ impl Render for SpeechInputView {
         .round(true)
         .accessibility_label(Self::accessibility_label_for_state(state));
 
-        // Activation wiring depends on state (issue #148 F2):
+        // Activation wiring depends on state:
         //   Idle → start recording
         //   Listening → stop recording
         //   PermissionRequired → trigger host's requestAccess
@@ -571,11 +569,10 @@ impl Render for SpeechInputView {
 
         if listening {
             if reduce_motion {
-                // Issue #148 F5: Reduce Motion substitute — a single solid
-                // red border stays visible while recording so the active
-                // state is communicated without oscillating motion. Matches
-                // the HIG guidance that motion must not be the sole carrier
-                // of state.
+                // Reduce Motion substitute — a single solid red border stays
+                // visible while recording so the active state is communicated
+                // without oscillating motion. Matches the HIG guidance that
+                // motion must not be the sole carrier of state.
                 let static_id = ElementId::from(SharedString::from(format!(
                     "{}-ring-static",
                     self.element_id
@@ -642,9 +639,9 @@ impl Render for SpeechInputView {
             .gap(theme.spacing_sm)
             .child(btn_wrapper);
 
-        // Issue #148 F16: Render elapsed time next to the button while
-        // Listening so users — including VoiceOver users reading the live
-        // text — can gauge how long they've been recording.
+        // Render elapsed time next to the button while Listening so users —
+        // including VoiceOver users reading the live text — can gauge how
+        // long they've been recording.
         if listening {
             container = container.child(
                 div()
@@ -662,9 +659,9 @@ impl Render for SpeechInputView {
             );
         }
 
-        // Issue #148 F3/F2: Inline explanatory copy for permission states.
-        // The button's accessibility label already announces the state;
-        // this row gives sighted users the same cue.
+        // Inline explanatory copy for permission states. The button's
+        // accessibility label already announces the state; this row gives
+        // sighted users the same cue.
         match state {
             SpeechInputState::PermissionRequired => {
                 container = container.child(
@@ -694,9 +691,9 @@ impl Render for SpeechInputView {
             _ => {}
         }
 
-        // Issue #148 F15: Optional AI transparency disclosure. Rendered as
-        // a subdued info glyph + caption text so consumers can document
-        // how audio is processed (on-device vs. server, provider).
+        // Optional AI transparency disclosure. Rendered as a subdued info
+        // glyph + caption text so consumers can document how audio is
+        // processed (on-device vs. server, provider).
         if let Some(ref disclosure) = self.ai_disclosure {
             container = container.child(
                 div()
@@ -714,9 +711,9 @@ impl Render for SpeechInputView {
             );
         }
 
-        // Issue #148 F14: First-use tooltip explaining the macOS 26 orange
-        // menu-bar microphone indicator so first-time recorders don't
-        // mistake it for an alert.
+        // First-use tooltip explaining the macOS 26 orange menu-bar
+        // microphone indicator so first-time recorders don't mistake it for
+        // an alert.
         if self.menu_bar_tip_visible {
             container = container.child(
                 div()
@@ -806,8 +803,8 @@ mod tests {
             SpeechInputView::icon_for_state(SpeechInputState::Idle),
             IconName::Mic
         );
-        // Issue #148 F10: Disabled uses the mic-slash glyph so it differs
-        // from Idle by shape, not just opacity.
+        // Disabled uses the mic-slash glyph so it differs from Idle by
+        // shape, not just opacity.
         assert_eq!(
             SpeechInputView::icon_for_state(SpeechInputState::Disabled),
             IconName::MicOff

@@ -116,7 +116,7 @@ impl Snippet {
     /// Override the CopyButton's default icon with custom child content.
     ///
     /// The closure receives the current `copied` state so callers can render
-    /// conditionally (e.g. "Copy" u2192 "Copied!").
+    /// conditionally (e.g. "Copy" → "Copied!").
     pub fn copy_button_child(
         mut self,
         child: Box<dyn Fn(bool) -> AnyElement + Send + Sync + 'static>,

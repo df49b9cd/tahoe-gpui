@@ -1,6 +1,6 @@
 //! Audio capture via cpal — microphone recording and WAV encoding.
 //!
-//! # Permission model (HIG Voice audit, issue #148 F1/F2)
+//! # Permission model (HIG Voice audit)
 //!
 //! Apple's Generative AI HIG requires disclosing how personal data (audio)
 //! is used and asking permission explicitly, so the voice module distinguishes
@@ -44,10 +44,10 @@ pub struct CapturedAudio {
 /// Authorization hint supplied by the host application. Mirrors
 /// `AVCaptureDevice.authorizationStatus(for: .audio)` on macOS.
 ///
-/// The host app owns the AVFoundation permission lifecycle (issue #148 open
-/// question 1). This enum lets the host signal the observed state so
-/// `audio_capture` can produce an accurate [`AudioCaptureError`] variant
-/// when cpal returns `None` from `default_input_device()`.
+/// The host app owns the AVFoundation permission lifecycle. This enum lets
+/// the host signal the observed state so `audio_capture` can produce an
+/// accurate [`AudioCaptureError`] variant when cpal returns `None` from
+/// `default_input_device()`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PermissionHint {
     /// The host has not inspected the authorization status. cpal's `None`
@@ -96,10 +96,10 @@ impl std::fmt::Display for AudioCaptureError {
 /// Callback fired from the cpal thread when the underlying audio stream
 /// errors mid-recording (e.g. device disconnected, sample-rate change).
 ///
-/// Issue #148 F13: previously these errors went to `eprintln!` and silently
-/// produced empty audio or stalled. The Generative AI HIG asks for graceful
-/// propagation so the UI can report a recoverable state. Consumers typically
-/// wire this into a `SpeechInputView::set_disabled(true, …)` + toast.
+/// Previously these errors went to `eprintln!` and silently produced empty
+/// audio or stalled. The Generative AI HIG asks for graceful propagation so
+/// the UI can report a recoverable state. Consumers typically wire this into
+/// a `SpeechInputView::set_disabled(true, …)` + toast.
 pub type StreamErrorCallback = Arc<dyn Fn(cpal::StreamError) + Send + Sync + 'static>;
 
 /// Shared state between the cpal callback thread and the UI thread.
@@ -144,7 +144,7 @@ impl AudioCapture {
     /// `on_stream_error` receives `cpal::StreamError` notifications that
     /// occur after the stream has started (e.g. a USB microphone unplugged
     /// mid-recording). Pass `None` to silently discard them — but UIs should
-    /// provide a callback so the user can see the failure (issue #148 F13).
+    /// provide a callback so the user can see the failure.
     pub fn start_with_permission(
         permission: PermissionHint,
         on_stream_error: Option<StreamErrorCallback>,
@@ -285,7 +285,7 @@ impl AudioCapture {
 /// Returns a list of [`super::AudioDevice`] structs. On macOS, if microphone
 /// permission has not been granted, `input_devices()` returns an empty
 /// iterator — cpal provides no generic device names in that case, so the
-/// caller sees zero devices rather than placeholders (issue #148 F4).
+/// caller sees zero devices rather than placeholders.
 ///
 /// Note: cpal does not provide stable device IDs across sessions; device
 /// names are used as identifiers.

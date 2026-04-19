@@ -329,7 +329,11 @@ impl RenderOnce for OutlineView {
                     "end" => {
                         cx.stop_propagation();
                         if let Some(cb) = &focus_cb {
-                            let last = flat_for_keys.last().unwrap().id.clone();
+                            let last = flat_for_keys
+                                .last()
+                                .expect("flat_for_keys is non-empty: guarded by `if !flat.is_empty()` above")
+                                .id
+                                .clone();
                             cb(Some(last), window, cx);
                         }
                     }

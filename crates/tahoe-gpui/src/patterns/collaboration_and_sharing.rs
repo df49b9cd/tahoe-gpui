@@ -9,7 +9,8 @@
 //! # See also
 //!
 //! - [`crate::components::content::avatar::Avatar`] — per-contributor
-//!   identity glyph; stack via `FacePile` for multi-party attribution.
+//!   identity glyph; stack horizontally with overlap for multi-party
+//!   attribution.
 //! - [`crate::components::content::badge::Badge`] — presence / role
 //!   chips (e.g. `"Editor"`, `"Viewer"`). Use `BadgeVariant::Dot` for
 //!   live-presence indicators.

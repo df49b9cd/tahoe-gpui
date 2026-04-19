@@ -23,6 +23,31 @@ use crate::foundations::theme::{ActiveTheme, GlassSize};
 ///     .step(1.0)
 ///     .on_change(|new_val, _window, cx| { /* update model */ })
 /// ```
+///
+/// # TODO: HIG press-and-hold auto-repeat (NSStepper)
+///
+/// `NSStepper` increments continuously while either button is held —
+/// 500ms initial delay, then 60ms cadence. Adding that here requires
+/// elevating `Stepper` from the current `RenderOnce` builder to a
+/// stateful `Entity<T>` so the repeat [`gpui::Task`] can live in the
+/// component and be cancelled on mouse-up / mouse-leave. The conversion
+/// ripples through every caller (gallery entries, unit harnesses) and
+/// every builder method (they become mutators on `&mut self` or
+/// constructor args), so it exceeds the in-scope budget for this pass.
+///
+/// Sketch of the future shape:
+/// ```ignore
+/// pub struct Stepper { /* …existing fields… */, repeat: Option<Task<()>> }
+/// fn start_repeat(&mut self, delta: f64, cx: &mut Context<Self>) {
+///     self.repeat = Some(cx.spawn(async move |this, cx| {
+///         cx.background_executor().timer(Duration::from_millis(500)).await;
+///         loop {
+///             cx.background_executor().timer(Duration::from_millis(60)).await;
+///             if this.update(cx, |this, cx| this.bump(delta, cx)).is_err() { break; }
+///         }
+///     }));
+/// }
+/// ```
 #[derive(IntoElement)]
 pub struct Stepper {
     id: ElementId,
@@ -281,14 +306,36 @@ impl RenderOnce for Stepper {
         if self.disabled {
             container = container.opacity(0.5);
         } else if let Some(handler) = handler_rc {
-            container =
-                container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    match event.keystroke.key.as_str() {
-                        "up" | "right" => handler(incremented, window, cx),
-                        "down" | "left" => handler(decremented, window, cx),
-                        _ => {}
+            container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                // HIG macOS: Shift-arrow bumps by 10× the step, mirroring
+                // the Shift-click behaviour already wired on the +/- buttons.
+                let shift = event.keystroke.modifiers.shift;
+                match event.keystroke.key.as_str() {
+                    "up" | "right" => {
+                        handler(
+                            if shift {
+                                shift_incremented
+                            } else {
+                                incremented
+                            },
+                            window,
+                            cx,
+                        );
                     }
-                });
+                    "down" | "left" => {
+                        handler(
+                            if shift {
+                                shift_decremented
+                            } else {
+                                decremented
+                            },
+                            window,
+                            cx,
+                        );
+                    }
+                    _ => {}
+                }
+            });
         }
 
         container
@@ -359,6 +406,19 @@ mod tests {
     fn stepper_clamp_above_max() {
         let s = Stepper::new("test").min(0.0).max(10.0);
         assert!((s.clamp(15.0) - 10.0).abs() < f64::EPSILON);
+    }
+
+    /// Press-and-hold auto-repeat is deferred pending the `RenderOnce →
+    /// Entity<T>` elevation. If this source stops mentioning the TODO
+    /// block we've either landed the feature or silently dropped it — in
+    /// either case we should notice immediately.
+    #[test]
+    fn stepper_documents_auto_repeat_todo() {
+        const SELF_SRC: &str = include_str!("stepper.rs");
+        assert!(
+            SELF_SRC.contains("TODO: HIG press-and-hold auto-repeat"),
+            "auto-repeat TODO doc missing from stepper.rs"
+        );
     }
 }
 

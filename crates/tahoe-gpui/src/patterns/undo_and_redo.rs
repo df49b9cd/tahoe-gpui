@@ -10,7 +10,6 @@
 //! [`crate::workflow::WorkflowCanvas`]: it owns an undo stack of
 //! `CanvasCommand` values and wires `Cmd+Z` / `Shift+Cmd+Z` plus optional
 //! toolbar buttons (via [`crate::workflow::WorkflowControls::show_undo_redo`]).
-//! Findings F6 and F7 in issue #149 drove that work.
 //!
 //! # When to reach for this pattern
 //!

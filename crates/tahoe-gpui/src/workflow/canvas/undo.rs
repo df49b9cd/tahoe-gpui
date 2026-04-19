@@ -6,16 +6,16 @@
 //! and revert itself; the canvas never mutates `nodes` / `connections`
 //! directly from event handlers anymore, it pushes a command and dispatches.
 //!
-//! # Architecture (answers Open Question 3 from #149)
+//! # Architecture
 //!
-//! The stack lives **inside** `WorkflowCanvas`. Findings F6/F7 called out
-//! that `delete_selected` mutates state with zero reversibility, and the
-//! HIG mandates multi-level undo on macOS; keeping the stack internal means
-//! every host gets that out of the box without wiring. Hosts that own a
-//! richer model (persistent DB, collaborative CRDT) can still observe
-//! mutations via the existing `on_nodes_delete` / `on_edges_delete` /
-//! `on_connect` callbacks — those fire during both the initial command and
-//! its replay, keeping the host model consistent with canvas-local undo.
+//! The stack lives **inside** `WorkflowCanvas`. The prior `delete_selected`
+//! mutated state with zero reversibility, and the HIG mandates multi-level
+//! undo on macOS; keeping the stack internal means every host gets that
+//! out of the box without wiring. Hosts that own a richer model (persistent
+//! DB, collaborative CRDT) can still observe mutations via the existing
+//! `on_nodes_delete` / `on_edges_delete` / `on_connect` callbacks — those
+//! fire during both the initial command and its replay, keeping the host
+//! model consistent with canvas-local undo.
 //!
 //! Entities are retained on the stack rather than snapshot-then-rebuilt,
 //! because `WorkflowNode` holds non-`Clone` closures (`content_builder`,
@@ -68,7 +68,7 @@ pub(super) enum CanvasCommand {
         /// Each entity, paired with the index it was inserted at.
         nodes: Vec<(usize, Entity<WorkflowNode>)>,
     },
-    /// A node was resized by dragging one of its handles (F28). Position
+    /// A node was resized by dragging one of its handles. Position
     /// and size are captured together because corner/edge handles change
     /// both atomically — reverting only one would leave the node visually
     /// "teleporting" mid-undo.

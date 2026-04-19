@@ -7,11 +7,15 @@
 //! a `See also` section pointing to the concrete components in this
 //! crate that implement the pattern.
 //!
-//! Three entries carry real supporting types beyond documentation:
-//! [`feedback`] (style + intensity enums), [`loading`]
-//! (`LoadingState` machine), and [`undo_and_redo`] (which documents the
-//! canvas-level `UndoStack` runtime). tvOS/watchOS-only patterns
-//! (`live_viewing_apps`, `workouts`) are marked not-applicable.
+//! Seven modules carry real supporting types: [`feedback`] (style +
+//! intensity enums), [`loading`] (`LoadingState` machine), [`launching`]
+//! (`StateRestoration` trait), [`modality`] (`ModalGuard` runtime),
+//! [`multitasking`] (`WindowStateCheckpoint` hooks), [`onboarding`]
+//! (`OnboardingFlow` state machine), and [`settings`] (`OpenSettings`
+//! action + `⌘,` binding). [`undo_and_redo`] is a pointer to the
+//! canvas-level runtime in [`crate::workflow`]. tvOS/watchOS-only
+//! patterns ([`live_viewing_apps`], [`workouts`]) are marked
+//! not-applicable; the remaining entries are pure documentation stubs.
 //!
 //! # HIG Reference
 //!

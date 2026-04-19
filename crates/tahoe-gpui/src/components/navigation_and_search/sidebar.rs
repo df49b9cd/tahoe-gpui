@@ -25,6 +25,7 @@ use gpui::{
 
 use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
 use crate::foundations::materials::{SurfaceContext, apply_focus_ring};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
@@ -184,7 +185,15 @@ impl Sidebar {
 impl RenderOnce for Sidebar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let base_width = self.width.unwrap_or(theme.sidebar_width_default);
+        // HIG macOS Tahoe: rendered width defaults to
+        // `theme.sidebar_width_default` (220pt) when unspecified, and
+        // is never allowed to render below the HIG floor
+        // (`SIDEBAR_MIN_WIDTH` = 180pt) outside the collapsed state —
+        // below 180pt row labels truncate at default Dynamic Type.
+        let base_width = self
+            .width
+            .unwrap_or(theme.sidebar_width_default)
+            .max(px(SIDEBAR_MIN_WIDTH));
         let width = if self.collapsed { px(0.0) } else { base_width };
 
         // Per macOS Tahoe System Settings: the sidebar is a flat, borderless,
@@ -287,8 +296,11 @@ impl RenderOnce for Sidebar {
                     )
                     .on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
                         if drag_state_move.get() {
+                            // Clamp to caller-supplied [min, max], never
+                            // below the HIG floor (SIDEBAR_MIN_WIDTH).
+                            let effective_min = f32::from(min).max(SIDEBAR_MIN_WIDTH);
                             let new_width = f32::from(event.position.x)
-                                .max(f32::from(min))
+                                .max(effective_min)
                                 .min(f32::from(max));
                             resize_move(px(new_width), window, cx);
                         }

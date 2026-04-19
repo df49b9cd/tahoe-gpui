@@ -23,6 +23,9 @@ pub struct PickerItem {
     pub label: SharedString,
     /// Unique value used for selection matching and `on_change` callbacks.
     pub value: SharedString,
+    /// Optional SF Symbol rendered by visual styles such as
+    /// [`PickerStyle::Palette`]. Ignored by list-style pickers.
+    pub icon: Option<IconName>,
 }
 
 impl PickerItem {
@@ -30,7 +33,15 @@ impl PickerItem {
         Self {
             label: label.into(),
             value: value.into(),
+            icon: None,
         }
+    }
+
+    /// Attach an SF Symbol that visual styles (e.g. [`PickerStyle::Palette`])
+    /// will render inside the tile. List-style pickers ignore this field.
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
     }
 }
 
@@ -43,16 +54,25 @@ impl PickerItem {
 /// * `Segmented` — renders the items as a [`super::SegmentedControl`]
 ///   inline (no trigger). HIG caps this style at ~7 segments, so
 ///   `Picker` clamps to 7 and `debug_assert!`s beyond that.
-/// * `Palette` — grid-of-swatches layout for visual options (colors,
-///   emoji). Out of scope for menu/value pickers; callers wanting a
-///   palette should prefer [`super::color_well::ColorWell`]. Selecting
-///   this style currently falls back to the menu layout.
+/// * `Radio` — vertical list of radio rows. The selected row renders a
+///   filled accent circle, unselected rows render an empty circle.
+///   Useful in preference panes where the options need to be visible at
+///   a glance rather than collapsed into a trigger.
+/// * `Wheel` — HIG wheel picker. A fixed-height vertical column snaps the
+///   selected item to the centre, with the neighbouring items dimmed.
+/// * `Palette` — horizontal grid of square tiles (max 10 per row). Each
+///   tile shows the item's [`PickerItem::icon`] when present, otherwise
+///   the first letter of the label. The selected tile receives an
+///   accent-coloured border.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PickerStyle {
     #[default]
     Menu,
     Inline,
     Segmented,
+    Radio,
+    Wheel,
     Palette,
 }
 
@@ -223,6 +243,319 @@ impl RenderOnce for Picker {
             return control.into_any_element();
         }
 
+        // Radio style — vertical list of radio rows. Always visible, no
+        // trigger. Selected row gets a filled accent circle; unselected
+        // rows get an empty circle.
+        if style == PickerStyle::Radio {
+            let items_flat: Vec<PickerItem> = if self.sections.is_empty() {
+                self.items
+            } else {
+                self.sections.into_iter().flat_map(|s| s.items).collect()
+            };
+            let item_count = items_flat.len();
+            let item_values: Vec<SharedString> =
+                items_flat.iter().map(|i| i.value.clone()).collect();
+            let highlighted_index = self.highlighted_index;
+            let selected_value = self.selected.clone();
+            let on_change = rc_wrap(self.on_change);
+            let on_highlight = self.on_highlight.map(Rc::new);
+
+            let mut list = div()
+                .id(self.id.clone())
+                .focusable()
+                .flex()
+                .flex_col()
+                .w_full()
+                .gap(theme.spacing_xs);
+
+            // Keyboard: Up/Down move focus, Space/Enter pick.
+            let key_change = on_change.clone();
+            let key_highlight = on_highlight.clone();
+            list = list.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if item_count == 0 {
+                    return;
+                }
+                match event.keystroke.key.as_str() {
+                    "down" => {
+                        cx.stop_propagation();
+                        let next = match highlighted_index {
+                            Some(i) if i + 1 < item_count => i + 1,
+                            Some(_) => 0,
+                            None => 0,
+                        };
+                        if let Some(ref h) = key_highlight {
+                            h(Some(next), window, cx);
+                        }
+                    }
+                    "up" => {
+                        cx.stop_propagation();
+                        let prev = match highlighted_index {
+                            Some(0) | None => item_count - 1,
+                            Some(i) => i - 1,
+                        };
+                        if let Some(ref h) = key_highlight {
+                            h(Some(prev), window, cx);
+                        }
+                    }
+                    _ => {
+                        if crate::foundations::keyboard::is_activation_key(event) {
+                            cx.stop_propagation();
+                            if let Some(idx) = highlighted_index {
+                                if idx < item_count {
+                                    if let Some(ref h) = key_change {
+                                        h(&item_values[idx], window, cx);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            for (idx, item) in items_flat.into_iter().enumerate() {
+                let is_selected = selected_value.as_ref() == Some(&item.value);
+                let is_highlighted = highlighted_index == Some(idx);
+                let click_change = on_change.clone();
+                let item_value = item.value.clone();
+
+                // Radio glyph: outer 14pt border, inner 6pt accent fill
+                // when selected. Kept as nested divs so we don't depend
+                // on SF Symbol availability for this primitive.
+                let mut outer = div()
+                    .w(px(14.0))
+                    .h(px(14.0))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(if is_selected {
+                        theme.accent
+                    } else {
+                        theme.border
+                    })
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .flex_shrink_0();
+                if is_selected {
+                    outer =
+                        outer.child(div().w(px(6.0)).h(px(6.0)).rounded_full().bg(theme.accent));
+                }
+
+                let mut row = div()
+                    .id(ElementId::from(SharedString::from(format!(
+                        "picker-radio-{}",
+                        item.value
+                    ))))
+                    .min_h(px(theme.target_size()))
+                    .flex()
+                    .items_center()
+                    .gap(theme.spacing_sm)
+                    .px(theme.spacing_sm)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(theme.hover_bg()));
+                if is_highlighted {
+                    row = row.bg(theme.hover_bg());
+                }
+                row = row.child(outer).child(
+                    div()
+                        .text_style(TextStyle::Body, theme)
+                        .text_color(theme.text)
+                        .child(item.label),
+                );
+                row = row.on_click(move |_event, window, cx| {
+                    if let Some(h) = &click_change {
+                        h(&item_value, window, cx);
+                    }
+                });
+                list = list.child(row);
+            }
+
+            return list.into_any_element();
+        }
+
+        // Wheel style — fixed-height vertical column where the selected
+        // item is centred and the items immediately above/below are
+        // dimmed. Up/Down cycles through the list.
+        if style == PickerStyle::Wheel {
+            let items_flat: Vec<PickerItem> = if self.sections.is_empty() {
+                self.items
+            } else {
+                self.sections.into_iter().flat_map(|s| s.items).collect()
+            };
+            let item_count = items_flat.len();
+            let selected_value = self.selected.clone();
+            let selected_idx = selected_value
+                .as_ref()
+                .and_then(|s| items_flat.iter().position(|i| &i.value == s));
+            let item_values: Vec<SharedString> =
+                items_flat.iter().map(|i| i.value.clone()).collect();
+            let on_change = rc_wrap(self.on_change);
+
+            // Row height tuned so three rows fit within the visible wheel.
+            let row_h = px(32.0);
+            let wheel_h = row_h * 3.0;
+
+            let mut wheel = div()
+                .id(self.id.clone())
+                .focusable()
+                .flex()
+                .flex_col()
+                .items_center()
+                .w_full()
+                .h(wheel_h)
+                .overflow_hidden();
+            wheel = wheel.bg(theme
+                .glass
+                .accessible_bg(GlassSize::Small, theme.accessibility_mode));
+            wheel = wheel.rounded(theme.glass.radius(GlassSize::Small));
+
+            // Up/Down cycles through the list.
+            let key_change = on_change.clone();
+            wheel = wheel.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if item_count == 0 {
+                    return;
+                }
+                let current = selected_idx.unwrap_or(0);
+                let new_idx = match event.keystroke.key.as_str() {
+                    "down" => Some((current + 1) % item_count),
+                    "up" => Some(if current == 0 {
+                        item_count - 1
+                    } else {
+                        current - 1
+                    }),
+                    _ => None,
+                };
+                if let Some(idx) = new_idx {
+                    cx.stop_propagation();
+                    if let Some(ref h) = key_change {
+                        h(&item_values[idx], window, cx);
+                    }
+                }
+            });
+
+            for (idx, item) in items_flat.into_iter().enumerate() {
+                let is_selected = selected_idx == Some(idx);
+                let is_neighbour = selected_idx
+                    .map(|s| (idx as isize - s as isize).unsigned_abs() == 1)
+                    .unwrap_or(false);
+                let (color, style_kind) = if is_selected {
+                    (theme.text, TextStyle::Body)
+                } else if is_neighbour {
+                    (theme.text_muted, TextStyle::Body)
+                } else {
+                    // Items outside the visible ±1 range stay muted; the
+                    // `overflow_hidden` wheel still clips them to the
+                    // three-row window.
+                    (theme.text_muted, TextStyle::Body)
+                };
+                let click_change = on_change.clone();
+                let item_value = item.value.clone();
+                let mut row = div()
+                    .id(ElementId::from(SharedString::from(format!(
+                        "picker-wheel-{}",
+                        item.value
+                    ))))
+                    .h(row_h)
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_style(style_kind, theme)
+                    .text_color(color);
+                if is_selected {
+                    row = row.bg(theme.hover_bg());
+                }
+                row = row.child(item.label).on_click(move |_event, window, cx| {
+                    if let Some(h) = &click_change {
+                        h(&item_value, window, cx);
+                    }
+                });
+                wheel = wheel.child(row);
+            }
+
+            return wheel.into_any_element();
+        }
+
+        // Palette style — grid of square icon tiles, max 10 per row.
+        // Ignores section headers because palettes are inherently flat.
+        if style == PickerStyle::Palette {
+            let items_flat: Vec<PickerItem> = if self.sections.is_empty() {
+                self.items
+            } else {
+                self.sections.into_iter().flat_map(|s| s.items).collect()
+            };
+            let on_change = rc_wrap(self.on_change);
+            let selected_value = self.selected.clone();
+
+            const TILES_PER_ROW: usize = 10;
+            const TILE_SIZE: f32 = 32.0;
+
+            let mut grid = div()
+                .id(self.id.clone())
+                .flex()
+                .flex_col()
+                .gap(theme.spacing_xs);
+
+            for chunk in items_flat.chunks(TILES_PER_ROW) {
+                let mut row = div().flex().flex_row().gap(theme.spacing_xs);
+                for item in chunk {
+                    let is_selected = selected_value.as_ref() == Some(&item.value);
+                    let click_change = on_change.clone();
+                    let item_value = item.value.clone();
+                    let mut tile = div()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "picker-palette-{}",
+                            item.value
+                        ))))
+                        .w(px(TILE_SIZE))
+                        .h(px(TILE_SIZE))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(6.0))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.hover_bg()));
+                    // 2pt accent border when selected; 1pt transparent
+                    // otherwise so tile size stays constant.
+                    if is_selected {
+                        tile = tile.border_2().border_color(theme.accent);
+                    } else {
+                        tile = tile.border_1().border_color(theme.border);
+                    }
+
+                    if let Some(icon_name) = item.icon {
+                        tile = tile.child(Icon::new(icon_name).size(px(18.0)).color(theme.text));
+                    } else {
+                        // First letter of label, uppercased, as a
+                        // fallback glyph.
+                        let glyph: SharedString = item
+                            .label
+                            .chars()
+                            .next()
+                            .map(|c| c.to_uppercase().to_string())
+                            .unwrap_or_default()
+                            .into();
+                        tile = tile.child(
+                            div()
+                                .text_style(TextStyle::Body, theme)
+                                .text_color(theme.text)
+                                .child(glyph),
+                        );
+                    }
+
+                    tile = tile.on_click(move |_event, window, cx| {
+                        if let Some(h) = &click_change {
+                            h(&item_value, window, cx);
+                        }
+                    });
+                    row = row.child(tile);
+                }
+                grid = grid.child(row);
+            }
+
+            return grid.into_any_element();
+        }
+
         // Flatten sections into a single items list for all downstream
         // layout logic. Section headers are tracked separately via
         // `header_at_index`.
@@ -282,7 +615,12 @@ impl RenderOnce for Picker {
                     .child(trigger_label),
             )
             .child(
-                Icon::new(IconName::ChevronDown)
+                // HIG macOS `NSPopUpButton` pop-up-style triggers use the
+                // `chevron.up.chevron.down` glyph, not a single down
+                // chevron (which denotes navigation/expansion). Picker's
+                // default `Menu` style is a pop-up menu, so mirror the
+                // system symbol.
+                Icon::new(IconName::ChevronsUpDown)
                     .size(px(12.0))
                     .color(theme.text_muted),
             );
@@ -326,9 +664,14 @@ impl RenderOnce for Picker {
 
         // In Inline style the list is always open — it lives directly
         // under the trigger row instead of in a floating dropdown.
+        // Segmented / Radio / Wheel / Palette all return above, so the
+        // only shapes that reach this match are Menu and Inline. The
+        // fallback branch keeps the match exhaustive for any future
+        // `#[non_exhaustive]` additions that fall through to the menu
+        // layout (the documented fallback for non-trigger styles).
         let is_list_visible = match style {
-            PickerStyle::Menu | PickerStyle::Segmented | PickerStyle::Palette => self.is_open,
             PickerStyle::Inline => true,
+            _ => self.is_open,
         };
 
         if is_list_visible {
@@ -525,7 +868,8 @@ impl RenderOnce for Picker {
 
 #[cfg(test)]
 mod tests {
-    use super::{Picker, PickerItem};
+    use super::{Picker, PickerItem, PickerStyle};
+    use crate::foundations::icons::IconName;
     use core::prelude::v1::test;
     use gpui::SharedString;
 
@@ -606,5 +950,50 @@ mod tests {
     fn picker_highlighted_index_none_by_default() {
         let p = Picker::new("test");
         assert_eq!(p.highlighted_index, None);
+    }
+
+    #[test]
+    fn picker_style_defaults_to_menu() {
+        let p = Picker::new("test");
+        assert_eq!(p.style, PickerStyle::Menu);
+    }
+
+    #[test]
+    fn picker_radio_style_builder() {
+        let p = Picker::new("radio").style(PickerStyle::Radio).items(vec![
+            PickerItem::new("One", "1"),
+            PickerItem::new("Two", "2"),
+        ]);
+        assert_eq!(p.style, PickerStyle::Radio);
+        assert_eq!(p.items.len(), 2);
+    }
+
+    #[test]
+    fn picker_wheel_style_builder() {
+        let p = Picker::new("wheel")
+            .style(PickerStyle::Wheel)
+            .items(vec![PickerItem::new("A", "a"), PickerItem::new("B", "b")])
+            .selected(Some(SharedString::from("b")));
+        assert_eq!(p.style, PickerStyle::Wheel);
+        assert_eq!(p.selected.as_ref().map(|s| s.as_ref()), Some("b"));
+    }
+
+    #[test]
+    fn picker_palette_style_builder_with_icons() {
+        let p = Picker::new("palette")
+            .style(PickerStyle::Palette)
+            .items(vec![
+                PickerItem::new("Star", "s").icon(IconName::StarFill),
+                PickerItem::new("Heart", "h"),
+            ]);
+        assert_eq!(p.style, PickerStyle::Palette);
+        assert!(p.items[0].icon.is_some());
+        assert!(p.items[1].icon.is_none());
+    }
+
+    #[test]
+    fn picker_item_icon_builder() {
+        let item = PickerItem::new("Label", "v").icon(IconName::CircleFilled);
+        assert!(item.icon.is_some());
     }
 }

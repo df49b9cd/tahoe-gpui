@@ -13,6 +13,12 @@
 //!   uppercase caption-style section headers.
 //! - [`ListStyle::Inset`] — grouped with rounded inset cards, matching
 //!   `UICollectionLayoutListConfiguration.Appearance.insetGrouped`.
+//! - [`ListStyle::Sidebar`] — Liquid Glass source-list variant intended
+//!   for sidebar/navigator panes. Selection tints with `theme.accent`
+//!   and keyboard-focused rows draw a 2pt accent outline.
+//! - [`ListStyle::Bordered`] — hairline-bordered container with
+//!   alternating-row zebra striping, matching AppKit's
+//!   `NSTableView.Style.bordered`.
 //!
 //! # Swipe actions
 //!
@@ -31,10 +37,15 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::color::with_alpha;
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`List`].
+///
+/// Marked `#[non_exhaustive]` so additional HIG variants can be added in
+/// future minor releases without breaking downstream `match` statements.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum ListStyle {
     /// Flush rows without grouping. Matches `UITableView.Style.plain`.
@@ -46,6 +57,15 @@ pub enum ListStyle {
     /// Grouped with rounded inset cards. Matches
     /// `UICollectionLayoutListConfiguration.Appearance.insetGrouped`.
     Inset,
+    /// Source-list variant with a Liquid Glass (`GlassSize::Medium`)
+    /// background. Selected rows tint with `theme.accent`; the
+    /// keyboard-focused row draws a 2pt accent outline via the standard
+    /// focus-ring token. Intended for navigator / sidebar panes.
+    Sidebar,
+    /// 1pt `theme.separator` border around the list, alternating-row
+    /// zebra stripes using `theme.surface_muted()`, `theme.radius_md`
+    /// corners. Matches AppKit's `NSTableView.Style.bordered`.
+    Bordered,
 }
 
 /// One row in a [`List`] or [`ListSection`].
@@ -172,17 +192,33 @@ impl List {
 fn render_row(
     row: ListRow,
     is_selected: bool,
+    is_focused: bool,
+    row_index: usize,
     style: ListStyle,
     theme: &TahoeTheme,
     on_select: &OnSelect,
 ) -> AnyElement {
-    let text_color = if is_selected {
+    // Selection colour: the Sidebar style tints with `theme.accent` at
+    // ~15% alpha (matching the HIG source-list soft-tint selection), so
+    // the row label keeps the surface's primary text colour. All other
+    // styles fall back to the solid accent fill with on-accent text.
+    let selection_is_tinted = matches!(style, ListStyle::Sidebar);
+    let text_color = if is_selected && !selection_is_tinted {
         theme.text_on_accent
     } else {
         theme.text
     };
     let bg = if is_selected {
-        theme.accent
+        if selection_is_tinted {
+            with_alpha(theme.accent, 0.15)
+        } else {
+            theme.accent
+        }
+    } else if matches!(style, ListStyle::Bordered) && !row_index.is_multiple_of(2) {
+        // Bordered style: zebra-stripe every *odd* row with
+        // `surface_muted`, matching NSTableView's alternating-row
+        // convention (row 0 on the list surface, row 1 tinted, …).
+        theme.surface_muted()
     } else {
         gpui::transparent_black()
     };
@@ -232,9 +268,20 @@ fn render_row(
         ListStyle::Plain | ListStyle::Grouped => {
             row_el = row_el.border_b_1().border_color(theme.separator_color());
         }
-        ListStyle::Inset => {
+        ListStyle::Inset | ListStyle::Sidebar => {
             row_el = row_el.rounded(theme.radius_md);
         }
+        ListStyle::Bordered => {
+            row_el = row_el.border_b_1().border_color(theme.separator_color());
+        }
+    }
+
+    // Sidebar style: the *keyboard-focused* row (distinct from the
+    // mouse-selected one) gets a 2pt accent outline via the theme's
+    // focus-ring shadow stack — mirrors HIG's keyboard-navigation tell
+    // on AppKit source lists.
+    if matches!(style, ListStyle::Sidebar) {
+        row_el = apply_focus_ring(row_el, theme, is_focused, &[]);
     }
 
     if let Some(cb) = on_select.clone() {
@@ -270,13 +317,45 @@ impl RenderOnce for List {
                     .border_color(theme.border)
                     .rounded(theme.radius_md);
             }
-            ListStyle::Grouped => {
+            ListStyle::Grouped | ListStyle::Inset => {
                 container = container.gap(theme.spacing_md);
             }
-            ListStyle::Inset => {
-                container = container.gap(theme.spacing_md);
+            ListStyle::Sidebar => {
+                // Liquid Glass source-list surface (`GlassSize::Medium`)
+                // — matches the HIG sidebar material. Applying the glass
+                // tokens inline (rather than via `glass_surface`) keeps
+                // the container's `Stateful<Div>` type without requiring
+                // a `Div -> Div` adapter.
+                let glass_bg = theme
+                    .glass
+                    .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+                container = container
+                    .bg(glass_bg)
+                    .rounded(theme.glass.radius(GlassSize::Medium))
+                    .shadow(theme.glass.shadows(GlassSize::Medium).to_vec());
+            }
+            ListStyle::Bordered => {
+                // 1pt `separator` hairline + rounded corners. Background
+                // is the list surface so zebra-striped rows sit on it.
+                container = container
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.separator_color())
+                    .rounded(theme.radius_md)
+                    .overflow_hidden();
             }
         }
+
+        // Focus tracking: when the list itself is focused, the
+        // Sidebar style promotes the currently-selected row to the
+        // keyboard-focused row so it picks up the 2pt accent outline.
+        // Other styles ignore per-row focus.
+        let focused_id = if self.focused {
+            selected_id.clone()
+        } else {
+            None
+        };
+        let mut global_row_index: usize = 0;
 
         for section in self.sections {
             let mut section_el = div().flex().flex_col();
@@ -303,12 +382,22 @@ impl RenderOnce for List {
                         .rounded(theme.radius_md)
                         .overflow_hidden();
                 }
-                ListStyle::Plain => {}
+                ListStyle::Plain | ListStyle::Sidebar | ListStyle::Bordered => {}
             }
             for (idx, row) in section.rows.into_iter().enumerate() {
                 let is_last = idx + 1 == rows_len;
                 let is_selected = selected_id.as_ref() == Some(&row.id);
-                let mut el = render_row(row, is_selected, style, theme, &on_select);
+                let is_focused = focused_id.as_ref() == Some(&row.id);
+                let mut el = render_row(
+                    row,
+                    is_selected,
+                    is_focused,
+                    global_row_index,
+                    style,
+                    theme,
+                    &on_select,
+                );
+                global_row_index += 1;
                 // Remove bottom border on the last row of a grouped section
                 // so the rounded corner stays clean — doing this by wrapping
                 // the element is cheaper than threading through render_row.
@@ -424,5 +513,25 @@ mod tests {
         assert_eq!(list.style, ListStyle::Inset);
         assert_eq!(list.sections.len(), 1);
         assert!(list.on_select.is_some());
+    }
+
+    #[test]
+    fn list_style_sidebar_and_bordered_are_distinct() {
+        // Sidebar and Bordered are additive HIG variants; make sure
+        // equality + Copy semantics still hold so patterns keyed off
+        // `ListStyle` don't accidentally coalesce the two.
+        assert_ne!(ListStyle::Sidebar, ListStyle::Bordered);
+        assert_ne!(ListStyle::Sidebar, ListStyle::default());
+        assert_ne!(ListStyle::Bordered, ListStyle::default());
+        let copy = ListStyle::Sidebar;
+        assert_eq!(copy, ListStyle::Sidebar);
+    }
+
+    #[test]
+    fn list_accepts_sidebar_and_bordered_styles() {
+        let l = List::new("l").style(ListStyle::Sidebar);
+        assert_eq!(l.style, ListStyle::Sidebar);
+        let l = List::new("l").style(ListStyle::Bordered);
+        assert_eq!(l.style, ListStyle::Bordered);
     }
 }

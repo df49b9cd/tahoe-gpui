@@ -21,6 +21,24 @@
 //! [`MenuBar::validate_standard_structure`] help apps stay conformant. See
 //! also [`crate::components::menus_and_actions::edit_menu`] for the
 //! canonical Edit menu command set.
+//!
+//! ## Relationship to the system (AppKit) menu bar
+//!
+//! GPUI v0.231.1-pre (the version pinned by this workspace) does **not**
+//! expose any bridge to AppKit's `NSMenu` / `NSApplication.mainMenu` — it
+//! has no safe API for building or installing a system-level menu.
+//! [`MenuBar`] therefore renders **only** as an in-window widget: the bar
+//! appears inside the host app's GPUI window and is **not mirrored into
+//! the macOS system menu bar at the top of the display**. For apps that
+//! need a true system menu (the usual macOS expectation), the host must
+//! currently reach into AppKit themselves via a separate bridge crate.
+//!
+//! When GPUI lands the native `NSMenu` API, this module will gain an
+//! adapter of the shape `MenuBar::install_as_main_menu(cx)` that walks
+//! the same [`Menu`] list and hands each entry to AppKit. Until then,
+//! treat [`MenuBar`] as a visual-only component suitable for custom
+//! chrome (e.g. a chromeless/kiosk window, or the web-style in-window
+//! menu bars shipped on Linux/Windows).
 
 use gpui::prelude::*;
 use gpui::{

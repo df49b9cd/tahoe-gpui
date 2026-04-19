@@ -13,6 +13,20 @@
 //! gains the API. Until then, callers can still preview the menu via
 //! [`DockMenu::as_context_menu_entries`] — the same items render in a
 //! regular context menu for in-app simulation.
+//!
+//! # Platform support
+//!
+//! Dock menus are a **macOS-only** HIG surface. On Linux and Windows, the
+//! system dock / taskbar either does not exist or exposes an incompatible
+//! per-platform API. Callers targeting non-macOS platforms should not
+//! instantiate [`DockMenu`]: the type still compiles (it is a pure data
+//! container so that cross-platform test suites can at least reference
+//! it), but there is no path to install it into the OS dock — that
+//! requires an AppKit bridge which ships with the macOS build of GPUI.
+//! The crate suppresses `dead_code` warnings on non-macOS so the
+//! placeholder surface does not pollute builds that never call it.
+
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
 use gpui::SharedString;
 

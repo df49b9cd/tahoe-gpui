@@ -1076,6 +1076,10 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../../assets/icons/sf/plus.svg"),
     ),
     (
+        "icons/sf/questionmark.circle.svg",
+        include_bytes!("../../../assets/icons/sf/questionmark.circle.svg"),
+    ),
+    (
         "icons/sf/shippingbox.svg",
         include_bytes!("../../../assets/icons/sf/shippingbox.svg"),
     ),

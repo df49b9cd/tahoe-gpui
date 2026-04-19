@@ -32,7 +32,7 @@ pub enum PersonaState {
 impl PersonaState {
     /// Short human-readable label for this state — also used as the
     /// VoiceOver description suffix on the orb canvas so sighted and
-    /// VoiceOver users get the same cue (issue #148 F8).
+    /// VoiceOver users get the same cue.
     pub fn label(self) -> &'static str {
         match self {
             PersonaState::Idle => "Idle",
@@ -44,7 +44,7 @@ impl PersonaState {
     }
 
     /// Accessibility label applied to the persona orb canvas
-    /// (e.g. `"Persona orb, Listening"`). Issue #148 F8.
+    /// (e.g. `"Persona orb, Listening"`).
     pub fn accessibility_label(self) -> SharedString {
         SharedString::from(format!("Persona orb, {}", self.label()))
     }
@@ -178,10 +178,10 @@ impl RenderOnce for PersonaOrb {
         // to the same treatment.
         let reduce_motion = cx.theme().accessibility_mode.reduce_motion();
 
-        // Issue #148 F8: The orb is a canvas-painted region without any
-        // native label. Attach the state-dependent accessibility label via
-        // a `div` wrapper so VoiceOver announces e.g. "Persona orb,
-        // Listening" instead of a generic painted region.
+        // The orb is a canvas-painted region without any native label.
+        // Attach the state-dependent accessibility label via a `div` wrapper
+        // so VoiceOver announces e.g. "Persona orb, Listening" instead of a
+        // generic painted region.
         let ax_props = AccessibilityProps::new()
             .role(AccessibilityRole::Image)
             .label(state.accessibility_label());
@@ -741,9 +741,9 @@ impl Render for PersonaOrbState {
         let amplitude = state_amplitude(state);
         let grid = self.grid_positions.clone();
 
-        // Issue #148 F8: the canvas is a painted region with no native
-        // label. Wrap it in a `div` and attach the state-dependent
-        // accessibility label so VoiceOver announces the current state.
+        // The canvas is a painted region with no native label. Wrap it in a
+        // `div` and attach the state-dependent accessibility label so
+        // VoiceOver announces the current state.
         let ax_props = AccessibilityProps::new()
             .role(AccessibilityRole::Image)
             .label(state.accessibility_label());
@@ -961,8 +961,8 @@ impl RenderOnce for Persona {
             PersonaState::Asleep => theme.pending,
         };
 
-        // Issue #148 F8: delegate to `PersonaState::label()` so the visible
-        // state text and the orb's accessibility label stay in sync.
+        // Delegate to `PersonaState::label()` so the visible state text and
+        // the orb's accessibility label stay in sync.
         let state_label: SharedString = self.state.label().into();
 
         let orb_size = self.orb_size.unwrap_or(theme.avatar_size + px(8.0));
@@ -1001,8 +1001,7 @@ impl RenderOnce for Persona {
         // Mail), and combining them with the orb keeps the persona
         // recognisable even when the orb's animation is paused. The label
         // is also wired into the card's accessibility name so VoiceOver
-        // announces the persona identity alongside the state cue (issue
-        // #148 F8 extension).
+        // announces the persona identity alongside the state cue.
         let avatar_label = self.avatar_label.clone();
         let persona_name = self.name.clone();
         let a11y_props = AccessibilityProps::new()

@@ -2,13 +2,14 @@
 //!
 //! A stateless `RenderOnce` component that renders a color swatch trigger.
 //! When open, an absolute-positioned dropdown displays a 6x3 grid of preset
-//! colors from the theme's system color palette (18 colors). The selected
+//! colors from the theme's system color palette (18 colors), plus numeric
+//! RGB or HSB entry rows, a hex field, and an alpha scrubber. The selected
 //! color shows a white Check icon overlay.
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, Hsla, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div, hsla,
-    px,
+    App, ElementId, Hsla, KeyDownEvent, MouseDownEvent, Rgba, SharedString, Window, deferred, div,
+    hsla, px,
 };
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
@@ -23,6 +24,43 @@ const SWATCH_SIZE: f32 = 32.0;
 
 /// Number of columns in the color grid.
 const GRID_COLUMNS: usize = 6;
+
+/// Compact trigger width (HIG macOS Tahoe).
+const COMPACT_WIDTH: f32 = 28.0;
+/// Compact trigger height (HIG macOS Tahoe).
+const COMPACT_HEIGHT: f32 = 14.0;
+
+/// Number of ticks in the alpha scrubber row (8 steps: 0%, 12.5%, 25%, …, 100%).
+const ALPHA_TICK_COUNT: usize = 8;
+
+/// Visual style of the color well trigger.
+///
+/// Per HIG macOS Tahoe, `Compact` is the recommended default for toolbar
+/// and inline contexts; `Expanded` is the pre-Tahoe 44pt square retained
+/// for backcompat and for wells that need a larger tap target.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColorWellStyle {
+    /// 28×14pt rounded-rect swatch with a trailing chevron glyph.
+    Compact,
+    /// 44×44pt square swatch; pre-Tahoe default. No chevron.
+    ///
+    /// Retained as the library default to preserve the behaviour of
+    /// `ColorWell::new(...).color(...)` callers written before
+    /// `ColorWellStyle` existed.
+    #[default]
+    Expanded,
+}
+
+/// Which numeric entry tab is shown inside the popover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PopoverTab {
+    /// R/G/B 0-255 inputs.
+    #[default]
+    Rgb,
+    /// H (0-360) / S (0-100) / B (0-100) inputs.
+    Hsb,
+}
 
 /// Returns all 18 system colors from the theme as `(name, Hsla)` pairs.
 fn system_color_palette(theme: &TahoeTheme) -> Vec<(&'static str, Hsla)> {
@@ -51,25 +89,28 @@ fn system_color_palette(theme: &TahoeTheme) -> Vec<(&'static str, Hsla)> {
 
 /// HIG Color Well -- swatch button that opens a color picker grid.
 ///
-/// Closed state shows a 44x44pt rounded square filled with the current color.
-/// Open state adds an absolute-positioned dropdown with a glass surface
-/// containing a 6x3 grid of preset swatches. The selected swatch (matching
-/// `self.color`) shows a white Check icon overlay.
+/// Closed state shows either a 28×14pt compact pill with chevron
+/// (`ColorWellStyle::Compact`) or a 44×44pt rounded square filled with
+/// the current color (`ColorWellStyle::Expanded`). Open state adds an
+/// absolute-positioned dropdown with a glass surface containing a 6x3
+/// grid of preset swatches, RGB/HSB numeric tabs, a hex input, and an
+/// 8-tick alpha scrubber.
 #[derive(IntoElement)]
 #[allow(clippy::type_complexity)]
 pub struct ColorWell {
     id: ElementId,
     color: Hsla,
     is_open: bool,
+    style: ColorWellStyle,
+    popover_tab: PopoverTab,
     on_change: OnHslaChange,
     on_toggle: OnToggle,
     /// Fired when arrow keys move the grid highlight. Stateless — parent
     /// owns the `highlighted_index` state.
     on_highlight: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
-    /// When true, render an alpha/opacity slider below the swatch grid
-    /// so callers can adjust the color's `a` channel without leaving the
-    /// dropdown. HIG `NSColorPanel` includes an opacity slider.
-    show_alpha: bool,
+    /// Fires when the user clicks the RGB/HSB tab header inside the
+    /// popover. Stateless — parent owns the currently selected tab.
+    on_tab_change: Option<Box<dyn Fn(PopoverTab, &mut Window, &mut App) + 'static>>,
     /// When `Some`, render a hex text entry row below the grid with the
     /// supplied draft as its current value. Parents manage the draft by
     /// listening to `on_hex_input` and commit a parsed color on Enter
@@ -97,10 +138,12 @@ impl ColorWell {
             // Intentional default: blue-ish demo swatch
             color: hsla(0.6, 0.7, 0.5, 1.0),
             is_open: false,
+            style: ColorWellStyle::default(),
+            popover_tab: PopoverTab::default(),
             on_change: None,
             on_toggle: None,
             on_highlight: None,
-            show_alpha: false,
+            on_tab_change: None,
             hex_draft: None,
             on_hex_input: None,
             on_hex_commit: None,
@@ -145,9 +188,24 @@ impl ColorWell {
         self
     }
 
-    /// Show an opacity slider row below the swatch grid.
-    pub fn show_alpha(mut self, show: bool) -> Self {
-        self.show_alpha = show;
+    /// Fire a callback when the RGB/HSB tab header changes.
+    pub fn on_tab_change(
+        mut self,
+        handler: impl Fn(PopoverTab, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tab_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set the visual style of the trigger.
+    pub fn style(mut self, style: ColorWellStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Set which numeric entry tab is shown inside the popover.
+    pub fn popover_tab(mut self, tab: PopoverTab) -> Self {
+        self.popover_tab = tab;
         self
     }
 
@@ -198,7 +256,7 @@ fn hsla_eq(a: Hsla, b: Hsla) -> bool {
 
 /// Render an `Hsla` colour as `#RRGGBB` (or `#RRGGBBAA` when alpha < 1).
 fn hsla_to_hex(color: Hsla) -> String {
-    let rgba = gpui::Rgba::from(color);
+    let rgba = Rgba::from(color);
     let r = (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8;
     let g = (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8;
     let b = (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8;
@@ -243,13 +301,36 @@ fn parse_hex(input: &str) -> Option<Hsla> {
         }
         _ => return None,
     };
-    let rgba = gpui::Rgba {
+    let rgba = Rgba {
         r: r as f32 / 255.0,
         g: g as f32 / 255.0,
         b: b as f32 / 255.0,
         a: a as f32 / 255.0,
     };
     Some(rgba.into())
+}
+
+/// Return the R, G, B (each 0-255) components of an Hsla colour.
+fn hsla_to_rgb_bytes(color: Hsla) -> (u8, u8, u8) {
+    let rgba = Rgba::from(color);
+    let r = (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8;
+    let g = (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8;
+    let b = (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8;
+    (r, g, b)
+}
+
+/// Convert HSL (0..=1 hue/sat/light) to HSB (hue in degrees 0-360,
+/// saturation 0-100, brightness 0-100). Matches NSColorPanel's HSB tab.
+fn hsla_to_hsb(color: Hsla) -> (u32, u32, u32) {
+    let h = (color.h * 360.0).round().clamp(0.0, 360.0) as u32;
+    let l = color.l.clamp(0.0, 1.0);
+    let s = color.s.clamp(0.0, 1.0);
+    // HSL -> HSV conversion. v = l + s * min(l, 1 - l)
+    let v = l + s * l.min(1.0 - l);
+    let sv = if v == 0.0 { 0.0 } else { 2.0 * (1.0 - l / v) };
+    let s_pct = (sv * 100.0).round().clamp(0.0, 100.0) as u32;
+    let b_pct = (v * 100.0).round().clamp(0.0, 100.0) as u32;
+    (h, s_pct, b_pct)
 }
 
 impl RenderOnce for ColorWell {
@@ -261,24 +342,45 @@ impl RenderOnce for ColorWell {
         let on_highlight = self.on_highlight.map(std::rc::Rc::new);
         let on_hex_input = self.on_hex_input.map(std::rc::Rc::new);
         let on_hex_commit = self.on_hex_commit.map(std::rc::Rc::new);
+        let on_tab_change = self.on_tab_change.map(std::rc::Rc::new);
         let hex_draft = self.hex_draft.clone();
-        let show_alpha = self.show_alpha;
+        let style = self.style;
+        let popover_tab = self.popover_tab;
 
-        // -- Trigger swatch (44x44pt rounded square filled with current color) --
+        // -- Trigger swatch --
+        //
+        // Compact: 28x14pt pill with trailing chevron (Tahoe default).
+        // Expanded: 44x44pt square (pre-Tahoe; retained for backcompat).
         let toggle_for_trigger = on_toggle.clone();
         let trigger_key_toggle = on_toggle.clone();
         let is_open = self.is_open;
 
         let mut trigger = div()
             .id(self.id.clone())
-            .size(px(theme.target_size()))
-            .rounded(theme.radius_md)
-            .bg(self.color)
             .flex()
             .items_center()
             .justify_center()
             .flex_shrink_0()
             .cursor_pointer();
+
+        trigger = match style {
+            ColorWellStyle::Compact => trigger
+                .w(px(COMPACT_WIDTH))
+                .h(px(COMPACT_HEIGHT))
+                .rounded(theme.radius_sm)
+                .bg(self.color)
+                .pr(theme.spacing_xs)
+                .justify_end()
+                .child(
+                    Icon::new(IconName::ChevronDown)
+                        .size(px(10.0))
+                        .color(crate::foundations::color::text_on_background(self.color)),
+                ),
+            ColorWellStyle::Expanded => trigger
+                .size(px(theme.target_size()))
+                .rounded(theme.radius_md)
+                .bg(self.color),
+        };
 
         trigger = apply_focus_ring(
             trigger,
@@ -342,6 +444,80 @@ impl RenderOnce for ColorWell {
                 + (f32::from(grid_gap) * (GRID_COLUMNS as f32 - 1.0))
                 + (f32::from(grid_padding) * 2.0);
             grid = grid.w(px(grid_width));
+
+            // -- Tab header (RGB / HSB) -------------------------------------
+            //
+            // Clicking either pill fires `on_tab_change`. The parent owns
+            // the selected tab and re-renders with `popover_tab(...)`.
+            let tab_row = {
+                let tab_handler_rgb = on_tab_change.clone();
+                let tab_handler_hsb = on_tab_change.clone();
+                let rgb_active = matches!(popover_tab, PopoverTab::Rgb);
+                let hsb_active = matches!(popover_tab, PopoverTab::Hsb);
+
+                let mut row = div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(theme.spacing_xs)
+                    .pb(theme.spacing_xs)
+                    .w_full();
+
+                row = row.child(
+                    div()
+                        .id(ElementId::from((self.id.clone(), "tab-rgb")))
+                        .px(theme.spacing_sm)
+                        .py(px(2.0))
+                        .rounded(theme.radius_sm)
+                        .bg(if rgb_active {
+                            theme.selected_bg
+                        } else {
+                            theme.hover
+                        })
+                        .text_style(TextStyle::Footnote, theme)
+                        .text_color(if rgb_active {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        })
+                        .cursor_pointer()
+                        .child(SharedString::from("RGB"))
+                        .on_click(move |_event, window, cx| {
+                            if let Some(h) = &tab_handler_rgb {
+                                h(PopoverTab::Rgb, window, cx);
+                            }
+                        }),
+                );
+
+                row = row.child(
+                    div()
+                        .id(ElementId::from((self.id.clone(), "tab-hsb")))
+                        .px(theme.spacing_sm)
+                        .py(px(2.0))
+                        .rounded(theme.radius_sm)
+                        .bg(if hsb_active {
+                            theme.selected_bg
+                        } else {
+                            theme.hover
+                        })
+                        .text_style(TextStyle::Footnote, theme)
+                        .text_color(if hsb_active {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        })
+                        .cursor_pointer()
+                        .child(SharedString::from("HSB"))
+                        .on_click(move |_event, window, cx| {
+                            if let Some(h) = &tab_handler_hsb {
+                                h(PopoverTab::Hsb, window, cx);
+                            }
+                        }),
+                );
+
+                row
+            };
+            grid = grid.child(tab_row);
 
             // Keyboard nav: Arrow keys + Enter + Escape + hex entry.
             let key_on_toggle = on_toggle.clone();
@@ -420,6 +596,15 @@ impl RenderOnce for ColorWell {
                         // filtered downstream by `parse_hex` at commit
                         // time; we accept them in the draft so the user
                         // can paste `#FF00AA` and edit mid-string.
+                        //
+                        // NOTE: Tab-cycling between swatches, the hex
+                        // field, and the RGB/HSB numeric inputs requires
+                        // multiple independent `FocusHandle`s, which only
+                        // stateful (`Entity<T>`) components can own.
+                        // Within this `RenderOnce` we expose click-based
+                        // selection for tabs and arrow-key navigation for
+                        // swatches; callers that need full Tab cycling
+                        // should promote the field to a stateful picker.
                         if let (Some(draft), Some(handler)) =
                             (key_hex_draft.clone(), &key_on_hex_input)
                         {
@@ -490,6 +675,79 @@ impl RenderOnce for ColorWell {
                 grid = grid.child(swatch);
             }
 
+            // -- RGB / HSB numeric display row ------------------------------
+            //
+            // Shows current channel values as read-only chips. The parent
+            // wires up an external text-field widget if full editing is
+            // needed; exposing three independent inputs with live draft
+            // state from a `RenderOnce` would require six more callbacks
+            // and drafts per tab. The chips reflect the *committed*
+            // colour so external changes are visible here.
+            let numeric_row = {
+                let label_a;
+                let label_b;
+                let label_c;
+                let val_a;
+                let val_b;
+                let val_c;
+                match popover_tab {
+                    PopoverTab::Rgb => {
+                        let (r, g, b) = hsla_to_rgb_bytes(current_color);
+                        label_a = "R";
+                        label_b = "G";
+                        label_c = "B";
+                        val_a = format!("{}", r);
+                        val_b = format!("{}", g);
+                        val_c = format!("{}", b);
+                    }
+                    PopoverTab::Hsb => {
+                        let (h, s, b) = hsla_to_hsb(current_color);
+                        label_a = "H";
+                        label_b = "S";
+                        label_c = "B";
+                        val_a = format!("{}", h);
+                        val_b = format!("{}", s);
+                        val_c = format!("{}", b);
+                    }
+                }
+                let make_cell = |label: &'static str, value: String| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(1.0))
+                        .flex_1()
+                        .child(
+                            div()
+                                .text_style(TextStyle::Footnote, theme)
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(label)),
+                        )
+                        .child(
+                            div()
+                                .w_full()
+                                .px(theme.spacing_xs)
+                                .py(px(2.0))
+                                .rounded(theme.radius_sm)
+                                .bg(theme.hover)
+                                .text_style(TextStyle::Body, theme)
+                                .text_color(theme.text)
+                                .child(SharedString::from(value)),
+                        )
+                };
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(theme.spacing_xs)
+                    .w_full()
+                    .pb(theme.spacing_xs)
+                    .child(make_cell(label_a, val_a))
+                    .child(make_cell(label_b, val_b))
+                    .child(make_cell(label_c, val_c))
+            };
+            grid = grid.child(numeric_row);
+
             // Hex entry row. Shown when the parent supplies `hex_draft`.
             // The dropdown's on_key_down fires `on_hex_input` on every
             // keystroke and `on_hex_commit` on Enter (if the draft
@@ -535,16 +793,68 @@ impl RenderOnce for ColorWell {
                 );
             }
 
-            // Opacity slider row. HIG NSColorPanel exposes an alpha
-            // slider; the row sits below the swatch grid and mutates
-            // just the `a` channel, preserving hue/saturation/lightness.
-            if show_alpha {
-                let alpha_handler = on_change.clone();
-                let current_color = self.color;
+            // -- Alpha scrubber ---------------------------------------------
+            //
+            // HIG NSColorPanel exposes a continuous opacity slider. The
+            // reusable `Slider` primitive is a stateful `Entity<T>` and
+            // cannot be embedded inside this `RenderOnce` (the entity
+            // must outlive the render and own a `FocusHandle`). As a
+            // substitute we render an 8-tick clickable row at 0.125
+            // alpha steps. Each tick commits a new colour with the
+            // updated `a` channel; hue/saturation/lightness are
+            // preserved. The filled portion of the track visualises the
+            // current alpha so external changes are reflected back.
+            let alpha_row = {
+                let bar_alpha = current_color.a.clamp(0.0, 1.0);
                 let bar_bg = theme.border;
                 let bar_fg = theme.accent;
-                let bar_alpha = current_color.a.clamp(0.0, 1.0);
-                let alpha_row = div()
+                let alpha_handler = on_change.clone();
+
+                let mut track = div()
+                    .h(px(6.0))
+                    .w_full()
+                    .rounded(px(3.0))
+                    .bg(bar_bg)
+                    .relative();
+                track = track.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .bottom_0()
+                        .w(gpui::relative(bar_alpha))
+                        .rounded(px(3.0))
+                        .bg(bar_fg),
+                );
+
+                let mut ticks = div().flex().flex_row().items_center().w_full().gap(px(2.0));
+                for i in 0..ALPHA_TICK_COUNT {
+                    let frac = i as f32 / (ALPHA_TICK_COUNT - 1) as f32;
+                    let active = (bar_alpha - frac).abs() <= 0.5 / (ALPHA_TICK_COUNT as f32 - 1.0);
+                    let handler = alpha_handler.clone();
+                    let base_color = current_color;
+                    ticks = ticks.child(
+                        div()
+                            .id(ElementId::from((
+                                self.id.clone(),
+                                SharedString::from(format!("alpha-tick-{}", i)),
+                            )))
+                            .h(px(12.0))
+                            .flex_1()
+                            .rounded(px(2.0))
+                            .bg(if active { theme.accent } else { theme.hover })
+                            .cursor_pointer()
+                            .on_click(move |_event, window, cx| {
+                                let mut next = base_color;
+                                next.a = frac.clamp(0.0, 1.0);
+                                if let Some(h) = &handler {
+                                    h(next, window, cx);
+                                }
+                            }),
+                    );
+                }
+
+                div()
                     .id(ElementId::from((self.id.clone(), "alpha-row")))
                     .flex()
                     .flex_col()
@@ -560,76 +870,10 @@ impl RenderOnce for ColorWell {
                                 (bar_alpha * 100.0).round() as u32
                             ))),
                     )
-                    .child({
-                        let mut track = div()
-                            .h(px(6.0))
-                            .w_full()
-                            .rounded(px(3.0))
-                            .bg(bar_bg)
-                            .relative();
-                        // Filled portion representing the current alpha.
-                        track = track.child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .top_0()
-                                .bottom_0()
-                                .w(gpui::relative(bar_alpha))
-                                .rounded(px(3.0))
-                                .bg(bar_fg),
-                        );
-                        // Step buttons for keyboard-less alpha adjustment.
-                        // GPUI lacks a bare slider primitive callable from
-                        // `RenderOnce`, so we expose ±10% buttons instead
-                        // of wrapping a stateful `Slider` entity from a
-                        // stateless control.
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(theme.spacing_sm)
-                            .child(track)
-                            .child({
-                                let handler = alpha_handler.clone();
-                                let color = current_color;
-                                div()
-                                    .id(ElementId::from((self.id.clone(), "alpha-minus")))
-                                    .px(theme.spacing_xs)
-                                    .py(px(2.0))
-                                    .rounded(theme.radius_md)
-                                    .bg(theme.hover)
-                                    .cursor_pointer()
-                                    .child("−")
-                                    .on_click(move |_event, window, cx| {
-                                        let mut next = color;
-                                        next.a = (color.a - 0.1).clamp(0.0, 1.0);
-                                        if let Some(h) = &handler {
-                                            h(next, window, cx);
-                                        }
-                                    })
-                            })
-                            .child({
-                                let handler = alpha_handler.clone();
-                                let color = current_color;
-                                div()
-                                    .id(ElementId::from((self.id.clone(), "alpha-plus")))
-                                    .px(theme.spacing_xs)
-                                    .py(px(2.0))
-                                    .rounded(theme.radius_md)
-                                    .bg(theme.hover)
-                                    .cursor_pointer()
-                                    .child("+")
-                                    .on_click(move |_event, window, cx| {
-                                        let mut next = color;
-                                        next.a = (color.a + 0.1).clamp(0.0, 1.0);
-                                        if let Some(h) = &handler {
-                                            h(next, window, cx);
-                                        }
-                                    })
-                            })
-                    });
-                grid = grid.child(alpha_row);
-            }
+                    .child(track)
+                    .child(ticks)
+            };
+            grid = grid.child(alpha_row);
 
             container = container.child(deferred(grid).with_priority(1));
         }
@@ -645,7 +889,8 @@ mod tests {
     use gpui::hsla;
 
     use crate::components::selection_and_input::color_well::{
-        ColorWell, GRID_COLUMNS, hsla_eq, system_color_palette,
+        ALPHA_TICK_COUNT, ColorWell, ColorWellStyle, GRID_COLUMNS, PopoverTab, hsla_eq,
+        hsla_to_hsb, hsla_to_rgb_bytes, parse_hex, system_color_palette,
     };
     use crate::foundations::theme::TahoeTheme;
 
@@ -657,6 +902,10 @@ mod tests {
         assert!(cw.on_toggle.is_none());
         assert!(!cw.focused);
         assert!(cw.highlighted_index.is_none());
+        // Backcompat: default style must remain Expanded so callers
+        // of ColorWell::new(...).color(...) keep their 44pt square.
+        assert_eq!(cw.style, ColorWellStyle::Expanded);
+        assert_eq!(cw.popover_tab, PopoverTab::Rgb);
     }
 
     #[test]
@@ -735,5 +984,85 @@ mod tests {
         // Up/Down navigates by GRID_COLUMNS (6).
         let rows = palette.len() / GRID_COLUMNS;
         assert_eq!(rows, 3);
+    }
+
+    // ── ColorWellStyle smoke test ─────────────────────────────────────────
+
+    #[test]
+    fn color_well_style_builder() {
+        let cw = ColorWell::new("test").style(ColorWellStyle::Compact);
+        assert_eq!(cw.style, ColorWellStyle::Compact);
+        let cw = ColorWell::new("test").style(ColorWellStyle::Expanded);
+        assert_eq!(cw.style, ColorWellStyle::Expanded);
+    }
+
+    #[test]
+    fn color_well_style_default_is_expanded() {
+        // Preserves the pre-Tahoe 44pt behaviour for
+        // `ColorWell::new(...).color(...)` callers.
+        assert_eq!(ColorWellStyle::default(), ColorWellStyle::Expanded);
+    }
+
+    // ── RGB / HSB entry tests ─────────────────────────────────────────────
+
+    #[test]
+    fn rgb_bytes_roundtrip_through_hex() {
+        // Yellow #FFFF00 must parse to (255, 255, 0).
+        let yellow = parse_hex("#FFFF00").expect("valid hex");
+        let (r, g, b) = hsla_to_rgb_bytes(yellow);
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn hsb_conversion_pure_red() {
+        // Pure red = HSB(0, 100, 100).
+        let red = parse_hex("#FF0000").expect("valid hex");
+        let (h, s, b) = hsla_to_hsb(red);
+        assert_eq!(h, 0);
+        assert_eq!(s, 100);
+        assert_eq!(b, 100);
+    }
+
+    #[test]
+    fn hsb_conversion_pure_white() {
+        // Pure white = HSB(_, 0, 100). Hue is undefined for achromatic
+        // colours, so we only assert on saturation and brightness.
+        let white = parse_hex("#FFFFFF").expect("valid hex");
+        let (_h, s, b) = hsla_to_hsb(white);
+        assert_eq!(s, 0);
+        assert_eq!(b, 100);
+    }
+
+    #[test]
+    fn popover_tab_builder() {
+        let cw = ColorWell::new("test").popover_tab(PopoverTab::Hsb);
+        assert_eq!(cw.popover_tab, PopoverTab::Hsb);
+    }
+
+    #[test]
+    fn on_tab_change_is_some() {
+        let cw = ColorWell::new("test").on_tab_change(|_, _, _| {});
+        assert!(cw.on_tab_change.is_some());
+    }
+
+    // ── Alpha scrubber tests ──────────────────────────────────────────────
+
+    #[test]
+    fn alpha_ticks_count_is_eight() {
+        // Compromise: `Slider` is a stateful `Entity<T>` and cannot be
+        // embedded inside `RenderOnce`, so we expose 8 discrete ticks
+        // at 0.125 alpha increments instead of a continuous slider.
+        assert_eq!(ALPHA_TICK_COUNT, 8);
+    }
+
+    #[test]
+    fn alpha_tick_fractions_cover_full_range() {
+        // The first tick maps to alpha 0.0 and the last tick maps to 1.0.
+        let first = 0_f32 / (ALPHA_TICK_COUNT as f32 - 1.0);
+        let last = (ALPHA_TICK_COUNT as f32 - 1.0) / (ALPHA_TICK_COUNT as f32 - 1.0);
+        assert!((first - 0.0).abs() < f32::EPSILON);
+        assert!((last - 1.0).abs() < f32::EPSILON);
     }
 }

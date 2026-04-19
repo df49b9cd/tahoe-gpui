@@ -5,8 +5,8 @@
 //! every one of them lands on the undo stack and shares the same
 //! invariant: collect snapshots → fire host callbacks → mutate → push
 //! `CanvasCommand`. Centralising them here keeps the command-dispatch
-//! order consistent and makes F5/F6/F4 easier to audit against the HIG
-//! rules they implement.
+//! order consistent and makes the selection mutations easier to audit
+//! against the HIG rules they implement.
 
 use std::collections::HashSet;
 
@@ -69,14 +69,14 @@ impl WorkflowCanvas {
         cx.notify();
     }
 
-    /// F26 (#149): cycle keyboard focus between nodes. Tab (forward) and
-    /// Shift+Tab (backward) move the single-node selection through the
-    /// node list so the user can navigate a graph without a pointer.
+    /// Cycle keyboard focus between nodes. Tab (forward) and Shift+Tab
+    /// (backward) move the single-node selection through the node list
+    /// so the user can navigate a graph without a pointer.
     ///
-    /// This is the keyboard half of F26 — it works today without any
-    /// GPUI accessibility-tree API. The VoiceOver half, which announces
-    /// "Node 2 of 5, selected" on each Tab, still waits on upstream
-    /// `accessibility_label` support (see `foundations::accessibility`).
+    /// Works today without any GPUI accessibility-tree API. The VoiceOver
+    /// side, which would announce "Node 2 of 5, selected" on each Tab,
+    /// still waits on upstream `accessibility_label` support (see
+    /// `foundations::accessibility`).
     pub fn cycle_node_focus(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.nodes.is_empty() {
             return;
@@ -98,8 +98,8 @@ impl WorkflowCanvas {
         self.select_node(Some(next), window, cx);
     }
 
-    /// F5 (#149): Shift-click on a node adds it to the current selection
-    /// without dropping existing members. Distinct from `toggle_node_selection`
+    /// Shift-click on a node adds it to the current selection without
+    /// dropping existing members. Distinct from `toggle_node_selection`
     /// (Cmd-click): Shift never *removes* a node that was already part of
     /// the selection — matching Finder / Keynote "extend" semantics.
     pub fn extend_selection(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -112,7 +112,7 @@ impl WorkflowCanvas {
         }
     }
 
-    /// F3 (#149): nudge every selected node by `(dx, dy)` world units.
+    /// Nudge every selected node by `(dx, dy)` world units.
     /// Lands on the undo stack as a single batched Move per node so one
     /// Cmd-Z reverses the whole arrow-key press even across a multi-select.
     pub fn nudge_selected(
@@ -152,8 +152,8 @@ impl WorkflowCanvas {
         cx.notify();
     }
 
-    /// F4 (#149): duplicate every selected node via the host's factory
-    /// callback. No-op when `on_node_duplicate` isn't set (see OQ6).
+    /// Duplicate every selected node via the host's factory callback.
+    /// No-op when `on_node_duplicate` isn't set.
     pub fn duplicate_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected_nodes.is_empty() || self.on_node_duplicate.is_none() {
             return;
@@ -260,7 +260,7 @@ impl WorkflowCanvas {
 
         // Capture (index, entity) for nodes and (index, connection) for edges
         // so the DeleteNodes command on the undo stack can splice them back
-        // in at the same position (F6).
+        // in at the same position.
         let mut sorted_node_indices: Vec<usize> = self.selected_nodes.iter().copied().collect();
         sorted_node_indices.sort_unstable();
         let mut deleted_node_entities: Vec<(usize, Entity<WorkflowNode>)> = Vec::new();

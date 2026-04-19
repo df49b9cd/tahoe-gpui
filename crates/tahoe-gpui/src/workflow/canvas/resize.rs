@@ -1,4 +1,4 @@
-//! Resize-handle hit-testing and geometry (F28 from #149).
+//! Resize-handle hit-testing and geometry.
 //!
 //! Responsibilities kept strictly to "given a node rect and a pointer,
 //! which of the 8 HIG handles is under it, and what does dragging it
@@ -11,7 +11,7 @@ use super::super::node::{NODE_MIN_HEIGHT, NODE_MIN_WIDTH};
 
 /// Screen-space radius around a handle's painted square that still counts
 /// as a hit. The visual handle is 10 px across, so 9 px radius gives a
-/// ~22 px target — the same 44 pt HIG minimum we apply to ports (F17).
+/// ~22 px target — the same 44 pt HIG minimum we apply to ports.
 pub(super) const HANDLE_HIT_RADIUS: f32 = 9.0;
 /// Painted side-length of the handle square.
 pub(super) const HANDLE_VISUAL_SIZE: f32 = 10.0;
