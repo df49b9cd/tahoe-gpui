@@ -65,7 +65,7 @@ impl gpui::AssetSource for EmbeddedIconAssets {
 ///
 /// GPUI caches decoded SVGs after first load, so this map is only consulted
 /// on cold paths. Using a `HashMap` keeps cold-path cost constant as the
-/// icon set grows (currently ~380 entries).
+/// icon set grows.
 static ICON_INDEX: LazyLock<HashMap<&'static str, &'static [u8]>> =
     LazyLock::new(|| ICON_ENTRIES.iter().copied().collect());
 
@@ -74,266 +74,319 @@ fn lookup_svg(path: &str) -> Option<&'static [u8]> {
 }
 
 /// All embedded SVG icon data.
+///
+/// Symbol icons live under `icons/symbols/` — an original, SF-Symbols-aligned
+/// glyph set authored for this crate (Apache-2.0). Domain-specific icons
+/// (programming languages, LLM providers, git, dev-tools) keep their own
+/// folders with both standard and Liquid Glass variants.
 static ICON_ENTRIES: &[(&str, &[u8])] = &[
     (
-        "icons/ai-sdk/alert-triangle.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/alert-triangle.svg"),
+        "icons/symbols/ant.svg",
+        include_bytes!("../../../assets/icons/symbols/ant.svg"),
     ),
     (
-        "icons/ai-sdk/arrow-down.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/arrow-down.svg"),
+        "icons/symbols/arrow-clockwise.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-clockwise.svg"),
     ),
     (
-        "icons/ai-sdk/arrow-right.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/arrow-right.svg"),
+        "icons/symbols/arrow-down-circle.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-down-circle.svg"),
     ),
     (
-        "icons/ai-sdk/book.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/book.svg"),
+        "icons/symbols/arrow-down.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-down.svg"),
     ),
     (
-        "icons/ai-sdk/bookmark.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/bookmark.svg"),
+        "icons/symbols/arrow-right.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-right.svg"),
     ),
     (
-        "icons/ai-sdk/bot.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/bot.svg"),
+        "icons/symbols/arrow-up-left-down-right.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-up-left-down-right.svg"),
     ),
     (
-        "icons/ai-sdk/brain.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/brain.svg"),
+        "icons/symbols/arrow-up-right-square.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-up-right-square.svg"),
     ),
     (
-        "icons/ai-sdk/bug.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/bug.svg"),
+        "icons/symbols/arrow-uturn-backward.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-uturn-backward.svg"),
     ),
     (
-        "icons/ai-sdk/check.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/check.svg"),
+        "icons/symbols/arrow-uturn-forward.svg",
+        include_bytes!("../../../assets/icons/symbols/arrow-uturn-forward.svg"),
     ),
     (
-        "icons/ai-sdk/chevron-down.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/chevron-down.svg"),
+        "icons/symbols/arrowtriangle-down-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/arrowtriangle-down-fill.svg"),
     ),
     (
-        "icons/ai-sdk/chevron-left.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/chevron-left.svg"),
+        "icons/symbols/arrowtriangle-right-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/arrowtriangle-right-fill.svg"),
     ),
     (
-        "icons/ai-sdk/chevron-right.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/chevron-right.svg"),
+        "icons/symbols/backward-end.svg",
+        include_bytes!("../../../assets/icons/symbols/backward-end.svg"),
     ),
     (
-        "icons/ai-sdk/chevron-up.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/chevron-up.svg"),
+        "icons/symbols/book.svg",
+        include_bytes!("../../../assets/icons/symbols/book.svg"),
     ),
     (
-        "icons/ai-sdk/chevrons-up-down.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/chevrons-up-down.svg"),
+        "icons/symbols/bookmark.svg",
+        include_bytes!("../../../assets/icons/symbols/bookmark.svg"),
     ),
     (
-        "icons/ai-sdk/circle-filled.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/circle-filled.svg"),
+        "icons/symbols/bot.svg",
+        include_bytes!("../../../assets/icons/symbols/bot.svg"),
     ),
     (
-        "icons/ai-sdk/circle-outline.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/circle-outline.svg"),
+        "icons/symbols/brain.svg",
+        include_bytes!("../../../assets/icons/symbols/brain.svg"),
     ),
     (
-        "icons/ai-sdk/code.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/code.svg"),
+        "icons/symbols/checklist.svg",
+        include_bytes!("../../../assets/icons/symbols/checklist.svg"),
     ),
     (
-        "icons/ai-sdk/copy.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/copy.svg"),
+        "icons/symbols/checkmark.svg",
+        include_bytes!("../../../assets/icons/symbols/checkmark.svg"),
     ),
     (
-        "icons/ai-sdk/database.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/database.svg"),
+        "icons/symbols/chevron-down.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-down.svg"),
     ),
     (
-        "icons/ai-sdk/download.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/download.svg"),
+        "icons/symbols/chevron-left-fwdslash-chevron-right.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-left-fwdslash-chevron-right.svg"),
     ),
     (
-        "icons/ai-sdk/external-link.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/external-link.svg"),
+        "icons/symbols/chevron-left.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-left.svg"),
     ),
     (
-        "icons/ai-sdk/eye-off.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/eye-off.svg"),
+        "icons/symbols/chevron-right.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-right.svg"),
     ),
     (
-        "icons/ai-sdk/eye.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/eye.svg"),
+        "icons/symbols/chevron-up-chevron-down.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-up-chevron-down.svg"),
     ),
     (
-        "icons/ai-sdk/file-code.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/file-code.svg"),
+        "icons/symbols/chevron-up.svg",
+        include_bytes!("../../../assets/icons/symbols/chevron-up.svg"),
     ),
     (
-        "icons/ai-sdk/file.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/file.svg"),
+        "icons/symbols/circle-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/circle-fill.svg"),
     ),
     (
-        "icons/ai-sdk/folder-open.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/folder-open.svg"),
+        "icons/symbols/circle.svg",
+        include_bytes!("../../../assets/icons/symbols/circle.svg"),
     ),
     (
-        "icons/ai-sdk/folder.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/folder.svg"),
+        "icons/symbols/clock.svg",
+        include_bytes!("../../../assets/icons/symbols/clock.svg"),
     ),
     (
-        "icons/ai-sdk/git-commit.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/git-commit.svg"),
+        "icons/symbols/cylinder.svg",
+        include_bytes!("../../../assets/icons/symbols/cylinder.svg"),
     ),
     (
-        "icons/ai-sdk/globe.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/globe.svg"),
+        "icons/symbols/document-on-document.svg",
+        include_bytes!("../../../assets/icons/symbols/document-on-document.svg"),
     ),
     (
-        "icons/ai-sdk/image.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/image.svg"),
+        "icons/symbols/document.svg",
+        include_bytes!("../../../assets/icons/symbols/document.svg"),
     ),
     (
-        "icons/ai-sdk/key.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/key.svg"),
+        "icons/symbols/ellipsis.svg",
+        include_bytes!("../../../assets/icons/symbols/ellipsis.svg"),
     ),
     (
-        "icons/ai-sdk/link.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/link.svg"),
+        "icons/symbols/exclamationmark-triangle.svg",
+        include_bytes!("../../../assets/icons/symbols/exclamationmark-triangle.svg"),
     ),
     (
-        "icons/ai-sdk/list-todo.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/list-todo.svg"),
+        "icons/symbols/file-code.svg",
+        include_bytes!("../../../assets/icons/symbols/file-code.svg"),
     ),
     (
-        "icons/ai-sdk/loader.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/loader.svg"),
+        "icons/symbols/eye-slash.svg",
+        include_bytes!("../../../assets/icons/symbols/eye-slash.svg"),
     ),
     (
-        "icons/ai-sdk/lock.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/lock.svg"),
+        "icons/symbols/eye.svg",
+        include_bytes!("../../../assets/icons/symbols/eye.svg"),
     ),
     (
-        "icons/ai-sdk/maximize.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/maximize.svg"),
+        "icons/symbols/film.svg",
+        include_bytes!("../../../assets/icons/symbols/film.svg"),
     ),
     (
-        "icons/ai-sdk/mic.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/mic.svg"),
+        "icons/symbols/folder-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/folder-fill.svg"),
     ),
     (
-        "icons/ai-sdk/mic-off.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/mic-off.svg"),
+        "icons/symbols/folder.svg",
+        include_bytes!("../../../assets/icons/symbols/folder.svg"),
     ),
     (
-        "icons/ai-sdk/minus.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/minus.svg"),
+        "icons/symbols/forward-end.svg",
+        include_bytes!("../../../assets/icons/symbols/forward-end.svg"),
     ),
     (
-        "icons/ai-sdk/package.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/package.svg"),
+        "icons/symbols/gear.svg",
+        include_bytes!("../../../assets/icons/symbols/gear.svg"),
     ),
     (
-        "icons/ai-sdk/paperclip.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/paperclip.svg"),
+        "icons/symbols/git-commit.svg",
+        include_bytes!("../../../assets/icons/symbols/git-commit.svg"),
     ),
     (
-        "icons/ai-sdk/pause.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/pause.svg"),
+        "icons/symbols/globe.svg",
+        include_bytes!("../../../assets/icons/symbols/globe.svg"),
     ),
     (
-        "icons/ai-sdk/pencil.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/pencil.svg"),
+        "icons/symbols/hand-thumbsdown.svg",
+        include_bytes!("../../../assets/icons/symbols/hand-thumbsdown.svg"),
     ),
     (
-        "icons/ai-sdk/phone.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/phone.svg"),
+        "icons/symbols/hand-thumbsup.svg",
+        include_bytes!("../../../assets/icons/symbols/hand-thumbsup.svg"),
     ),
     (
-        "icons/ai-sdk/play.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/play.svg"),
+        "icons/symbols/key.svg",
+        include_bytes!("../../../assets/icons/symbols/key.svg"),
     ),
     (
-        "icons/ai-sdk/plus.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/plus.svg"),
+        "icons/symbols/link.svg",
+        include_bytes!("../../../assets/icons/symbols/link.svg"),
     ),
     (
-        "icons/ai-sdk/rotate-ccw.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/rotate-ccw.svg"),
+        "icons/symbols/lock-open.svg",
+        include_bytes!("../../../assets/icons/symbols/lock-open.svg"),
     ),
     (
-        "icons/ai-sdk/search.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/search.svg"),
+        "icons/symbols/lock.svg",
+        include_bytes!("../../../assets/icons/symbols/lock.svg"),
     ),
     (
-        "icons/ai-sdk/send.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/send.svg"),
+        "icons/symbols/magnifyingglass.svg",
+        include_bytes!("../../../assets/icons/symbols/magnifyingglass.svg"),
     ),
     (
-        "icons/ai-sdk/settings.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/settings.svg"),
+        "icons/symbols/microphone-slash.svg",
+        include_bytes!("../../../assets/icons/symbols/microphone-slash.svg"),
     ),
     (
-        "icons/ai-sdk/share.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/share.svg"),
+        "icons/symbols/microphone.svg",
+        include_bytes!("../../../assets/icons/symbols/microphone.svg"),
     ),
     (
-        "icons/ai-sdk/skip-back.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/skip-back.svg"),
+        "icons/symbols/minus.svg",
+        include_bytes!("../../../assets/icons/symbols/minus.svg"),
     ),
     (
-        "icons/ai-sdk/skip-forward.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/skip-forward.svg"),
+        "icons/symbols/paperclip.svg",
+        include_bytes!("../../../assets/icons/symbols/paperclip.svg"),
     ),
     (
-        "icons/ai-sdk/sparkle.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/sparkle.svg"),
+        "icons/symbols/paperplane.svg",
+        include_bytes!("../../../assets/icons/symbols/paperplane.svg"),
     ),
     (
-        "icons/ai-sdk/square.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/square.svg"),
+        "icons/symbols/pause-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/pause-fill.svg"),
     ),
     (
-        "icons/ai-sdk/terminal.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/terminal.svg"),
+        "icons/symbols/pencil.svg",
+        include_bytes!("../../../assets/icons/symbols/pencil.svg"),
     ),
     (
-        "icons/ai-sdk/test-tube.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/test-tube.svg"),
+        "icons/symbols/phone.svg",
+        include_bytes!("../../../assets/icons/symbols/phone.svg"),
     ),
     (
-        "icons/ai-sdk/thumbs-down.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/thumbs-down.svg"),
+        "icons/symbols/photo.svg",
+        include_bytes!("../../../assets/icons/symbols/photo.svg"),
     ),
     (
-        "icons/ai-sdk/thumbs-up.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/thumbs-up.svg"),
+        "icons/symbols/play-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/play-fill.svg"),
     ),
     (
-        "icons/ai-sdk/trash.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/trash.svg"),
+        "icons/symbols/plus.svg",
+        include_bytes!("../../../assets/icons/symbols/plus.svg"),
     ),
     (
-        "icons/ai-sdk/unlock.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/unlock.svg"),
+        "icons/symbols/progress-indicator.svg",
+        include_bytes!("../../../assets/icons/symbols/progress-indicator.svg"),
     ),
     (
-        "icons/ai-sdk/video.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/video.svg"),
+        "icons/symbols/questionmark-circle.svg",
+        include_bytes!("../../../assets/icons/symbols/questionmark-circle.svg"),
     ),
     (
-        "icons/ai-sdk/volume-x.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/volume-x.svg"),
+        "icons/symbols/shippingbox.svg",
+        include_bytes!("../../../assets/icons/symbols/shippingbox.svg"),
     ),
     (
-        "icons/ai-sdk/volume2.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/volume2.svg"),
+        "icons/symbols/sidebar-left.svg",
+        include_bytes!("../../../assets/icons/symbols/sidebar-left.svg"),
     ),
     (
-        "icons/ai-sdk/x.svg",
-        include_bytes!("../../../assets/icons/ai-sdk/x.svg"),
+        "icons/symbols/sparkles.svg",
+        include_bytes!("../../../assets/icons/symbols/sparkles.svg"),
+    ),
+    (
+        "icons/symbols/speaker-slash.svg",
+        include_bytes!("../../../assets/icons/symbols/speaker-slash.svg"),
+    ),
+    (
+        "icons/symbols/speaker-wave-2.svg",
+        include_bytes!("../../../assets/icons/symbols/speaker-wave-2.svg"),
+    ),
+    (
+        "icons/symbols/square-and-arrow-up.svg",
+        include_bytes!("../../../assets/icons/symbols/square-and-arrow-up.svg"),
+    ),
+    (
+        "icons/symbols/square.svg",
+        include_bytes!("../../../assets/icons/symbols/square.svg"),
+    ),
+    (
+        "icons/symbols/star-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/star-fill.svg"),
+    ),
+    (
+        "icons/symbols/star-leadinghalf-filled.svg",
+        include_bytes!("../../../assets/icons/symbols/star-leadinghalf-filled.svg"),
+    ),
+    (
+        "icons/symbols/star.svg",
+        include_bytes!("../../../assets/icons/symbols/star.svg"),
+    ),
+    (
+        "icons/symbols/terminal.svg",
+        include_bytes!("../../../assets/icons/symbols/terminal.svg"),
+    ),
+    (
+        "icons/symbols/testtube-2.svg",
+        include_bytes!("../../../assets/icons/symbols/testtube-2.svg"),
+    ),
+    (
+        "icons/symbols/trash.svg",
+        include_bytes!("../../../assets/icons/symbols/trash.svg"),
+    ),
+    (
+        "icons/symbols/xmark-circle-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/xmark-circle-fill.svg"),
+    ),
+    (
+        "icons/symbols/xmark.svg",
+        include_bytes!("../../../assets/icons/symbols/xmark.svg"),
     ),
     (
         "icons/languages/bash.svg",
@@ -842,1062 +895,5 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
     (
         "icons/dev-tools/webhook_muted.svg",
         include_bytes!("../../../assets/icons/dev-tools/webhook_muted.svg"),
-    ),
-    // SF Symbols 7 glyphs — extracted from the canonical template SVGs via
-    // `scripts/extract_sf_symbol.py`. These carry dot-notation filenames
-    // matching Apple's identifiers so future native-path integrations
-    // (`NSImage(systemSymbolName:)`) can use the same strings.
-    (
-        "icons/sf/ant.svg",
-        include_bytes!("../../../assets/icons/sf/ant.svg"),
-    ),
-    (
-        "icons/sf/apple.terminal.svg",
-        include_bytes!("../../../assets/icons/sf/apple.terminal.svg"),
-    ),
-    (
-        "icons/sf/arrow.clockwise.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.clockwise.svg"),
-    ),
-    (
-        "icons/sf/arrow.down.circle.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.down.circle.svg"),
-    ),
-    (
-        "icons/sf/arrow.down.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.down.svg"),
-    ),
-    (
-        "icons/sf/arrow.right.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.right.svg"),
-    ),
-    (
-        "icons/sf/arrowtriangle.down.fill.svg",
-        include_bytes!("../../../assets/icons/sf/arrowtriangle.down.fill.svg"),
-    ),
-    (
-        "icons/sf/arrowtriangle.right.fill.svg",
-        include_bytes!("../../../assets/icons/sf/arrowtriangle.right.fill.svg"),
-    ),
-    (
-        "icons/sf/arrow.up.left.and.arrow.down.right.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.up.left.and.arrow.down.right.svg"),
-    ),
-    (
-        "icons/sf/arrow.up.right.square.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.up.right.square.svg"),
-    ),
-    (
-        "icons/sf/arrow.uturn.backward.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.uturn.backward.svg"),
-    ),
-    (
-        "icons/sf/arrow.uturn.forward.svg",
-        include_bytes!("../../../assets/icons/sf/arrow.uturn.forward.svg"),
-    ),
-    (
-        "icons/sf/backward.end.svg",
-        include_bytes!("../../../assets/icons/sf/backward.end.svg"),
-    ),
-    (
-        "icons/sf/book.svg",
-        include_bytes!("../../../assets/icons/sf/book.svg"),
-    ),
-    (
-        "icons/sf/bookmark.svg",
-        include_bytes!("../../../assets/icons/sf/bookmark.svg"),
-    ),
-    (
-        "icons/sf/brain.svg",
-        include_bytes!("../../../assets/icons/sf/brain.svg"),
-    ),
-    (
-        "icons/sf/checklist.svg",
-        include_bytes!("../../../assets/icons/sf/checklist.svg"),
-    ),
-    (
-        "icons/sf/checkmark.svg",
-        include_bytes!("../../../assets/icons/sf/checkmark.svg"),
-    ),
-    (
-        "icons/sf/chevron.down.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.down.svg"),
-    ),
-    (
-        "icons/sf/chevron.left.forwardslash.chevron.right.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.left.forwardslash.chevron.right.svg"),
-    ),
-    (
-        "icons/sf/chevron.left.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.left.svg"),
-    ),
-    (
-        "icons/sf/chevron.right.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.right.svg"),
-    ),
-    (
-        "icons/sf/chevron.up.chevron.down.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.up.chevron.down.svg"),
-    ),
-    (
-        "icons/sf/chevron.up.svg",
-        include_bytes!("../../../assets/icons/sf/chevron.up.svg"),
-    ),
-    (
-        "icons/sf/circle.fill.svg",
-        include_bytes!("../../../assets/icons/sf/circle.fill.svg"),
-    ),
-    (
-        "icons/sf/circle.svg",
-        include_bytes!("../../../assets/icons/sf/circle.svg"),
-    ),
-    (
-        "icons/sf/cylinder.svg",
-        include_bytes!("../../../assets/icons/sf/cylinder.svg"),
-    ),
-    (
-        "icons/sf/document.on.document.svg",
-        include_bytes!("../../../assets/icons/sf/document.on.document.svg"),
-    ),
-    (
-        "icons/sf/document.svg",
-        include_bytes!("../../../assets/icons/sf/document.svg"),
-    ),
-    (
-        "icons/sf/exclamationmark.triangle.svg",
-        include_bytes!("../../../assets/icons/sf/exclamationmark.triangle.svg"),
-    ),
-    (
-        "icons/sf/eye.slash.svg",
-        include_bytes!("../../../assets/icons/sf/eye.slash.svg"),
-    ),
-    (
-        "icons/sf/eye.svg",
-        include_bytes!("../../../assets/icons/sf/eye.svg"),
-    ),
-    (
-        "icons/sf/film.svg",
-        include_bytes!("../../../assets/icons/sf/film.svg"),
-    ),
-    (
-        "icons/sf/folder.fill.svg",
-        include_bytes!("../../../assets/icons/sf/folder.fill.svg"),
-    ),
-    (
-        "icons/sf/folder.svg",
-        include_bytes!("../../../assets/icons/sf/folder.svg"),
-    ),
-    (
-        "icons/sf/forward.end.svg",
-        include_bytes!("../../../assets/icons/sf/forward.end.svg"),
-    ),
-    (
-        "icons/sf/gear.svg",
-        include_bytes!("../../../assets/icons/sf/gear.svg"),
-    ),
-    (
-        "icons/sf/globe.svg",
-        include_bytes!("../../../assets/icons/sf/globe.svg"),
-    ),
-    (
-        "icons/sf/hand.thumbsdown.svg",
-        include_bytes!("../../../assets/icons/sf/hand.thumbsdown.svg"),
-    ),
-    (
-        "icons/sf/hand.thumbsup.svg",
-        include_bytes!("../../../assets/icons/sf/hand.thumbsup.svg"),
-    ),
-    (
-        "icons/sf/key.svg",
-        include_bytes!("../../../assets/icons/sf/key.svg"),
-    ),
-    (
-        "icons/sf/link.svg",
-        include_bytes!("../../../assets/icons/sf/link.svg"),
-    ),
-    (
-        "icons/sf/lock.open.svg",
-        include_bytes!("../../../assets/icons/sf/lock.open.svg"),
-    ),
-    (
-        "icons/sf/lock.svg",
-        include_bytes!("../../../assets/icons/sf/lock.svg"),
-    ),
-    (
-        "icons/sf/magnifyingglass.svg",
-        include_bytes!("../../../assets/icons/sf/magnifyingglass.svg"),
-    ),
-    (
-        "icons/sf/microphone.svg",
-        include_bytes!("../../../assets/icons/sf/microphone.svg"),
-    ),
-    (
-        "icons/sf/microphone.slash.svg",
-        include_bytes!("../../../assets/icons/sf/microphone.slash.svg"),
-    ),
-    (
-        "icons/sf/minus.svg",
-        include_bytes!("../../../assets/icons/sf/minus.svg"),
-    ),
-    (
-        "icons/sf/paperclip.svg",
-        include_bytes!("../../../assets/icons/sf/paperclip.svg"),
-    ),
-    (
-        "icons/sf/paperplane.svg",
-        include_bytes!("../../../assets/icons/sf/paperplane.svg"),
-    ),
-    (
-        "icons/sf/pause.fill.svg",
-        include_bytes!("../../../assets/icons/sf/pause.fill.svg"),
-    ),
-    (
-        "icons/sf/pencil.svg",
-        include_bytes!("../../../assets/icons/sf/pencil.svg"),
-    ),
-    (
-        "icons/sf/phone.svg",
-        include_bytes!("../../../assets/icons/sf/phone.svg"),
-    ),
-    (
-        "icons/sf/photo.svg",
-        include_bytes!("../../../assets/icons/sf/photo.svg"),
-    ),
-    (
-        "icons/sf/play.fill.svg",
-        include_bytes!("../../../assets/icons/sf/play.fill.svg"),
-    ),
-    (
-        "icons/sf/progress.indicator.svg",
-        include_bytes!("../../../assets/icons/sf/progress.indicator.svg"),
-    ),
-    (
-        "icons/sf/plus.svg",
-        include_bytes!("../../../assets/icons/sf/plus.svg"),
-    ),
-    (
-        "icons/sf/questionmark.circle.svg",
-        include_bytes!("../../../assets/icons/sf/questionmark.circle.svg"),
-    ),
-    (
-        "icons/sf/shippingbox.svg",
-        include_bytes!("../../../assets/icons/sf/shippingbox.svg"),
-    ),
-    (
-        "icons/sf/sparkles.svg",
-        include_bytes!("../../../assets/icons/sf/sparkles.svg"),
-    ),
-    (
-        "icons/sf/speaker.slash.svg",
-        include_bytes!("../../../assets/icons/sf/speaker.slash.svg"),
-    ),
-    (
-        "icons/sf/speaker.wave.2.svg",
-        include_bytes!("../../../assets/icons/sf/speaker.wave.2.svg"),
-    ),
-    (
-        "icons/sf/square.and.arrow.up.svg",
-        include_bytes!("../../../assets/icons/sf/square.and.arrow.up.svg"),
-    ),
-    (
-        "icons/sf/square.svg",
-        include_bytes!("../../../assets/icons/sf/square.svg"),
-    ),
-    (
-        "icons/sf/star.fill.svg",
-        include_bytes!("../../../assets/icons/sf/star.fill.svg"),
-    ),
-    (
-        "icons/sf/star.leadinghalf.filled.svg",
-        include_bytes!("../../../assets/icons/sf/star.leadinghalf.filled.svg"),
-    ),
-    (
-        "icons/sf/star.svg",
-        include_bytes!("../../../assets/icons/sf/star.svg"),
-    ),
-    (
-        "icons/sf/testtube.2.svg",
-        include_bytes!("../../../assets/icons/sf/testtube.2.svg"),
-    ),
-    (
-        "icons/sf/trash.svg",
-        include_bytes!("../../../assets/icons/sf/trash.svg"),
-    ),
-    (
-        "icons/sf/xmark.svg",
-        include_bytes!("../../../assets/icons/sf/xmark.svg"),
-    ),
-    // Liquid Glass variants (stroke-width 1.5)
-    (
-        "icons-glass/ai-sdk/alert-triangle.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/alert-triangle.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/arrow-down.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/arrow-down.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/arrow-right.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/arrow-right.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/book.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/book.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/bookmark.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/bookmark.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/bot.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/bot.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/brain.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/brain.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/bug.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/bug.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/check.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/check.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/chevron-down.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/chevron-down.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/chevron-left.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/chevron-left.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/chevron-right.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/chevron-right.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/chevron-up.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/chevron-up.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/chevrons-up-down.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/chevrons-up-down.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/circle-filled.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/circle-filled.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/circle-outline.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/circle-outline.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/code.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/code.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/copy.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/copy.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/database.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/database.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/download.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/download.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/external-link.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/external-link.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/eye-off.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/eye-off.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/eye.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/eye.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/file-code.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/file-code.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/file.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/file.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/folder-open.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/folder-open.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/folder.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/folder.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/git-commit.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/git-commit.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/globe.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/globe.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/image.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/image.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/key.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/key.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/link.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/link.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/list-todo.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/list-todo.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/loader.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/loader.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/lock.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/lock.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/maximize.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/maximize.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/mic.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/mic.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/mic-off.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/mic-off.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/minus.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/minus.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/package.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/package.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/paperclip.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/paperclip.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/pause.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/pause.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/pencil.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/pencil.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/phone.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/phone.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/play.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/play.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/plus.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/plus.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/progress-spinner.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/progress-spinner.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/rotate-ccw.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/rotate-ccw.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/search.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/search.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/send.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/send.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/settings.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/settings.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/share.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/share.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/skip-back.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/skip-back.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/skip-forward.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/skip-forward.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/sparkle.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/sparkle.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/square.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/square.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/terminal.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/terminal.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/test-tube.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/test-tube.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/thumbs-down.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/thumbs-down.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/thumbs-up.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/thumbs-up.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/trash.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/trash.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/unlock.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/unlock.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/video.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/video.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/volume-x.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/volume-x.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/volume2.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/volume2.svg"),
-    ),
-    (
-        "icons-glass/ai-sdk/x.svg",
-        include_bytes!("../../../assets/icons-glass/ai-sdk/x.svg"),
-    ),
-    (
-        "icons-glass/languages/bash.svg",
-        include_bytes!("../../../assets/icons-glass/languages/bash.svg"),
-    ),
-    (
-        "icons-glass/languages/c.svg",
-        include_bytes!("../../../assets/icons-glass/languages/c.svg"),
-    ),
-    (
-        "icons-glass/languages/cpp.svg",
-        include_bytes!("../../../assets/icons-glass/languages/cpp.svg"),
-    ),
-    (
-        "icons-glass/languages/css.svg",
-        include_bytes!("../../../assets/icons-glass/languages/css.svg"),
-    ),
-    (
-        "icons-glass/languages/go.svg",
-        include_bytes!("../../../assets/icons-glass/languages/go.svg"),
-    ),
-    (
-        "icons-glass/languages/html.svg",
-        include_bytes!("../../../assets/icons-glass/languages/html.svg"),
-    ),
-    (
-        "icons-glass/languages/javascript.svg",
-        include_bytes!("../../../assets/icons-glass/languages/javascript.svg"),
-    ),
-    (
-        "icons-glass/languages/json.svg",
-        include_bytes!("../../../assets/icons-glass/languages/json.svg"),
-    ),
-    (
-        "icons-glass/languages/python.svg",
-        include_bytes!("../../../assets/icons-glass/languages/python.svg"),
-    ),
-    (
-        "icons-glass/languages/rust.svg",
-        include_bytes!("../../../assets/icons-glass/languages/rust.svg"),
-    ),
-    (
-        "icons-glass/languages/toml.svg",
-        include_bytes!("../../../assets/icons-glass/languages/toml.svg"),
-    ),
-    (
-        "icons-glass/languages/typescript.svg",
-        include_bytes!("../../../assets/icons-glass/languages/typescript.svg"),
-    ),
-    (
-        "icons-glass/providers/claude.svg",
-        include_bytes!("../../../assets/icons-glass/providers/claude.svg"),
-    ),
-    (
-        "icons-glass/providers/cohere.svg",
-        include_bytes!("../../../assets/icons-glass/providers/cohere.svg"),
-    ),
-    (
-        "icons-glass/providers/custom.svg",
-        include_bytes!("../../../assets/icons-glass/providers/custom.svg"),
-    ),
-    (
-        "icons-glass/providers/deepseek.svg",
-        include_bytes!("../../../assets/icons-glass/providers/deepseek.svg"),
-    ),
-    (
-        "icons-glass/providers/ernie.svg",
-        include_bytes!("../../../assets/icons-glass/providers/ernie.svg"),
-    ),
-    (
-        "icons-glass/providers/gemini.svg",
-        include_bytes!("../../../assets/icons-glass/providers/gemini.svg"),
-    ),
-    (
-        "icons-glass/providers/gemma.svg",
-        include_bytes!("../../../assets/icons-glass/providers/gemma.svg"),
-    ),
-    (
-        "icons-glass/providers/glm.svg",
-        include_bytes!("../../../assets/icons-glass/providers/glm.svg"),
-    ),
-    (
-        "icons-glass/providers/gpt.svg",
-        include_bytes!("../../../assets/icons-glass/providers/gpt.svg"),
-    ),
-    (
-        "icons-glass/providers/grok.svg",
-        include_bytes!("../../../assets/icons-glass/providers/grok.svg"),
-    ),
-    (
-        "icons-glass/providers/llama.svg",
-        include_bytes!("../../../assets/icons-glass/providers/llama.svg"),
-    ),
-    (
-        "icons-glass/providers/minimax.svg",
-        include_bytes!("../../../assets/icons-glass/providers/minimax.svg"),
-    ),
-    (
-        "icons-glass/providers/mistral.svg",
-        include_bytes!("../../../assets/icons-glass/providers/mistral.svg"),
-    ),
-    (
-        "icons-glass/providers/nova.svg",
-        include_bytes!("../../../assets/icons-glass/providers/nova.svg"),
-    ),
-    (
-        "icons-glass/providers/perplexity.svg",
-        include_bytes!("../../../assets/icons-glass/providers/perplexity.svg"),
-    ),
-    (
-        "icons-glass/providers/phi.svg",
-        include_bytes!("../../../assets/icons-glass/providers/phi.svg"),
-    ),
-    (
-        "icons-glass/providers/qwen.svg",
-        include_bytes!("../../../assets/icons-glass/providers/qwen.svg"),
-    ),
-    (
-        "icons-glass/git/added_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/added_success.svg"),
-    ),
-    (
-        "icons-glass/git/ahead_info.svg",
-        include_bytes!("../../../assets/icons-glass/git/ahead_info.svg"),
-    ),
-    (
-        "icons-glass/git/behind_warning.svg",
-        include_bytes!("../../../assets/icons-glass/git/behind_warning.svg"),
-    ),
-    (
-        "icons-glass/git/blame_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/blame_muted.svg"),
-    ),
-    (
-        "icons-glass/git/blame_warning.svg",
-        include_bytes!("../../../assets/icons-glass/git/blame_warning.svg"),
-    ),
-    (
-        "icons-glass/git/branch_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/branch_muted.svg"),
-    ),
-    (
-        "icons-glass/git/checkout_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/checkout_muted.svg"),
-    ),
-    (
-        "icons-glass/git/clean_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/clean_success.svg"),
-    ),
-    (
-        "icons-glass/git/clone_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/clone_muted.svg"),
-    ),
-    (
-        "icons-glass/git/code-review_info.svg",
-        include_bytes!("../../../assets/icons-glass/git/code-review_info.svg"),
-    ),
-    (
-        "icons-glass/git/code-review_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/code-review_muted.svg"),
-    ),
-    (
-        "icons-glass/git/commit_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/commit_muted.svg"),
-    ),
-    (
-        "icons-glass/git/compare_error.svg",
-        include_bytes!("../../../assets/icons-glass/git/compare_error.svg"),
-    ),
-    (
-        "icons-glass/git/compare_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/compare_muted.svg"),
-    ),
-    (
-        "icons-glass/git/compare_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/compare_success.svg"),
-    ),
-    (
-        "icons-glass/git/conflict_warning.svg",
-        include_bytes!("../../../assets/icons-glass/git/conflict_warning.svg"),
-    ),
-    (
-        "icons-glass/git/deleted_error.svg",
-        include_bytes!("../../../assets/icons-glass/git/deleted_error.svg"),
-    ),
-    (
-        "icons-glass/git/fork_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/fork_muted.svg"),
-    ),
-    (
-        "icons-glass/git/ignored_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/ignored_muted.svg"),
-    ),
-    (
-        "icons-glass/git/inline-diff_error.svg",
-        include_bytes!("../../../assets/icons-glass/git/inline-diff_error.svg"),
-    ),
-    (
-        "icons-glass/git/inline-diff_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/inline-diff_muted.svg"),
-    ),
-    (
-        "icons-glass/git/inline-diff_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/inline-diff_success.svg"),
-    ),
-    (
-        "icons-glass/git/log_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/log_muted.svg"),
-    ),
-    (
-        "icons-glass/git/merge_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/merge_success.svg"),
-    ),
-    (
-        "icons-glass/git/modified_warning.svg",
-        include_bytes!("../../../assets/icons-glass/git/modified_warning.svg"),
-    ),
-    (
-        "icons-glass/git/pull-request_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/pull-request_success.svg"),
-    ),
-    (
-        "icons-glass/git/pull_info.svg",
-        include_bytes!("../../../assets/icons-glass/git/pull_info.svg"),
-    ),
-    (
-        "icons-glass/git/push_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/push_success.svg"),
-    ),
-    (
-        "icons-glass/git/rebase_ai.svg",
-        include_bytes!("../../../assets/icons-glass/git/rebase_ai.svg"),
-    ),
-    (
-        "icons-glass/git/rebase_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/rebase_muted.svg"),
-    ),
-    (
-        "icons-glass/git/remote_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/remote_muted.svg"),
-    ),
-    (
-        "icons-glass/git/staged_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/staged_success.svg"),
-    ),
-    (
-        "icons-glass/git/staging_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/staging_muted.svg"),
-    ),
-    (
-        "icons-glass/git/staging_success.svg",
-        include_bytes!("../../../assets/icons-glass/git/staging_success.svg"),
-    ),
-    (
-        "icons-glass/git/stash_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/stash_muted.svg"),
-    ),
-    (
-        "icons-glass/git/tag_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/tag_muted.svg"),
-    ),
-    (
-        "icons-glass/git/untracked_muted.svg",
-        include_bytes!("../../../assets/icons-glass/git/untracked_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/agent_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/agent_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/api_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/api_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/breadcrumb_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/breadcrumb_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/breadcrumb_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/breadcrumb_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/cache_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/cache_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/chain_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/chain_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/ci-cd_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/ci-cd_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/container_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/container_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/context_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/context_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/debug_error.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/debug_error.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/deploy_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/deploy_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/embedding_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/embedding_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/environment_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/environment_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/environment_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/environment_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/extension_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/extension_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/file_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/file_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/find-replace_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/find-replace_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/fine-tune_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/fine-tune_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/folder_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/folder_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/function-call_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/function-call_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/function-call_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/function-call_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/guardrail_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/guardrail_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/health_error.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/health_error.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/keyboard_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/keyboard_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/logs_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/logs_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/logs_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/logs_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/memory_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/memory_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/minimap_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/minimap_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/minimap_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/minimap_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/model_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/model_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/monitor_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/monitor_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/monitor_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/monitor_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/orchestrator_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/orchestrator_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/orchestrator_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/orchestrator_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/palette_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/palette_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/palette_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/palette_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/pipeline_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/pipeline_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/pipeline_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/pipeline_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/pipeline_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/pipeline_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/prompt_ai.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/prompt_ai.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/queue_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/queue_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/rag_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/rag_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/rag_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/rag_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/rollback_error.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/rollback_error.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/scale_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/scale_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/scale_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/scale_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/search_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/search_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/secret_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/secret_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/settings_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/settings_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/sidebar_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/sidebar_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/snippet_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/snippet_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/snippet_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/snippet_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/split-view_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/split-view_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/streaming_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/streaming_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/tab_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/tab_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/terminal_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/terminal_muted.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/terminal_success.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/terminal_success.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/token_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/token_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/tool-use_warning.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/tool-use_warning.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/webhook_info.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/webhook_info.svg"),
-    ),
-    (
-        "icons-glass/dev-tools/webhook_muted.svg",
-        include_bytes!("../../../assets/icons-glass/dev-tools/webhook_muted.svg"),
     ),
 ];

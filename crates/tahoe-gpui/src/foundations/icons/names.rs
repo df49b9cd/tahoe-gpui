@@ -594,86 +594,95 @@ impl IconName {
         }
     }
 
-    /// Internal: the embedded `icons/sf/<name>.svg` asset path for this
-    /// icon if the mapping in [`Self::system_name`] covers it.
+    /// Internal: the embedded `icons/symbols/<name>.svg` asset path for this
+    /// icon, if a bundled SVG exists.
     ///
-    /// Must stay in lockstep with `system_name()` — the invariant that
-    /// every `system_name()` entry has a corresponding extracted SVG in
-    /// `assets/icons/sf/` and a matching `ICON_ENTRIES` registration is
-    /// exercised by the tests.
+    /// The `icons/symbols/` set is an original, SF-Symbols-aligned glyph set
+    /// authored for this crate (Apache-2.0). Variants whose [`Self::system_name`]
+    /// returns `Some` always have a bundled asset here; a few additional
+    /// variants without an SF equivalent (e.g. `Bot`, `GitCommit`, `Clock`,
+    /// `Ellipsis`, `SidebarLeft`, `XmarkCircleFill`) also resolve here.
     #[allow(unreachable_patterns)]
-    pub(crate) fn sf_asset_path(&self) -> Option<&'static str> {
+    pub(crate) fn bundled_asset_path(&self) -> Option<&'static str> {
         match self {
-            IconName::ArrowDown => Some("icons/sf/arrow.down.svg"),
-            IconName::ArrowRight => Some("icons/sf/arrow.right.svg"),
-            IconName::ArrowTriangleRight => Some("icons/sf/arrowtriangle.right.fill.svg"),
-            IconName::ArrowTriangleDown => Some("icons/sf/arrowtriangle.down.fill.svg"),
-            IconName::Brain => Some("icons/sf/brain.svg"),
-            IconName::Check => Some("icons/sf/checkmark.svg"),
-            IconName::ChevronDown => Some("icons/sf/chevron.down.svg"),
-            IconName::ChevronLeft => Some("icons/sf/chevron.left.svg"),
-            IconName::ChevronRight => Some("icons/sf/chevron.right.svg"),
-            IconName::ChevronUp => Some("icons/sf/chevron.up.svg"),
-            IconName::Copy => Some("icons/sf/document.on.document.svg"),
-            IconName::Download => Some("icons/sf/arrow.down.circle.svg"),
-            IconName::Send => Some("icons/sf/paperplane.svg"),
-            IconName::Square => Some("icons/sf/square.svg"),
-            IconName::X => Some("icons/sf/xmark.svg"),
-            IconName::Loader => Some("icons/sf/arrow.clockwise.svg"),
-            IconName::ProgressSpinner => Some("icons/sf/progress.indicator.svg"),
-            IconName::Code => Some("icons/sf/chevron.left.forwardslash.chevron.right.svg"),
-            IconName::File => Some("icons/sf/document.svg"),
-            IconName::Folder => Some("icons/sf/folder.svg"),
-            IconName::FolderOpen => Some("icons/sf/folder.fill.svg"),
-            IconName::Terminal => Some("icons/sf/apple.terminal.svg"),
-            IconName::Play => Some("icons/sf/play.fill.svg"),
-            IconName::Pause => Some("icons/sf/pause.fill.svg"),
-            IconName::Mic => Some("icons/sf/microphone.svg"),
-            IconName::MicOff => Some("icons/sf/microphone.slash.svg"),
-            IconName::Phone => Some("icons/sf/phone.svg"),
-            IconName::Video => Some("icons/sf/film.svg"),
-            IconName::Settings => Some("icons/sf/gear.svg"),
-            IconName::Bookmark => Some("icons/sf/bookmark.svg"),
-            IconName::Book => Some("icons/sf/book.svg"),
-            IconName::Search => Some("icons/sf/magnifyingglass.svg"),
-            IconName::Link => Some("icons/sf/link.svg"),
-            IconName::Globe => Some("icons/sf/globe.svg"),
-            IconName::Sparkle => Some("icons/sf/sparkles.svg"),
-            IconName::StarFill => Some("icons/sf/star.fill.svg"),
-            IconName::Star => Some("icons/sf/star.svg"),
-            IconName::StarLeadingHalfFilled => Some("icons/sf/star.leadinghalf.filled.svg"),
-            IconName::ListTodo => Some("icons/sf/checklist.svg"),
-            IconName::CircleFilled => Some("icons/sf/circle.fill.svg"),
-            IconName::CircleOutline => Some("icons/sf/circle.svg"),
-            IconName::AlertTriangle => Some("icons/sf/exclamationmark.triangle.svg"),
-            IconName::Image => Some("icons/sf/photo.svg"),
-            IconName::Plus => Some("icons/sf/plus.svg"),
-            IconName::Minus => Some("icons/sf/minus.svg"),
-            IconName::Bug => Some("icons/sf/ant.svg"),
-            IconName::TestTube => Some("icons/sf/testtube.2.svg"),
-            IconName::Package => Some("icons/sf/shippingbox.svg"),
-            IconName::Database => Some("icons/sf/cylinder.svg"),
-            IconName::Key => Some("icons/sf/key.svg"),
-            IconName::Trash => Some("icons/sf/trash.svg"),
-            IconName::Eye => Some("icons/sf/eye.svg"),
-            IconName::EyeOff => Some("icons/sf/eye.slash.svg"),
-            IconName::ExternalLink => Some("icons/sf/arrow.up.right.square.svg"),
-            IconName::ChevronsUpDown => Some("icons/sf/chevron.up.chevron.down.svg"),
-            IconName::ThumbsUp => Some("icons/sf/hand.thumbsup.svg"),
-            IconName::ThumbsDown => Some("icons/sf/hand.thumbsdown.svg"),
-            IconName::RotateCcw => Some("icons/sf/arrow.uturn.backward.svg"),
-            IconName::RotateCw => Some("icons/sf/arrow.uturn.forward.svg"),
-            IconName::Share => Some("icons/sf/square.and.arrow.up.svg"),
-            IconName::Pencil => Some("icons/sf/pencil.svg"),
-            IconName::Volume2 => Some("icons/sf/speaker.wave.2.svg"),
-            IconName::VolumeX => Some("icons/sf/speaker.slash.svg"),
-            IconName::SkipBack => Some("icons/sf/backward.end.svg"),
-            IconName::SkipForward => Some("icons/sf/forward.end.svg"),
-            IconName::Lock => Some("icons/sf/lock.svg"),
-            IconName::Unlock => Some("icons/sf/lock.open.svg"),
-            IconName::Maximize => Some("icons/sf/arrow.up.left.and.arrow.down.right.svg"),
-            IconName::Paperclip => Some("icons/sf/paperclip.svg"),
-            IconName::QuestionMark => Some("icons/sf/questionmark.circle.svg"),
+            IconName::ArrowDown => Some("icons/symbols/arrow-down.svg"),
+            IconName::ArrowRight => Some("icons/symbols/arrow-right.svg"),
+            IconName::ArrowTriangleRight => Some("icons/symbols/arrowtriangle-right-fill.svg"),
+            IconName::ArrowTriangleDown => Some("icons/symbols/arrowtriangle-down-fill.svg"),
+            IconName::Brain => Some("icons/symbols/brain.svg"),
+            IconName::Check => Some("icons/symbols/checkmark.svg"),
+            IconName::ChevronDown => Some("icons/symbols/chevron-down.svg"),
+            IconName::ChevronLeft => Some("icons/symbols/chevron-left.svg"),
+            IconName::ChevronRight => Some("icons/symbols/chevron-right.svg"),
+            IconName::ChevronUp => Some("icons/symbols/chevron-up.svg"),
+            IconName::Copy => Some("icons/symbols/document-on-document.svg"),
+            IconName::Download => Some("icons/symbols/arrow-down-circle.svg"),
+            IconName::Send => Some("icons/symbols/paperplane.svg"),
+            IconName::Square => Some("icons/symbols/square.svg"),
+            IconName::X => Some("icons/symbols/xmark.svg"),
+            IconName::Loader => Some("icons/symbols/arrow-clockwise.svg"),
+            IconName::ProgressSpinner => Some("icons/symbols/progress-indicator.svg"),
+            IconName::Code => Some("icons/symbols/chevron-left-fwdslash-chevron-right.svg"),
+            IconName::File => Some("icons/symbols/document.svg"),
+            IconName::Folder => Some("icons/symbols/folder.svg"),
+            IconName::FolderOpen => Some("icons/symbols/folder-fill.svg"),
+            IconName::Terminal => Some("icons/symbols/terminal.svg"),
+            IconName::Play => Some("icons/symbols/play-fill.svg"),
+            IconName::Pause => Some("icons/symbols/pause-fill.svg"),
+            IconName::Mic => Some("icons/symbols/microphone.svg"),
+            IconName::MicOff => Some("icons/symbols/microphone-slash.svg"),
+            IconName::Phone => Some("icons/symbols/phone.svg"),
+            IconName::Video => Some("icons/symbols/film.svg"),
+            IconName::Settings => Some("icons/symbols/gear.svg"),
+            IconName::Bookmark => Some("icons/symbols/bookmark.svg"),
+            IconName::Book => Some("icons/symbols/book.svg"),
+            IconName::Search => Some("icons/symbols/magnifyingglass.svg"),
+            IconName::Link => Some("icons/symbols/link.svg"),
+            IconName::Globe => Some("icons/symbols/globe.svg"),
+            IconName::Sparkle => Some("icons/symbols/sparkles.svg"),
+            IconName::StarFill => Some("icons/symbols/star-fill.svg"),
+            IconName::Star => Some("icons/symbols/star.svg"),
+            IconName::StarLeadingHalfFilled => Some("icons/symbols/star-leadinghalf-filled.svg"),
+            IconName::ListTodo => Some("icons/symbols/checklist.svg"),
+            IconName::CircleFilled => Some("icons/symbols/circle-fill.svg"),
+            IconName::CircleOutline => Some("icons/symbols/circle.svg"),
+            IconName::AlertTriangle => Some("icons/symbols/exclamationmark-triangle.svg"),
+            IconName::Image => Some("icons/symbols/photo.svg"),
+            IconName::Plus => Some("icons/symbols/plus.svg"),
+            IconName::Minus => Some("icons/symbols/minus.svg"),
+            IconName::Bug => Some("icons/symbols/ant.svg"),
+            IconName::TestTube => Some("icons/symbols/testtube-2.svg"),
+            IconName::Package => Some("icons/symbols/shippingbox.svg"),
+            IconName::Database => Some("icons/symbols/cylinder.svg"),
+            IconName::Key => Some("icons/symbols/key.svg"),
+            IconName::Trash => Some("icons/symbols/trash.svg"),
+            IconName::Eye => Some("icons/symbols/eye.svg"),
+            IconName::EyeOff => Some("icons/symbols/eye-slash.svg"),
+            IconName::ExternalLink => Some("icons/symbols/arrow-up-right-square.svg"),
+            IconName::ChevronsUpDown => Some("icons/symbols/chevron-up-chevron-down.svg"),
+            IconName::ThumbsUp => Some("icons/symbols/hand-thumbsup.svg"),
+            IconName::ThumbsDown => Some("icons/symbols/hand-thumbsdown.svg"),
+            IconName::RotateCcw => Some("icons/symbols/arrow-uturn-backward.svg"),
+            IconName::RotateCw => Some("icons/symbols/arrow-uturn-forward.svg"),
+            IconName::Share => Some("icons/symbols/square-and-arrow-up.svg"),
+            IconName::Pencil => Some("icons/symbols/pencil.svg"),
+            IconName::Volume2 => Some("icons/symbols/speaker-wave-2.svg"),
+            IconName::VolumeX => Some("icons/symbols/speaker-slash.svg"),
+            IconName::SkipBack => Some("icons/symbols/backward-end.svg"),
+            IconName::SkipForward => Some("icons/symbols/forward-end.svg"),
+            IconName::Lock => Some("icons/symbols/lock.svg"),
+            IconName::Unlock => Some("icons/symbols/lock-open.svg"),
+            IconName::Maximize => Some("icons/symbols/arrow-up-left-down-right.svg"),
+            IconName::Paperclip => Some("icons/symbols/paperclip.svg"),
+            IconName::QuestionMark => Some("icons/symbols/questionmark-circle.svg"),
+            // Bundled-only (no SF Symbol equivalent in `system_name`).
+            IconName::Bot => Some("icons/symbols/bot.svg"),
+            IconName::GitCommit => Some("icons/symbols/git-commit.svg"),
+            IconName::FileCode => Some("icons/symbols/file-code.svg"),
+            IconName::Clock => Some("icons/symbols/clock.svg"),
+            IconName::XmarkCircleFill => Some("icons/symbols/xmark-circle-fill.svg"),
+            IconName::Ellipsis => Some("icons/symbols/ellipsis.svg"),
+            IconName::SidebarLeft => Some("icons/symbols/sidebar-left.svg"),
             _ => None,
         }
     }
@@ -683,116 +692,24 @@ impl IconName {
     /// Returns `None` for icons whose SVG assets haven't been added yet,
     /// causing [`super::Icon`] to fall back to Unicode symbol rendering.
     ///
-    /// UI action icons (chevrons, trash, gear, …) now resolve to canonical
-    /// SF Symbols 7 glyphs embedded at `icons/sf/<name>.svg`. Provider, git,
-    /// dev-tools, and language icons keep the crate's custom Lucide-derived
-    /// SVGs because Apple's library contains no equivalents. [`Self::system_name`]
-    /// mirrors this split.
+    /// Generic UI icons (chevrons, trash, gear, …) resolve to the original,
+    /// SF-Symbols-aligned glyph set under `icons/symbols/`. Provider, git,
+    /// dev-tools, and language icons keep their domain-specific custom SVGs.
     ///
     /// **Sync points** -- when adding a new `IconName` variant, update all of:
-    /// 1. `render_strategy()` match arms (standard SVG paths)
-    /// 2. `render_strategy_glass()` match arms (glass SVG paths)
-    /// 3. `ICON_ENTRIES` in `assets.rs` (embedded asset registration)
-    /// 4. `ALL_VARIANTS` in the test module (count guard will fail if missed)
+    /// 1. [`Self::bundled_asset_path`] (for symbol-set icons) or this
+    ///    function's match arms (for domain-specific icons)
+    /// 2. `ICON_ENTRIES` in `assets.rs` (embedded asset registration)
+    /// 3. `ALL_VARIANTS` in the test module (count guard will fail if missed)
     #[allow(unreachable_patterns)] // _ => arm for #[non_exhaustive] forward compat
     pub(crate) fn render_strategy(&self) -> Option<RenderStrategy> {
-        // Route every icon with a canonical SF Symbol identifier to the
-        // extracted SF Symbols 7 asset. Falls through to the Lucide path
-        // for domain-specific icons (providers, git, dev-tools, langs)
-        // that have no SF-Symbol equivalent.
-        if let Some(path) = self.sf_asset_path() {
+        // Symbol-set icons resolve via `bundled_asset_path`. Domain-specific
+        // icons (providers, git, dev-tools, languages) fall through to the
+        // match arms below.
+        if let Some(path) = self.bundled_asset_path() {
             return Some(RenderStrategy::Monochrome(path));
         }
         match self {
-            IconName::ArrowDown => Some(RenderStrategy::Monochrome("icons/ai-sdk/arrow-down.svg")),
-            IconName::ArrowRight => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/arrow-right.svg"))
-            }
-            IconName::Brain => Some(RenderStrategy::Monochrome("icons/ai-sdk/brain.svg")),
-            IconName::Check => Some(RenderStrategy::Monochrome("icons/ai-sdk/check.svg")),
-            IconName::ChevronDown => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/chevron-down.svg"))
-            }
-            IconName::ChevronLeft => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/chevron-left.svg"))
-            }
-            IconName::ChevronRight => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/chevron-right.svg"))
-            }
-            IconName::ChevronUp => Some(RenderStrategy::Monochrome("icons/ai-sdk/chevron-up.svg")),
-            IconName::Copy => Some(RenderStrategy::Monochrome("icons/ai-sdk/copy.svg")),
-            IconName::Download => Some(RenderStrategy::Monochrome("icons/ai-sdk/download.svg")),
-            IconName::Send => Some(RenderStrategy::Monochrome("icons/ai-sdk/send.svg")),
-            IconName::Square => Some(RenderStrategy::Monochrome("icons/ai-sdk/square.svg")),
-            IconName::X => Some(RenderStrategy::Monochrome("icons/ai-sdk/x.svg")),
-            IconName::Loader => Some(RenderStrategy::Monochrome("icons/ai-sdk/loader.svg")),
-            IconName::Code => Some(RenderStrategy::Monochrome("icons/ai-sdk/code.svg")),
-            IconName::File => Some(RenderStrategy::Monochrome("icons/ai-sdk/file.svg")),
-            IconName::Folder => Some(RenderStrategy::Monochrome("icons/ai-sdk/folder.svg")),
-            IconName::FolderOpen => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/folder-open.svg"))
-            }
-            IconName::Terminal => Some(RenderStrategy::Monochrome("icons/ai-sdk/terminal.svg")),
-            IconName::Play => Some(RenderStrategy::Monochrome("icons/ai-sdk/play.svg")),
-            IconName::Pause => Some(RenderStrategy::Monochrome("icons/ai-sdk/pause.svg")),
-            IconName::Mic => Some(RenderStrategy::Monochrome("icons/ai-sdk/mic.svg")),
-            IconName::MicOff => Some(RenderStrategy::Monochrome("icons/ai-sdk/mic-off.svg")),
-            IconName::Phone => Some(RenderStrategy::Monochrome("icons/ai-sdk/phone.svg")),
-            IconName::Video => Some(RenderStrategy::Monochrome("icons/ai-sdk/video.svg")),
-            IconName::Settings => Some(RenderStrategy::Monochrome("icons/ai-sdk/settings.svg")),
-            IconName::Bookmark => Some(RenderStrategy::Monochrome("icons/ai-sdk/bookmark.svg")),
-            IconName::Book => Some(RenderStrategy::Monochrome("icons/ai-sdk/book.svg")),
-            IconName::Search => Some(RenderStrategy::Monochrome("icons/ai-sdk/search.svg")),
-            IconName::Link => Some(RenderStrategy::Monochrome("icons/ai-sdk/link.svg")),
-            IconName::Globe => Some(RenderStrategy::Monochrome("icons/ai-sdk/globe.svg")),
-            IconName::Sparkle => Some(RenderStrategy::Monochrome("icons/ai-sdk/sparkle.svg")),
-            IconName::ListTodo => Some(RenderStrategy::Monochrome("icons/ai-sdk/list-todo.svg")),
-            IconName::CircleFilled => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/circle-filled.svg"))
-            }
-            IconName::CircleOutline => Some(RenderStrategy::Monochrome(
-                "icons/ai-sdk/circle-outline.svg",
-            )),
-            IconName::AlertTriangle => Some(RenderStrategy::Monochrome(
-                "icons/ai-sdk/alert-triangle.svg",
-            )),
-            IconName::Image => Some(RenderStrategy::Monochrome("icons/ai-sdk/image.svg")),
-            IconName::Plus => Some(RenderStrategy::Monochrome("icons/ai-sdk/plus.svg")),
-            IconName::Minus => Some(RenderStrategy::Monochrome("icons/ai-sdk/minus.svg")),
-            IconName::Bug => Some(RenderStrategy::Monochrome("icons/ai-sdk/bug.svg")),
-            IconName::TestTube => Some(RenderStrategy::Monochrome("icons/ai-sdk/test-tube.svg")),
-            IconName::GitCommit => Some(RenderStrategy::Monochrome("icons/ai-sdk/git-commit.svg")),
-            IconName::Package => Some(RenderStrategy::Monochrome("icons/ai-sdk/package.svg")),
-            IconName::Database => Some(RenderStrategy::Monochrome("icons/ai-sdk/database.svg")),
-            IconName::Key => Some(RenderStrategy::Monochrome("icons/ai-sdk/key.svg")),
-            IconName::Bot => Some(RenderStrategy::Monochrome("icons/ai-sdk/bot.svg")),
-            IconName::FileCode => Some(RenderStrategy::Monochrome("icons/ai-sdk/file-code.svg")),
-            IconName::Trash => Some(RenderStrategy::Monochrome("icons/ai-sdk/trash.svg")),
-            IconName::Eye => Some(RenderStrategy::Monochrome("icons/ai-sdk/eye.svg")),
-            IconName::EyeOff => Some(RenderStrategy::Monochrome("icons/ai-sdk/eye-off.svg")),
-            IconName::ExternalLink => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/external-link.svg"))
-            }
-            IconName::ChevronsUpDown => Some(RenderStrategy::Monochrome(
-                "icons/ai-sdk/chevrons-up-down.svg",
-            )),
-            IconName::ThumbsUp => Some(RenderStrategy::Monochrome("icons/ai-sdk/thumbs-up.svg")),
-            IconName::ThumbsDown => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/thumbs-down.svg"))
-            }
-            IconName::RotateCcw => Some(RenderStrategy::Monochrome("icons/ai-sdk/rotate-ccw.svg")),
-            IconName::Share => Some(RenderStrategy::Monochrome("icons/ai-sdk/share.svg")),
-            IconName::Pencil => Some(RenderStrategy::Monochrome("icons/ai-sdk/pencil.svg")),
-            IconName::Volume2 => Some(RenderStrategy::Monochrome("icons/ai-sdk/volume2.svg")),
-            IconName::VolumeX => Some(RenderStrategy::Monochrome("icons/ai-sdk/volume-x.svg")),
-            IconName::SkipBack => Some(RenderStrategy::Monochrome("icons/ai-sdk/skip-back.svg")),
-            IconName::SkipForward => {
-                Some(RenderStrategy::Monochrome("icons/ai-sdk/skip-forward.svg"))
-            }
-            IconName::Lock => Some(RenderStrategy::Monochrome("icons/ai-sdk/lock.svg")),
-            IconName::Unlock => Some(RenderStrategy::Monochrome("icons/ai-sdk/unlock.svg")),
-            IconName::Maximize => Some(RenderStrategy::Monochrome("icons/ai-sdk/maximize.svg")),
-            IconName::Paperclip => Some(RenderStrategy::Monochrome("icons/ai-sdk/paperclip.svg")),
             // Languages
             IconName::LangRust => Some(RenderStrategy::Monochrome("icons/languages/rust.svg")),
             IconName::LangPython => Some(RenderStrategy::Monochrome("icons/languages/python.svg")),
@@ -1159,616 +1076,6 @@ impl IconName {
             )])),
             IconName::Cache => Some(RenderStrategy::MultiColor(&[(
                 "icons/dev-tools/cache_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            _ => None,
-        }
-    }
-
-    /// Returns the Liquid Glass SVG rendering strategy (stroke-width 1.5).
-    ///
-    /// For icons that resolve to a canonical SF Symbol, both the standard
-    /// and glass strategies point at the same fill-based SF asset — SF
-    /// Symbols are filled glyphs, not strokes, so `stroke-width` does not
-    /// apply; Liquid Glass's brighter color palette is applied instead.
-    ///
-    /// For domain-specific icons (providers, git, languages, dev-tools),
-    /// uses glass variant SVGs from `assets/icons-glass/` with thicker
-    /// strokes (1.5 vs 1.2).
-    #[allow(unreachable_patterns)] // _ => arm for #[non_exhaustive] forward compat
-    pub(crate) fn render_strategy_glass(&self) -> Option<RenderStrategy> {
-        // SF Symbols are fill-based and look identical across standard and
-        // glass themes — the only thing that changes is the tint color.
-        if let Some(path) = self.sf_asset_path() {
-            return Some(RenderStrategy::Monochrome(path));
-        }
-        match self {
-            // ── Core UI ──────────────────────────────────────────────────
-            IconName::ArrowDown => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/arrow-down.svg",
-            )),
-            IconName::ArrowRight => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/arrow-right.svg",
-            )),
-            IconName::Brain => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/brain.svg")),
-            IconName::Check => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/check.svg")),
-            IconName::ChevronDown => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/chevron-down.svg",
-            )),
-            IconName::ChevronLeft => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/chevron-left.svg",
-            )),
-            IconName::ChevronRight => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/chevron-right.svg",
-            )),
-            IconName::ChevronUp => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/chevron-up.svg",
-            )),
-            IconName::Copy => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/copy.svg")),
-            IconName::Download => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/download.svg",
-            )),
-            IconName::Send => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/send.svg")),
-            IconName::Square => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/square.svg")),
-            IconName::X => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/x.svg")),
-            IconName::Loader => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/loader.svg")),
-            IconName::ProgressSpinner => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/progress-spinner.svg",
-            )),
-            IconName::Code => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/code.svg")),
-            IconName::File => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/file.svg")),
-            IconName::Folder => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/folder.svg")),
-            IconName::FolderOpen => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/folder-open.svg",
-            )),
-            IconName::Terminal => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/terminal.svg",
-            )),
-            IconName::Play => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/play.svg")),
-            IconName::Pause => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/pause.svg")),
-            IconName::Mic => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/mic.svg")),
-            IconName::MicOff => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/mic-off.svg")),
-            IconName::Phone => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/phone.svg")),
-            IconName::Video => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/video.svg")),
-            IconName::Settings => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/settings.svg",
-            )),
-            // ── Phase 2 ──────────────────────────────────────────────────
-            IconName::Bookmark => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/bookmark.svg",
-            )),
-            IconName::Book => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/book.svg")),
-            IconName::Search => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/search.svg")),
-            IconName::Link => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/link.svg")),
-            IconName::Globe => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/globe.svg")),
-            IconName::Sparkle => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/sparkle.svg")),
-            IconName::ListTodo => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/list-todo.svg",
-            )),
-            IconName::CircleFilled => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/circle-filled.svg",
-            )),
-            IconName::CircleOutline => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/circle-outline.svg",
-            )),
-            IconName::AlertTriangle => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/alert-triangle.svg",
-            )),
-            IconName::Image => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/image.svg")),
-            IconName::Plus => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/plus.svg")),
-            IconName::Minus => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/minus.svg")),
-            // ── Phase 3 ──────────────────────────────────────────────────
-            IconName::Bug => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/bug.svg")),
-            IconName::TestTube => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/test-tube.svg",
-            )),
-            IconName::GitCommit => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/git-commit.svg",
-            )),
-            IconName::Package => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/package.svg")),
-            IconName::Database => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/database.svg",
-            )),
-            IconName::Key => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/key.svg")),
-            IconName::Bot => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/bot.svg")),
-            IconName::FileCode => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/file-code.svg",
-            )),
-            IconName::Trash => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/trash.svg")),
-            IconName::Eye => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/eye.svg")),
-            IconName::EyeOff => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/eye-off.svg")),
-            IconName::ExternalLink => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/external-link.svg",
-            )),
-            // ── Plan / Message actions / Audio / Workflow ────────────────
-            IconName::ChevronsUpDown => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/chevrons-up-down.svg",
-            )),
-            IconName::ThumbsUp => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/thumbs-up.svg",
-            )),
-            IconName::ThumbsDown => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/thumbs-down.svg",
-            )),
-            IconName::RotateCcw => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/rotate-ccw.svg",
-            )),
-            IconName::Share => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/share.svg")),
-            IconName::Pencil => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/pencil.svg")),
-            IconName::Volume2 => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/volume2.svg")),
-            IconName::VolumeX => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/volume-x.svg",
-            )),
-            IconName::SkipBack => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/skip-back.svg",
-            )),
-            IconName::SkipForward => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/skip-forward.svg",
-            )),
-            IconName::Lock => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/lock.svg")),
-            IconName::Unlock => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/unlock.svg")),
-            IconName::Maximize => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/maximize.svg",
-            )),
-            IconName::Paperclip => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/paperclip.svg",
-            )),
-            // ── Languages ────────────────────────────────────────────────
-            IconName::LangRust => {
-                Some(RenderStrategy::Monochrome("icons-glass/languages/rust.svg"))
-            }
-            IconName::LangPython => Some(RenderStrategy::Monochrome(
-                "icons-glass/languages/python.svg",
-            )),
-            IconName::LangJavaScript => Some(RenderStrategy::Monochrome(
-                "icons-glass/languages/javascript.svg",
-            )),
-            IconName::LangTypeScript => Some(RenderStrategy::Monochrome(
-                "icons-glass/languages/typescript.svg",
-            )),
-            IconName::LangGo => Some(RenderStrategy::Monochrome("icons-glass/languages/go.svg")),
-            IconName::LangC => Some(RenderStrategy::Monochrome("icons-glass/languages/c.svg")),
-            IconName::LangCpp => Some(RenderStrategy::Monochrome("icons-glass/languages/cpp.svg")),
-            IconName::LangBash => {
-                Some(RenderStrategy::Monochrome("icons-glass/languages/bash.svg"))
-            }
-            IconName::LangJson => {
-                Some(RenderStrategy::Monochrome("icons-glass/languages/json.svg"))
-            }
-            IconName::LangToml => {
-                Some(RenderStrategy::Monochrome("icons-glass/languages/toml.svg"))
-            }
-            IconName::LangHtml => {
-                Some(RenderStrategy::Monochrome("icons-glass/languages/html.svg"))
-            }
-            IconName::LangCss => Some(RenderStrategy::Monochrome("icons-glass/languages/css.svg")),
-            // ── Providers ────────────────────────────────────────────────
-            IconName::ProviderClaude => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/claude.svg",
-            )),
-            IconName::ProviderGpt => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/gpt.svg"))
-            }
-            IconName::ProviderGemini => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/gemini.svg",
-            )),
-            IconName::ProviderGrok => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/grok.svg"))
-            }
-            IconName::ProviderLlama => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/llama.svg",
-            )),
-            IconName::ProviderDeepSeek => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/deepseek.svg",
-            )),
-            IconName::ProviderMistral => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/mistral.svg",
-            )),
-            IconName::ProviderGemma => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/gemma.svg",
-            )),
-            IconName::ProviderPhi => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/phi.svg"))
-            }
-            IconName::ProviderQwen => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/qwen.svg"))
-            }
-            IconName::ProviderGlm => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/glm.svg"))
-            }
-            IconName::ProviderMiniMax => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/minimax.svg",
-            )),
-            IconName::ProviderErnie => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/ernie.svg",
-            )),
-            IconName::ProviderCohere => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/cohere.svg",
-            )),
-            IconName::ProviderPerplexity => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/perplexity.svg",
-            )),
-            IconName::ProviderNova => {
-                Some(RenderStrategy::Monochrome("icons-glass/providers/nova.svg"))
-            }
-            IconName::ProviderCustom => Some(RenderStrategy::Monochrome(
-                "icons-glass/providers/custom.svg",
-            )),
-            // ── Git (multi-color layers) ─────────────────────────────────
-            IconName::GitBranch => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/branch_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitMerge => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/merge_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::GitConflict => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/conflict_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::GitPull => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/pull_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::GitPush => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/push_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::GitCheckout => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/checkout_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitStash => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/stash_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitTag => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/tag_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitLog => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/log_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitRebase => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/git/rebase_muted.svg", IconColorRole::Muted),
-                ("icons-glass/git/rebase_ai.svg", IconColorRole::Ai),
-            ])),
-            IconName::GitCompare => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/git/compare_muted.svg", IconColorRole::Muted),
-                ("icons-glass/git/compare_error.svg", IconColorRole::Error),
-                (
-                    "icons-glass/git/compare_success.svg",
-                    IconColorRole::Success,
-                ),
-            ])),
-            IconName::GitInlineDiff => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/git/inline-diff_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/git/inline-diff_error.svg",
-                    IconColorRole::Error,
-                ),
-                (
-                    "icons-glass/git/inline-diff_success.svg",
-                    IconColorRole::Success,
-                ),
-            ])),
-            IconName::GitStaging => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/git/staging_muted.svg", IconColorRole::Muted),
-                (
-                    "icons-glass/git/staging_success.svg",
-                    IconColorRole::Success,
-                ),
-            ])),
-            IconName::GitPullRequest => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/pull-request_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::GitCodeReview => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/git/code-review_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                ("icons-glass/git/code-review_info.svg", IconColorRole::Info),
-            ])),
-            IconName::GitFork => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/fork_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitClone => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/clone_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitRemote => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/remote_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitBlame => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/git/blame_muted.svg", IconColorRole::Muted),
-                ("icons-glass/git/blame_warning.svg", IconColorRole::Warning),
-            ])),
-            IconName::GitStaged => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/staged_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::GitModified => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/modified_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::GitUntracked => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/untracked_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitAdded => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/added_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::GitDeleted => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/deleted_error.svg",
-                IconColorRole::Error,
-            )])),
-            IconName::GitIgnored => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/ignored_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::GitAhead => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/ahead_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::GitBehind => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/behind_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::GitClean => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/git/clean_success.svg",
-                IconColorRole::Success,
-            )])),
-            // ── Dev Tools: IDE & Editor ──────────────────────────────────
-            IconName::DevTab => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/tab_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::DevSidebar => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/sidebar_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::DevSplitView => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/split-view_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::DevSearch => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/search_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::DevFindReplace => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/find-replace_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::DevMinimap => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/minimap_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/minimap_info.svg",
-                    IconColorRole::Info,
-                ),
-            ])),
-            IconName::DevBreadcrumb => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/breadcrumb_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/breadcrumb_info.svg",
-                    IconColorRole::Info,
-                ),
-            ])),
-            IconName::DevSnippet => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/snippet_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/snippet_warning.svg",
-                    IconColorRole::Warning,
-                ),
-            ])),
-            IconName::DevPalette => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/palette_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/palette_info.svg",
-                    IconColorRole::Info,
-                ),
-            ])),
-            IconName::DevExtension => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/extension_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::DevKeyboard => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/keyboard_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::DevDebug => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/debug_error.svg",
-                IconColorRole::Error,
-            )])),
-            // ── Dev Tools: AI & Agents ───────────────────────────────────
-            IconName::Agent => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/agent_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Prompt => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/prompt_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Chain => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/chain_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::ToolUse => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/tool-use_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::Memory => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/memory_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Context => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/context_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Embedding => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/embedding_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Rag => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/dev-tools/rag_muted.svg", IconColorRole::Muted),
-                ("icons-glass/dev-tools/rag_info.svg", IconColorRole::Info),
-            ])),
-            IconName::Orchestrator => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/orchestrator_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/orchestrator_ai.svg",
-                    IconColorRole::Ai,
-                ),
-            ])),
-            IconName::Model => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/model_ai.svg",
-                IconColorRole::Ai,
-            )])),
-            IconName::Streaming => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/streaming_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::FunctionCall => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/function-call_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/function-call_warning.svg",
-                    IconColorRole::Warning,
-                ),
-            ])),
-            IconName::Guardrail => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/guardrail_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::Token => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/token_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::FineTune => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/fine-tune_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            // ── Dev Tools: DevOps ────────────────────────────────────────
-            IconName::Deploy => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/deploy_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::CiCd => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/ci-cd_success.svg",
-                IconColorRole::Success,
-            )])),
-            IconName::Container => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/container_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::Pipeline => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/pipeline_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/pipeline_success.svg",
-                    IconColorRole::Success,
-                ),
-                (
-                    "icons-glass/dev-tools/pipeline_warning.svg",
-                    IconColorRole::Warning,
-                ),
-            ])),
-            IconName::Monitor => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/monitor_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/monitor_success.svg",
-                    IconColorRole::Success,
-                ),
-            ])),
-            IconName::Logs => Some(RenderStrategy::MultiColor(&[
-                ("icons-glass/dev-tools/logs_muted.svg", IconColorRole::Muted),
-                (
-                    "icons-glass/dev-tools/logs_warning.svg",
-                    IconColorRole::Warning,
-                ),
-            ])),
-            IconName::Environment => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/environment_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/environment_info.svg",
-                    IconColorRole::Info,
-                ),
-            ])),
-            IconName::Secret => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/secret_warning.svg",
-                IconColorRole::Warning,
-            )])),
-            IconName::Webhook => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/webhook_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/webhook_info.svg",
-                    IconColorRole::Info,
-                ),
-            ])),
-            IconName::Api => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/api_info.svg",
-                IconColorRole::Info,
-            )])),
-            IconName::Scale => Some(RenderStrategy::MultiColor(&[
-                (
-                    "icons-glass/dev-tools/scale_muted.svg",
-                    IconColorRole::Muted,
-                ),
-                (
-                    "icons-glass/dev-tools/scale_success.svg",
-                    IconColorRole::Success,
-                ),
-            ])),
-            IconName::Rollback => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/rollback_error.svg",
-                IconColorRole::Error,
-            )])),
-            IconName::Health => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/health_error.svg",
-                IconColorRole::Error,
-            )])),
-            IconName::Queue => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/queue_muted.svg",
-                IconColorRole::Muted,
-            )])),
-            IconName::Cache => Some(RenderStrategy::MultiColor(&[(
-                "icons-glass/dev-tools/cache_warning.svg",
                 IconColorRole::Warning,
             )])),
             _ => None,
