@@ -16,8 +16,14 @@ use crate::foundations::layout::CONTENT_MARGIN;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
-/// Calendar day-cell square size (width and height, in points).
-const DATE_CELL_SIZE: f32 = 36.0;
+/// Calendar day-cell size for the `Compact` popover style (in points).
+/// The popover calendar is visually denser than the inline `Graphical`
+/// variant, so its cells shrink to match HIG's compact density.
+const DATE_CELL_SIZE_COMPACT: f32 = 28.0;
+
+/// Calendar day-cell size for the `Graphical` inline style (in points).
+/// Matches macOS Tahoe's always-visible inline calendar sizing.
+const DATE_CELL_SIZE_GRAPHICAL: f32 = 36.0;
 
 /// Calendar day-of-week header row height (in points).
 const DATE_HEADER_HEIGHT: f32 = 28.0;
@@ -130,6 +136,29 @@ pub enum DateDisplayFormat {
     Iso,
 }
 
+/// Visual presentation style per HIG.
+///
+/// Marked `#[non_exhaustive]` so additional styles (e.g. a future
+/// `Automatic`) can be added without a breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum DatePickerStyle {
+    /// Trigger button that pops a calendar dropdown. Day cells are 28pt
+    /// to match the denser popover form. Default.
+    #[default]
+    Compact,
+    /// Plain text field. The user types a date in the locale format;
+    /// callers validate on blur. No dropdown, no icon trigger.
+    Field,
+    /// Always-visible inline calendar. The trigger button is omitted
+    /// and `is_open` is ignored — the grid renders directly. Day cells
+    /// are 36pt to match macOS Tahoe's inline sizing.
+    Graphical,
+    /// Text field paired with a ± stepper that increments or decrements
+    /// the selected date by one day.
+    StepperField,
+}
+
 // ─── DatePicker ─────────────────────────────────────────────────────────────
 
 /// HIG date picker with a calendar grid dropdown.
@@ -186,6 +215,8 @@ pub struct DatePicker {
     max_date: Option<SimpleDate>,
     /// Trigger-label format. Defaults to locale-style short form per HIG.
     display_format: DateDisplayFormat,
+    /// HIG presentation style. Defaults to [`DatePickerStyle::Compact`].
+    style: DatePickerStyle,
 }
 
 /// Total ordering helper for `SimpleDate`. We need it for range checks but
@@ -213,7 +244,15 @@ impl DatePicker {
             min_date: None,
             max_date: None,
             display_format: DateDisplayFormat::Locale,
+            style: DatePickerStyle::Compact,
         }
+    }
+
+    /// Select the HIG presentation style. Defaults to
+    /// [`DatePickerStyle::Compact`].
+    pub fn style(mut self, style: DatePickerStyle) -> Self {
+        self.style = style;
+        self
     }
 
     /// Per-component override for the first day of the week. When unset,
@@ -324,6 +363,15 @@ impl RenderOnce for DatePicker {
             .map(|h| h.is_focused(window))
             .unwrap_or(self.focused);
 
+        let style = self.style;
+        // Day-cell size switches by style: the Compact popover is denser
+        // at 28pt while the Graphical inline calendar uses 36pt to match
+        // macOS Tahoe.
+        let cell_size = match style {
+            DatePickerStyle::Graphical => DATE_CELL_SIZE_GRAPHICAL,
+            _ => DATE_CELL_SIZE_COMPACT,
+        };
+
         // ── Trigger label ──────────────────────────────────────────────────
         let display_format = self.display_format;
         let trigger_label: SharedString = self
@@ -351,11 +399,20 @@ impl RenderOnce for DatePicker {
         let on_highlight = self.on_highlight.map(std::rc::Rc::new);
 
         // ── Trigger button ─────────────────────────────────────────────────
+        // Trigger variants differ by style:
+        //   Compact      -> button with list icon, popover on open
+        //   Field        -> text-field visual, no icon, no popover
+        //   Graphical    -> no trigger (inline calendar)
+        //   StepperField -> text-field visual + ±1 day stepper buttons
         let toggle_for_trigger = on_toggle.clone();
         let trigger_key_toggle = on_toggle.clone();
         let is_open = self.is_open;
 
-        let trigger_content = div()
+        // Icon is only shown for Compact; Field/StepperField look like
+        // plain text fields.
+        let show_trigger_icon = matches!(style, DatePickerStyle::Compact);
+
+        let mut trigger_content = div()
             .flex()
             .items_center()
             .justify_between()
@@ -366,12 +423,14 @@ impl RenderOnce for DatePicker {
                     .text_style(TextStyle::Body, theme)
                     .text_color(trigger_text_color)
                     .child(trigger_label),
-            )
-            .child(
+            );
+        if show_trigger_icon {
+            trigger_content = trigger_content.child(
                 Icon::new(IconName::ListTodo)
                     .size(theme.icon_size_inline)
                     .color(theme.text_muted),
             );
+        }
 
         let mut trigger = div()
             .id(self.id.clone())
@@ -391,26 +450,111 @@ impl RenderOnce for DatePicker {
             .hover(|style| style.cursor_pointer())
             .child(trigger_content);
 
-        if let Some(handler) = toggle_for_trigger {
+        // Click-to-toggle applies to Compact only; Field/StepperField are
+        // text entry surfaces. (StepperField's ± buttons handle their own
+        // clicks further below.)
+        if matches!(style, DatePickerStyle::Compact)
+            && let Some(handler) = toggle_for_trigger
+        {
             trigger = trigger.on_click(move |_event, window, cx| {
                 handler(!is_open, window, cx);
             });
         }
 
-        // Trigger keyboard activation: Enter/Space opens the dropdown.
+        // Trigger keyboard activation: Enter/Space opens the dropdown
+        // for Compact. For Field/StepperField it commits the (parent-
+        // validated) value by firing on_toggle(false); callers treat
+        // that as a "blur".
         if let Some(handler) = trigger_key_toggle {
+            let style_captured = style;
             trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if crate::foundations::keyboard::is_activation_key(event) && !is_open {
-                    cx.stop_propagation();
-                    handler(true, window, cx);
+                if crate::foundations::keyboard::is_activation_key(event) {
+                    match style_captured {
+                        DatePickerStyle::Compact => {
+                            if !is_open {
+                                cx.stop_propagation();
+                                handler(true, window, cx);
+                            }
+                        }
+                        DatePickerStyle::Field | DatePickerStyle::StepperField => {
+                            cx.stop_propagation();
+                            handler(false, window, cx);
+                        }
+                        DatePickerStyle::Graphical => {}
+                    }
                 }
             });
         }
 
-        // ── Container ──────────────────────────────────────────────────────
-        let mut container = div().relative().child(trigger);
+        // Graphical variant: render the calendar inline and skip the
+        // trigger + popover entirely. All interactivity, keyboard
+        // handling, and the focus ring live on the inline calendar.
+        if matches!(style, DatePickerStyle::Graphical) {
+            let calendar = build_inline_calendar(
+                self.viewing_year,
+                self.viewing_month,
+                self.selected,
+                self.highlighted_day,
+                self.first_weekday,
+                self.min_date,
+                self.max_date,
+                self.focus_handle.clone(),
+                cell_size,
+                theme,
+                focused,
+                on_change.clone(),
+                on_navigate.clone(),
+                on_highlight.clone(),
+            );
+            return div().child(calendar).into_any_element();
+        }
 
-        if self.is_open {
+        // StepperField variant: wrap the text field in a row with ± buttons.
+        let container_root = if matches!(style, DatePickerStyle::StepperField) {
+            let selected = self.selected;
+            let on_change_dec = on_change.clone();
+            let on_change_inc = on_change.clone();
+            let dec_btn = stepper_button(
+                theme,
+                ElementId::from((self.id.clone(), "dp-step-dec")),
+                IconName::Minus,
+                move |_event, window, cx| {
+                    if let (Some(date), Some(handler)) = (selected, on_change_dec.as_ref()) {
+                        let prev = shift_days(date, -1);
+                        handler(prev, window, cx);
+                    }
+                },
+            );
+            let inc_btn = stepper_button(
+                theme,
+                ElementId::from((self.id.clone(), "dp-step-inc")),
+                IconName::Plus,
+                move |_event, window, cx| {
+                    if let (Some(date), Some(handler)) = (selected, on_change_inc.as_ref()) {
+                        let next = shift_days(date, 1);
+                        handler(next, window, cx);
+                    }
+                },
+            );
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(theme.spacing_sm)
+                .child(div().flex_grow().child(trigger))
+                .child(dec_btn)
+                .child(inc_btn)
+        } else {
+            div().relative().child(trigger)
+        };
+
+        let mut container = container_root;
+
+        // Field / StepperField don't have a popover — the field itself
+        // is the value-entry surface. Callers supply an on_change hook
+        // for parse-on-blur handling (HIG guidance).
+        let show_popover = matches!(style, DatePickerStyle::Compact) && self.is_open;
+        if show_popover {
             let year = self.viewing_year;
             let month = self.viewing_month;
             let days_in = SimpleDate::days_in_month(year, month);
@@ -509,7 +653,7 @@ impl RenderOnce for DatePicker {
                 let label = base_labels[idx];
                 dow_row = dow_row.child(
                     div()
-                        .w(px(DATE_CELL_SIZE))
+                        .w(px(cell_size))
                         .h(px(DATE_HEADER_HEIGHT))
                         .flex()
                         .items_center()
@@ -587,13 +731,13 @@ impl RenderOnce for DatePicker {
 
                     let mut cell = div()
                         .id(cell_id)
-                        .w(px(DATE_CELL_SIZE))
-                        .h(px(DATE_CELL_SIZE))
+                        .w(px(cell_size))
+                        .h(px(cell_size))
                         .flex()
                         .items_center()
                         .justify_center()
                         .text_style(TextStyle::Subheadline, theme)
-                        .rounded(px(DATE_CELL_SIZE / 2.0)); // circle
+                        .rounded(px(cell_size / 2.0)); // circle
 
                     if is_selected && in_range {
                         cell = cell
@@ -651,7 +795,7 @@ impl RenderOnce for DatePicker {
                     .absolute()
                     .left_0()
                     .top(theme.dropdown_top())
-                    .w(px(DATE_CELL_SIZE * DATE_GRID_COLUMNS + CONTENT_MARGIN)) // 7 cells + padding
+                    .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN)) // 7 cells + padding
                     .overflow_hidden(),
                 theme,
                 GlassSize::Medium,
@@ -746,13 +890,372 @@ impl RenderOnce for DatePicker {
             container = container.child(deferred(dropdown).with_priority(1));
         }
 
-        container
+        container.into_any_element()
     }
+}
+
+// ─── Style-specific helpers ─────────────────────────────────────────────────
+
+/// Shift a [`SimpleDate`] by a signed day delta, rolling over months and
+/// years. Used by the `StepperField` style's ± buttons.
+fn shift_days(date: SimpleDate, delta: i32) -> SimpleDate {
+    let mut year = date.year;
+    let mut month = date.month as i32;
+    let mut day = date.day as i32 + delta;
+    // Walk backward/forward month by month rather than computing ordinal
+    // dates, which keeps leap-year handling inside `days_in_month`.
+    loop {
+        if day < 1 {
+            month -= 1;
+            if month < 1 {
+                month = 12;
+                year -= 1;
+            }
+            day += SimpleDate::days_in_month(year, month as u8) as i32;
+        } else {
+            let max = SimpleDate::days_in_month(year, month as u8) as i32;
+            if day > max {
+                day -= max;
+                month += 1;
+                if month > 12 {
+                    month = 1;
+                    year += 1;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    SimpleDate::new(year, month as u8, day as u8)
+}
+
+/// Build a compact ± stepper button used by the `StepperField` style.
+fn stepper_button(
+    theme: &crate::foundations::theme::TahoeTheme,
+    id: ElementId,
+    icon: IconName,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .min_w(px(theme.target_size()))
+        .min_h(px(theme.target_size()))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .rounded(theme.radius_md)
+        .hover(|style| style.bg(theme.hover))
+        .child(
+            Icon::new(icon)
+                .size(theme.icon_size_inline)
+                .color(theme.text),
+        )
+        .on_click(on_click)
+}
+
+/// Build the inline calendar used by the `Graphical` style.
+///
+/// Mirrors the popover body produced for `Compact` but with no
+/// absolute positioning and no mouse-down-out dismissal — the calendar
+/// is always visible. Keyboard navigation and the focus ring are
+/// preserved so the a11y surface stays consistent across styles.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn build_inline_calendar(
+    year: i32,
+    month: u8,
+    selected: Option<SimpleDate>,
+    highlighted_day: Option<u8>,
+    first_weekday_override: Option<u8>,
+    min_date: Option<SimpleDate>,
+    max_date: Option<SimpleDate>,
+    focus_handle: Option<gpui::FocusHandle>,
+    cell_size: f32,
+    theme: &crate::foundations::theme::TahoeTheme,
+    focused: bool,
+    on_change: Option<std::rc::Rc<Box<dyn Fn(SimpleDate, &mut Window, &mut App) + 'static>>>,
+    on_navigate: Option<std::rc::Rc<Box<dyn Fn(i32, u8, &mut Window, &mut App) + 'static>>>,
+    on_highlight: Option<std::rc::Rc<Box<dyn Fn(u8, &mut Window, &mut App) + 'static>>>,
+) -> gpui::AnyElement {
+    let days_in = SimpleDate::days_in_month(year, month);
+    let first_weekday = first_weekday_override.unwrap_or(theme.first_weekday).min(6);
+    let raw_dow = SimpleDate::day_of_week(year, month, 1);
+    let first_dow = ((raw_dow as i16 - first_weekday as i16).rem_euclid(7)) as u8;
+
+    let prev_month = if month == 1 { 12 } else { month - 1 };
+    let prev_year = if month == 1 { year - 1 } else { year };
+    let prev_days = SimpleDate::days_in_month(prev_year, prev_month);
+
+    let next_month_val = if month == 12 { 1 } else { month + 1 };
+    let next_year_val = if month == 12 { year + 1 } else { year };
+
+    // ── Header ────────────────────────────────────────────────────────────
+    let header_label = SharedString::from(format!("{} {}", month_name(month), year));
+
+    let on_nav_prev = on_navigate.clone();
+    let mut prev_btn = div()
+        .id("datepicker-graphical-prev")
+        .min_w(px(theme.target_size()))
+        .min_h(px(theme.target_size()))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .rounded(theme.radius_md)
+        .hover(|style| style.bg(theme.hover))
+        .child(
+            Icon::new(IconName::ChevronLeft)
+                .size(theme.icon_size_inline)
+                .color(theme.text),
+        );
+    if let Some(handler) = on_nav_prev {
+        prev_btn = prev_btn.on_click(move |_event, window, cx| {
+            handler(prev_year, prev_month, window, cx);
+        });
+    }
+
+    let on_nav_next = on_navigate.clone();
+    let mut next_btn = div()
+        .id("datepicker-graphical-next")
+        .min_w(px(theme.target_size()))
+        .min_h(px(theme.target_size()))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .rounded(theme.radius_md)
+        .hover(|style| style.bg(theme.hover))
+        .child(
+            Icon::new(IconName::ChevronRight)
+                .size(theme.icon_size_inline)
+                .color(theme.text),
+        );
+    if let Some(handler) = on_nav_next {
+        next_btn = next_btn.on_click(move |_event, window, cx| {
+            handler(next_year_val, next_month_val, window, cx);
+        });
+    }
+
+    let header = div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .px(theme.spacing_sm)
+        .py(theme.spacing_sm)
+        .child(prev_btn)
+        .child(
+            div()
+                .text_style(TextStyle::Body, theme)
+                .font_weight(theme.effective_weight(FontWeight::SEMIBOLD))
+                .text_color(theme.text)
+                .child(header_label),
+        )
+        .child(next_btn);
+
+    // ── Day-of-week row ──────────────────────────────────────────────────
+    let base_labels = ["S", "M", "T", "W", "T", "F", "S"];
+    let mut dow_row = div().flex().flex_row();
+    for i in 0..7 {
+        let idx = (i + first_weekday as usize) % 7;
+        let label = base_labels[idx];
+        dow_row = dow_row.child(
+            div()
+                .w(px(cell_size))
+                .h(px(DATE_HEADER_HEIGHT))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_style(TextStyle::Subheadline, theme)
+                .font_weight(theme.effective_weight(FontWeight::MEDIUM))
+                .text_color(theme.text_muted)
+                .child(SharedString::from(label)),
+        );
+    }
+
+    // ── Calendar grid ────────────────────────────────────────────────────
+    let today = selected;
+    let accent = theme.accent;
+    let text_color = theme.text;
+    let muted_color = theme.text_muted;
+    let hover_bg = theme.hover_bg();
+
+    let mut grid = div().flex().flex_col();
+    let mut day_cursor: i32 = 1;
+    let mut next_month_day: i32 = 1;
+
+    for row_idx in 0u8..6 {
+        let mut row = div().flex().flex_row();
+        for col in 0u8..7 {
+            let cell_index = (row_idx as i32) * 7 + (col as i32);
+            let offset = cell_index - first_dow as i32;
+            let (display_day, is_current_month) = if offset < 0 {
+                let d = prev_days as i32 + offset + 1;
+                (d as u8, false)
+            } else if day_cursor <= days_in as i32 {
+                let d = day_cursor;
+                day_cursor += 1;
+                (d as u8, true)
+            } else {
+                let d = next_month_day;
+                next_month_day += 1;
+                (d as u8, false)
+            };
+
+            let is_selected = is_current_month
+                && today
+                    .is_some_and(|t| t.year == year && t.month == month && t.day == display_day);
+            let is_highlighted = is_current_month && highlighted_day == Some(display_day);
+            let cell_date = if is_current_month {
+                SimpleDate::new(year, month, display_day)
+            } else {
+                let (y, m) = if offset < 0 {
+                    (prev_year, prev_month)
+                } else {
+                    (next_year_val, next_month_val)
+                };
+                SimpleDate::new(y, m, display_day)
+            };
+            let in_range = min_date
+                .is_none_or(|d| date_cmp(cell_date, d) != std::cmp::Ordering::Less)
+                && max_date.is_none_or(|d| date_cmp(cell_date, d) != std::cmp::Ordering::Greater);
+            let is_interactable = is_current_month && in_range;
+
+            let on_change_cell = on_change.clone();
+
+            let cell_id = ElementId::from(SharedString::from(format!(
+                "dpg-{}-{}-{}",
+                row_idx, col, display_day
+            )));
+
+            let mut cell = div()
+                .id(cell_id)
+                .w(px(cell_size))
+                .h(px(cell_size))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_style(TextStyle::Subheadline, theme)
+                .rounded(px(cell_size / 2.0));
+
+            if is_selected && in_range {
+                cell = cell
+                    .bg(accent)
+                    .text_color(theme.text_on_accent)
+                    .font_weight(theme.effective_weight(FontWeight::SEMIBOLD));
+            } else if is_highlighted && in_range {
+                cell = cell
+                    .bg(hover_bg)
+                    .text_color(text_color)
+                    .font_weight(theme.effective_weight(FontWeight::MEDIUM));
+            } else if is_interactable {
+                cell = cell
+                    .text_color(text_color)
+                    .hover(|style| style.bg(theme.hover).cursor_pointer());
+            } else if is_current_month && !in_range {
+                cell = cell.text_color(muted_color).opacity(0.35);
+            } else {
+                cell = cell.text_color(muted_color).opacity(0.5);
+            }
+
+            cell = cell.child(SharedString::from(format!("{}", display_day)));
+
+            if is_interactable {
+                let date = SimpleDate::new(year, month, display_day);
+                cell = cell.cursor_pointer().on_click(move |_event, window, cx| {
+                    if let Some(handler) = &on_change_cell {
+                        handler(date, window, cx);
+                    }
+                });
+            }
+
+            row = row.child(cell);
+        }
+        grid = grid.child(row);
+    }
+
+    // ── Wrap with focus ring + keyboard nav ──────────────────────────────
+    let mut wrapper = div()
+        .flex()
+        .flex_col()
+        .p(theme.spacing_sm)
+        .child(header)
+        .child(dow_row)
+        .child(grid);
+
+    wrapper = apply_standard_control_styling(wrapper, theme, GlassSize::Small, focused);
+    if let Some(handle) = focus_handle.as_ref() {
+        wrapper = wrapper.track_focus(handle);
+    }
+
+    let key_on_change = on_change.clone();
+    let key_on_navigate = on_navigate.clone();
+    let key_on_highlight = on_highlight.clone();
+    let year_c = year;
+    let month_c = month;
+    let days_in_c = days_in;
+    wrapper = wrapper.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        match event.keystroke.key.as_str() {
+            "enter" => {
+                if let Some(day) = highlighted_day
+                    && day >= 1
+                    && day <= days_in_c
+                {
+                    let date = SimpleDate::new(year_c, month_c, day);
+                    if let Some(ref handler) = key_on_change {
+                        handler(date, window, cx);
+                    }
+                }
+            }
+            key @ ("left" | "right" | "up" | "down") => {
+                cx.stop_propagation();
+                let start = highlighted_day.unwrap_or(1) as i32;
+                let delta = match key {
+                    "left" => -1,
+                    "right" => 1,
+                    "up" => -7,
+                    "down" => 7,
+                    _ => 0,
+                };
+                let target = start + delta;
+                let (target_year, target_month, target_day) = if target < 1 {
+                    let (py, pm) = if month_c == 1 {
+                        (year_c - 1, 12)
+                    } else {
+                        (year_c, month_c - 1)
+                    };
+                    let pd = SimpleDate::days_in_month(py, pm) as i32 + target;
+                    (py, pm, pd.max(1) as u8)
+                } else if target > days_in_c as i32 {
+                    let (ny, nm) = if month_c == 12 {
+                        (year_c + 1, 1)
+                    } else {
+                        (year_c, month_c + 1)
+                    };
+                    let nd = target - days_in_c as i32;
+                    let nd = nd.min(SimpleDate::days_in_month(ny, nm) as i32).max(1);
+                    (ny, nm, nd as u8)
+                } else {
+                    (year_c, month_c, target as u8)
+                };
+                if (target_year, target_month) != (year_c, month_c)
+                    && let Some(ref handler) = key_on_navigate
+                {
+                    handler(target_year, target_month, window, cx);
+                }
+                if let Some(ref handler) = key_on_highlight {
+                    handler(target_day, window, cx);
+                }
+            }
+            _ => {}
+        }
+    });
+
+    wrapper.into_any_element()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DatePicker, SimpleDate};
+    use super::{DatePicker, DatePickerStyle, SimpleDate, shift_days};
     use core::prelude::v1::test;
 
     // ── SimpleDate::days_in_month ──────────────────────────────────────────
@@ -950,5 +1453,67 @@ mod tests {
                 assert!(dow < 7, "day_of_week({}, {}, 1) = {}", year, month, dow);
             }
         }
+    }
+
+    // ── DatePickerStyle smoke tests ───────────────────────────────────────
+    //
+    // One smoke test per style: verifies the builder threads through and
+    // that the value is retained. Rendering correctness is covered by
+    // existing keyboard / grid tests plus the gallery examples.
+
+    #[test]
+    fn datepicker_style_default_is_compact() {
+        let dp = DatePicker::new("test");
+        assert_eq!(dp.style, DatePickerStyle::Compact);
+    }
+
+    #[test]
+    fn datepicker_style_compact() {
+        let dp = DatePicker::new("test").style(DatePickerStyle::Compact);
+        assert_eq!(dp.style, DatePickerStyle::Compact);
+    }
+
+    #[test]
+    fn datepicker_style_field() {
+        let dp = DatePicker::new("test").style(DatePickerStyle::Field);
+        assert_eq!(dp.style, DatePickerStyle::Field);
+    }
+
+    #[test]
+    fn datepicker_style_graphical() {
+        let dp = DatePicker::new("test").style(DatePickerStyle::Graphical);
+        assert_eq!(dp.style, DatePickerStyle::Graphical);
+    }
+
+    #[test]
+    fn datepicker_style_stepper_field() {
+        let dp = DatePicker::new("test").style(DatePickerStyle::StepperField);
+        assert_eq!(dp.style, DatePickerStyle::StepperField);
+    }
+
+    // ── StepperField day-arithmetic ───────────────────────────────────────
+
+    #[test]
+    fn shift_days_forward_within_month() {
+        let d = shift_days(SimpleDate::new(2025, 6, 15), 1);
+        assert_eq!((d.year, d.month, d.day), (2025, 6, 16));
+    }
+
+    #[test]
+    fn shift_days_backward_across_month() {
+        let d = shift_days(SimpleDate::new(2025, 3, 1), -1);
+        assert_eq!((d.year, d.month, d.day), (2025, 2, 28));
+    }
+
+    #[test]
+    fn shift_days_forward_across_year() {
+        let d = shift_days(SimpleDate::new(2024, 12, 31), 1);
+        assert_eq!((d.year, d.month, d.day), (2025, 1, 1));
+    }
+
+    #[test]
+    fn shift_days_leap_year() {
+        let d = shift_days(SimpleDate::new(2024, 2, 28), 1);
+        assert_eq!((d.year, d.month, d.day), (2024, 2, 29));
     }
 }

@@ -48,6 +48,36 @@ fn to_24h(hour_12: u8, is_pm: bool) -> u8 {
     }
 }
 
+/// Increment (or decrement) a (hour, minute) pair by `delta_minutes`, wrapping
+/// across 00:00 / 23:59. Used by the `StepperField` style's ± buttons.
+fn shift_minutes(hour: u8, minute: u8, delta_minutes: i32) -> (u8, u8) {
+    let total = (hour as i32) * 60 + (minute as i32) + delta_minutes;
+    let total = total.rem_euclid(24 * 60);
+    ((total / 60) as u8, (total % 60) as u8)
+}
+
+/// Visual presentation style per HIG.
+///
+/// Marked `#[non_exhaustive]` so additional styles can be added later
+/// without a breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum TimePickerStyle {
+    /// Trigger button + scroll-column dropdown. Matches the original
+    /// macOS textual style. Default.
+    #[default]
+    Compact,
+    /// Plain HH:MM text field. The parent owns parse-on-blur; no
+    /// dropdown is rendered.
+    Field,
+    /// Three-column wheel (hour / minute / AM-PM) rendered inline.
+    /// No trigger, always visible.
+    Wheel,
+    /// Text field paired with a ± stepper that increments or decrements
+    /// by `minute_granularity` minutes, wrapping across midnight.
+    StepperField,
+}
+
 // ─── TimePicker ─────────────────────────────────────────────────────────────
 
 /// HIG time picker with hour/minute column dropdown.
@@ -89,6 +119,8 @@ pub struct TimePicker {
     /// Fired when arrow keys move the highlight. Receives
     /// `(column, row)` so the parent can update state.
     on_highlight: Option<Box<dyn Fn(u8, usize, &mut Window, &mut App) + 'static>>,
+    /// HIG presentation style. Defaults to [`TimePickerStyle::Compact`].
+    style: TimePickerStyle,
 }
 
 impl TimePicker {
@@ -106,7 +138,15 @@ impl TimePicker {
             highlighted_row: None,
             minute_granularity: 5,
             on_highlight: None,
+            style: TimePickerStyle::Compact,
         }
+    }
+
+    /// Select the HIG presentation style. Defaults to
+    /// [`TimePickerStyle::Compact`].
+    pub fn style(mut self, style: TimePickerStyle) -> Self {
+        self.style = style;
+        self
     }
 
     /// Set the minute step granularity. `1` enables every-minute entry,
@@ -284,6 +324,8 @@ impl RenderOnce for TimePicker {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
+        let style = self.style;
+
         // ── Trigger label ──────────────────────────────────────────────────
         let trigger_label: SharedString = SharedString::from(if self.use_24h {
             format_24h(self.hour, self.minute)
@@ -296,11 +338,14 @@ impl RenderOnce for TimePicker {
         let on_highlight = self.on_highlight.map(std::rc::Rc::new);
 
         // ── Trigger button ─────────────────────────────────────────────────
+        // Icon shown only for `Compact`; `Field` / `StepperField` look
+        // like plain text fields per HIG.
         let toggle_for_trigger = on_toggle.clone();
         let trigger_key_toggle = on_toggle.clone();
         let is_open = self.is_open;
+        let show_trigger_icon = matches!(style, TimePickerStyle::Compact);
 
-        let trigger_content = div()
+        let mut trigger_content = div()
             .flex()
             .items_center()
             .justify_between()
@@ -311,12 +356,14 @@ impl RenderOnce for TimePicker {
                     .text_style(TextStyle::Body, theme)
                     .text_color(theme.text)
                     .child(trigger_label),
-            )
-            .child(
+            );
+        if show_trigger_icon {
+            trigger_content = trigger_content.child(
                 Icon::new(IconName::Clock)
                     .size(theme.icon_size_inline)
                     .color(theme.text_muted),
             );
+        }
 
         let mut trigger = div()
             .id(self.id.clone())
@@ -332,29 +379,108 @@ impl RenderOnce for TimePicker {
             .hover(|style| style.cursor_pointer())
             .child(trigger_content);
 
-        if let Some(handler) = toggle_for_trigger {
+        // Click-to-toggle applies only to `Compact`. The text-field styles
+        // have their own commit semantics (parse-on-blur handled by the
+        // parent).
+        if matches!(style, TimePickerStyle::Compact)
+            && let Some(handler) = toggle_for_trigger
+        {
             trigger = trigger.on_click(move |_event, window, cx| {
                 handler(!is_open, window, cx);
             });
         }
 
-        // Trigger keyboard activation: Enter/Space/Down opens the dropdown.
+        // Trigger keyboard activation: Enter/Space/Down opens the dropdown
+        // in `Compact`. In `Field` / `StepperField`, Enter fires
+        // `on_toggle(false)` as a "commit / blur" signal for the parent.
         if let Some(handler) = trigger_key_toggle {
+            let style_captured = style;
             trigger = trigger.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if (crate::foundations::keyboard::is_activation_key(event)
-                    || event.keystroke.key.as_str() == "down")
-                    && !is_open
-                {
-                    cx.stop_propagation();
-                    handler(true, window, cx);
+                let is_activation = crate::foundations::keyboard::is_activation_key(event)
+                    || event.keystroke.key.as_str() == "down";
+                match style_captured {
+                    TimePickerStyle::Compact => {
+                        if is_activation && !is_open {
+                            cx.stop_propagation();
+                            handler(true, window, cx);
+                        }
+                    }
+                    TimePickerStyle::Field | TimePickerStyle::StepperField => {
+                        if crate::foundations::keyboard::is_activation_key(event) {
+                            cx.stop_propagation();
+                            handler(false, window, cx);
+                        }
+                    }
+                    TimePickerStyle::Wheel => {}
                 }
             });
         }
 
-        // ── Container ──────────────────────────────────────────────────────
-        let mut container = div().relative().child(trigger);
+        // ── Wheel variant: always-visible inline columns ───────────────────
+        if matches!(style, TimePickerStyle::Wheel) {
+            let wheel = build_time_wheel(
+                self.hour,
+                self.minute,
+                self.use_24h,
+                self.highlighted_column,
+                self.highlighted_row,
+                self.minute_granularity,
+                theme,
+                self.focused,
+                on_change.clone(),
+                on_highlight.clone(),
+            );
+            return div().child(wheel).into_any_element();
+        }
 
-        if self.is_open {
+        // ── StepperField variant: trigger + ± stepper buttons ──────────────
+        let container_root = if matches!(style, TimePickerStyle::StepperField) {
+            let step = self.minute_granularity.max(1) as i32;
+            let hour_now = self.hour;
+            let minute_now = self.minute;
+            let on_change_dec = on_change.clone();
+            let on_change_inc = on_change.clone();
+            let dec_btn = tp_stepper_button(
+                theme,
+                ElementId::from((self.id.clone(), "tp-step-dec")),
+                IconName::Minus,
+                move |_event, window, cx| {
+                    if let Some(handler) = on_change_dec.as_ref() {
+                        let (h, m) = shift_minutes(hour_now, minute_now, -step);
+                        handler(h, m, window, cx);
+                    }
+                },
+            );
+            let inc_btn = tp_stepper_button(
+                theme,
+                ElementId::from((self.id.clone(), "tp-step-inc")),
+                IconName::Plus,
+                move |_event, window, cx| {
+                    if let Some(handler) = on_change_inc.as_ref() {
+                        let (h, m) = shift_minutes(hour_now, minute_now, step);
+                        handler(h, m, window, cx);
+                    }
+                },
+            );
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(theme.spacing_sm)
+                .child(div().flex_grow().child(trigger))
+                .child(dec_btn)
+                .child(inc_btn)
+        } else {
+            div().relative().child(trigger)
+        };
+
+        // ── Container ──────────────────────────────────────────────────────
+        let mut container = container_root;
+
+        // Only `Compact` shows the popover; `Field` / `StepperField` are
+        // text-entry surfaces and ignore `is_open`.
+        let show_popover = matches!(style, TimePickerStyle::Compact) && self.is_open;
+        if show_popover {
             let current_hour = self.hour;
             let current_minute = self.minute;
             let use_24h = self.use_24h;
@@ -669,15 +795,301 @@ impl RenderOnce for TimePicker {
             container = container.child(deferred(dropdown).with_priority(1));
         }
 
-        container
+        container.into_any_element()
     }
+}
+
+// ─── Style-specific helpers ─────────────────────────────────────────────────
+
+/// Build a compact ± stepper button used by the `StepperField` style.
+fn tp_stepper_button(
+    theme: &crate::foundations::theme::TahoeTheme,
+    id: ElementId,
+    icon: IconName,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .min_w(px(theme.target_size()))
+        .min_h(px(theme.target_size()))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .rounded(theme.radius_md)
+        .hover(|style| style.bg(theme.hover))
+        .child(
+            Icon::new(icon)
+                .size(theme.icon_size_inline)
+                .color(theme.text),
+        )
+        .on_click(on_click)
+}
+
+/// Build the always-visible three-column time wheel used by the
+/// `Wheel` style (hour / minute / AM-PM). Keyboard nav and the focus
+/// ring live on the wrapper so a11y stays consistent with `Compact`.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn build_time_wheel(
+    current_hour: u8,
+    current_minute: u8,
+    use_24h: bool,
+    highlighted_column: u8,
+    highlighted_row: Option<usize>,
+    minute_granularity: u8,
+    theme: &crate::foundations::theme::TahoeTheme,
+    focused: bool,
+    on_change: Option<std::rc::Rc<Box<dyn Fn(u8, u8, &mut Window, &mut App) + 'static>>>,
+    on_highlight: Option<std::rc::Rc<Box<dyn Fn(u8, usize, &mut Window, &mut App) + 'static>>>,
+) -> gpui::AnyElement {
+    let is_pm = current_hour >= 12;
+    let accent = theme.accent;
+    let hover_bg = theme.hover_bg();
+
+    let hour_range: Vec<u8> = if use_24h {
+        (0..24).collect()
+    } else {
+        (1..=12).collect()
+    };
+    let current_display_hour = if use_24h {
+        current_hour
+    } else {
+        match current_hour {
+            0 => 12,
+            1..=12 => current_hour,
+            _ => current_hour - 12,
+        }
+    };
+
+    // Hour column
+    let mut hour_col = div()
+        .id("tpw-hour-col")
+        .flex()
+        .flex_col()
+        .overflow_y_scroll()
+        .max_h(px(DROPDOWN_MAX_HEIGHT))
+        .min_w(px(60.0));
+    for (idx, h) in hour_range.iter().enumerate() {
+        let h = *h;
+        let is_selected = h == current_display_hour;
+        let is_highlighted = highlighted_column == 0 && highlighted_row == Some(idx);
+        let on_change_h = on_change.clone();
+        let cell_id = ElementId::from(SharedString::from(format!("tpw-h-{}", h)));
+        let mut cell = div()
+            .id(cell_id)
+            .min_h(px(theme.target_size()))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_style(TextStyle::Body, theme)
+            .cursor_pointer();
+        if is_selected {
+            cell = cell
+                .bg(accent)
+                .text_color(theme.text_on_accent)
+                .font_weight(theme.effective_weight(FontWeight::SEMIBOLD));
+        } else if is_highlighted {
+            cell = cell.bg(hover_bg).text_color(theme.text);
+        } else {
+            cell = cell
+                .text_color(theme.text)
+                .hover(|style| style.bg(theme.hover));
+        }
+        cell = cell.child(SharedString::from(format!("{:02}", h)));
+        let minute_val = current_minute;
+        let is_pm_val = is_pm;
+        cell = cell.on_click(move |_event, window, cx| {
+            let hour_24 = if use_24h { h } else { to_24h(h, is_pm_val) };
+            if let Some(handler) = &on_change_h {
+                handler(hour_24, minute_val, window, cx);
+            }
+        });
+        hour_col = hour_col.child(cell);
+    }
+
+    // Minute column
+    let granularity = minute_granularity.max(1);
+    let step_count = (60 / granularity as u16).max(1) as u8;
+    let minute_values: Vec<u8> = (0..step_count).map(|i| i * granularity).collect();
+    let snapped_minute = (current_minute / granularity) * granularity;
+
+    let mut minute_col = div()
+        .id("tpw-minute-col")
+        .flex()
+        .flex_col()
+        .overflow_y_scroll()
+        .max_h(px(DROPDOWN_MAX_HEIGHT))
+        .min_w(px(60.0));
+    for (idx, m) in minute_values.iter().enumerate() {
+        let m = *m;
+        let is_selected = m == snapped_minute;
+        let is_highlighted = highlighted_column == 1 && highlighted_row == Some(idx);
+        let on_change_m = on_change.clone();
+        let cell_id = ElementId::from(SharedString::from(format!("tpw-m-{}", m)));
+        let mut cell = div()
+            .id(cell_id)
+            .min_h(px(theme.target_size()))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_style(TextStyle::Body, theme)
+            .cursor_pointer();
+        if is_selected {
+            cell = cell
+                .bg(accent)
+                .text_color(theme.text_on_accent)
+                .font_weight(theme.effective_weight(FontWeight::SEMIBOLD));
+        } else if is_highlighted {
+            cell = cell.bg(hover_bg).text_color(theme.text);
+        } else {
+            cell = cell
+                .text_color(theme.text)
+                .hover(|style| style.bg(theme.hover));
+        }
+        cell = cell.child(SharedString::from(format!("{:02}", m)));
+        let hour_val = current_hour;
+        cell = cell.on_click(move |_event, window, cx| {
+            if let Some(handler) = &on_change_m {
+                handler(hour_val, m, window, cx);
+            }
+        });
+        minute_col = minute_col.child(cell);
+    }
+
+    let mut columns = div()
+        .flex()
+        .flex_row()
+        .gap(px(1.0))
+        .child(hour_col)
+        .child(minute_col);
+
+    // AM/PM column in 12-hour mode
+    if !use_24h {
+        let mut ampm_col = div().flex().flex_col().min_w(px(52.0));
+        for (idx, (label, pm_flag)) in [("AM", false), ("PM", true)].iter().enumerate() {
+            let pm_flag = *pm_flag;
+            let is_selected = is_pm == pm_flag;
+            let is_highlighted = highlighted_column == 2 && highlighted_row == Some(idx);
+            let on_change_ap = on_change.clone();
+            let cell_id = ElementId::from(SharedString::from(format!("tpw-{}", label)));
+            let mut cell = div()
+                .id(cell_id)
+                .min_h(px(theme.target_size()))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_style(TextStyle::Subheadline, theme)
+                .font_weight(theme.effective_weight(FontWeight::MEDIUM))
+                .cursor_pointer();
+            if is_selected {
+                cell = cell.bg(accent).text_color(theme.text_on_accent);
+            } else if is_highlighted {
+                cell = cell.bg(hover_bg).text_color(theme.text);
+            } else {
+                cell = cell
+                    .text_color(theme.text)
+                    .hover(|style| style.bg(theme.hover));
+            }
+            cell = cell.child(SharedString::from(*label));
+            let display_hour = current_display_hour;
+            let minute_val = current_minute;
+            cell = cell.on_click(move |_event, window, cx| {
+                let hour_24 = to_24h(display_hour, pm_flag);
+                if let Some(handler) = &on_change_ap {
+                    handler(hour_24, minute_val, window, cx);
+                }
+            });
+            ampm_col = ampm_col.child(cell);
+        }
+        columns = columns.child(ampm_col);
+    }
+
+    let mut wrapper = div().flex().flex_col().p(theme.spacing_sm).child(columns);
+    wrapper = apply_standard_control_styling(wrapper, theme, GlassSize::Small, focused);
+
+    let has_ampm = !use_24h;
+    let hour_rows = if use_24h { 24 } else { 12 };
+    let minute_rows = step_count as usize;
+    let key_on_change = on_change.clone();
+    let key_on_highlight = on_highlight.clone();
+    wrapper = wrapper.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        match event.keystroke.key.as_str() {
+            "enter" => {
+                if let Some(row) = highlighted_row {
+                    let (h, m) = resolve_selection_with_granularity(
+                        highlighted_column,
+                        row,
+                        current_hour,
+                        current_minute,
+                        use_24h,
+                        granularity,
+                    );
+                    if let Some(ref handler) = key_on_change {
+                        handler(h, m, window, cx);
+                    }
+                }
+            }
+            key @ ("up" | "down" | "left" | "right") => {
+                cx.stop_propagation();
+                let max_col: u8 = if has_ampm { 2 } else { 1 };
+                let col_rows = match highlighted_column {
+                    0 => hour_rows,
+                    1 => minute_rows,
+                    2 => 2,
+                    _ => 1,
+                };
+                let current_row = highlighted_row.unwrap_or(0);
+                let (new_col, new_row) = match key {
+                    "left" => {
+                        let c = if highlighted_column == 0 {
+                            max_col
+                        } else {
+                            highlighted_column - 1
+                        };
+                        (c, 0usize)
+                    }
+                    "right" => {
+                        let c = if highlighted_column >= max_col {
+                            0
+                        } else {
+                            highlighted_column + 1
+                        };
+                        (c, 0usize)
+                    }
+                    "up" => {
+                        let r = if current_row == 0 {
+                            col_rows.saturating_sub(1)
+                        } else {
+                            current_row - 1
+                        };
+                        (highlighted_column, r)
+                    }
+                    "down" => {
+                        let r = if current_row + 1 >= col_rows {
+                            0
+                        } else {
+                            current_row + 1
+                        };
+                        (highlighted_column, r)
+                    }
+                    _ => (highlighted_column, current_row),
+                };
+                if let Some(ref handler) = key_on_highlight {
+                    handler(new_col, new_row, window, cx);
+                }
+            }
+            _ => {}
+        }
+    });
+
+    wrapper.into_any_element()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        TimePicker, column_item_count, default_row_for_column, format_12h, format_24h,
-        resolve_selection, to_24h,
+        TimePicker, TimePickerStyle, column_item_count, default_row_for_column, format_12h,
+        format_24h, resolve_selection, shift_minutes, to_24h,
     };
     use core::prelude::v1::test;
 
@@ -900,5 +1312,59 @@ mod tests {
         let (h, m) = resolve_selection(2, 1, 9, 15, false);
         assert_eq!(h, 21); // 9 PM = 21
         assert_eq!(m, 15);
+    }
+
+    // ── TimePickerStyle smoke tests ───────────────────────────────────────
+
+    #[test]
+    fn timepicker_style_default_is_compact() {
+        let tp = TimePicker::new("test");
+        assert_eq!(tp.style, TimePickerStyle::Compact);
+    }
+
+    #[test]
+    fn timepicker_style_compact() {
+        let tp = TimePicker::new("test").style(TimePickerStyle::Compact);
+        assert_eq!(tp.style, TimePickerStyle::Compact);
+    }
+
+    #[test]
+    fn timepicker_style_field() {
+        let tp = TimePicker::new("test").style(TimePickerStyle::Field);
+        assert_eq!(tp.style, TimePickerStyle::Field);
+    }
+
+    #[test]
+    fn timepicker_style_wheel() {
+        let tp = TimePicker::new("test").style(TimePickerStyle::Wheel);
+        assert_eq!(tp.style, TimePickerStyle::Wheel);
+    }
+
+    #[test]
+    fn timepicker_style_stepper_field() {
+        let tp = TimePicker::new("test").style(TimePickerStyle::StepperField);
+        assert_eq!(tp.style, TimePickerStyle::StepperField);
+    }
+
+    // ── StepperField minute arithmetic ────────────────────────────────────
+
+    #[test]
+    fn shift_minutes_forward() {
+        assert_eq!(shift_minutes(10, 25, 5), (10, 30));
+    }
+
+    #[test]
+    fn shift_minutes_backward() {
+        assert_eq!(shift_minutes(10, 0, -5), (9, 55));
+    }
+
+    #[test]
+    fn shift_minutes_wraps_midnight_forward() {
+        assert_eq!(shift_minutes(23, 55, 10), (0, 5));
+    }
+
+    #[test]
+    fn shift_minutes_wraps_midnight_backward() {
+        assert_eq!(shift_minutes(0, 0, -5), (23, 55));
     }
 }
