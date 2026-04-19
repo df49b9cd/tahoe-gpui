@@ -22,10 +22,10 @@ test-support = ["gpui/test-support", "dep:image"]
 # `PinchEvent` / `on_pinch`, `UniformListScrollHandle::scroll_to_bottom`,
 # the three-argument `FocusHandle::focus(window, cx)`, etc.). Upgrade
 # in lock-step with any `gpui_platform` / `gpui_macros` dev-deps below.
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre" }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre" }
 
 # Markdown auto-completion
-remend = { path = "../remend" }
+remend = { version = "0.1.0", path = "../remend" }
 
 # Markdown parsing
 pulldown-cmark = { version = "0.13", default-features = false, features = ["simd"] }
@@ -64,8 +64,8 @@ image = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["test-support"] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["font-kit"] }
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["test-support"] }
+gpui_platform = { version = "0.1.0", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["font-kit"] }
 
 # ── Examples ────────────────────────────────────────────────────────────────
 

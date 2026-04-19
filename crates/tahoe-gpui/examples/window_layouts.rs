@@ -21,7 +21,7 @@ use tahoe_gpui::components::selection_and_input::segmented_control::{
 use tahoe_gpui::foundations::icons::{EmbeddedIconAssets, Icon, IconName};
 use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
-// u2500u2500 Folder data u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ── Folder data ────────────────────────────────────────────────────────────
 
 struct FolderSection {
     header: &'static str,
@@ -39,7 +39,7 @@ const SECTIONS: &[FolderSection] = &[
     },
 ];
 
-// u2500u2500 Window variant enum u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ── Window variant enum ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum WindowVariant {
@@ -70,7 +70,7 @@ impl WindowVariant {
     ];
 }
 
-// u2500u2500 App state u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ── App state ──────────────────────────────────────────────────────────────
 
 struct WindowLayouts {
     variant_index: usize,
@@ -104,7 +104,7 @@ impl WindowLayouts {
         "Folder"
     }
 
-    // u2500u2500 Shared sidebar content u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── Shared sidebar content ─────────────────────────────────────────────
     fn render_sidebar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.global::<TahoeTheme>();
         let mut content = div().flex().flex_col().size_full();
@@ -176,7 +176,7 @@ impl WindowLayouts {
         Sidebar::new("sidebar").child(content).into_any_element()
     }
 
-    // u2500u2500 Toolbar action icons (shared across toolbar variants) u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── Toolbar action icons (shared across toolbar variants) ─────────────
     fn toolbar_actions() -> Vec<Button> {
         vec![
             Button::new("act-archive")
@@ -202,7 +202,7 @@ impl WindowLayouts {
         ]
     }
 
-    // u2500u2500 Render each variant's top chrome u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── Render each variant's top chrome ───────────────────────────────────
     fn render_chrome(&self, variant: WindowVariant, theme: &TahoeTheme) -> gpui::AnyElement {
         let folder_name = self.selected_folder_name();
 

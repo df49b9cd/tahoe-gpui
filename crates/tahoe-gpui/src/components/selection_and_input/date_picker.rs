@@ -1366,7 +1366,7 @@ mod tests {
         assert!(dp.on_navigate.is_some());
     }
 
-    // u2500u2500 day_of_week edge cases u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── day_of_week edge cases ─────────────────────────────────────────────
 
     #[test]
     fn day_of_week_y2k() {
@@ -1398,7 +1398,7 @@ mod tests {
         assert_eq!(SimpleDate::day_of_week(1900, 3, 1), 4);
     }
 
-    // u2500u2500 days_in_month out-of-range fallback u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── days_in_month out-of-range fallback ────────────────────────────────
 
     #[test]
     fn days_in_month_zero_fallback() {
@@ -1410,7 +1410,7 @@ mod tests {
         assert_eq!(SimpleDate::days_in_month(2025, 13), 30);
     }
 
-    // u2500u2500 viewing builder clamps month u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── viewing builder clamps month ───────────────────────────────────────
 
     #[test]
     fn viewing_clamps_month_zero() {

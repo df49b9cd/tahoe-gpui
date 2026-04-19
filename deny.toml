@@ -56,8 +56,9 @@ exceptions = [
   { name = "ztracing", allow = ["GPL-3.0-or-later"] },
   { name = "ztracing_macro", allow = ["GPL-3.0-or-later"] },
   { name = "zlog", allow = ["GPL-3.0-or-later"] },
-  # `bzip2` / `libbz2-rs-sys` ship under the bzip2-specific permissive license.
-  { name = "bzip2", allow = ["bzip2-1.0.6"] },
+  # `libbz2-rs-sys` ships under the bzip2-specific permissive license.
+  # (`bzip2` itself upstreamed to MIT OR Apache-2.0 at 0.6.0, so it no
+  # longer needs an exception.)
   { name = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
 ]
 

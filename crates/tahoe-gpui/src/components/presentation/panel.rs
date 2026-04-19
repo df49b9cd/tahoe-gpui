@@ -32,13 +32,13 @@
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, CursorStyle, ElementId, KeyDownEvent, MouseDownEvent, Pixels, SharedString,
-    Window, div, hsla, px,
+    Window, div, px,
 };
 
 use crate::callback_types::{OnMutCallback, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::{INSPECTOR_PANEL_WIDTH, MACOS_PANEL_TITLE_BAR_HEIGHT};
-use crate::foundations::materials::{backdrop_overlay, glass_surface};
+use crate::foundations::materials::{backdrop_overlay, glass_surface, glass_surface_hud};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Default panel width, backed by the shared layout token
@@ -64,22 +64,6 @@ const TEXT_STYLE_WIDTH_DEFAULT: Pixels = px(240.0);
 /// Height of the (non-HUD) panel title bar, per HIG
 /// [`MACOS_PANEL_TITLE_BAR_HEIGHT`] (22 pt).
 const TITLE_BAR_HEIGHT: Pixels = px(MACOS_PANEL_TITLE_BAR_HEIGHT);
-
-/// HUD overlay tint — dark translucent fill applied on top of
-/// [`glass_surface`] so HUD panels render dark regardless of the
-/// current appearance (matches `NSPanel.StyleMask.HUDWindow`).
-///
-/// Composed as `bg(black @ 0.6)` per the task brief. Kept local to
-/// this file — `foundations::materials` does not currently expose a
-/// `glass_surface_hud()` helper; see TODO below.
-fn hud_overlay_tint() -> gpui::Hsla {
-    hsla(0.0, 0.0, 0.0, 0.6)
-}
-
-// TODO(materials): Expose a `glass_surface_hud()` helper in
-// `foundations::materials` that composes the dark tint + light text
-// in one place so every HUD surface shares the same recipe. Today
-// this file applies the tint inline on top of `glass_surface`.
 
 /// Position of the panel relative to the viewport edge.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -383,17 +367,15 @@ impl RenderOnce for Panel {
         }
 
         // ── Panel surface (glass) ───────────────────────────────────────────
+        // HUD panels route through `glass_surface_hud` so the dark tint +
+        // light-text recipe matches every other HUD surface in the crate.
         let panel_id = ElementId::from((self.id.clone(), "panel"));
         let panel_body = div().w(width).h_full().flex().flex_col();
-        let mut panel = glass_surface(panel_body, theme, GlassSize::Large).id(panel_id);
-
-        // HUD: dark translucent tint + light text so the panel reads
-        // as dark-glass regardless of current appearance. This is the
-        // documented fallback for the missing `glass_surface_hud()`
-        // helper (see TODO at top of file).
-        if is_hud {
-            panel = panel.bg(hud_overlay_tint()).text_color(theme.background);
-        }
+        let mut panel = if is_hud {
+            glass_surface_hud(panel_body, theme, GlassSize::Large).id(panel_id)
+        } else {
+            glass_surface(panel_body, theme, GlassSize::Large).id(panel_id)
+        };
 
         if let Some(bar) = title_bar {
             panel = panel.child(bar);

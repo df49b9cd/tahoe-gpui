@@ -1199,7 +1199,7 @@ mod tests {
         assert!(tp.on_toggle.is_some());
     }
 
-    // u2500u2500 format_12h / to_24h boundary tests u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── format_12h / to_24h boundary tests ─────────────────────────────────
 
     #[test]
     fn format_12h_one_am() {

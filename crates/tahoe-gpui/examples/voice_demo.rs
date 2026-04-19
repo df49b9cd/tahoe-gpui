@@ -310,7 +310,7 @@ fn main() {
                             .child(Persona::new("Echo", "E").state(PersonaState::Listening)),
                     ),
                 )
-                // Speech Input (functional u2014 click to record)
+                // Speech Input (functional — click to record)
                 .child(
                     section("Speech Input", theme)
                         .child(
