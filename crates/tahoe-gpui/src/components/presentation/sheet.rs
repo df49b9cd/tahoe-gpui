@@ -15,6 +15,35 @@
 //! The variant is selected automatically from [`TahoeTheme::platform`]
 //! or explicitly via [`Sheet::presentation`].
 //!
+//! # macOS implementation note
+//!
+//! The current macOS [`SheetPresentation::Cardlike`] variant renders a
+//! centered panel with a dimming backdrop inside the parent GPUI
+//! window. It is **not** a true NSWindow title-bar-attached sheet (the
+//! native AppKit behavior where the sheet slides out from the window
+//! chrome and shares the parent window's title bar). Wiring that up
+//! requires AppKit sheet APIs (`beginSheet:completionHandler:` etc.)
+//! which GPUI does not currently expose. Once GPUI surfaces the
+//! underlying NSWindow so callers can attach sheets natively, this
+//! variant should be upgraded to match AppKit behavior.
+//!
+//! # Hosting
+//!
+//! `Sheet` is a stateless builder — it does not own its `is_open`
+//! state. Hosts should put a `bool is_open` (and, on macOS, an
+//! `Option<ActiveModal>` to enforce HIG "don't nest modals") on the
+//! parent [`Entity`](gpui::Entity) and drive the sheet from there.
+//! Acquire the modality slot via
+//! [`ModalGuard::global().present()`](crate::patterns::modality::ModalGuard::present)
+//! at the same entity that owns `is_open`, then drop the returned
+//! [`ActiveModal`](crate::patterns::modality::ActiveModal) when the
+//! sheet closes. See `patterns::modality` for the host-integration
+//! pattern.
+//!
+//! Cmd+. and Esc dismiss semantics are unchanged: the panel's focus
+//! handler invokes `on_dismiss` on Escape; outside-click also dismisses
+//! the panel.
+//!
 //! # HIG Reference
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/sheets>

@@ -32,6 +32,41 @@
 //! let _active = guard.present();  // `_active` drops → guard decrements
 //! ```
 //!
+//! ## Integrating with stateless builders
+//!
+//! [`Alert`](crate::components::presentation::alert::Alert),
+//! [`Sheet`](crate::components::presentation::sheet::Sheet),
+//! [`Modal`](crate::components::presentation::modal::Modal), and
+//! [`ActionSheet`](crate::components::presentation::action_sheet::ActionSheet)
+//! are stateless builders — they do not own `is_open` or the
+//! [`ActiveModal`] slot themselves. Store both on the parent entity
+//! that renders the presenter, and acquire / drop the guard in the
+//! same `open` / `close` handlers that flip `is_open`:
+//!
+//! ```ignore
+//! struct MyDialogHost {
+//!     is_open: bool,
+//!     modal_guard: Option<ActiveModal>,
+//! }
+//!
+//! impl MyDialogHost {
+//!     fn open(&mut self, _cx: &mut Context<Self>) {
+//!         if self.modal_guard.is_none() {
+//!             self.modal_guard = Some(ModalGuard::global().present());
+//!             self.is_open = true;
+//!         }
+//!     }
+//!
+//!     fn close(&mut self, _cx: &mut Context<Self>) {
+//!         self.is_open = false;
+//!         self.modal_guard = None; // drops ActiveModal → decrements depth
+//!     }
+//! }
+//! ```
+//!
+//! The example is marked `ignore` so it documents the pattern without
+//! forcing a full GPUI test context into doctest compilation.
+//!
 //! # See also
 //!
 //! - [`crate::components::presentation::alert::Alert`] — modal dialogs
