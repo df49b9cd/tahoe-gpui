@@ -9,10 +9,8 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div, px};
 
-use tahoe_gpui::foundations::materials::{
-    MaterialThickness, glass_surface, glass_surface_thick,
-};
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{MaterialThickness, glass_surface, glass_surface_thick};
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 

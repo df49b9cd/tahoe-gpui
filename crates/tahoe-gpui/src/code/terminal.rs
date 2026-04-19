@@ -92,7 +92,11 @@ impl RenderOnce for TerminalTitle {
             .flex()
             .items_center()
             .gap(theme.spacing_sm)
-            .child(Icon::new(self.icon).size(theme.icon_size_inline).color(theme.text_muted))
+            .child(
+                Icon::new(self.icon)
+                    .size(theme.icon_size_inline)
+                    .color(theme.text_muted),
+            )
             .child(
                 div()
                     .text_style(TextStyle::Subheadline, theme)
@@ -277,17 +281,10 @@ impl RenderOnce for TerminalContent {
                     let is_last = ix + 1 == line_count;
 
                     let line_element: gpui::AnyElement = if let Some(sel) = &selection {
-                        let id = ElementId::Name(SharedString::from(format!(
-                            "terminal-line-{}",
-                            ix
-                        )));
-                        let mut selectable = SelectableText::new(
-                            id,
-                            shared_text,
-                            styled,
-                            selection_bg,
-                            sel.clone(),
-                        );
+                        let id =
+                            ElementId::Name(SharedString::from(format!("terminal-line-{}", ix)));
+                        let mut selectable =
+                            SelectableText::new(id, shared_text, styled, selection_bg, sel.clone());
                         if !link_ranges.is_empty() {
                             selectable = selectable.with_links(link_ranges, link_urls);
                         }
@@ -375,7 +372,9 @@ fn build_line_runs(
         let resolved_bg = if span.style.reverse {
             span.style.fg.unwrap_or(text_color)
         } else {
-            span.style.bg.unwrap_or_else(|| gpui::hsla(0.0, 0.0, 0.0, 0.0))
+            span.style
+                .bg
+                .unwrap_or_else(|| gpui::hsla(0.0, 0.0, 0.0, 0.0))
         };
 
         let is_link = span.style.link.is_some();

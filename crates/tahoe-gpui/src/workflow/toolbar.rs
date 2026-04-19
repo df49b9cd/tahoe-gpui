@@ -161,6 +161,25 @@ impl RenderOnce for WorkflowToolbar {
     }
 }
 
+/// Render a single toolbar action as a ghost button.
+fn render_action(idx: usize, action: ToolbarAction, _cx: &mut App) -> gpui::AnyElement {
+    let handler = action.on_click;
+    let mut btn = Button::new(ElementId::NamedInteger(
+        "wf-toolbar-action".into(),
+        idx as u64,
+    ))
+    .icon(Icon::new(action.icon))
+    .label(action.label)
+    .variant(ButtonVariant::Ghost)
+    .size(ButtonSize::Sm);
+    if action.disabled {
+        btn = btn.disabled(true);
+    } else {
+        btn = btn.on_click(move |event, window, cx| handler(event, window, cx));
+    }
+    btn.into_any_element()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,27 +214,4 @@ mod tests {
             .action(test_action("Share", ToolbarSection::Trailing));
         assert_eq!(bar.actions.len(), 3);
     }
-}
-
-/// Render a single toolbar action as a ghost button.
-fn render_action(
-    idx: usize,
-    action: ToolbarAction,
-    _cx: &mut App,
-) -> gpui::AnyElement {
-    let handler = action.on_click;
-    let mut btn = Button::new(ElementId::NamedInteger(
-        "wf-toolbar-action".into(),
-        idx as u64,
-    ))
-    .icon(Icon::new(action.icon))
-    .label(action.label)
-    .variant(ButtonVariant::Ghost)
-    .size(ButtonSize::Sm);
-    if action.disabled {
-        btn = btn.disabled(true);
-    } else {
-        btn = btn.on_click(move |event, window, cx| handler(event, window, cx));
-    }
-    btn.into_any_element()
 }

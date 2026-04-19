@@ -308,11 +308,8 @@ impl Icon {
         };
         let duration = Duration::from_secs_f32(1.0 / tps);
 
-        let mut anim = super::AnimatedIcon::new(
-            id,
-            self.name,
-            super::IconAnimation::Spin { duration },
-        );
+        let mut anim =
+            super::AnimatedIcon::new(id, self.name, super::IconAnimation::Spin { duration });
         if let Some(size) = self.size {
             anim = anim.size(size);
         }

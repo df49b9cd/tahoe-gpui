@@ -16,9 +16,7 @@ use gpui::{
     SharedString, Window, canvas, div, fill, point, px, size,
 };
 
-use crate::foundations::accessibility::{
-    AccessibilityProps, AccessibilityRole, AccessibleExt,
-};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// The current state of a voice persona.
@@ -802,7 +800,10 @@ impl Render for PersonaOrbState {
             let fade_in = progress * to_base_opacity;
 
             // Skip near-zero-opacity canvases to halve GPU work at transition edges
-            let mut container = div().size(orb_size).relative().with_accessibility(&ax_props);
+            let mut container = div()
+                .size(orb_size)
+                .relative()
+                .with_accessibility(&ax_props);
             if fade_out >= 0.05 {
                 let grid_clone = grid.clone();
                 container = container.child(

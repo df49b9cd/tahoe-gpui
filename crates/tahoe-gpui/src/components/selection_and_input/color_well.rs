@@ -16,7 +16,7 @@ use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::materials::apply_high_contrast_border;
 use crate::foundations::materials::glass_surface;
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Swatch size inside the dropdown grid (32x32pt).
 const SWATCH_SIZE: f32 = 32.0;
@@ -128,7 +128,10 @@ impl ColorWell {
 
     /// Fires when the user presses Enter in the hex-entry row and the
     /// draft parses to a valid `#RRGGBB` or `#RRGGBBAA` colour.
-    pub fn on_hex_commit(mut self, handler: impl Fn(Hsla, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_hex_commit(
+        mut self,
+        handler: impl Fn(Hsla, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_hex_commit = Some(Box::new(handler));
         self
     }
@@ -357,8 +360,7 @@ impl RenderOnce for ColorWell {
                     "enter" => {
                         // Enter commits the hex draft when present, else
                         // applies the currently highlighted swatch.
-                        if let (Some(draft), Some(commit)) =
-                            (&key_hex_draft, &key_on_hex_commit)
+                        if let (Some(draft), Some(commit)) = (&key_hex_draft, &key_on_hex_commit)
                             && let Some(color) = parse_hex(draft.as_ref())
                         {
                             cx.stop_propagation();
@@ -407,8 +409,7 @@ impl RenderOnce for ColorWell {
                             "down" => GRID_COLUMNS as isize,
                             _ => 0,
                         };
-                        let next =
-                            (current + step).rem_euclid(palette_len as isize) as usize;
+                        let next = (current + step).rem_euclid(palette_len as isize) as usize;
                         if let Some(ref handler) = key_on_highlight {
                             handler(Some(next), window, cx);
                         }
@@ -422,11 +423,10 @@ impl RenderOnce for ColorWell {
                         if let (Some(draft), Some(handler)) =
                             (key_hex_draft.clone(), &key_on_hex_input)
                         {
-                            let typed = event
-                                .keystroke
-                                .key_char
-                                .as_deref()
-                                .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()));
+                            let typed =
+                                event.keystroke.key_char.as_deref().filter(|s| {
+                                    !s.is_empty() && !s.chars().any(|c| c.is_control())
+                                });
                             if let Some(text) = typed {
                                 cx.stop_propagation();
                                 let mut buf = draft.to_string();

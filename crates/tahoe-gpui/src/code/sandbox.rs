@@ -189,8 +189,7 @@ impl Render for SandboxView {
         // Indicators — animated glyph communicates ongoing work), Badge
         // for the other terminal states.
         if status == SandboxStatus::Running {
-            let spinner_id =
-                SharedString::from(format!("{}-activity", self.element_id.clone()));
+            let spinner_id = SharedString::from(format!("{}-activity", self.element_id.clone()));
             header = header.child(
                 ActivityIndicator::new(spinner_id)
                     .label("Running")

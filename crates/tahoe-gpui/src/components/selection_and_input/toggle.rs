@@ -223,16 +223,15 @@ impl RenderOnce for Toggle {
             thumb_offset + travel
         };
         let thumb_id = ElementId::from((self.id.clone(), "thumb"));
-        let thumb = thumb_base.ml(origin_ml).with_animation(
-            thumb_id,
-            thumb_animation,
-            move |el, delta| {
-                let from = f32::from(origin_ml);
-                let to = f32::from(thumb_ml);
-                let interp = from + (to - from) * delta;
-                el.ml(px(interp))
-            },
-        );
+        let thumb =
+            thumb_base
+                .ml(origin_ml)
+                .with_animation(thumb_id, thumb_animation, move |el, delta| {
+                    let from = f32::from(origin_ml);
+                    let to = f32::from(thumb_ml);
+                    let interp = from + (to - from) * delta;
+                    el.ml(px(interp))
+                });
 
         // Track — the colored capsule. Shadows and border go on the track,
         // not on the outer touch target.

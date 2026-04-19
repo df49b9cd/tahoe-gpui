@@ -318,19 +318,13 @@ impl AudioPlayerView {
     /// The consumer observes `AVAudioSessionInterruptionNotification` (or
     /// the platform equivalent) and forwards a call to
     /// [`Self::notify_interruption_began`] so the UI can reflect the state.
-    pub fn set_on_interruption_began(
-        &mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) {
+    pub fn set_on_interruption_began(&mut self, handler: impl Fn(&mut Window, &mut App) + 'static) {
         self.on_interruption_began = Some(Box::new(handler));
     }
 
     /// Register a handler fired by the consumer when the interruption
     /// ends. Typically resumes playback and restores Now Playing metadata.
-    pub fn set_on_interruption_ended(
-        &mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) {
+    pub fn set_on_interruption_ended(&mut self, handler: impl Fn(&mut Window, &mut App) + 'static) {
         self.on_interruption_ended = Some(Box::new(handler));
     }
 
@@ -474,8 +468,10 @@ impl Render for AudioPlayerView {
 
         // Seek backward button (optional)
         if self.show_seek_buttons {
-            let seek_back_label =
-                SharedString::from(format!("Seek {} seconds backward", self.seek_offset_secs as u32));
+            let seek_back_label = SharedString::from(format!(
+                "Seek {} seconds backward",
+                self.seek_offset_secs as u32
+            ));
             play_group = play_group.child(
                 Button::new(ElementId::from(SharedString::from(format!(
                     "{}-seek-back",
@@ -516,8 +512,10 @@ impl Render for AudioPlayerView {
 
         // Seek forward button (optional)
         if self.show_seek_buttons {
-            let seek_fwd_label =
-                SharedString::from(format!("Seek {} seconds forward", self.seek_offset_secs as u32));
+            let seek_fwd_label = SharedString::from(format!(
+                "Seek {} seconds forward",
+                self.seek_offset_secs as u32
+            ));
             play_group = play_group.child(
                 Button::new(ElementId::from(SharedString::from(format!(
                     "{}-seek-fwd",

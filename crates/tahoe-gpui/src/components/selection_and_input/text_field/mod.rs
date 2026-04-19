@@ -670,8 +670,8 @@ impl TextField {
         self.redo_stack
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = prev_content;
-        self.selected_range = prev_range.start.min(self.content.len())
-            ..prev_range.end.min(self.content.len());
+        self.selected_range =
+            prev_range.start.min(self.content.len())..prev_range.end.min(self.content.len());
         self.marked_range = None;
         cx.notify();
         if let Some(on_change) = &self.on_change {
@@ -689,8 +689,8 @@ impl TextField {
         self.undo_stack
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = next_content;
-        self.selected_range = next_range.start.min(self.content.len())
-            ..next_range.end.min(self.content.len());
+        self.selected_range =
+            next_range.start.min(self.content.len())..next_range.end.min(self.content.len());
         self.marked_range = None;
         cx.notify();
         if let Some(on_change) = &self.on_change {
@@ -1000,10 +1000,8 @@ impl Render for TextField {
         // causes visual noise in static forms (see the HIG Selection & Input audit
         // finding 3). Zed's `Input` takes the same approach.
         let is_focused = self.focus_handle.is_focused(window);
-        let show_clear = self.show_clear_button
-            && !self.content.is_empty()
-            && !self.disabled
-            && is_focused;
+        let show_clear =
+            self.show_clear_button && !self.content.is_empty() && !self.disabled && is_focused;
 
         let mut input_container = container
             .key_context(TEXT_FIELD_CONTEXT)
@@ -1078,11 +1076,11 @@ impl Render for TextField {
                 theme.spacing_xs,
             );
             input_container = input_container.child(
-                div()
-                    .flex_shrink_0()
-                    .ml(icon_ml)
-                    .mr(icon_mr)
-                    .child(Icon::new(icon).size(theme.icon_size_inline).color(theme.text_muted)),
+                div().flex_shrink_0().ml(icon_ml).mr(icon_mr).child(
+                    Icon::new(icon)
+                        .size(theme.icon_size_inline)
+                        .color(theme.text_muted),
+                ),
             );
         }
 
@@ -1134,11 +1132,11 @@ impl Render for TextField {
                 px(0.0),
             );
             input_container = input_container.child(
-                div()
-                    .flex_shrink_0()
-                    .ml(icon_ml)
-                    .mr(icon_mr)
-                    .child(Icon::new(icon).size(theme.icon_size_inline).color(theme.text_muted)),
+                div().flex_shrink_0().ml(icon_ml).mr(icon_mr).child(
+                    Icon::new(icon)
+                        .size(theme.icon_size_inline)
+                        .color(theme.text_muted),
+                ),
             );
         }
 

@@ -265,10 +265,8 @@ impl IncrementalMarkdownParser {
                                             if let Some(checked) = pending_task_marker.take()
                                                 && let MarkdownBlock::Paragraph(inlines) = &mut b
                                             {
-                                                inlines.insert(
-                                                    0,
-                                                    InlineContent::TaskMarker(checked),
-                                                );
+                                                inlines
+                                                    .insert(0, InlineContent::TaskMarker(checked));
                                             }
                                             item_blocks.push(b);
                                         }
@@ -325,8 +323,11 @@ impl IncrementalMarkdownParser {
                 (Some(MarkdownBlock::BlockQuote(inner_blocks)), idx)
             }
             Event::Start(Tag::Table(alignments)) => {
-                let alignments: Vec<TableAlignment> =
-                    alignments.iter().copied().map(TableAlignment::from).collect();
+                let alignments: Vec<TableAlignment> = alignments
+                    .iter()
+                    .copied()
+                    .map(TableAlignment::from)
+                    .collect();
                 let mut headers: Vec<Vec<InlineContent>> = Vec::new();
                 let mut rows: Vec<Vec<Vec<InlineContent>>> = Vec::new();
                 let mut idx = start + 1;

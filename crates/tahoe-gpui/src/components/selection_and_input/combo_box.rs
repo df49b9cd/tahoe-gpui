@@ -182,20 +182,19 @@ impl RenderOnce for ComboBox {
         // value prefixes an item (case-insensitive), we display the
         // remainder appended in muted text. Parents can wire Tab/Enter
         // to accept via `on_select`.
-        let autocomplete_suffix: Option<SharedString> = if self.autocomplete
-            && !self.value.is_empty()
-        {
-            let needle = self.value.to_lowercase();
-            self.items
-                .iter()
-                .find(|item| {
-                    let lower = item.to_lowercase();
-                    lower.starts_with(&needle) && lower != needle
-                })
-                .map(|m| SharedString::from(m[self.value.len()..].to_string()))
-        } else {
-            None
-        };
+        let autocomplete_suffix: Option<SharedString> =
+            if self.autocomplete && !self.value.is_empty() {
+                let needle = self.value.to_lowercase();
+                self.items
+                    .iter()
+                    .find(|item| {
+                        let lower = item.to_lowercase();
+                        lower.starts_with(&needle) && lower != needle
+                    })
+                    .map(|m| SharedString::from(m[self.value.len()..].to_string()))
+            } else {
+                None
+            };
 
         let display_text: SharedString = if self.value.is_empty() {
             self.placeholder.clone()
@@ -234,11 +233,8 @@ impl RenderOnce for ComboBox {
             .text_color(text_color)
             .child(display_text);
         if let Some(ref suffix) = autocomplete_suffix {
-            trigger_label = trigger_label.child(
-                div()
-                    .text_color(theme.text_muted)
-                    .child(suffix.clone()),
-            );
+            trigger_label =
+                trigger_label.child(div().text_color(theme.text_muted).child(suffix.clone()));
         }
         let input_content = div()
             .flex()
@@ -433,10 +429,7 @@ impl RenderOnce for ComboBox {
                     let on_toggle_r = on_toggle.clone();
                     let item_value = item.clone();
                     let row = div()
-                        .id(ElementId::NamedInteger(
-                            "combo-recent".into(),
-                            ridx as u64,
-                        ))
+                        .id(ElementId::NamedInteger("combo-recent".into(), ridx as u64))
                         .min_h(px(theme.target_size()))
                         .flex()
                         .items_center()

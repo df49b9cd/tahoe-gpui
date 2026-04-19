@@ -66,17 +66,17 @@ pub use crate::components::selection_and_input::{
 
 // ── Components > Status ────────────────────────────────────────────────────
 
+/// `RatingIndicator` is re-exported only on macOS — HIG restricts the
+/// control to that platform ("Not supported in iOS, iPadOS, tvOS,
+/// visionOS, or watchOS").
+#[cfg(target_os = "macos")]
+pub use crate::components::status::RatingIndicator;
 pub use crate::components::status::{
     ACTIVITY_RING_EXERCISE, ACTIVITY_RING_MOVE, ACTIVITY_RING_STAND, ActivityIndicator,
     ActivityIndicatorStyle, ActivityRing, ActivityRingSet, Gauge, GaugeDirection, GaugeStyle,
     ProgressIndicator, ProgressIndicatorSize, ProgressIndicatorValue, Shimmer, ShimmerEasing,
     SweepDirection, TextShimmer, TextShimmerState,
 };
-/// `RatingIndicator` is re-exported only on macOS — HIG restricts the
-/// control to that platform ("Not supported in iOS, iPadOS, tvOS,
-/// visionOS, or watchOS").
-#[cfg(target_os = "macos")]
-pub use crate::components::status::RatingIndicator;
 
 // ── Components > System experiences ────────────────────────────────────────
 // Stub-only today: Widgets, Notifications, Live Activities, App Shortcuts,

@@ -135,40 +135,40 @@ impl VoiceAccent {
     /// Flag emoji for this accent, if available.
     pub fn flag(&self) -> &'static str {
         match self {
-            Self::American => "\u{1F1FA}\u{1F1F8}",     // 🇺🇸
-            Self::British => "\u{1F1EC}\u{1F1E7}",      // 🇬🇧
-            Self::Australian => "\u{1F1E6}\u{1F1FA}",   // 🇦🇺
-            Self::Canadian => "\u{1F1E8}\u{1F1E6}",     // 🇨🇦
-            Self::Irish => "\u{1F1EE}\u{1F1EA}",        // 🇮🇪
+            Self::American => "\u{1F1FA}\u{1F1F8}",   // 🇺🇸
+            Self::British => "\u{1F1EC}\u{1F1E7}",    // 🇬🇧
+            Self::Australian => "\u{1F1E6}\u{1F1FA}", // 🇦🇺
+            Self::Canadian => "\u{1F1E8}\u{1F1E6}",   // 🇨🇦
+            Self::Irish => "\u{1F1EE}\u{1F1EA}",      // 🇮🇪
             // Issue #148 F20: The stable Scotland ZWJ sequence
             // `🏴󠁧󠁢󠁳󠁣󠁴󠁿` is not yet reliably supported in macOS bundled fonts.
             // Ship the generic black flag `🏴` as a cross-platform
             // fallback; update once Apple adds the subdivision variant.
             Self::Scottish => "\u{1F3F4}",
-            Self::Indian => "\u{1F1EE}\u{1F1F3}", // 🇮🇳
+            Self::Indian => "\u{1F1EE}\u{1F1F3}",       // 🇮🇳
             Self::SouthAfrican => "\u{1F1FF}\u{1F1E6}", // 🇿🇦
-            Self::NewZealand => "\u{1F1F3}\u{1F1FF}", // 🇳🇿
-            Self::Spanish => "\u{1F1EA}\u{1F1F8}", // 🇪🇸
-            Self::French => "\u{1F1EB}\u{1F1F7}", // 🇫🇷
-            Self::German => "\u{1F1E9}\u{1F1EA}", // 🇩🇪
-            Self::Italian => "\u{1F1EE}\u{1F1F9}", // 🇮🇹
-            Self::Portuguese => "\u{1F1F5}\u{1F1F9}", // 🇵🇹
-            Self::Brazilian => "\u{1F1E7}\u{1F1F7}", // 🇧🇷
-            Self::Mexican => "\u{1F1F2}\u{1F1FD}", // 🇲🇽
-            Self::Argentinian => "\u{1F1E6}\u{1F1F7}", // 🇦🇷
-            Self::Japanese => "\u{1F1EF}\u{1F1F5}", // 🇯🇵
-            Self::Chinese => "\u{1F1E8}\u{1F1F3}", // 🇨🇳
-            Self::Korean => "\u{1F1F0}\u{1F1F7}", // 🇰🇷
-            Self::Russian => "\u{1F1F7}\u{1F1FA}", // 🇷🇺
-            Self::Arabic => "\u{1F1F8}\u{1F1E6}", // 🇸🇦
-            Self::Dutch => "\u{1F1F3}\u{1F1F1}", // 🇳🇱
-            Self::Swedish => "\u{1F1F8}\u{1F1EA}", // 🇸🇪
-            Self::Norwegian => "\u{1F1F3}\u{1F1F4}", // 🇳🇴
-            Self::Danish => "\u{1F1E9}\u{1F1F0}", // 🇩🇰
-            Self::Finnish => "\u{1F1EB}\u{1F1EE}", // 🇫🇮
-            Self::Polish => "\u{1F1F5}\u{1F1F1}", // 🇵🇱
-            Self::Turkish => "\u{1F1F9}\u{1F1F7}", // 🇹🇷
-            Self::Greek => "\u{1F1EC}\u{1F1F7}", // 🇬🇷
+            Self::NewZealand => "\u{1F1F3}\u{1F1FF}",   // 🇳🇿
+            Self::Spanish => "\u{1F1EA}\u{1F1F8}",      // 🇪🇸
+            Self::French => "\u{1F1EB}\u{1F1F7}",       // 🇫🇷
+            Self::German => "\u{1F1E9}\u{1F1EA}",       // 🇩🇪
+            Self::Italian => "\u{1F1EE}\u{1F1F9}",      // 🇮🇹
+            Self::Portuguese => "\u{1F1F5}\u{1F1F9}",   // 🇵🇹
+            Self::Brazilian => "\u{1F1E7}\u{1F1F7}",    // 🇧🇷
+            Self::Mexican => "\u{1F1F2}\u{1F1FD}",      // 🇲🇽
+            Self::Argentinian => "\u{1F1E6}\u{1F1F7}",  // 🇦🇷
+            Self::Japanese => "\u{1F1EF}\u{1F1F5}",     // 🇯🇵
+            Self::Chinese => "\u{1F1E8}\u{1F1F3}",      // 🇨🇳
+            Self::Korean => "\u{1F1F0}\u{1F1F7}",       // 🇰🇷
+            Self::Russian => "\u{1F1F7}\u{1F1FA}",      // 🇷🇺
+            Self::Arabic => "\u{1F1F8}\u{1F1E6}",       // 🇸🇦
+            Self::Dutch => "\u{1F1F3}\u{1F1F1}",        // 🇳🇱
+            Self::Swedish => "\u{1F1F8}\u{1F1EA}",      // 🇸🇪
+            Self::Norwegian => "\u{1F1F3}\u{1F1F4}",    // 🇳🇴
+            Self::Danish => "\u{1F1E9}\u{1F1F0}",       // 🇩🇰
+            Self::Finnish => "\u{1F1EB}\u{1F1EE}",      // 🇫🇮
+            Self::Polish => "\u{1F1F5}\u{1F1F1}",       // 🇵🇱
+            Self::Turkish => "\u{1F1F9}\u{1F1F7}",      // 🇹🇷
+            Self::Greek => "\u{1F1EC}\u{1F1F7}",        // 🇬🇷
         }
     }
 }

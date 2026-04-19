@@ -17,7 +17,7 @@ use crate::callback_types::{OnF32Change, rc_wrap};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, Hsla, KeyDownEvent, Pixels, SharedString, Window, div, px,

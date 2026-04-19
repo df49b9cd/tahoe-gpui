@@ -249,13 +249,21 @@ pub(crate) mod helpers {
         #[test]
         fn light_theme_primary_text_meets_wcag_aa() {
             let theme = theme_light();
-            assert_contrast_aa(theme.text, theme.background, "light theme text on background");
+            assert_contrast_aa(
+                theme.text,
+                theme.background,
+                "light theme text on background",
+            );
         }
 
         #[test]
         fn dark_theme_primary_text_meets_wcag_aa() {
             let theme = theme_dark();
-            assert_contrast_aa(theme.text, theme.background, "dark theme text on background");
+            assert_contrast_aa(
+                theme.text,
+                theme.background,
+                "dark theme text on background",
+            );
         }
 
         #[test]
@@ -264,13 +272,21 @@ pub(crate) mod helpers {
             // text. Guards against future theme edits that would lower
             // the contrast of the primary reading surface.
             let theme = theme_light();
-            assert_contrast_aaa(theme.text, theme.background, "light theme text on background");
+            assert_contrast_aaa(
+                theme.text,
+                theme.background,
+                "light theme text on background",
+            );
         }
 
         #[test]
         fn dark_theme_primary_text_meets_wcag_aaa() {
             let theme = theme_dark();
-            assert_contrast_aaa(theme.text, theme.background, "dark theme text on background");
+            assert_contrast_aaa(
+                theme.text,
+                theme.background,
+                "dark theme text on background",
+            );
         }
 
         // ── assert_all_distinct ──────────────────────────────────────

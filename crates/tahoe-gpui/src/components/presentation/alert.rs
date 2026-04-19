@@ -28,7 +28,7 @@ use crate::callback_types::OnMutCallback;
 use crate::foundations::icons::Icon;
 use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
 use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Maximum number of actions an alert may contain per HIG.
 const MAX_ACTIONS: usize = 3;

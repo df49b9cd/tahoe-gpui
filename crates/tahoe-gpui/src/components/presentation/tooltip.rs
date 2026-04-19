@@ -59,13 +59,11 @@ impl Render for TooltipView {
             // appears quieter than the main text but stays legible.
             el = el.child(
                 div()
-                    .text_color(
-                        crate::foundations::materials::resolve_label(
-                            theme,
-                            SurfaceContext::GlassBright,
-                            1,
-                        ),
-                    )
+                    .text_color(crate::foundations::materials::resolve_label(
+                        theme,
+                        SurfaceContext::GlassBright,
+                        1,
+                    ))
                     .child(binding),
             );
         }
@@ -131,11 +129,14 @@ impl RenderOnce for Tooltip {
         let text = self.text;
         let key_binding = self.key_binding;
 
-        div().id(self.id).child(self.child).tooltip(move |_window, cx| {
-            let text = text.clone();
-            let key_binding = key_binding.clone();
-            cx.new(|_cx| TooltipView { text, key_binding }).into()
-        })
+        div()
+            .id(self.id)
+            .child(self.child)
+            .tooltip(move |_window, cx| {
+                let text = text.clone();
+                let key_binding = key_binding.clone();
+                cx.new(|_cx| TooltipView { text, key_binding }).into()
+            })
     }
 }
 

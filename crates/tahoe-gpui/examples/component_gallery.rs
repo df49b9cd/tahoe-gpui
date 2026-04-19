@@ -88,13 +88,13 @@ use gpui::{
     WindowBounds, WindowOptions, div, px, size,
 };
 
+use gpui_platform::application;
 use tahoe_gpui::components::menus_and_actions::context_menu::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle,
 };
 use tahoe_gpui::components::presentation::hover_card::HoverCard;
 use tahoe_gpui::components::selection_and_input::date_picker::SimpleDate;
 use tahoe_gpui::foundations::accessibility::AccessibilityMode;
-use gpui_platform::application;
 
 use tahoe_gpui::components::layout_and_organization::split_view::SplitView;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
@@ -442,8 +442,7 @@ pub struct ComponentGallery {
     pub disclosure_open: bool,
     pub date_viewing_year: i32,
     pub date_viewing_month: u8,
-    pub context_menu:
-        Entity<tahoe_gpui::components::menus_and_actions::context_menu::ContextMenu>,
+    pub context_menu: Entity<tahoe_gpui::components::menus_and_actions::context_menu::ContextMenu>,
     pub context_menu_status: SharedString,
     pub hover_card: Entity<tahoe_gpui::components::presentation::hover_card::HoverCard>,
     pub page_current: usize,
@@ -527,14 +526,12 @@ impl ComponentGallery {
             search_focus: cx.focus_handle(),
             tab_active: SharedString::from("general"),
             digit_interactive: cx.new(|cx| {
-                let mut entry =
-                    tahoe_gpui::components::selection_and_input::DigitEntry::new(cx);
+                let mut entry = tahoe_gpui::components::selection_and_input::DigitEntry::new(cx);
                 entry.set_id("de-interactive");
                 entry
             }),
             digit_static: cx.new(|cx| {
-                let mut entry =
-                    tahoe_gpui::components::selection_and_input::DigitEntry::new(cx);
+                let mut entry = tahoe_gpui::components::selection_and_input::DigitEntry::new(cx);
                 entry.set_id("de-4");
                 entry.set_length(4);
                 entry.set_text("1234", cx);
@@ -595,12 +592,7 @@ impl ComponentGallery {
                         cx,
                     );
                     tf.set_suggestions(
-                        vec![
-                            "Go".into(),
-                            "Kotlin".into(),
-                            "Python".into(),
-                            "Zig".into(),
-                        ],
+                        vec!["Go".into(), "Kotlin".into(), "Python".into(), "Zig".into()],
                         cx,
                     );
                     tf
@@ -722,22 +714,20 @@ impl Render for ComponentGallery {
         let dark_mode = self.dark_mode;
         let access_mode = theme_ref.accessibility_mode;
 
-        let access_chip = |id: &'static str,
-                           label: &'static str,
-                           flag: AccessibilityMode,
-                           active: bool| {
-            Button::new(id)
-                .label(label)
-                .variant(if active {
-                    ButtonVariant::Primary
-                } else {
-                    ButtonVariant::Outline
-                })
-                .size(ButtonSize::Sm)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.toggle_accessibility(flag, cx);
-                }))
-        };
+        let access_chip =
+            |id: &'static str, label: &'static str, flag: AccessibilityMode, active: bool| {
+                Button::new(id)
+                    .label(label)
+                    .variant(if active {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Outline
+                    })
+                    .size(ButtonSize::Sm)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.toggle_accessibility(flag, cx);
+                    }))
+            };
 
         let header = div()
             .flex()

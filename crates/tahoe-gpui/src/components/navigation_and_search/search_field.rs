@@ -461,12 +461,10 @@ impl RenderOnce for SearchField {
 
                 if let Some(ref handler) = capsule_on_change {
                     match key {
-                        "backspace" => {
-                            if !capsule_value.is_empty() {
-                                let mut s = capsule_value.to_string();
-                                s.pop();
-                                handler(SharedString::from(s), window, cx);
-                            }
+                        "backspace" if !capsule_value.is_empty() => {
+                            let mut s = capsule_value.to_string();
+                            s.pop();
+                            handler(SharedString::from(s), window, cx);
                         }
                         k if k.len() == 1 && !event.keystroke.modifiers.platform => {
                             let mut s = capsule_value.to_string();

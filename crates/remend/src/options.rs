@@ -30,7 +30,7 @@ pub trait RemendHandler: Send + Sync {
 
 /// Built-in handler priorities, matching the TypeScript implementation.
 ///
-/// Lower values run first. Custom handlers default to [`DEFAULT`](self::DEFAULT).
+/// Lower values run first. Custom handlers default to [`priority::DEFAULT`].
 pub mod priority {
     /// Priority for single-tilde escaping.
     pub const SINGLE_TILDE: i32 = 0;

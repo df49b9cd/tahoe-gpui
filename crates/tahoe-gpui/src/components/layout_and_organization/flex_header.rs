@@ -4,7 +4,7 @@
 //! commonly used as the header row in terminal, commit, stack trace,
 //! and other code display components.
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Window, div};
 

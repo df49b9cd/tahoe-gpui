@@ -410,12 +410,8 @@ impl RenderOnce for TabBar {
                         glass.radius(GlassSize::Small)
                     })
                     .overflow_hidden();
-                tab_bar = apply_focus_ring(
-                    tab_bar,
-                    theme,
-                    focused,
-                    glass.shadows(GlassSize::Small),
-                );
+                tab_bar =
+                    apply_focus_ring(tab_bar, theme, focused, glass.shadows(GlassSize::Small));
                 tab_bar = apply_high_contrast_border(tab_bar, theme);
             }
         }

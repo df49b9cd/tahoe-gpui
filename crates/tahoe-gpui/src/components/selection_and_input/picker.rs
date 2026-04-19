@@ -203,8 +203,7 @@ impl RenderOnce for Picker {
                 .as_ref()
                 .and_then(|sel| items_flat.iter().position(|i| &i.value == sel))
                 .unwrap_or(0);
-            let values: Vec<SharedString> =
-                items_flat.iter().map(|i| i.value.clone()).collect();
+            let values: Vec<SharedString> = items_flat.iter().map(|i| i.value.clone()).collect();
             let segments: Vec<SegmentItem> = items_flat
                 .into_iter()
                 .map(|i| SegmentItem::new(i.label))
@@ -439,9 +438,7 @@ impl RenderOnce for Picker {
             for (item_idx, item) in flat_items.into_iter().enumerate() {
                 // Render a section header before this row if the
                 // grouped-items list emitted one.
-                if let Some(Some(header)) =
-                    header_at_index.get(item_idx).map(|h| h.as_ref())
-                {
+                if let Some(Some(header)) = header_at_index.get(item_idx).map(|h| h.as_ref()) {
                     list = list.child(
                         div()
                             .px(theme.spacing_md)

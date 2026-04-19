@@ -37,7 +37,7 @@ pub mod types;
 pub use subcomponents::*;
 pub use types::*;
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use crate::ids::next_element_id;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, ElementId, SharedString, Window, div};

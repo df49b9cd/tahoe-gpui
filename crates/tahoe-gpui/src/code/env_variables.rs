@@ -181,7 +181,6 @@ impl EnvironmentVariablesView {
         self.title = title.into();
     }
 
-
     /// Set a callback invoked when the visibility toggle changes.
     pub fn set_on_show_values_change(
         &mut self,

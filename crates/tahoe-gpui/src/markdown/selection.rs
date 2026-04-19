@@ -115,11 +115,7 @@ impl MarkdownSelection {
         // Guard against duplicate ids (shouldn't happen, but be
         // defensive so a caller bug doesn't produce confusing
         // selection coordinates).
-        if state
-            .paragraphs
-            .iter()
-            .any(|p| p.element_id == element_id)
-        {
+        if state.paragraphs.iter().any(|p| p.element_id == element_id) {
             return;
         }
         state.paragraphs.push(ParagraphInfo { element_id, text });
@@ -246,9 +242,10 @@ impl MarkdownSelection {
                 state.original_range = Some((start, end));
             }
             _ => {
-                if let (Some(first), Some(last)) =
-                    (state.paragraphs.first().cloned(), state.paragraphs.last().cloned())
-                {
+                if let (Some(first), Some(last)) = (
+                    state.paragraphs.first().cloned(),
+                    state.paragraphs.last().cloned(),
+                ) {
                     state.anchor = Some(SelectionPoint {
                         element_id: first.element_id,
                         char_index: 0,
@@ -319,9 +316,10 @@ impl MarkdownSelection {
     /// Cmd+A / Ctrl+A — select every registered paragraph.
     pub fn select_all(&self) {
         let mut state = self.inner.borrow_mut();
-        let (Some(first), Some(last)) =
-            (state.paragraphs.first().cloned(), state.paragraphs.last().cloned())
-        else {
+        let (Some(first), Some(last)) = (
+            state.paragraphs.first().cloned(),
+            state.paragraphs.last().cloned(),
+        ) else {
             return;
         };
         state.anchor = Some(SelectionPoint {
@@ -383,8 +381,16 @@ impl MarkdownSelection {
                 continue;
             }
             let text_len = para.text.len();
-            let lo = if idx == start.0 { start.1.min(text_len) } else { 0 };
-            let hi = if idx == end.0 { end.1.min(text_len) } else { text_len };
+            let lo = if idx == start.0 {
+                start.1.min(text_len)
+            } else {
+                0
+            };
+            let hi = if idx == end.0 {
+                end.1.min(text_len)
+            } else {
+                text_len
+            };
             if lo < hi
                 && let Some(slice) = para.text.get(lo..hi)
             {
@@ -423,10 +429,7 @@ impl MarkdownSelection {
     }
 }
 
-fn normalise(
-    a: (usize, usize),
-    b: (usize, usize),
-) -> ((usize, usize), (usize, usize)) {
+fn normalise(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
@@ -535,7 +538,11 @@ pub fn word_range_at(text: &str, index: usize) -> Range<usize> {
     let next_kind = after.chars().next().map(CharKind::of);
     let kind = match (prev_kind, next_kind) {
         (Some(p), Some(n)) => {
-            if p.priority() >= n.priority() { p } else { n }
+            if p.priority() >= n.priority() {
+                p
+            } else {
+                n
+            }
         }
         (Some(k), None) | (None, Some(k)) => k,
         (None, None) => return 0..0,

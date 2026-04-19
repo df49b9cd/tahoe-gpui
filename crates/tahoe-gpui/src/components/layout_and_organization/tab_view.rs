@@ -25,9 +25,7 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px,
-};
+use gpui::{AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::apply_focus_ring;
@@ -159,9 +157,10 @@ impl RenderOnce for TabView {
                     });
 
                 let mut button = div()
-                    .id(ElementId::Name(
-                        SharedString::from(format!("tabview-tab-{}", tab.id)),
-                    ))
+                    .id(ElementId::Name(SharedString::from(format!(
+                        "tabview-tab-{}",
+                        tab.id
+                    ))))
                     .px(theme.spacing_sm)
                     .py(theme.spacing_xs)
                     .min_h(px(theme.target_size()))
@@ -192,11 +191,12 @@ impl RenderOnce for TabView {
 
                 if let Some(cb) = on_select.clone() {
                     let tab_id = tab.id.clone();
-                    button = button.hover(|s| s.bg(theme.hover)).on_click(
-                        move |_event, window, cx| {
-                            cb(tab_id.clone(), window, cx);
-                        },
-                    );
+                    button =
+                        button
+                            .hover(|s| s.bg(theme.hover))
+                            .on_click(move |_event, window, cx| {
+                                cb(tab_id.clone(), window, cx);
+                            });
                 }
 
                 control = control.child(button);

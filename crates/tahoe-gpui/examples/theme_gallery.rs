@@ -1,5 +1,11 @@
 //! Example: visual gallery of all primitive components and theme tokens.
 
+use gpui::prelude::*;
+use gpui::{
+    App, Bounds, Div, FontWeight, Hsla, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowOptions, div, hsla, px, size,
+};
+use gpui_platform::application;
 use tahoe_gpui::components::content::avatar::Avatar;
 use tahoe_gpui::components::content::badge::{Badge, BadgeVariant};
 use tahoe_gpui::components::layout_and_organization::disclosure_group::DisclosureGroup;
@@ -8,12 +14,6 @@ use tahoe_gpui::components::status::shimmer::Shimmer;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 use tahoe_gpui::markdown::code_block::CodeBlockView;
-use gpui::prelude::*;
-use gpui::{
-    App, Bounds, Div, FontWeight, Hsla, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowOptions, div, hsla, px, size,
-};
-use gpui_platform::application;
 
 struct ThemeGallery;
 

@@ -495,8 +495,7 @@ mod tests {
         assert_eq!(kept.duration, base_duration);
 
         // Reduce Motion on → duration compressed to the cross-fade window.
-        let crossfaded =
-            reduce_motion_substitute(base.clone(), AccessibilityMode::REDUCE_MOTION);
+        let crossfaded = reduce_motion_substitute(base.clone(), AccessibilityMode::REDUCE_MOTION);
         assert_eq!(crossfaded.duration, REDUCE_MOTION_CROSSFADE);
     }
 }

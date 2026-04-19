@@ -8,7 +8,7 @@
 //! <https://developer.apple.com/design/human-interface-guidelines/image-views>
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize, TextStyle};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle};
 use gpui::prelude::*;
 use gpui::{App, Hsla, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img, px};
 

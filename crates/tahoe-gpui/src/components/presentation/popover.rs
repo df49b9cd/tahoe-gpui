@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
 use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent,

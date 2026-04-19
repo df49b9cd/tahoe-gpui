@@ -235,13 +235,7 @@ impl RenderOnce for Sidebar {
         // translucent glass colour sits above the extension without
         // consuming the layout slot the children need.
         if self.background_extension.is_some() {
-            el = el.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .bg(bg)
-                    .into_any_element(),
-            );
+            el = el.child(div().absolute().inset_0().bg(bg).into_any_element());
         }
 
         // Floating overlays drop the trailing hairline so content is

@@ -152,10 +152,9 @@ impl RenderOnce for ProgressIndicator {
         let glass_enabled = self.glass;
 
         let a11y_label: SharedString = match self.value {
-            ProgressIndicatorValue::Determinate(v) => SharedString::from(format!(
-                "Progress, {}%",
-                (v * 100.0).round() as i32
-            )),
+            ProgressIndicatorValue::Determinate(v) => {
+                SharedString::from(format!("Progress, {}%", (v * 100.0).round() as i32))
+            }
             ProgressIndicatorValue::Indeterminate => SharedString::from("Loading"),
         };
         let mut a11y_props = AccessibilityProps::new()
@@ -169,17 +168,15 @@ impl RenderOnce for ProgressIndicator {
         }
 
         let inner: gpui::AnyElement = match self.value {
-            ProgressIndicatorValue::Determinate(v) => {
-                render_bar(
-                    v,
-                    self.hig_size,
-                    self.height,
-                    color,
-                    self.track_color.unwrap_or(theme.semantic.system_fill),
-                    theme.is_rtl(),
-                )
-                .into_any_element()
-            }
+            ProgressIndicatorValue::Determinate(v) => render_bar(
+                v,
+                self.hig_size,
+                self.height,
+                color,
+                self.track_color.unwrap_or(theme.semantic.system_fill),
+                theme.is_rtl(),
+            )
+            .into_any_element(),
             ProgressIndicatorValue::Indeterminate => {
                 let id = self.id.clone().unwrap_or_else(|| "progress-spinner".into());
                 render_spinner(id, self.hig_size, color).into_any_element()
@@ -251,11 +248,7 @@ fn render_bar(
     )
 }
 
-fn render_spinner(
-    id: ElementId,
-    hig_size: ProgressIndicatorSize,
-    color: Hsla,
-) -> impl IntoElement {
+fn render_spinner(id: ElementId, hig_size: ProgressIndicatorSize, color: Hsla) -> impl IntoElement {
     // HIG: the macOS indeterminate spinner is a 12-tick radial
     // `NSProgressIndicator.style = .spinning`. `AnimatedIcon::Spin` handles
     // the rotation and the REDUCE_MOTION fallback to a static render.
@@ -281,13 +274,19 @@ mod tests {
     #[test]
     fn value_clamped_to_0_1() {
         let bar = ProgressIndicator::new(-0.5);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON)
+        );
 
         let bar = ProgressIndicator::new(1.5);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 1.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 1.0).abs() < f32::EPSILON)
+        );
 
         let bar = ProgressIndicator::new(0.5);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.5).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.5).abs() < f32::EPSILON)
+        );
     }
 
     #[test]
@@ -324,16 +323,22 @@ mod tests {
     #[test]
     fn nan_value_treated_as_zero() {
         let bar = ProgressIndicator::new(f32::NAN);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]
     fn infinity_value_treated_as_zero() {
         let bar = ProgressIndicator::new(f32::INFINITY);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON)
+        );
 
         let bar = ProgressIndicator::new(f32::NEG_INFINITY);
-        assert!(matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON));
+        assert!(
+            matches!(bar.value, ProgressIndicatorValue::Determinate(v) if (v - 0.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]

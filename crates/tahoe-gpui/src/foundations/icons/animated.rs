@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use super::{Icon, IconName, RenderStrategy};
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 
 /// Animation type for an icon.
 #[derive(Debug, Clone)]

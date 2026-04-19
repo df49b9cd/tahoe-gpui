@@ -66,7 +66,7 @@ use undo::{CanvasCommand, UndoStack};
 use std::collections::HashSet;
 use std::time::Instant;
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use crate::ids::next_element_id;
 use gpui::prelude::*;
 use gpui::{
@@ -208,8 +208,7 @@ pub struct WorkflowCanvas {
     /// Optional callback fired when undo/redo restores nodes the host had
     /// observed as deleted — lets the host re-register them in its source
     /// model. Receives the restored entities.
-    on_nodes_restore:
-        Option<Box<dyn Fn(&[Entity<WorkflowNode>], &mut Window, &mut App) + 'static>>,
+    on_nodes_restore: Option<Box<dyn Fn(&[Entity<WorkflowNode>], &mut Window, &mut App) + 'static>>,
     /// Optional callback fired when undo/redo restores edges that had fired
     /// an `on_edges_delete` earlier. Host re-adds them to its model.
     on_edges_restore: Option<Box<dyn Fn(&[Connection], &mut Window, &mut App) + 'static>>,
@@ -220,11 +219,12 @@ pub struct WorkflowCanvas {
     on_node_duplicate: Option<
         Box<
             dyn Fn(
-                &Entity<WorkflowNode>,
-                (f32, f32),
-                &mut Window,
-                &mut App,
-            ) -> Option<Entity<WorkflowNode>> + 'static,
+                    &Entity<WorkflowNode>,
+                    (f32, f32),
+                    &mut Window,
+                    &mut App,
+                ) -> Option<Entity<WorkflowNode>>
+                + 'static,
         >,
     >,
 }
@@ -691,8 +691,7 @@ impl WorkflowCanvas {
                     .filter(|(_, e)| ids.contains(e.read(cx).id()))
                     .map(|(i, e)| (i, e.clone()))
                     .collect();
-                self.nodes
-                    .retain(|e| !ids.contains(e.read(cx).id()));
+                self.nodes.retain(|e| !ids.contains(e.read(cx).id()));
                 // Notify host so external model can drop duplicates.
                 if let Some(ref handler) = self.on_nodes_delete {
                     let indices: Vec<usize> = snapshot.iter().map(|(i, _)| *i).collect();
@@ -1007,12 +1006,7 @@ impl WorkflowCanvas {
     /// F28: test the screen point against the 8 resize handles of each
     /// currently selected node. Returns the initial `ResizeState` the
     /// canvas should keep in-flight until mouse-up.
-    fn resize_handle_hit(
-        &self,
-        screen_x: f32,
-        screen_y: f32,
-        cx: &App,
-    ) -> Option<ResizeState> {
+    fn resize_handle_hit(&self, screen_x: f32, screen_y: f32, cx: &App) -> Option<ResizeState> {
         if self.selected_nodes.len() != 1 {
             // Handles only render for single-node selection, so the
             // hit-test gates on the same invariant.
@@ -1069,11 +1063,7 @@ impl WorkflowCanvas {
         // Read the end state from the live node so we capture whatever
         // intermediate `update_resize` last wrote — this way the
         // recorded Resize command matches exactly what the user sees.
-        let Some(entity) = self
-            .nodes
-            .iter()
-            .find(|e| e.read(cx).id() == state.node_id)
-        else {
+        let Some(entity) = self.nodes.iter().find(|e| e.read(cx).id() == state.node_id) else {
             return;
         };
         let n = entity.read(cx);
@@ -1394,9 +1384,7 @@ impl Render for WorkflowCanvas {
                     // F12 (#149): highlight the port under the pointer while
                     // a connection is in flight so compatible drop targets
                     // are discoverable.
-                    let new_port_hover = this
-                        .port_at_screen_point(mx, my, cx)
-                        .map(|(id, _, _)| id);
+                    let new_port_hover = this.port_at_screen_point(mx, my, cx).map(|(id, _, _)| id);
                     if new_port_hover != this.hovered_port {
                         this.hovered_port = new_port_hover;
                     }
@@ -1408,9 +1396,7 @@ impl Render for WorkflowCanvas {
                 // (subtle hover affordance), F20 (edge thickening), and
                 // F28 (resize cursor). Only recomputes when any of the
                 // tracked hovers changed so notify() stays rate-limited.
-                let new_resize_hover = this
-                    .resize_handle_hit(mx, my, cx)
-                    .map(|state| state.handle);
+                let new_resize_hover = this.resize_handle_hit(mx, my, cx).map(|state| state.handle);
                 let new_node_hover = if new_resize_hover.is_none() {
                     this.node_at_screen_point(mx, my, cx)
                 } else {
@@ -1440,7 +1426,9 @@ impl Render for WorkflowCanvas {
                 // necessary" during drag. We drive pan_offset by a constant
                 // step per frame so the effect is perceptibly smooth and
                 // predictable even on fast drags.
-                if this.drag_initial_pos.is_some() && event.pressed_button == Some(MouseButton::Left) {
+                if this.drag_initial_pos.is_some()
+                    && event.pressed_button == Some(MouseButton::Left)
+                {
                     if let Some((vw, vh)) = this.viewport_size {
                         let mut dx = 0.0_f32;
                         let mut dy = 0.0_f32;
