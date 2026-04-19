@@ -3,13 +3,17 @@
 //! A stateful context menu that appears at a screen position (typically from a
 //! right-click). Supports keyboard navigation (Arrow keys, Enter, Escape,
 //! Shift-F10, Application/Menu key), click-outside dismiss, separator
-//! dividers, destructive, disabled, and checked items, submenu expansion,
-//! typed keyboard-shortcut glyphs, and anchor-rect positioning.
+//! dividers, destructive, disabled, and checked items, submenu expansion
+//! (click, Right-arrow, or ~100 ms hover), typed keyboard-shortcut glyphs,
+//! Space-to-toggle for checkable items, and anchor-rect positioning.
+
+use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, ClickEvent, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, Point,
-    SharedString, Window, div, px,
+    SharedString, Task, Window, div, px,
 };
 
 use crate::callback_types::OnMutCallback;
@@ -20,6 +24,15 @@ use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH};
 use crate::foundations::materials::{SurfaceContext, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use crate::ids::next_element_id;
+
+/// Delay before a hovered submenu row opens its nested overlay
+/// (HIG "menus open on hover after a short delay").
+const SUBMENU_HOVER_OPEN_MS: u64 = 100;
+
+/// Shared-ownership toggle callback fired by Space on a checkable row.
+/// Equivalent to `OnToggle` but `Rc`-based so the same handler can be
+/// cloned into both the click and keyboard code paths without moving.
+pub type OnToggleRc = Option<Rc<dyn Fn(bool, &mut Window, &mut App)>>;
 
 // ─── Item Style ──────────────────────────────────────────────────────────────
 
@@ -60,6 +73,12 @@ pub struct ContextMenuItem {
     pub checked: bool,
     /// Click handler invoked when the item is activated.
     pub on_click: OnMutCallback,
+    /// Optional toggle handler fired when Space is pressed on a selected
+    /// checkable row. Receives the *new* checked state. Firing this does
+    /// **not** close the menu — toggling is a non-destructive gesture so
+    /// users can flip multiple switches without reopening the overlay.
+    /// Enter still activates + closes via [`ContextMenuItem::on_click`].
+    pub on_toggle: OnToggleRc,
 }
 
 impl ContextMenuItem {
@@ -72,6 +91,7 @@ impl ContextMenuItem {
             shortcut: None,
             checked: false,
             on_click: None,
+            on_toggle: None,
         }
     }
 
@@ -105,6 +125,18 @@ impl ContextMenuItem {
     /// Set the click handler.
     pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
+        self
+    }
+
+    /// Set the Space-to-toggle handler for a checkable row.
+    ///
+    /// The handler is called with the *new* checked state; the caller is
+    /// responsible for updating its model and re-rendering the menu with
+    /// an updated `.checked(...)` value. The menu stays open so the user
+    /// can toggle multiple options in one gesture (HIG "checked menu
+    /// items").
+    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(handler));
         self
     }
 }
@@ -154,6 +186,14 @@ pub struct ContextMenu {
     selection_path: Vec<usize>,
     /// Indices of expanded submenus (currently supports at most one level).
     expanded_submenu: Option<usize>,
+    /// Pending submenu-open timer scheduled by hover. Dropping the task
+    /// aborts it, so replacing this field (on a new hover or a hover-leave)
+    /// is sufficient to cancel the previously-scheduled open.
+    hover_submenu_task: Option<Task<()>>,
+    /// Top-level index of the row currently being hovered in the parent
+    /// menu. Used only to decide whether a pending hover-open should fire
+    /// (the row still matches) or be ignored (the user moved away).
+    hovered_submenu_index: Option<usize>,
     focus_handle: FocusHandle,
 }
 
@@ -168,6 +208,8 @@ impl ContextMenu {
             anchor: None,
             selection_path: Vec::new(),
             expanded_submenu: None,
+            hover_submenu_task: None,
+            hovered_submenu_index: None,
             focus_handle: cx.focus_handle(),
         }
     }
@@ -184,6 +226,8 @@ impl ContextMenu {
         self.anchor = None;
         self.selection_path.clear();
         self.expanded_submenu = None;
+        self.hover_submenu_task = None;
+        self.hovered_submenu_index = None;
         self.focus_handle.focus(window, cx);
         cx.notify();
     }
@@ -206,6 +250,8 @@ impl ContextMenu {
         self.anchor = Some(anchor);
         self.selection_path.clear();
         self.expanded_submenu = None;
+        self.hover_submenu_task = None;
+        self.hovered_submenu_index = None;
         self.focus_handle.focus(window, cx);
         cx.notify();
     }
@@ -250,6 +296,8 @@ impl ContextMenu {
         self.is_open = false;
         self.selection_path.clear();
         self.expanded_submenu = None;
+        self.hover_submenu_task = None;
+        self.hovered_submenu_index = None;
         cx.notify();
     }
 
@@ -313,6 +361,85 @@ impl ContextMenu {
                 *last = idx;
             }
         }
+    }
+
+    /// Begin (or restart) the ~100 ms hover-to-open timer for a submenu
+    /// parent row at top-level index `idx`. Dropping `hover_submenu_task`
+    /// cancels any previously-pending open, so each call is an idempotent
+    /// "reset the timer for the row currently under the cursor".
+    fn schedule_submenu_hover_open(&mut self, idx: usize, cx: &mut Context<Self>) {
+        // Ignore hovers on non-submenu rows so a quick mouse-over of an
+        // adjacent item doesn't schedule a phantom open.
+        if !matches!(self.items.get(idx), Some(ContextMenuEntry::Submenu { .. })) {
+            self.cancel_submenu_hover_open();
+            return;
+        }
+        // If we're already scheduled on this exact row, leave the existing
+        // timer alone — replacing it would reset the 100 ms clock, which
+        // is the opposite of what a continuous hover should do.
+        if self.hovered_submenu_index == Some(idx) && self.hover_submenu_task.is_some() {
+            return;
+        }
+        self.hovered_submenu_index = Some(idx);
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(SUBMENU_HOVER_OPEN_MS))
+                .await;
+            let _ = this.update(cx, |this: &mut Self, cx| {
+                // Only fire if the user is still hovering this row; a
+                // hover-leave (or a hover on a different row) will have
+                // cleared `hovered_submenu_index`.
+                if this.hovered_submenu_index != Some(idx) {
+                    return;
+                }
+                if !matches!(this.items.get(idx), Some(ContextMenuEntry::Submenu { .. })) {
+                    return;
+                }
+                this.expanded_submenu = Some(idx);
+                this.selection_path = vec![idx];
+                if let Some(first_child) = first_actionable_in_submenu(&this.items, idx) {
+                    this.selection_path.push(first_child);
+                }
+                this.hover_submenu_task = None;
+                cx.notify();
+            });
+        });
+        self.hover_submenu_task = Some(task);
+    }
+
+    /// Cancel any pending hover-to-open scheduled by
+    /// [`ContextMenu::schedule_submenu_hover_open`]. Safe to call even
+    /// when nothing is pending.
+    fn cancel_submenu_hover_open(&mut self) {
+        self.hover_submenu_task = None;
+        self.hovered_submenu_index = None;
+    }
+
+    /// Toggle the checked state of the currently-selected row and fire its
+    /// `on_toggle` handler. Used by the Space-key branch of
+    /// [`ContextMenu::handle_key_down`]. Returns `true` when the key event
+    /// was consumed (a checkable row was selected *and* had `on_toggle`).
+    fn toggle_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(idx) = self.selection_path.last().copied() else {
+            return false;
+        };
+        let items = self.active_items();
+        let Some(ContextMenuEntry::Item(item)) = items.get(idx) else {
+            return false;
+        };
+        if item.style == ContextMenuItemStyle::Disabled {
+            return false;
+        }
+        let Some(handler) = item.on_toggle.clone() else {
+            return false;
+        };
+        let new_state = !item.checked;
+        handler(new_state, window, cx);
+        // The row stays visible; the host is responsible for rebuilding
+        // the items with the new `.checked(...)` state. A plain notify
+        // keeps the row highlight in sync while we wait for that rebuild.
+        cx.notify();
+        true
     }
 
     /// Fire the item's `on_click` and close the menu, skipping disabled entries.
@@ -396,6 +523,13 @@ impl ContextMenu {
             }
             "enter" => {
                 self.activate_selected(window, cx);
+            }
+            // Space toggles a checkable row without closing the menu.
+            // Falls through to no-op on non-checkable rows so the host
+            // retains the option to bind Space elsewhere (e.g. as a
+            // scrolling gesture) if nothing consumed it here.
+            "space" => {
+                self.toggle_selected(window, cx);
             }
             "escape" => {
                 if self.expanded_submenu.is_some() {
@@ -877,9 +1011,32 @@ fn render_rows(
                         if let Some(first_child) = first_actionable_in_submenu(&this.items, idx) {
                             this.selection_path.push(first_child);
                         }
+                        // A click is an explicit open; cancel any
+                        // still-pending hover timer so we don't double-fire.
+                        this.cancel_submenu_hover_open();
                         cx.notify();
                     },
                 ));
+
+                // HIG "menus open on hover after a short delay": arm a
+                // ~100 ms timer when this parent row starts being hovered,
+                // and cancel it on hover-leave. Only wired for top-level
+                // rows — nested levels open directly.
+                if !is_submenu {
+                    row = row.on_hover(cx.listener(move |this, &hovered: &bool, _window, cx| {
+                        if hovered {
+                            // Do not rearm when this row's submenu is
+                            // already visible — it's a no-op that would
+                            // just churn the task field.
+                            if this.expanded_submenu == Some(idx) {
+                                return;
+                            }
+                            this.schedule_submenu_hover_open(idx, cx);
+                        } else if this.hovered_submenu_index == Some(idx) {
+                            this.cancel_submenu_hover_open();
+                        }
+                    }));
+                }
 
                 children.push(row.into_any_element());
             }
@@ -1194,5 +1351,137 @@ mod interaction_tests {
         menu.update_in(cx, |menu, _window, _cx| assert!(!menu.is_open()));
         assert!(actions.borrow().is_empty());
         assert_element_absent(cx, MENU_CONTENT);
+    }
+
+    // ── Submenu hover-to-open (Task A) ───────────────────────────────────
+
+    /// Build an entries list whose index 0 is a submenu parent — exercises
+    /// the hover-to-open path.
+    fn items_with_submenu() -> Vec<ContextMenuEntry> {
+        vec![
+            ContextMenuEntry::Submenu {
+                label: "Recent".into(),
+                icon: None,
+                items: vec![
+                    ContextMenuEntry::Item(ContextMenuItem::new("File A")),
+                    ContextMenuEntry::Item(ContextMenuItem::new("File B")),
+                ],
+            },
+            ContextMenuEntry::Item(ContextMenuItem::new("Close")),
+        ]
+    }
+
+    #[gpui::test]
+    async fn submenu_hover_expands_after_delay(cx: &mut TestAppContext) {
+        let (menu, cx) = setup_test_window(cx, |_window, cx| ContextMenu::new(cx));
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            menu.set_items(items_with_submenu());
+        });
+        open_menu(&menu, cx);
+
+        // Drive the hover-open timer directly: rendering a synthetic hover
+        // event against the overlay would still funnel through the same
+        // `schedule_submenu_hover_open` we're about to call.
+        menu.update_in(cx, |menu, _window, cx| {
+            menu.schedule_submenu_hover_open(0, cx);
+            assert!(menu.expanded_submenu().is_none(), "must not expand yet");
+        });
+
+        // 100 ms later, the task should have fired and expanded the submenu.
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(150));
+        cx.run_until_parked();
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            assert_eq!(
+                menu.expanded_submenu(),
+                Some(0),
+                "submenu should be open after 100 ms hover"
+            );
+            // Selection path should have descended into the first child
+            // so keyboard nav lands on a real row.
+            assert_eq!(menu.selection_path(), &[0, 0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn submenu_hover_cancelled_before_delay(cx: &mut TestAppContext) {
+        let (menu, cx) = setup_test_window(cx, |_window, cx| ContextMenu::new(cx));
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            menu.set_items(items_with_submenu());
+        });
+        open_menu(&menu, cx);
+
+        // Start the timer, then cancel before 100 ms elapse.
+        menu.update_in(cx, |menu, _window, cx| {
+            menu.schedule_submenu_hover_open(0, cx);
+            menu.cancel_submenu_hover_open();
+        });
+
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(300));
+        cx.run_until_parked();
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            assert!(
+                menu.expanded_submenu().is_none(),
+                "hover-leave must cancel the pending open"
+            );
+        });
+    }
+
+    // ── Space-to-toggle (Task B) ─────────────────────────────────────────
+
+    #[gpui::test]
+    async fn space_fires_on_toggle_without_closing_menu(cx: &mut TestAppContext) {
+        let toggles: Rc<RefCell<Vec<bool>>> = Rc::new(RefCell::new(Vec::new()));
+        let (menu, cx) = setup_test_window(cx, |_window, cx| ContextMenu::new(cx));
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            let t = toggles.clone();
+            menu.set_items(vec![ContextMenuEntry::Item(
+                ContextMenuItem::new("Show Toolbar")
+                    .checked(false)
+                    .on_toggle(move |new_state, _window, _cx| {
+                        t.borrow_mut().push(new_state);
+                    }),
+            )]);
+        });
+        open_menu(&menu, cx);
+
+        // Land keyboard selection on the checkable row.
+        cx.press("down");
+        cx.press("space");
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            assert!(menu.is_open(), "Space must not close the menu");
+        });
+        assert_eq!(
+            &*toggles.borrow(),
+            &[true],
+            "on_toggle should fire with the flipped state"
+        );
+    }
+
+    #[gpui::test]
+    async fn space_on_non_togglable_item_is_a_noop(cx: &mut TestAppContext) {
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let (menu, cx) = setup_test_window(cx, |_window, cx| ContextMenu::new(cx));
+
+        menu.update_in(cx, |menu, _window, _cx| {
+            menu.set_items(test_items(actions.clone()));
+        });
+        open_menu(&menu, cx);
+
+        cx.press("down");
+        cx.press("space");
+
+        // Neither Copy's on_click nor any toggle should have fired.
+        assert!(actions.borrow().is_empty());
+        menu.update_in(cx, |menu, _window, _cx| {
+            assert!(menu.is_open(), "Space must not close on a plain item");
+        });
     }
 }
