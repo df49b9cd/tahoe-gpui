@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 description = "Tahoe HIG-aligned UI components for GPUI"
 
+[lints]
+workspace = true
+
 [features]
 default = []
 voice = ["dep:cpal"]
@@ -35,6 +38,9 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["simd
 # to produce `RenderImage` bitmaps that the `img()` element displays.
 # Default features (`cli`, `png`) are off — we only need the SVG path.
 mermaid-rs-renderer = { version = "0.2.1", default-features = false }
+
+# Grapheme cluster segmentation for cursor boundaries (emoji ZWJ, CJK composites).
+unicode-segmentation = "1.12"
 
 # Syntax highlighting
 tree-sitter = "0.26"
