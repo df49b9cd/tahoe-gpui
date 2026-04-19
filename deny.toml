@@ -17,6 +17,14 @@ ignore = [
   # async-std: discontinued, pulled in transitively by gpui. Not used
   # directly by tahoe-gpui.
   "RUSTSEC-2025-0052",
+  # rand (<0.9.3) unsoundness in custom-logger + ThreadRng reseed path
+  # (GHSA-cq8v-f236-94qc). `rand 0.8.6` is a ghost entry in Cargo.lock
+  # reached only through `zed-scap`, which lives behind gpui's disabled
+  # `screen-capture` feature — never compiled for our targets. The
+  # advisory database may not yet surface this at cargo-deny check time
+  # (the advisory was published 2026-04-14); listing it here keeps CI
+  # stable once the database refreshes.
+  "RUSTSEC-2026-0097",
 ]
 
 [licenses]
@@ -63,7 +71,6 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
   "https://github.com/zed-industries/zed",
-  "https://github.com/zed-industries/mermaid-rs-renderer",
   "https://github.com/zed-industries/font-kit",
   "https://github.com/zed-industries/wgpu",
   "https://github.com/proptest-rs/proptest",
