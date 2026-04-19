@@ -314,7 +314,10 @@ fn render_bottom_drawer(
     if let Some(ref handler) = on_dismiss_rc {
         let h = handler.clone();
         panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event) {
+            // HIG `#sheets` dismissal shortcuts: Escape and Command-Period.
+            let modifiers = &event.keystroke.modifiers;
+            let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
+            if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
                 h(window, cx);
             }
         });
@@ -374,7 +377,10 @@ fn render_cardlike(
     if let Some(ref handler) = on_dismiss_rc {
         let h = handler.clone();
         panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event) {
+            // HIG `#sheets` dismissal shortcuts: Escape and Command-Period.
+            let modifiers = &event.keystroke.modifiers;
+            let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
+            if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
                 h(window, cx);
             }
         });

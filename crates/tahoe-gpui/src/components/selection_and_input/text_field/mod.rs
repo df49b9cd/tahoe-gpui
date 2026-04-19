@@ -1115,8 +1115,11 @@ impl Render for TextField {
                         }),
                     )
                     .child(
-                        Icon::new(IconName::X)
-                            .size(px(12.0))
+                        // HIG: clear button uses the filled-circle X glyph
+                        // (`xmark.circle.fill`) — matches NSSearchField and
+                        // UISearchTextField conventions.
+                        Icon::new(IconName::XmarkCircleFill)
+                            .size(px(14.0))
                             .color(theme.text_muted),
                     ),
             );

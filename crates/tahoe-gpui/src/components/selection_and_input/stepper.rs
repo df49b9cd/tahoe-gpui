@@ -281,14 +281,36 @@ impl RenderOnce for Stepper {
         if self.disabled {
             container = container.opacity(0.5);
         } else if let Some(handler) = handler_rc {
-            container =
-                container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    match event.keystroke.key.as_str() {
-                        "up" | "right" => handler(incremented, window, cx),
-                        "down" | "left" => handler(decremented, window, cx),
-                        _ => {}
+            container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                // HIG macOS: Shift-arrow bumps by 10× the step, mirroring
+                // the Shift-click behaviour already wired on the +/- buttons.
+                let shift = event.keystroke.modifiers.shift;
+                match event.keystroke.key.as_str() {
+                    "up" | "right" => {
+                        handler(
+                            if shift {
+                                shift_incremented
+                            } else {
+                                incremented
+                            },
+                            window,
+                            cx,
+                        );
                     }
-                });
+                    "down" | "left" => {
+                        handler(
+                            if shift {
+                                shift_decremented
+                            } else {
+                                decremented
+                            },
+                            window,
+                            cx,
+                        );
+                    }
+                    _ => {}
+                }
+            });
         }
 
         container

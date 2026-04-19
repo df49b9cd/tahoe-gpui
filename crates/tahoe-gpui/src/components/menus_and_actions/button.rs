@@ -32,10 +32,23 @@ use gpui::{
 /// | `GlassProminent`| Liquid Glass tinted         | Tinted glass, primary CTA on glass                |
 /// | `Filled`        | (Tahoe) high-contrast CTA   | Dark fill on light themes (black CTA)             |
 ///
-/// HIG (macOS 26) styles: Plain, Gray, Tinted, Filled, Bordered,
-/// Borderless, Glass. Each variant below carries a `#[doc(alias = ...)]`
-/// mapping to its canonical HIG name + SwiftUI `.buttonStyle` equivalent
-/// so rustdoc search finds the familiar Apple term.
+/// HIG (macOS 26) styles covered here: Plain, Gray, Tinted, Filled,
+/// Bordered, Borderless, Glass. Each variant below carries a
+/// `#[doc(alias = ...)]` mapping to its canonical HIG name + SwiftUI
+/// `.buttonStyle` equivalent so rustdoc search finds the familiar Apple
+/// term.
+///
+/// HIG macOS 26 variants **not yet represented** (pending separate PRs so
+/// we don't churn the public API in one pass):
+/// - `Help` — 20 pt circle showing a `?` that opens help documentation.
+///   Would use `IconName::QuestionMark` (not currently in `IconName`).
+/// - `Disclosure` — small triangle chevron for collapsible-group headers.
+///   Distinct from the `DisclosureGroup` component; here it's the bare
+///   button chrome for custom group headers.
+/// - `Gradient` — bezel / subtly tinted gradient used for legacy AppKit
+///   push-button compatibility in Tahoe toolbars.
+///
+/// See `docs/hig/components/menus-and-actions.md` for the canonical list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ButtonVariant {
     /// Tinted accent CTA — SwiftUI `.borderedProminent` with the system tint.
@@ -212,7 +225,10 @@ impl Button {
 
     /// Sets the button shape per HIG.
     ///
-    /// - `RoundedRectangle` (default): standard corner radius (`theme.radius_md`)
+    /// - `RoundedRectangle` (default): macOS 26 Tahoe Liquid Glass rounded
+    ///   corner (`theme.glass.radius(GlassSize::Small)`). Historical AppKit
+    ///   push buttons used 6pt; macOS 26 moved to a larger, more rounded
+    ///   corner to match the Liquid Glass family.
     /// - `Capsule`: fully rounded ends / pill shape (`theme.radius_full`)
     /// - `Circle`: perfect circle (`theme.radius_full` + equal width/height)
     pub fn shape(mut self, shape: ButtonShape) -> Self {

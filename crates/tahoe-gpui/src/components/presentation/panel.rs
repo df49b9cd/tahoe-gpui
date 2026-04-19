@@ -13,9 +13,10 @@
 //!   to the leading or trailing edge with a backdrop dim. Rendered
 //!   with `GlassSize::Large`.
 //! - [`PanelStyle::HUD`] — "Heads-up display" panel that floats over
-//!   its parent with a darker, high-contrast glass surface and no
-//!   backdrop dim. Used for Fonts/Colors-style overlays that should
-//!   not suppress interaction with the underlying window.
+//!   its parent with no backdrop dim so the underlying window remains
+//!   interactive. Intended for Fonts/Colors-style overlays; a dark
+//!   translucent surface treatment matching AppKit's `hudWindow` is
+//!   not yet applied to the panel chrome (tracked separately).
 //!
 //! # HIG Reference
 //!
@@ -52,8 +53,11 @@ pub enum PanelStyle {
     /// Inspector-style side panel with backdrop dim. Default.
     #[default]
     Standard,
-    /// HUD-style floating panel — no backdrop, darker glass surface,
-    /// suitable for tool-palette overlays (Fonts, Colors, HUD).
+    /// HUD-style floating panel — no backdrop dim so the underlying
+    /// window stays interactive. Suitable for tool-palette overlays
+    /// (Fonts, Colors, HUD). The dark translucent surface treatment
+    /// of AppKit's `hudWindow` is not yet applied; the panel chrome
+    /// currently matches [`PanelStyle::Standard`].
     HUD,
 }
 

@@ -192,7 +192,10 @@ impl RenderOnce for PopupButton {
                     .child(trigger_label),
             )
             .child(
-                Icon::new(IconName::ChevronDown)
+                // HIG Pop-up buttons: trailing glyph is the up/down double
+                // chevron (`chevron.up.chevron.down`), distinct from the
+                // single `chevron.down` used by pull-down buttons.
+                Icon::new(IconName::ChevronsUpDown)
                     .size(px(12.0))
                     .color(theme.text_muted),
             );

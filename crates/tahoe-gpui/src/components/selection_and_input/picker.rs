@@ -282,7 +282,12 @@ impl RenderOnce for Picker {
                     .child(trigger_label),
             )
             .child(
-                Icon::new(IconName::ChevronDown)
+                // HIG macOS `NSPopUpButton` pop-up-style triggers use the
+                // `chevron.up.chevron.down` glyph, not a single down
+                // chevron (which denotes navigation/expansion). Picker's
+                // default `Menu` style is a pop-up menu, so mirror the
+                // system symbol.
+                Icon::new(IconName::ChevronsUpDown)
                     .size(px(12.0))
                     .color(theme.text_muted),
             );

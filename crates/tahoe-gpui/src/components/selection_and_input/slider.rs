@@ -241,9 +241,17 @@ impl Slider {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let step = match self.step_count {
+        let base_step = match self.step_count {
             Some(count) if count >= 2 => 1.0 / (count - 1) as f32,
             _ => KEYBOARD_STEP,
+        };
+        // HIG Slider accessibility: arrow keys move 1 unit; Shift+arrow moves
+        // 10 units (a "big step"). For stepped sliders this still jumps by
+        // `base_step * 10`, rounded into the step grid by `snap_value` below.
+        let step = if event.keystroke.modifiers.shift {
+            base_step * 10.0
+        } else {
+            base_step
         };
 
         let rtl = cx.theme().is_rtl();

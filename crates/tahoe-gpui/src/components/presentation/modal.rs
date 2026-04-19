@@ -317,7 +317,10 @@ impl RenderOnce for Modal {
         let dismiss_for_keys = on_dismiss_rc.clone();
         let focus_cycle = self.focus_cycle.clone();
         content_div = content_div.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event) {
+            // HIG `#modality` dismissal shortcuts: Escape and Command-Period.
+            let modifiers = &event.keystroke.modifiers;
+            let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
+            if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
                 if let Some(handler) = &dismiss_for_keys {
                     handler(window, cx);
                 }
