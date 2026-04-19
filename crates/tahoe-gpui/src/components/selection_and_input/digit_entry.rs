@@ -22,6 +22,12 @@ use gpui::{
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::theme::{ActiveTheme, TextStyle};
 
+/// Minimum cell height in logical pixels. HIG PIN/OTP entry matches the
+/// 62pt `NSTextField` tall-cell variant — wide enough for the Dynamic Type
+/// Title3 glyph to breathe without clipping and to leave ~10pt padding
+/// around the caret.
+pub(crate) const DIGIT_CELL_MIN_H: f32 = 62.0;
+
 /// A stateful digit-entry field for PIN/OTP input per HIG.
 ///
 /// Construct with `cx.new(|cx| DigitEntry::new(cx))` and pass the entity
@@ -229,9 +235,14 @@ impl Render for DigitEntry {
                 (None, false)
             };
 
+            // HIG NSTextField/PIN-entry cells: `DIGIT_CELL_MIN_H` (62pt) tall
+            // when rendered at the regular Dynamic Type scale. The width stays
+            // bound to the shared `theme.target_size()` token so the cell's
+            // horizontal footprint remains HIG-compliant (44pt touch target
+            // minimum).
             let inner = div()
                 .min_w(px(theme.target_size()))
-                .min_h(px(52.0))
+                .min_h(px(DIGIT_CELL_MIN_H))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -346,6 +357,14 @@ mod tests {
             entry.set_secure(true);
             assert_eq!(entry.display_char('5'), '\u{2022}');
         });
+    }
+
+    /// HIG: the tall PIN/OTP cell variant is 62pt — noticeably taller
+    /// than the 52pt short variant we started from. Lock the constant so
+    /// future cleanups don't silently shrink it.
+    #[test]
+    fn digit_cell_min_h_is_sixty_two() {
+        assert!((super::DIGIT_CELL_MIN_H - 62.0).abs() < f32::EPSILON);
     }
 }
 
