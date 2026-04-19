@@ -117,7 +117,7 @@ pub fn render(
                 .child(
                     "On macOS, notifications are posted by the system via \
                      UNUserNotificationCenter. Here\u{2019}s the visual treatment of a \
-                     notification banner composed from rust-ai-elements primitives.",
+                     notification banner composed from tahoe-gpui primitives.",
                 ),
         )
         .child(div().h(theme.spacing_sm))

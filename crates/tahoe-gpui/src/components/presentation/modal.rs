@@ -46,7 +46,7 @@ type DismissEmitFn = std::rc::Rc<dyn Fn(&AnyEntity, &mut Window, &mut App) + 'st
 /// The parent manages `is_open` state and provides an `on_dismiss` callback.
 /// Uses GPUI's `overlay()` for rendering above other content.
 ///
-/// # Event-emitter pattern (Finding 5 in df49b9cd/ai-sdk-rust#132)
+/// # Event-emitter pattern (Finding 5 in the Zed cross-reference audit)
 ///
 /// Zed's `Modal` emits [`DismissEvent`] via `EventEmitter` so parents
 /// subscribe reactively with `cx.subscribe(&modal, Self::on_dismiss)`
@@ -84,7 +84,7 @@ pub struct Modal {
     /// Type-erased handle to an `Entity<T>` where `T: EventEmitter<DismissEvent>`.
     /// Paired with `dismiss_emit_fn` so the render path can dispatch
     /// `cx.emit(DismissEvent)` through the erased entity without the
-    /// surrounding struct generics. Finding 5 in df49b9cd/ai-sdk-rust#132.
+    /// surrounding struct generics. Finding 5 in the Zed cross-reference audit.
     dismiss_emitter: Option<AnyEntity>,
     dismiss_emit_fn: Option<DismissEmitFn>,
 }
@@ -168,7 +168,7 @@ impl Modal {
     ///
     /// The entity must implement `EventEmitter<DismissEvent>`. Any existing
     /// [`Modal::on_dismiss`] callback still fires — the emitter is
-    /// additive, not a replacement. Finding 5 in df49b9cd/ai-sdk-rust#132.
+    /// additive, not a replacement. Finding 5 in the Zed cross-reference audit.
     ///
     /// ```ignore
     /// struct MySheet;

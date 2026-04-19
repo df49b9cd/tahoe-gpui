@@ -1,6 +1,6 @@
 //! Context window usage display, model identification, and cost estimation.
 //!
-//! Ported from `iced-ai-elements` (df49b9cd/iced#1). Provides:
+//! Ported from an earlier `iced`-based prototype. Provides:
 //! - [`Usage`] — token usage breakdown (input, output, reasoning, cached)
 //! - [`ModelId`] / [`Provider`] — model identification and parsing
 //! - [`ModelPricing`] — per-million-token pricing with cost calculation

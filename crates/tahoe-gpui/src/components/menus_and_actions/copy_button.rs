@@ -144,7 +144,7 @@ impl Render for CopyButton {
         let theme = cx.theme().clone();
 
         if let Some(ref custom_child) = self.custom_child {
-            // Finding 15 adoption (df49b9cd/ai-sdk-rust#132): CopyButton's
+            // Finding 15 adoption: CopyButton's
             // custom-child path used to open-code the disabled / cursor /
             // click / activation-key wiring. ButtonLike now owns that
             // stack — both the click handler and the activation-key

@@ -56,7 +56,7 @@ pub struct RatingIndicator {
     interactive: bool,
     focused: bool,
     /// Optional host-supplied focus handle. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132 — when set, the focus-ring derives from
+    /// the Zed cross-reference audit — when set, the focus-ring derives from
     /// `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)`; falls back to [`focused`](Self::focused).
     focus_handle: Option<FocusHandle>,
@@ -112,7 +112,7 @@ impl RatingIndicator {
     /// `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self
@@ -171,7 +171,7 @@ impl RenderOnce for RatingIndicator {
         let value = self.value.clamp(0.0, self.max as f32);
         let interactive = self.interactive;
         let on_change = rc_wrap(self.on_change);
-        // Finding 18 in df49b9cd/ai-sdk-rust#132.
+        // Finding 18 in the Zed cross-reference audit.
         let focused = self
             .focus_handle
             .as_ref()

@@ -84,7 +84,7 @@ pub struct Sidebar {
     /// Best-effort background-extension colour — the fill rendered behind
     /// the sidebar glass so the "content extends beneath" HIG intent is
     /// visible without SwiftUI's real `backgroundExtensionEffect`
-    /// shader. Finding 24 in df49b9cd/ai-sdk-rust#132.
+    /// shader. Finding 24 in the Zed cross-reference audit.
     ///
     /// GPUI v0.231.1-pre does not expose the render-to-texture primitive
     /// needed to sample the actual content behind the sidebar, so this
@@ -116,7 +116,7 @@ impl Sidebar {
     /// `backgroundExtensionEffect` appearance shows through even without
     /// a render-to-texture backbuffer. Pass the theme's content
     /// background colour or the dominant content tone. Finding 24 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn background_extension(mut self, color: gpui::Hsla) -> Self {
         self.background_extension = Some(color);
         self
@@ -196,7 +196,7 @@ impl RenderOnce for Sidebar {
             theme.accessibility_mode,
         );
 
-        // Finding 24 in df49b9cd/ai-sdk-rust#132: when the host supplies a
+        // Finding 24 in the Zed cross-reference audit: when the host supplies a
         // `background_extension` colour we composite it *below* the
         // glass fill so the HIG "content extends beneath the sidebar"
         // visual intent is preserved. Without GPUI render-to-texture

@@ -997,7 +997,7 @@ impl Render for TextField {
 
         // HIG: the inline clear ("x") affordance should appear only when
         // the field is focused. Showing it whenever content is present
-        // causes visual noise in static forms (see df49b9cd/ai-sdk-rust#145
+        // causes visual noise in static forms (see the HIG Selection & Input audit
         // finding 3). Zed's `Input` takes the same approach.
         let is_focused = self.focus_handle.is_focused(window);
         let show_clear = self.show_clear_button
@@ -1276,7 +1276,7 @@ impl Element for TextFieldElement {
         // HIG Accessibility: placeholder must remain legible. The raw
         // `semantic.placeholder_text` token is alpha 0.30 which drops
         // below WCAG AA against the field's surface fill in dark mode
-        // (see df49b9cd/ai-sdk-rust#145 finding 4). `text_muted` is tuned
+        // (see the HIG Selection & Input audit finding 4). `text_muted` is tuned
         // to stay above the 4.5:1 contrast floor on both the surface and
         // plain (transparent) backgrounds, so we use it for the
         // placeholder copy instead.

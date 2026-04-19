@@ -162,7 +162,7 @@ pub struct TabBar {
     on_close: OnCloseTab,
     focused: bool,
     /// Optional host-supplied focus handle. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132 — when set, the focus-ring visibility
+    /// the Zed cross-reference audit — when set, the focus-ring visibility
     /// comes from `handle.is_focused(window)` and the root element
     /// threads `track_focus(&handle)`; otherwise uses the explicit
     /// [`focused`](Self::focused) bool.
@@ -227,7 +227,7 @@ impl TabBar {
     /// `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self
@@ -246,7 +246,7 @@ impl RenderOnce for TabBar {
         let theme = cx.theme();
         let selector_id = self.id.to_string();
         let tab_bar_selector = format!("tab-bar-{selector_id}");
-        // Finding 18 in df49b9cd/ai-sdk-rust#132.
+        // Finding 18 in the Zed cross-reference audit.
         let focused = self
             .focus_handle
             .as_ref()

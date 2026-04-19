@@ -194,7 +194,7 @@ pub struct TahoeTheme {
     /// components can resolve a runtime-scaled point size for any
     /// [`TextStyle`] without reaching past the theme.
     ///
-    /// Finding 26 in df49b9cd/ai-sdk-rust#132 tracks this wiring — it
+    /// Finding 26 in the Zed cross-reference audit tracks this wiring — it
     /// lands the storage + resolver so future PRs can migrate individual
     /// components off raw `px(14.)` in favour of
     /// `theme.text_size_for(TextStyle::Body)`.
@@ -1428,7 +1428,7 @@ impl TahoeTheme {
     /// [`TahoeTheme::text_size_for`]. Default is
     /// [`DynamicTypeSize::Large`] (the HIG baseline); hosts that read
     /// the user's Dynamic Type preference from the OS should propagate
-    /// it here. Finding 26 in df49b9cd/ai-sdk-rust#132.
+    /// it here. Finding 26 in the Zed cross-reference audit.
     pub fn with_dynamic_type_size(mut self, size: DynamicTypeSize) -> Self {
         self.dynamic_type_size = size;
         self
@@ -1512,7 +1512,7 @@ fn dynamic_type_multiplier(size: DynamicTypeSize) -> f32 {
 // ActiveTheme — Zed-style `cx.theme()` accessor
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
-// Finding 1 in the Zed cross-reference audit (df49b9cd/ai-sdk-rust#132). The
+// Finding 1 in the Zed cross-reference audit. The
 // crate still has ~200 call-sites that reach for the theme via
 // `cx.global::<TahoeTheme>()` — a concrete-type coupling that makes future
 // theme-backing-store changes a per-file sweep. Zed paid the same tax and

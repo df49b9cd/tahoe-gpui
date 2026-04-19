@@ -85,7 +85,7 @@ pub enum TreeNode {
 /// source files by language family so the tree reads at a glance
 /// without relying on filename alone (HIG §Icons + Finder
 /// document-icon family). Finding N4 / #12 in
-/// df49b9cd/ai-sdk-rust#151.
+/// the HIG Code-surface audit.
 pub fn icon_for_extension(ext: &str) -> IconName {
     match ext.to_ascii_lowercase().as_str() {
         // Programming languages — reuse the existing `Lang*` icon set
@@ -192,7 +192,7 @@ pub struct FileTreeView {
     expanded_paths: HashSet<String>,
     /// Set of currently selected paths. Stored as `HashSet<String>` so
     /// callers can opt into Cmd-click / Shift-click multi-selection
-    /// (finding #11 / df49b9cd/ai-sdk-rust#151). The convenience
+    /// (finding #11 / the HIG Code-surface audit). The convenience
     /// `select()` API continues to behave as single-select (replaces the
     /// set) for callers that do not enable [`Self::set_multi_select`].
     selected_paths: HashSet<String>,
@@ -211,7 +211,7 @@ pub struct FileTreeView {
     entries_dirty: bool,
     /// Scroll handle used to reveal focused items via
     /// `scroll_to_reveal_item` from keyboard navigation. Finding 17 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     scroll_handle: gpui::UniformListScrollHandle,
     /// When `true`, file rows register a GPUI drag source with a
     /// [`DraggedFilePath`] payload so consumers can participate in
@@ -260,7 +260,7 @@ impl FileTreeView {
     /// Use from keyboard navigation paths — HIG §scroll-views recommends
     /// auto-scrolling when the selection or insertion point changes so
     /// the user doesn't lose their place after a `↑` / `↓` / `Home` /
-    /// `End` press. Finding 17 in df49b9cd/ai-sdk-rust#132.
+    /// `End` press. Finding 17 in the Zed cross-reference audit.
     pub fn scroll_to_reveal_item(&self, index: usize) {
         self.scroll_handle
             .scroll_to_item(index, gpui::ScrollStrategy::Top);
@@ -810,7 +810,7 @@ impl Render for FileTreeView {
                                 // row icon + filename. Callers wire a
                                 // matching `.on_drop::<DraggedFilePath>`
                                 // on their drop target. Finding #19 in
-                                // df49b9cd/ai-sdk-rust#151.
+                                // the HIG Code-surface audit.
                                 if draggable {
                                     let drag_payload = DraggedFilePath {
                                         path: path_click.clone(),

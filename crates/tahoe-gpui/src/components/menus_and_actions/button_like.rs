@@ -1,7 +1,7 @@
 //! `ButtonLike` interactivity substrate.
 //!
 //! Finding 15 in the Zed cross-reference audit
-//! (df49b9cd/ai-sdk-rust#132). Zed separates the `Button`
+//!. Zed separates the `Button`
 //! *composition* (label + icon + variant) from `ButtonLike`, the
 //! *interactivity substrate* shared by every button-shaped control
 //! (standard button, copy-confirm button, segmented group members,

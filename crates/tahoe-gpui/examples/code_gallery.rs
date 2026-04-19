@@ -74,7 +74,7 @@ impl CodeGallery {
         let code_block_collapsed_copy = CopyButton::new(RUST_SAMPLE.to_string(), cx);
         let snippet_copies = [
             CopyButton::new("npm install @ai-sdk/react".to_string(), cx),
-            CopyButton::new("cargo add rust-ai-elements".to_string(), cx),
+            CopyButton::new("cargo add tahoe-gpui".to_string(), cx),
             CopyButton::new("git push origin main".to_string(), cx),
             CopyButton::new("export API_KEY=sk-...".to_string(), cx),
             CopyButton::new("echo 'Disabled example'".to_string(), cx),
@@ -484,7 +484,7 @@ impl Render for CodeGallery {
                     .copy_button(self.snippet_copies[0].clone()),
             ))
             .child(section("Snippet (with prefix)", theme).child(
-                Snippet::new("cargo add rust-ai-elements")
+                Snippet::new("cargo add tahoe-gpui")
                     .prefix("$")
                     .copy_button(self.snippet_copies[1].clone()),
             ))
@@ -534,11 +534,11 @@ impl Render for CodeGallery {
                     ]),
             ))
             .child(section("Package Info (convenience API)", theme).child(
-                PackageInfoView::new("rust-ai-elements", "0.1.0")
+                PackageInfoView::new("tahoe-gpui", "0.1.0")
                     .new_version("0.2.0")
                     .change_type(ChangeType::Minor)
-                    .description("GPU-accelerated UI components for AI chat applications")
-                    .license("MIT")
+                    .description("Tahoe HIG-aligned UI components for GPUI")
+                    .license("Apache-2.0")
                     .dependencies(vec![
                         Dependency::new("gpui").version("0.1.0"),
                         Dependency::new("serde"),

@@ -2,12 +2,11 @@
 //!
 //! Audio playback, speech input, transcription display, persona, and device selectors.
 //!
-//! # Audit notes (issue #148)
+//! # Audit notes
 //!
-//! The HIG Voice audit for macOS 26 Tahoe (`df49b9cd/ai-sdk-rust#148`)
-//! surfaced a set of findings and open questions that are answered below
-//! so consumers can understand the crate's contract without re-reading the
-//! issue.
+//! The HIG Voice audit for macOS 26 Tahoe surfaced a set of findings and
+//! open questions that are answered below so consumers can understand the
+//! crate's contract without re-reading the audit.
 //!
 //! ## Open question answers
 //!

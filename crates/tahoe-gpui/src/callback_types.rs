@@ -99,37 +99,32 @@ pub type OnTimeChange = Option<Box<dyn Fn(u8, u8, &mut Window, &mut App) + 'stat
 /// Used for date picker month navigation (year, month).
 pub type OnDateNavigate = Option<Box<dyn Fn(i32, u8, &mut Window, &mut App) + 'static>>;
 
-// ---- Types shared with the rust-ai-elements chatbot module ----
-// These types are *not* consumed inside tahoe-gpui itself, but they are
-// actively referenced from `rust-ai-elements` (conversation.rs,
-// prompt_input.rs, queue.rs, message.rs, streaming.rs). They live here
-// rather than in the chatbot crate so both crates can name the same
-// callback signature without one depending on the other. Removing any of
-// them is a breaking change for the binding crate — keep them in sync.
+// ---- Types shared with downstream chatbot-binding crates ----
+// These callback signatures are *not* consumed inside tahoe-gpui itself.
+// They live here so that downstream chatbot UIs built on tahoe-gpui can
+// name the same callback shape across crates without depending on each
+// other. Removing any of them is a breaking change for binding crates —
+// keep them in sync.
 
 /// `Option<Box<dyn Fn(&App) -> Vec<AnyElement> + 'static>>`
-/// Used by `rust-ai-elements::chatbot::prompt_input` for dynamic
-/// attachment element rendering.
+/// Dynamic attachment-element builder for prompt-input surfaces.
 pub type AppElementsBuilder = Option<Box<dyn Fn(&App) -> Vec<AnyElement> + 'static>>;
 
 /// `Option<Box<dyn Fn(&str) -> String>>`
-/// Used by `rust-ai-elements::chatbot::conversation` to transform
-/// message text before display (e.g. markdown preprocessing).
+/// Transform message text before display (e.g. markdown preprocessing).
 pub type FormatMessageFn = Option<Box<dyn Fn(&str) -> String>>;
 
 /// `Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>`
-/// Shared-ref click callback used by `rust-ai-elements::chatbot::queue`
-/// where the same handler is cloned across queue items.
+/// Shared-ref click callback for list/queue items where the same
+/// handler is cloned across entries.
 pub type OnClickRc = Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>;
 
 /// `Option<Rc<dyn Fn(usize, &mut Window, &mut App) + 'static>>`
-/// Shared-ref index-change callback used by
-/// `rust-ai-elements::chatbot::message`.
+/// Shared-ref index-change callback for message branch/version switchers.
 pub type OnUsizeChangeRc = Option<Rc<dyn Fn(usize, &mut Window, &mut App) + 'static>>;
 
 /// `Option<Box<dyn Fn(String, bool, Option<String>, &mut Window, &mut App) + 'static>>`
-/// Used by `rust-ai-elements::chatbot::streaming` for tool approval
-/// responses (tool_id, approved, feedback).
+/// Tool-approval response callback (tool_id, approved, feedback).
 pub type OnApprovalResponse =
     Option<Box<dyn Fn(String, bool, Option<String>, &mut Window, &mut App) + 'static>>;
 

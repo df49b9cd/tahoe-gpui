@@ -31,8 +31,6 @@ fn main() {
 }
 ```
 
-To integrate with the [rust-ai-sdk](https://github.com/df49b9cd/ai-sdk-rust), use the companion [`rust-ai-elements`](https://github.com/df49b9cd/ai-sdk-rust/tree/main/crates/rust-ai-elements) crate — it re-exports `tahoe-gpui` and adds streaming chatbot UI that binds to `rust-ai-sdk-provider` stream parts.
-
 See [`crates/tahoe-gpui/examples`](crates/tahoe-gpui/examples) for runnable demos:
 
 ```bash

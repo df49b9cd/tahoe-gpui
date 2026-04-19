@@ -48,7 +48,7 @@ pub struct Toggle {
     /// (`handle.is_focused(window)`) instead of the explicit
     /// [`Toggle::focused`] bool, and threads the handle through
     /// `track_focus` so host keyboard navigation stays coherent.
-    /// Finding 19 in df49b9cd/ai-sdk-rust#132.
+    /// Finding 19 in the Zed cross-reference audit.
     focus_handle: Option<FocusHandle>,
     tint: Option<Hsla>,
     size: ToggleSize,
@@ -95,7 +95,7 @@ impl Toggle {
     /// Deprecated in favour of [`Toggle::focus_handle`] — passing the
     /// caller's `FocusHandle` lets the toggle derive its focus state
     /// reactively rather than forcing the parent to track a bool.
-    /// Finding 19 in df49b9cd/ai-sdk-rust#132.
+    /// Finding 19 in the Zed cross-reference audit.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self

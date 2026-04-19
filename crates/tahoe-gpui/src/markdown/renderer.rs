@@ -177,7 +177,7 @@ impl MarkdownSecurity {
 
 /// Generation phase of a streaming markdown entity.
 ///
-/// Finding 29 in the Zed cross-reference audit (df49b9cd/ai-sdk-rust#132):
+/// Finding 29 in the Zed cross-reference audit:
 /// HIG Generative AI §"Factor processing time into your design" says the
 /// UI should advertise a loading indicator while the model is thinking
 /// and a terminal indicator (completion tick / error icon) once it stops.
@@ -221,7 +221,7 @@ pub struct StreamingMarkdown {
     is_streaming: bool,
     /// Lifecycle state published alongside `is_streaming` so hosts that
     /// want to render explicit `Done` / `Error` badges can do so without
-    /// a separate state machine. Finding 29 in df49b9cd/ai-sdk-rust#132.
+    /// a separate state machine. Finding 29 in the Zed cross-reference audit.
     loading_state: GenerativeLoadingState,
     /// Citation sources for inline rendering.
     citation_ctx: CitationContext,
@@ -370,7 +370,7 @@ impl StreamingMarkdown {
 
     /// Current [`GenerativeLoadingState`] — drives which
     /// `ActivityIndicator` / terminal-state glyph the host should
-    /// render. Finding 29 in df49b9cd/ai-sdk-rust#132.
+    /// render. Finding 29 in the Zed cross-reference audit.
     pub fn loading_state(&self) -> GenerativeLoadingState {
         self.loading_state
     }

@@ -25,7 +25,7 @@ pub fn render(
             div()
                 .text_style_emphasized(TextStyle::LargeTitle, theme)
                 .text_color(theme.text)
-                .child("rust-ai-elements primitive gallery"),
+                .child("tahoe-gpui primitive gallery"),
         )
         .child(
             div()

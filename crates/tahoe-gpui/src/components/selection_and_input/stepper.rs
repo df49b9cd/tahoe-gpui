@@ -33,7 +33,7 @@ pub struct Stepper {
     disabled: bool,
     focused: bool,
     /// Optional focus handle supplied by the host — see Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132. When set, the stepper derives its
+    /// the Zed cross-reference audit. When set, the stepper derives its
     /// focus-ring visibility from `handle.is_focused(window)` instead
     /// of the explicit [`focused`](Self::focused) bool and threads the
     /// handle through `track_focus` so host keyboard navigation stays
@@ -107,7 +107,7 @@ impl Stepper {
     /// from `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self

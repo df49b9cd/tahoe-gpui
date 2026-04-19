@@ -69,7 +69,7 @@ impl Slider {
             last_bounds: None,
             // HIG / NSSlider: 4 pt track, ~20 pt lozenge thumb. The
             // prior 6 pt / 14 pt defaults diverged visibly from the system
-            // control — see df49b9cd/ai-sdk-rust#145 finding 12.
+            // control — see the HIG Selection & Input audit finding 12.
             height: px(4.0),
             thumb_size: px(20.0),
             color: None,

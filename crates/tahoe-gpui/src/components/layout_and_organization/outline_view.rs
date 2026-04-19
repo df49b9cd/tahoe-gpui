@@ -100,7 +100,7 @@ impl OutlineNode {
 /// The stateless builder below renders every visible row on every frame.
 /// That is fine for outlines with a few dozen rows (the common case) but
 /// degrades for very large outlines. Finding 6 in the Zed cross-reference
-/// audit (df49b9cd/ai-sdk-rust#132) tracks the adoption of variable-
+/// audit tracks the adoption of variable-
 /// height virtualization here.
 ///
 /// For large outlines, drive rendering through the GPUI variable-height
@@ -201,7 +201,7 @@ impl OutlineView {
     /// Return the current visible-row sequence — the flat list a
     /// virtualized renderer would paint.
     ///
-    /// Finding 6 in df49b9cd/ai-sdk-rust#132. Pair with
+    /// Finding 6 in the Zed cross-reference audit. Pair with
     /// [`crate::ListState`] + [`crate::list_element`] for outlines
     /// large enough that the default (non-virtualized) render path
     /// becomes a bottleneck — index `ix` into the returned vector
@@ -232,7 +232,7 @@ impl OutlineView {
 ///
 /// Public as a non-exhaustive stable struct so hosts building custom
 /// virtualized outlines on top of [`crate::list_element`] +
-/// [`crate::ListState`] (Finding 6 in df49b9cd/ai-sdk-rust#132) can
+/// [`crate::ListState`] (Finding 6 in the Zed cross-reference audit) can
 /// reuse the same flatten routine without re-implementing the indent
 /// + parent tracking themselves.
 #[derive(Clone, Debug)]
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn visible_entries_counts_expanded_only() {
-        // Finding 6 in df49b9cd/ai-sdk-rust#132: visible_entries must
+        // Finding 6 in the Zed cross-reference audit: visible_entries must
         // match what the renderer paints — collapsed children don't
         // appear, expanded ones do.
         let collapsed_child = OutlineNode::new("c1", "child-1");

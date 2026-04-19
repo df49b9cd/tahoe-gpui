@@ -869,7 +869,7 @@ pub fn fade_out(color: Hsla, factor: f32) -> Hsla {
 /// Exposing the helpers as methods lets call sites chain `some_hsla
 /// .opacity(0.6)` the same way Zed does, instead of wrapping every alpha
 /// tweak in `with_alpha(color, color.a * 0.6)`. Finding 10 in the
-/// df49b9cd/ai-sdk-rust#132 Zed cross-reference audit tracks this gap.
+/// the Zed cross-reference audit Zed cross-reference audit tracks this gap.
 pub trait HslaAlphaExt: Copy {
     /// Replace the alpha channel (see [`with_alpha`]).
     fn alpha(self, alpha: f32) -> Self;

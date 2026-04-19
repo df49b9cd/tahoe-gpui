@@ -244,7 +244,7 @@ pub struct Table {
     on_column_resize: Option<OnColumnResize>,
     focused: bool,
     /// Optional host-supplied focus handle. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132 — when set, the focus-ring visibility
+    /// the Zed cross-reference audit — when set, the focus-ring visibility
     /// comes from `handle.is_focused(window)` and the root element
     /// threads `track_focus(&handle)`; otherwise uses the explicit
     /// [`focused`](Self::focused) bool.
@@ -373,7 +373,7 @@ impl Table {
     /// `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn focus_handle(mut self, handle: &gpui::FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self
@@ -822,7 +822,7 @@ impl RenderOnce for Table {
             });
         }
 
-        // Finding 18 in df49b9cd/ai-sdk-rust#132.
+        // Finding 18 in the Zed cross-reference audit.
         let focused = self
             .focus_handle
             .as_ref()

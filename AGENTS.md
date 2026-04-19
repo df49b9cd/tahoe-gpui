@@ -64,17 +64,6 @@ cx.set_global(TahoeTheme::dark()); // or ::light(), ::liquid_glass()
 
 Components read tokens via `cx.global::<TahoeTheme>()`. For runtime switching, `theme.apply(cx)` calls `cx.refresh_windows()`.
 
-## HIG Component Renames (vs generic naming)
-
-| Old Name | HIG-Aligned Name |
-| --- | --- |
-| `TextInput` | `TextField` |
-| `Switch` | `Toggle` |
-| `Tabs` | `TabBar` |
-| `ProgressBar` | `ProgressIndicator` |
-| `Collapsible` | `DisclosureGroup` |
-| `HorizontalScroll` | `ScrollView` |
-
 # Essential Commands
 
 ```bash

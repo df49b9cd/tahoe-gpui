@@ -1,6 +1,6 @@
 //! Word-level animation state for streaming content.
 //!
-//! Ported from `iced-ai-streamdown` (df49b9cd/iced#1). Uses a flat Vec of
+//! Ported from an earlier `iced`-based prototype. Uses a flat Vec of
 //! reveal timestamps rather than per-word animation instances, keeping overhead
 //! minimal even for thousands of words.
 

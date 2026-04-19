@@ -194,7 +194,7 @@ impl Icon {
     /// use for glyphs that read the same in both orientations (e.g.
     /// an arrow indicating physical down-motion rather than
     /// forward-in-reading-order). Finding 23 in
-    /// df49b9cd/ai-sdk-rust#132 tracks this wiring.
+    /// the Zed cross-reference audit tracks this wiring.
     pub fn follow_layout_direction(mut self, follow: bool) -> Self {
         self.follow_layout_direction = follow;
         self
@@ -477,7 +477,7 @@ impl RenderOnce for Icon {
                     }
                 },
             };
-            // Finding 23 in df49b9cd/ai-sdk-rust#132: apply RTL mirror
+            // Finding 23 in the Zed cross-reference audit: apply RTL mirror
             // for directional glyphs at the inner SVG layer. GPUI's
             // `Transformation` is only exposed on `svg()` today, so the
             // flip is honoured for the monochrome single-layer path;

@@ -87,7 +87,7 @@ pub struct SplitView {
     /// check until the caller installs the subscriptions (which needs
     /// a `&mut Window`, unavailable from `new`).
     ///
-    /// Finding 13 in df49b9cd/ai-sdk-rust#132.
+    /// Finding 13 in the Zed cross-reference audit.
     divider_focused: bool,
     /// Subscriptions kept alive for the lifetime of the view once
     /// [`install_focus_subscriptions`](Self::install_focus_subscriptions)
@@ -137,7 +137,7 @@ impl SplitView {
     ///
     /// Hosts that skip this step get the same behaviour as before —
     /// the render path falls back to `focus_handle.is_focused(window)`.
-    /// Finding 13 in df49b9cd/ai-sdk-rust#132.
+    /// Finding 13 in the Zed cross-reference audit.
     pub fn install_focus_subscriptions(
         &mut self,
         window: &mut Window,
@@ -360,7 +360,7 @@ impl Render for SplitView {
         // Prefer the reactively-maintained flag set by our focus_in /
         // focus_out subscriptions; fall back to a direct check for the
         // very first render before any event has fired. Finding 13 in
-        // df49b9cd/ai-sdk-rust#132.
+        // the Zed cross-reference audit.
         let divider_focused = self.divider_focused || self.focus_handle.is_focused(window);
         let orientation = self.orientation;
         let primary_visible = self.primary_visible;

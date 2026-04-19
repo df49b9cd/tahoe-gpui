@@ -1,4 +1,4 @@
-//! Single-binary primitive gallery for the rust-ai-elements crate.
+//! Single-binary primitive gallery for the tahoe-gpui crate.
 //!
 //! All primitive demos live inside one container app so we only need to
 //! grant computer-use permission once. Demos register themselves with

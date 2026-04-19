@@ -15,7 +15,7 @@ pub use super::materials::flex_row_directed;
 // Flex helpers — Zed-style h_flex / v_flex
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
-// Finding 2 in the Zed cross-reference audit (df49b9cd/ai-sdk-rust#132). Zed
+// Finding 2 in the Zed cross-reference audit. Zed
 // ships free functions `h_flex()` / `v_flex()` plus the matching `StyledExt`
 // methods so every component can write a one-call row or column layout
 // instead of chaining `.flex().flex_row().items_center()` / `.flex_col()`.

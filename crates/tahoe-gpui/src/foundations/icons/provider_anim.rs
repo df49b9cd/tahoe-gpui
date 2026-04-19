@@ -70,7 +70,7 @@ impl Render for AnimatedProviderIcon {
         // a 16ms background timer. This lets the compositor run at the
         // display's refresh rate (up to 120 Hz on ProMotion) and avoids the
         // duplicate-paint jitter a 16ms timer causes on non-60 Hz displays.
-        // Open question #2 on df49b9cd/ai-sdk-rust#137 tracks exposing
+        // Open question #2 on the internal tracker tracks exposing
         // the actual refresh rate for explicit budgeting.
         if !self.paused && !reduce_motion {
             window.request_animation_frame();

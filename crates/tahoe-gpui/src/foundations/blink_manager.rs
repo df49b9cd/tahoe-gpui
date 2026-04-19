@@ -2,7 +2,7 @@
 //! `BlinkManager`.
 //!
 //! Finding 4 in the Zed cross-reference audit
-//! (df49b9cd/ai-sdk-rust#132). Markdown streaming and TextField carets
+//!. Markdown streaming and TextField carets
 //! previously relied on a global `OnceLock<Instant>` epoch to drive
 //! blinking. That pattern conflates independent focus states, has no
 //! way to reset the phase after a keystroke (so the cursor can visibly
@@ -12,7 +12,7 @@
 //! `BlinkManager` replaces that with a proper GPUI entity:
 //! * host code owns a `Entity<BlinkManager>` per text input (not a
 //!   single global — independent editors keep independent phases;
-//!   see open question #4 on df49b9cd/ai-sdk-rust#132),
+//!   see open question #4 on the Zed cross-reference audit),
 //! * `reset()` marks the start of a new visible phase — call from
 //!   `KeyDownEvent` handlers so the cursor is solid while the user is
 //!   typing,

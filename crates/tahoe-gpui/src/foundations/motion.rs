@@ -54,7 +54,7 @@ impl MotionRamp {
 /// values. The underlying easing here is still the exponential approximation
 /// in [`spring_easing`] — for tactile parity with SwiftUI's physics solver,
 /// GPUI needs a velocity-preserving spring primitive (tracked as open
-/// question #1 on df49b9cd/ai-sdk-rust#137).
+/// question #1 on the internal tracker).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpringPreset {
     /// SwiftUI `.smooth` — no bounce, slow settle. `response=0.5, damping=1.0`.
@@ -98,7 +98,7 @@ pub struct MotionTokens {
     /// GPUI limitation: `.hover()` style API has no transition duration,
     /// so this token is consumed only by explicit `AnimationElement`
     /// wrappers (not by `interactive_hover`). Tracked as open question #3
-    /// on df49b9cd/ai-sdk-rust#137.
+    /// on the internal tracker.
     pub flex_duration_ms: u64,
     /// Lift-on-hover duration in ms (semantic: short-to-medium ramp).
     pub lift_duration_ms: u64,
@@ -201,7 +201,7 @@ impl MorphState {
     ///
     /// Short-term workaround for the lack of velocity-preserving spring
     /// interruption in GPUI (see open question #1 on
-    /// df49b9cd/ai-sdk-rust#137). Velocity is dropped; only position carries
+    /// the internal tracker). Velocity is dropped; only position carries
     /// over, so re-triggers near peak velocity will still visibly snap.
     pub fn capture_midflight(from: &Self, to: &Self, t: f32) -> Self {
         Self::lerp(from, to, t)
@@ -223,7 +223,7 @@ impl MorphState {
 /// enabled, matching the HIG requirement to "replace large, dramatic
 /// transitions with subtle cross-fades."
 ///
-/// # GPUI limitation (Finding 25 in df49b9cd/ai-sdk-rust#132)
+/// # GPUI limitation (Finding 25 in the Zed cross-reference audit)
 ///
 /// The returned animation uses [`spring_easing`] — an exponential
 /// approximation, not SwiftUI's physical spring solver. GPUI
@@ -296,7 +296,7 @@ pub const REDUCE_MOTION_CROSSFADE: Duration = Duration::from_millis(150);
 /// Substitute a short cross-fade for `base` when Reduce Motion is set.
 ///
 /// Finding 22 in the Zed cross-reference audit
-/// (df49b9cd/ai-sdk-rust#132). HIG Motion: *"replace large, dramatic
+///. HIG Motion: *"replace large, dramatic
 /// transitions with subtle cross-fades."* Zeroing the duration (as the
 /// older `effective_duration` helper does) produces a position snap rather
 /// than the fade HIG prescribes. This helper preserves the caller's easing
@@ -345,7 +345,7 @@ pub fn reduce_motion_substitute(
 /// This is an analytical approximation, not SwiftUI's physical solver.
 /// For interactive spring feel that matches tactile expectations, use
 /// [`SpringPreset`] constants and note GPUI's missing velocity-preserving
-/// interruption (open question #1 on df49b9cd/ai-sdk-rust#137).
+/// interruption (open question #1 on the internal tracker).
 pub fn spring_easing(damping: f32, bounce: f32) -> impl Fn(f32) -> f32 {
     move |t: f32| {
         if t >= 1.0 {

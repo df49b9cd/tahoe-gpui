@@ -48,7 +48,7 @@ pub fn should_flip_icon(direction: LayoutDirection) -> bool {
 
 /// Per-icon RTL treatment.
 ///
-/// Finding 31 in the Zed cross-reference audit (df49b9cd/ai-sdk-rust#132):
+/// Finding 31 in the Zed cross-reference audit:
 /// SF Symbols ship different behaviours for different glyphs. Arrows and
 /// chevrons must be mirrored geometrically; the signature glyph and a
 /// handful of rich-text symbols ship with a localised Arabic / Hebrew

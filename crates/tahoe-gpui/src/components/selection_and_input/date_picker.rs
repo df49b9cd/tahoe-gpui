@@ -166,7 +166,7 @@ pub struct DatePicker {
     /// Whether this date picker trigger is keyboard-focused.
     focused: bool,
     /// Optional host-supplied focus handle. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132. When set, the focus-ring visibility
+    /// the Zed cross-reference audit. When set, the focus-ring visibility
     /// is derived from `handle.is_focused(window)` and the trigger
     /// threads `track_focus(&handle)`; otherwise uses the explicit
     /// [`focused`](Self::focused) bool.
@@ -304,7 +304,7 @@ impl DatePicker {
     /// `handle.is_focused(window)` and the trigger threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in
-    /// df49b9cd/ai-sdk-rust#132.
+    /// the Zed cross-reference audit.
     pub fn focus_handle(mut self, handle: &gpui::FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self
@@ -320,7 +320,7 @@ impl DatePicker {
 impl RenderOnce for DatePicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        // Finding 18 in df49b9cd/ai-sdk-rust#132.
+        // Finding 18 in the Zed cross-reference audit.
         let focused = self
             .focus_handle
             .as_ref()

@@ -411,7 +411,7 @@ impl RenderOnce for JsxPreviewErrorDisplay {
 /// The file is written to a per-invocation UUID path under `$TMPDIR`
 /// (rather than a shared `jsx-preview/preview.html`) and `chmod 0600`
 /// is applied on Unix so the sandbox-escaped preview isn't world-readable.
-/// Finding #17 in df49b9cd/ai-sdk-rust#151 tracks hardening the `file://`
+/// Finding #17 in the HIG Code-surface audit tracks hardening the `file://`
 /// path; a full `WKWebView`-equivalent loopback server is a larger
 /// refactor and is deferred.
 fn open_jsx_in_browser(

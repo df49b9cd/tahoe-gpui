@@ -185,7 +185,7 @@ pub enum MaterialThickness {
 ///
 /// HIG §Materials names the content-layer Standard-Material tiers
 /// directly (`UltraThick`, `Thick`, `Regular`, `Thin`, `UltraThin`). The
-/// Zed cross-reference audit (df49b9cd/ai-sdk-rust#132, Finding 28) flagged
+/// Zed cross-reference audit (Finding 28) flagged
 /// that tahoe-gpui's `GlassStyle::subtle()` / `blur_only()` helpers don't
 /// map to any of these named tiers, which leaves callers guessing which
 /// thickness they're actually selecting. Exposing `StandardMaterial` as a
@@ -503,7 +503,7 @@ impl ElevationIndex {
 /// to a Standard Material or opaque fill. Glass helpers log a debug
 /// assertion when invoked with [`GlassRole::ContentLayer`], matching the
 /// lint-comment pattern described in Finding 21 of the Zed cross-reference
-/// audit (df49b9cd/ai-sdk-rust#132).
+/// audit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GlassRole {
     /// Content surfaces — document body, list rows, grid cells. HIG
@@ -1534,7 +1534,7 @@ pub fn apply_focus_ring<E: gpui::Styled>(
 /// target) is not consumed here. To animate hover transitions properly
 /// today a consumer must wrap the element with an `AnimationElement` keyed
 /// off a hover state flag; this is tracked as open question #3 on
-/// df49b9cd/ai-sdk-rust#137.
+/// the internal tracker.
 pub fn interactive_hover(
     el: gpui::Div,
     theme: &crate::foundations::theme::TahoeTheme,

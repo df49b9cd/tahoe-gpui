@@ -255,7 +255,7 @@ impl RenderOnce for CommitFileAdditions {
         // a low-opacity green fill so the gutter reads at a glance and
         // colour is not the sole carrier of meaning. Mirrors GitHub,
         // Xcode, and Zed's git_panel. Finding N3 in
-        // df49b9cd/ai-sdk-rust#151.
+        // the HIG Code-surface audit.
         div()
             .px(theme.spacing_xs)
             .rounded(theme.radius_sm)

@@ -115,7 +115,7 @@ impl RenderOnce for SegmentedControl {
         // HIG Tahoe/Liquid Glass: selected segments use a distinct elevated
         // fill, not the hover background. Sharing `hover_bg` caused the
         // selection indicator to melt into hover state as soon as the
-        // pointer entered another segment (see df49b9cd/ai-sdk-rust#145
+        // pointer entered another segment (see the HIG Selection & Input audit
         // finding 34).
         let selected_bg = theme.surface;
         let radius = glass.radius(GlassSize::Small);

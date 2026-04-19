@@ -154,7 +154,7 @@ pub struct TerminalContent {
     selection: Option<MarkdownSelection>,
     /// When `true`, a caret is rendered at the end of the last line —
     /// mirrors Terminal.app's "insertion point during output" affordance
-    /// (finding #3 / df49b9cd/ai-sdk-rust#151). The caret is static rather
+    /// (finding #3 / the HIG Code-surface audit). The caret is static rather
     /// than blinking because the terminal only re-renders on
     /// `push_output`; a proper blink would require an animation driver.
     streaming: bool,
@@ -511,7 +511,7 @@ pub struct TerminalView {
     on_clear: OnMutCallbackArc,
     /// Maximum number of newline-separated lines retained in `output`.
     /// Older lines are dropped from the front when the limit is exceeded
-    /// (Zed-style scrollback cap; finding #18 / df49b9cd/ai-sdk-rust#151).
+    /// (Zed-style scrollback cap; finding #18 / the HIG Code-surface audit).
     /// `0` disables the cap — every line is retained.
     scrollback_lines: usize,
     /// Shared cross-line selection coordinator. Outlives re-renders so

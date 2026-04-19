@@ -57,7 +57,7 @@ pub(crate) mod test_helpers;
 
 pub use foundations::theme::TahoeTheme;
 
-// ── Virtualized list primitives (Finding 6 in df49b9cd/ai-sdk-rust#132) ────
+// ── Virtualized list primitives (Finding 6 in the Zed cross-reference audit) ────
 //
 // Re-exports of GPUI's variable-height `list` element and its `ListState`
 // companion so consumers can assemble virtualized outlines / file trees
