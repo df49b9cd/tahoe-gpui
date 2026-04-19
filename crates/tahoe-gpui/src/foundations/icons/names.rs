@@ -152,6 +152,11 @@ pub enum IconName {
     /// Left-hand sidebar-toggle icon used as the canonical first toolbar
     /// item on macOS unified toolbars (`sidebar.left` in SF Symbols).
     SidebarLeft,
+    /// Circled question mark used on macOS HIG "Help" buttons
+    /// (`questionmark.circle` in SF Symbols 7). Paired with
+    /// [`crate::components::menus_and_actions::button::ButtonVariant::Help`]
+    /// to render the canonical contextual-help affordance.
+    QuestionMark,
 
     // ── Dev Tools: IDE & Editor ─────────────────────────────────────────────
     DevTab,
@@ -374,6 +379,7 @@ impl IconName {
             IconName::XmarkCircleFill => "\u{24E7}", // circled latin letter x — filled-circle stand-in
             IconName::Ellipsis => "\u{22EF}",        // midline horizontal ellipsis
             IconName::SidebarLeft => "\u{25E7}", // square with left half black — sidebar stand-in
+            IconName::QuestionMark => "\u{003F}", // ASCII question mark — non-emoji fallback
 
             // Dev Tools
             IconName::DevTab => "\u{2B1C}",
@@ -580,6 +586,7 @@ impl IconName {
             IconName::Unlock => Some("lock.open"),
             IconName::Maximize => Some("arrow.up.left.and.arrow.down.right"),
             IconName::Paperclip => Some("paperclip"),
+            IconName::QuestionMark => Some("questionmark.circle"),
             // No SF Symbol equivalent — dev-tools/AI-agents/git/lang/provider
             // iconography is intentionally custom and stays custom to keep
             // domain-specific marks consistent (see HIG Icons & issue #139).
@@ -666,6 +673,7 @@ impl IconName {
             IconName::Unlock => Some("icons/sf/lock.open.svg"),
             IconName::Maximize => Some("icons/sf/arrow.up.left.and.arrow.down.right.svg"),
             IconName::Paperclip => Some("icons/sf/paperclip.svg"),
+            IconName::QuestionMark => Some("icons/sf/questionmark.circle.svg"),
             _ => None,
         }
     }

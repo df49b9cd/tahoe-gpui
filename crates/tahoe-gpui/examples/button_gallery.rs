@@ -92,6 +92,13 @@ impl Render for ButtonGallery {
                     ButtonVariant::Glass => "glass",
                     ButtonVariant::GlassProminent => "glass-prom",
                     ButtonVariant::Filled => "filled",
+                    ButtonVariant::Help => "help",
+                    ButtonVariant::Disclosure => "disclosure",
+                    ButtonVariant::Gradient => "gradient",
+                    ButtonVariant::Link => "link",
+                    // `ButtonVariant` is `#[non_exhaustive]`; any future
+                    // variant lands here until the gallery adds an entry.
+                    _ => "unknown",
                 }
             );
 

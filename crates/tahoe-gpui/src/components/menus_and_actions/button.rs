@@ -31,6 +31,10 @@ use gpui::{
 /// | `Glass`         | Liquid Glass material       | Translucent glass surface, capsule                |
 /// | `GlassProminent`| Liquid Glass tinted         | Tinted glass, primary CTA on glass                |
 /// | `Filled`        | (Tahoe) high-contrast CTA   | Dark fill on light themes (black CTA)             |
+/// | `Help`          | Help button                 | 20pt neutral circle w/ `?` glyph                  |
+/// | `Disclosure`    | Disclosure control          | Transparent fill, accent-tinted triangle chevron  |
+/// | `Gradient`      | Bezel / Gradient            | Linear gradient fill, 1pt border, label text      |
+/// | `Link`          | Link role                   | Transparent bg, accent text + underline           |
 ///
 /// HIG (macOS 26) styles covered here: Plain, Gray, Tinted, Filled,
 /// Bordered, Borderless, Glass. Each variant below carries a
@@ -50,6 +54,7 @@ use gpui::{
 ///
 /// See `docs/hig/components/menus-and-actions.md` for the canonical list.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub enum ButtonVariant {
     /// Tinted accent CTA — SwiftUI `.borderedProminent` with the system tint.
     /// Uses `theme.accent` for the fill and `theme.text_on_accent` for the
@@ -95,6 +100,40 @@ pub enum ButtonVariant {
     /// this the "prominent" filled style.
     #[doc(alias = "Prominent")]
     Filled,
+    /// HIG §Buttons — Help button for contextual help.
+    ///
+    /// Renders a 20pt neutral circle with the `questionmark.circle` glyph
+    /// tinted in `theme.text`. Forces [`ButtonShape::Circle`] regardless of
+    /// the configured shape so the classic macOS help affordance always
+    /// reads correctly.
+    #[doc(alias = "HelpButton")]
+    Help,
+    /// HIG §Disclosure controls — filled triangle for collapsible sections.
+    ///
+    /// Transparent fill with an accent-tinted triangle chevron. Pair with
+    /// [`crate::foundations::icons::IconName::ArrowTriangleRight`] /
+    /// [`crate::foundations::icons::IconName::ArrowTriangleDown`] in the
+    /// icon slot to build a custom group header whose disclosure state
+    /// matches AppKit's `NSButton.BezelStyle.disclosure` behaviour.
+    #[doc(alias = "DisclosureTriangle")]
+    Disclosure,
+    /// HIG §Buttons — legacy bezel/gradient for inline toolbars.
+    ///
+    /// Linear gradient fill from `theme.surface` to `theme.background`
+    /// with a 1pt `theme.border` and `theme.text` foreground. Mirrors the
+    /// AppKit `NSBezelStyle.smallSquare`/`.regularSquare` gradient bezel
+    /// still used inside custom toolbar chrome (e.g. Finder's window-bar
+    /// tool affordances).
+    #[doc(alias = "Bezel")]
+    Gradient,
+    /// HIG §Buttons — Link role: inline underlined accent text.
+    ///
+    /// Transparent background with `theme.accent` text and a 1pt bottom
+    /// border that renders as a classic underline. No extra padding is
+    /// applied so the control sits flush with surrounding body copy, in
+    /// line with SwiftUI `Button(role: .link)` and AppKit `NSHyperlink`.
+    #[doc(alias = "Hyperlink")]
+    Link,
 }
 
 /// Button shape per HIG.
@@ -388,19 +427,75 @@ impl RenderOnce for Button {
                 };
                 (bg, text_color, bg, hovered)
             }
+            ButtonVariant::Help => {
+                // HIG Help button: neutral alpha-grey circle with a `?`
+                // glyph in the label color. Mirrors Secondary's alpha-
+                // composited fill so it reads on any parent surface, but
+                // the enclosing circle — not a rounded rect — identifies
+                // it as the canonical help affordance.
+                let bg = with_alpha(theme.text, 0.10);
+                let hovered = with_alpha(theme.text, 0.16);
+                let border = with_alpha(theme.text, 0.14);
+                (bg, theme.text, border, hovered)
+            }
+            ButtonVariant::Disclosure => {
+                // HIG Disclosure: transparent fill, accent-tinted chevron.
+                // Hover darkens the hit region subtly so the affordance
+                // responds without implying a pressed container.
+                let hovered = with_alpha(theme.text, 0.06);
+                (
+                    transparent_black(),
+                    theme.accent,
+                    transparent_black(),
+                    hovered,
+                )
+            }
+            ButtonVariant::Gradient => {
+                // HIG bezel/gradient: start from `theme.surface` and fade
+                // into `theme.background`. We pick the mid-fill for the
+                // resting `bg` so the shared rendering path can still pass
+                // a solid colour to `.bg()`; the gradient itself is applied
+                // below via the variant-aware override.
+                let mid = if theme.surface.l > theme.background.l {
+                    darken(theme.surface, 0.02)
+                } else {
+                    lighten(theme.surface, 0.02)
+                };
+                let hovered = if mid.l > 0.5 {
+                    darken(mid, 0.04)
+                } else {
+                    lighten(mid, 0.04)
+                };
+                (mid, theme.text, theme.border, hovered)
+            }
+            ButtonVariant::Link => {
+                // HIG Link role: accent text over a transparent bg with a
+                // 1pt bottom-border underline. No extra padding is applied
+                // so the control can sit flush inside a paragraph.
+                let hovered = with_alpha(theme.accent, 0.08);
+                (transparent_black(), theme.accent, theme.accent, hovered)
+            }
         };
         let is_glass_variant = matches!(
             self.variant,
             ButtonVariant::Glass | ButtonVariant::GlassProminent
         );
-        let is_circle = self.shape == ButtonShape::Circle;
-        let radius = match self.shape {
-            ButtonShape::Capsule | ButtonShape::Circle => theme.radius_full,
-            ButtonShape::RoundedRectangle => {
-                if self.round || is_glass_variant {
-                    theme.radius_full
-                } else {
-                    theme.glass.radius(GlassSize::Small)
+        // HIG Help buttons are always a 20pt circle — the shape is part of
+        // the affordance itself, not a caller decision — so override any
+        // other shape configuration here.
+        let force_circle = matches!(self.variant, ButtonVariant::Help);
+        let is_circle = self.shape == ButtonShape::Circle || force_circle;
+        let radius = if force_circle {
+            theme.radius_full
+        } else {
+            match self.shape {
+                ButtonShape::Capsule | ButtonShape::Circle => theme.radius_full,
+                ButtonShape::RoundedRectangle => {
+                    if self.round || is_glass_variant {
+                        theme.radius_full
+                    } else {
+                        theme.glass.radius(GlassSize::Small)
+                    }
                 }
             }
         };
@@ -441,6 +536,14 @@ impl RenderOnce for Button {
                 theme.target_size() + 4.0,
             ),
         };
+        // HIG §Help buttons: always render as a 20pt circle, regardless of
+        // the size tier the caller selected. The affordance itself — not
+        // the caller's layout intent — fixes the footprint.
+        let (px_val, py_val, min_h) = if matches!(self.variant, ButtonVariant::Help) {
+            (theme.spacing_xs, theme.spacing_xs, 20.0)
+        } else {
+            (px_val, py_val, min_h)
+        };
 
         let id = self.id;
         let mut el = div()
@@ -459,6 +562,36 @@ impl RenderOnce for Button {
             .text_style(ts, theme)
             .rounded(radius)
             .cursor_pointer();
+
+        // HIG §Gradient: layer a linear gradient from `theme.surface` down
+        // into `theme.background` over the solid fill, plus a 1pt border.
+        if matches!(self.variant, ButtonVariant::Gradient) {
+            el = el
+                .bg(gpui::linear_gradient(
+                    180.0,
+                    gpui::LinearColorStop {
+                        color: theme.surface,
+                        percentage: 0.0,
+                    },
+                    gpui::LinearColorStop {
+                        color: theme.background,
+                        percentage: 1.0,
+                    },
+                ))
+                .border_1()
+                .border_color(theme.border);
+        }
+
+        // HIG §Link: accent text with a 1pt bottom border underline.
+        if matches!(self.variant, ButtonVariant::Link) {
+            el = el
+                .px(px(0.0))
+                .py(px(0.0))
+                .min_h(px(0.0))
+                .min_w(px(0.0))
+                .border_b_1()
+                .border_color(theme.accent);
+        }
 
         // Circle shape: enforce equal width and height for a perfect circle.
         if is_circle {
@@ -596,6 +729,10 @@ mod tests {
         ButtonVariant::Glass,
         ButtonVariant::GlassProminent,
         ButtonVariant::Filled,
+        ButtonVariant::Help,
+        ButtonVariant::Disclosure,
+        ButtonVariant::Gradient,
+        ButtonVariant::Link,
     ];
 
     #[test]
@@ -629,6 +766,10 @@ mod tests {
             ButtonVariant::Glass => "glass",
             ButtonVariant::GlassProminent => "glass_prominent",
             ButtonVariant::Filled => "filled",
+            ButtonVariant::Help => "help",
+            ButtonVariant::Disclosure => "disclosure",
+            ButtonVariant::Gradient => "gradient",
+            ButtonVariant::Link => "link",
         }
     }
 
@@ -749,6 +890,18 @@ mod tests {
             ButtonVariant::Glass => (gpui::transparent_black(), theme.text),
             ButtonVariant::GlassProminent => (with_alpha(theme.accent, 0.25), theme.text),
             ButtonVariant::Filled => (theme.text, theme.background),
+            ButtonVariant::Help => (with_alpha(theme.text, 0.10), theme.text),
+            ButtonVariant::Disclosure => (gpui::transparent_black(), theme.accent),
+            ButtonVariant::Gradient => {
+                use crate::foundations::color::{darken, lighten};
+                let mid = if theme.surface.l > theme.background.l {
+                    darken(theme.surface, 0.02)
+                } else {
+                    lighten(theme.surface, 0.02)
+                };
+                (mid, theme.text)
+            }
+            ButtonVariant::Link => (gpui::transparent_black(), theme.accent),
         }
     }
 
@@ -822,6 +975,55 @@ mod tests {
                 ratio >= 7.0,
                 "Filled label/bg contrast {ratio:.2}:1 in {label} mode fails WCAG AAA 7:1"
             );
+        }
+    }
+
+    // ── New HIG variant smoke tests ──────────────────────────────────
+    //
+    // One test per variant asserting the coarse visual identity (fill /
+    // foreground token) so a regression on the match-arm wiring is caught
+    // without relying on the GPUI render harness.
+
+    #[test]
+    fn help_uses_neutral_fill_and_text_foreground() {
+        use crate::foundations::color::with_alpha;
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (bg, fg) = variant_colors(ButtonVariant::Help, &theme);
+            assert_eq!(bg, with_alpha(theme.text, 0.10));
+            assert_eq!(fg, theme.text);
+        }
+    }
+
+    #[test]
+    fn disclosure_is_transparent_with_accent_glyph() {
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (bg, fg) = variant_colors(ButtonVariant::Disclosure, &theme);
+            assert_eq!(bg, gpui::transparent_black());
+            assert_eq!(fg, theme.accent);
+        }
+    }
+
+    #[test]
+    fn gradient_uses_surface_midpoint_fill() {
+        use crate::foundations::color::{darken, lighten};
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (bg, fg) = variant_colors(ButtonVariant::Gradient, &theme);
+            let expected = if theme.surface.l > theme.background.l {
+                darken(theme.surface, 0.02)
+            } else {
+                lighten(theme.surface, 0.02)
+            };
+            assert_eq!(bg, expected);
+            assert_eq!(fg, theme.text);
+        }
+    }
+
+    #[test]
+    fn link_is_transparent_with_accent_text() {
+        for theme in [TahoeTheme::light(), TahoeTheme::dark()] {
+            let (bg, fg) = variant_colors(ButtonVariant::Link, &theme);
+            assert_eq!(bg, gpui::transparent_black());
+            assert_eq!(fg, theme.accent);
         }
     }
 

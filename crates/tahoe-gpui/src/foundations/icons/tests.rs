@@ -84,6 +84,7 @@ const ALL_VARIANTS: &[IconName] = &[
     IconName::XmarkCircleFill,
     IconName::Ellipsis,
     IconName::SidebarLeft,
+    IconName::QuestionMark,
     IconName::DevTab,
     IconName::DevSidebar,
     IconName::DevSplitView,
@@ -189,7 +190,7 @@ const ALL_VARIANTS: &[IconName] = &[
 fn all_variants_count_matches() {
     assert_eq!(
         ALL_VARIANTS.len(),
-        175,
+        176,
         "New IconName variants must be added to ALL_VARIANTS above",
     );
 }
