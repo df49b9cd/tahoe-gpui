@@ -276,10 +276,8 @@ impl RenderOnce for MenuBar {
             bar = bar.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 match key {
-                    "escape" => {
-                        if open.is_some() {
-                            h(None, window, cx);
-                        }
+                    "escape" if open.is_some() => {
+                        h(None, window, cx);
                     }
                     "enter" | "space" | "down" => {
                         h(Some(highlighted), window, cx);

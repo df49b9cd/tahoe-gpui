@@ -376,28 +376,23 @@ impl ContextMenu {
                 self.select_prev();
                 cx.notify();
             }
-            "right" => {
-                // Right arrow: expand submenu when selection is on a
-                // submenu parent row at the top level.
-                if self.selection_path.len() == 1 {
-                    let idx = self.selection_path[0];
-                    if matches!(self.items.get(idx), Some(ContextMenuEntry::Submenu { .. })) {
-                        self.expanded_submenu = Some(idx);
-                        if let Some(first_child) = first_actionable_in_submenu(&self.items, idx) {
-                            self.selection_path.push(first_child);
-                        }
-                        cx.notify();
+            // Right arrow: expand submenu when selection is on a submenu
+            // parent row at the top level.
+            "right" if self.selection_path.len() == 1 => {
+                let idx = self.selection_path[0];
+                if matches!(self.items.get(idx), Some(ContextMenuEntry::Submenu { .. })) {
+                    self.expanded_submenu = Some(idx);
+                    if let Some(first_child) = first_actionable_in_submenu(&self.items, idx) {
+                        self.selection_path.push(first_child);
                     }
-                }
-            }
-            "left" => {
-                // Left arrow: collapse the submenu and return focus to
-                // the parent row.
-                if self.selection_path.len() >= 2 {
-                    self.selection_path.pop();
-                    self.expanded_submenu = None;
                     cx.notify();
                 }
+            }
+            // Left arrow: collapse the submenu and return focus to the parent row.
+            "left" if self.selection_path.len() >= 2 => {
+                self.selection_path.pop();
+                self.expanded_submenu = None;
+                cx.notify();
             }
             "enter" => {
                 self.activate_selected(window, cx);

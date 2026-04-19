@@ -211,13 +211,7 @@ fn default_row_for_column(column: u8, hour: u8, minute: u8, use_24h: bool) -> us
             }
         }
         1 => (minute / 5).min(11) as usize,
-        2 => {
-            if hour >= 12 {
-                1
-            } else {
-                0
-            }
-        }
+        2 => usize::from(hour >= 12),
         _ => 0,
     }
 }
