@@ -122,7 +122,7 @@ impl Render for AnimatedProviderIcon {
     }
 }
 
-// u2500u2500u2500 Drawing context u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ─── Drawing context ──────────────────────────────────────────────────────
 
 struct DrawCtx {
     ox: f32,
@@ -161,7 +161,7 @@ impl DrawCtx {
     }
 }
 
-// u2500u2500u2500 Helpers u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ─── Helpers ──────────────────────────────────────────────────────────────
 
 fn draw_line(ctx: &DrawCtx, x1: f32, y1: f32, x2: f32, y2: f32, color: Hsla, window: &mut Window) {
     let mut pb = PathBuilder::stroke(ctx.sw());
@@ -291,7 +291,7 @@ fn draw_quad_bezier(ctx: &DrawCtx, bez: QuadBezier, color: Hsla, window: &mut Wi
     }
 }
 
-// u2500u2500u2500 Provider draw functions u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+// ─── Provider draw functions ──────────────────────────────────────────────
 
 /// Claude: 10 spokes extend outward from center with staggered timing.
 fn draw_claude(t: f32, ctx: &DrawCtx, window: &mut Window) {

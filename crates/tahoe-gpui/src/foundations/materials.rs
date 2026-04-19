@@ -928,6 +928,33 @@ pub fn glass_clear_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div 
     apply_glass_chrome(el, theme, bg, radius, size)
 }
 
+/// Dark translucent tint applied on top of [`glass_surface`] so HUD
+/// surfaces render dark regardless of the current appearance.
+///
+/// Composed as `black @ 60%` to match `NSPanel.StyleMask.HUDWindow`
+/// per HIG `#panels`. Exposed as a constant so callers that need the
+/// raw value (e.g. tinting a sub-element consistently with the HUD
+/// backdrop) can re-use the exact recipe.
+pub const HUD_TINT_ALPHA: f32 = 0.6;
+
+/// Apply Liquid Glass HUD surface styling to a div.
+///
+/// Composes the standard [`glass_surface`] chrome (bg + radius +
+/// shadows + high-contrast border) with the dark translucent HUD tint
+/// ([`HUD_TINT_ALPHA`]) and [`TahoeTheme::background`] as the text
+/// color, so the surface reads as a dark HUD regardless of the
+/// current appearance. Matches `NSPanel.StyleMask.HUDWindow` per HIG
+/// `#panels`.
+///
+/// Respects accessibility the same way [`glass_surface`] does:
+/// ReduceTransparency routes through the opaque fallback fill and
+/// IncreaseContrast adds a visible border.
+pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
+    glass_surface(el, theme, size)
+        .bg(hsla(0.0, 0.0, 0.0, HUD_TINT_ALPHA))
+        .text_color(theme.background)
+}
+
 /// Apply per-element glass blur effect to a div.
 ///
 /// # ⚠️ Backdrop blur is not yet implemented
@@ -1894,7 +1921,7 @@ mod tests {
         assert!((f32::from(theme.focus_ring_width) - 3.0).abs() < f32::EPSILON);
     }
 
-    // u2500u2500u2500 RTL Layout Tests u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ─── RTL Layout Tests ──────────────────────────────────────────────────
 
     #[test]
     fn flex_row_directed_ltr_returns_row() {
@@ -2092,6 +2119,17 @@ mod tests {
             f32::from(theme.glass.large_radius),
             f32::from(theme.glass.medium_radius),
         );
+    }
+
+    // ── HUD tint ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn hud_tint_alpha_matches_nspanel_hud_window() {
+        // HIG `#panels` HUD overlays compose glass with a black-60% tint
+        // to match `NSPanel.StyleMask.HUDWindow`. A drift here would
+        // silently brighten every HUD across the crate.
+        use super::HUD_TINT_ALPHA;
+        assert!((HUD_TINT_ALPHA - 0.6).abs() < f32::EPSILON);
     }
 
     // ── GlassStyle::labels() contract ─────────────────────────────────────

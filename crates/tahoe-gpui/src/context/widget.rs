@@ -89,7 +89,7 @@ pub struct ContextPill {
 }
 
 impl ContextPill {
-    /// Creates a pill for the given usage percentage (0.0u20131.0).
+    /// Creates a pill for the given usage percentage (0.0–1.0).
     pub fn new(percentage: f32) -> Self {
         Self {
             percentage: percentage.clamp(0.0, 1.0),

@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(state.words[2].as_ref(), "c");
     }
 
-    // u2500u2500 smooth_ease u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── smooth_ease ────────────────────────────────────────────────────────
 
     #[test]
     fn smooth_easing_formula_correctness() {
@@ -566,7 +566,7 @@ mod tests {
         assert!(smooth_ease(0.5) < smooth_ease(0.75));
     }
 
-    // u2500u2500 lerp_color boundary u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── lerp_color boundary ────────────────────────────────────────────────
 
     #[test]
     fn lerp_color_extrapolates_beyond_unit_range() {
@@ -606,7 +606,7 @@ mod tests {
         assert!(approx_eq(mid.h, 0.3));
     }
 
-    // u2500u2500 sweep direction logic u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+    // ── sweep direction logic ──────────────────────────────────────────────
 
     #[test]
     fn sweep_direction_position_logic() {
