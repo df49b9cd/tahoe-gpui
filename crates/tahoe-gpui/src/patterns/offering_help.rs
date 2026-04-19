@@ -10,8 +10,8 @@
 //!
 //! - [`crate::components::presentation::tooltip::Tooltip`] — canonical
 //!   contextual help over hover targets (400–500 ms delay per HIG).
-//! - [`crate::components::menus_and_actions::help_button`] — the `?`
-//!   button that opens context help.
+//! - `crate::components::menus_and_actions::help_button` — the `?`
+//!   button that opens context help (planned).
 //! - [`crate::components::content::badge::Badge`] with
 //!   `BadgeVariant::Info` — inline advisory annotations.
 //! - [`crate::components::presentation::popover::Popover`] — longer

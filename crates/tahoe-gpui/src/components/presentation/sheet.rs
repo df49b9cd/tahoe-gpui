@@ -55,7 +55,7 @@ const MACOS_SHEET_MAX_HEIGHT_FRACTION: f32 = 0.82;
 type DismissRc = std::rc::Rc<Box<dyn Fn(&mut Window, &mut App) + 'static>>;
 
 /// Sheet detent — controls how much of the screen the sheet covers on
-/// iOS/iPadOS. macOS sheets always use [`MACOS_SHEET_WIDTH`] and
+/// iOS/iPadOS. macOS sheets always use `MACOS_SHEET_WIDTH` and
 /// auto-sized height; detents are only consulted in
 /// [`SheetPresentation::BottomDrawer`].
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

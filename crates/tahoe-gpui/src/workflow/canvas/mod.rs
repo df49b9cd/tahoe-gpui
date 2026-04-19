@@ -513,7 +513,7 @@ impl WorkflowCanvas {
                     )
                 };
 
-                if dist <= tolerance && (best.is_none() || dist < best.unwrap().1) {
+                if dist <= tolerance && best.is_none_or(|(_, b_dist)| dist < b_dist) {
                     best = Some((idx, dist));
                 }
             }
@@ -583,7 +583,7 @@ impl WorkflowCanvas {
     }
 
     /// Short label for the top of the undo stack (e.g. "Move", "Delete")
-    /// so hosts can render "Undo <Label>" menu items per HIG.
+    /// so hosts can render "Undo `<Label>`" menu items per HIG.
     pub fn undo_label(&self) -> Option<&'static str> {
         self.history.peek_undo_label()
     }
@@ -1014,7 +1014,7 @@ impl WorkflowCanvas {
         }
         let pan = self.pan_offset;
         let zoom = self.zoom;
-        let idx = *self.selected_nodes.iter().next().unwrap();
+        let idx = *self.selected_nodes.iter().next()?;
         let entity = self.nodes.get(idx)?;
         let node = entity.read(cx);
         let (nw, nh) = node.effective_size();
@@ -1734,8 +1734,9 @@ impl Render for WorkflowCanvas {
         // across a group are ambiguous (do we scale? translate? grow
         // individually?) — Keynote and Freeform both suppress handles
         // in the same case.
-        if self.selected_nodes.len() == 1 {
-            let idx = *self.selected_nodes.iter().next().unwrap();
+        if let Some(&idx) = self.selected_nodes.iter().next()
+            && self.selected_nodes.len() == 1
+        {
             if let Some(entity) = self.nodes.get(idx) {
                 let node = entity.read(cx);
                 let pos = node.position();

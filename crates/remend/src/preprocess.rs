@@ -121,10 +121,7 @@ pub fn preprocess_literal_tag_content<'a>(markdown: &'a str, tag_names: &[&str])
         }
 
         // Lazily allocate the owned string on first real match.
-        if result.is_none() {
-            result = Some(markdown.to_owned());
-        }
-        let result_str = result.as_mut().unwrap();
+        let result_str = result.get_or_insert_with(|| markdown.to_owned());
 
         let mut search_from = 0;
         while let Some(pos) = find_tag_open(&result_str[search_from..], tag_name) {
@@ -161,10 +158,9 @@ pub fn preprocess_literal_tag_content<'a>(markdown: &'a str, tag_names: &[&str])
         }
     }
 
-    if changed {
-        Cow::Owned(result.unwrap())
-    } else {
-        Cow::Borrowed(markdown)
+    match result {
+        Some(owned) if changed => Cow::Owned(owned),
+        _ => Cow::Borrowed(markdown),
     }
 }
 

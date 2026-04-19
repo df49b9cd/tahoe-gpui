@@ -296,7 +296,7 @@ impl DatePicker {
         self
     }
 
-    /// Attach a [`FocusHandle`] so the date picker participates in the
+    /// Attach a [`gpui::FocusHandle`] so the date picker participates in the
     /// host's focus graph. When set, the focus-ring is derived from
     /// `handle.is_focused(window)` and the trigger threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts

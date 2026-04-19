@@ -16,7 +16,7 @@
 //!   destructive account actions (Sign Out, Delete Account).
 //! - [`crate::components::content::avatar::Avatar`] — identity glyph
 //!   for the signed-in user.
-//! - [`crate::patterns::privacy`] — permission + privacy copy guidance
+//! - [`crate::foundations::privacy`] — permission + privacy copy guidance
 //!   for sign-up flows.
 //!
 //! # HIG Reference

@@ -385,9 +385,9 @@ impl RenderOnce for MenuBar {
 ///
 /// Tracks open-menu index, keyboard highlight, and focus so the parent does
 /// not have to re-implement the same boilerplate in every view. The
-/// [`render_bar`](Self::render_bar) method produces a [`MenuBar`] wired
-/// with the controller's state and its own `on_open` callback so clicking
-/// or hovering a title transfers focus correctly.
+/// controller's `render` method (via [`gpui::Render`]) produces a [`MenuBar`]
+/// wired with the controller's state and its own `on_open` callback so
+/// clicking or hovering a title transfers focus correctly.
 pub struct MenuBarController {
     menus: Vec<Menu>,
     open_menu: Option<usize>,

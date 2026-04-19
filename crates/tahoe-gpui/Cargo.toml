@@ -13,7 +13,15 @@ voice = ["dep:cpal"]
 test-support = ["gpui/test-support", "dep:image"]
 
 [dependencies]
-# GPUI framework from Zed
+# GPUI framework from Zed.
+#
+# We track the git repo at the `v0.231.1-pre` tag rather than
+# crates.io `gpui = "0.2.2"` because the published crate is a much
+# older snapshot of the same version number — it is missing APIs we
+# rely on (`SvgRenderer::render_single_frame`, `ScrollStrategy::Nearest`,
+# `PinchEvent` / `on_pinch`, `UniformListScrollHandle::scroll_to_bottom`,
+# the three-argument `FocusHandle::focus(window, cx)`, etc.). Upgrade
+# in lock-step with any `gpui_platform` / `gpui_macros` dev-deps below.
 gpui = { git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre" }
 
 # Markdown auto-completion
@@ -25,7 +33,8 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["simd
 # Pure-Rust Mermaid → SVG renderer (matches Zed's markdown crate: no `mmdc`
 # binary dependency). Pairs with GPUI's `SvgRenderer::render_single_frame`
 # to produce `RenderImage` bitmaps that the `img()` element displays.
-mermaid-rs-renderer = { git = "https://github.com/zed-industries/mermaid-rs-renderer", rev = "374db9ead5426697c6c2111151d9f246899bc638", default-features = false }
+# Default features (`cli`, `png`) are off — we only need the SVG path.
+mermaid-rs-renderer = { version = "0.2.1", default-features = false }
 
 # Syntax highlighting
 tree-sitter = "0.26"

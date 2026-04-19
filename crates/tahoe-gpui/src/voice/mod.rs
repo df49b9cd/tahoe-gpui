@@ -22,8 +22,8 @@
 //!    `NSAccessibilityReduceMotionEnabled` at window focus.
 //! 3. **Live-region equivalent** — GPUI does not yet expose an AX API.
 //!    Components mark streaming indicators with
-//!    [`foundations::accessibility::AccessibilityProps`] via
-//!    [`foundations::accessibility::AccessibleExt::with_accessibility`];
+//!    [`crate::foundations::accessibility::AccessibilityProps`] via
+//!    [`crate::foundations::accessibility::AccessibleExt::with_accessibility`];
 //!    the label becomes a live-region announcement once GPUI lands the
 //!    upstream AX tree.
 //! 4. **Hypothesis tokens** — [`TranscriptionSegment::is_hypothesis`]

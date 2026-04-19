@@ -138,7 +138,8 @@ impl RenderOnce for TerminalStatus {
 
 /// Actions container for terminal header. Flex row with gap.
 ///
-/// Type alias for [`FlexActions`] -- a horizontal flex row with gap spacing.
+/// Type alias for [`crate::components::layout_and_organization::FlexActions`]
+/// — a horizontal flex row with gap spacing.
 pub type TerminalActions = crate::components::layout_and_organization::FlexActions;
 
 // -- TerminalContent ----------------------------------------------------------

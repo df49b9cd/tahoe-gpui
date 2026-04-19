@@ -62,7 +62,7 @@ pub enum IconName {
     /// clockwise-arrow): this is the native 12-tick stepped spinner used
     /// by `NSProgressIndicator.style = .spinning` and by `ActivityIndicator`
     /// on macOS. Opacity fades around the circle; rotate the whole symbol
-    /// via [`AnimatedIcon`] + [`IconAnimation::Spin`] for the native look.
+    /// via [`super::AnimatedIcon`] + [`super::IconAnimation::Spin`] for the native look.
     ProgressSpinner,
     Code,
     File,

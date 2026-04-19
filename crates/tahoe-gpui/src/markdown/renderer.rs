@@ -4,7 +4,7 @@
 //!
 //! Inline content renders through two paths:
 //!
-//! - **Flat path** ([`render_inlines_flat`]): the common case. Builds a
+//! - **Flat path** (`render_inlines_flat`): the common case. Builds a
 //!   single `Vec<TextRun>` via a style stack and emits one
 //!   [`StyledText::with_runs`] layout, matching Zed's own markdown
 //!   renderer (`crates/markdown/src/markdown.rs`). Wrapped in
@@ -13,7 +13,7 @@
 //!   copy. Inline code, links, bold/italic/strikethrough, and nested
 //!   combinations all live here — one text layout per run of inlines.
 //!
-//! - **Mixed path** ([`render_inlines_mixed`]): triggered only by
+//! - **Mixed path** (`render_inlines_mixed`): triggered only by
 //!   element-level content (interactive citations, image URLs). Splits
 //!   the inline run into flex-wrap children of flat-path segments and
 //!   element-level elements (`InlineCitation`, `img(...)`).
@@ -491,8 +491,8 @@ pub struct RenderCtx<'a> {
 /// Render a single markdown block as a GPUI element.
 ///
 /// Callers that do not track nesting depth should use the top-level value
-/// of `0`. List items recurse through [`render_block_at_depth`] so deeply
-/// nested structures are capped at [`LIST_MAX_DEPTH`] levels of indent
+/// of `0`. List items recurse through `render_block_at_depth` so deeply
+/// nested structures are capped at `LIST_MAX_DEPTH` levels of indent
 /// rather than overflowing their container.
 pub fn render_block(block: &MarkdownBlock, ctx: &RenderCtx) -> AnyElement {
     render_block_at_depth(block, ctx, 0)

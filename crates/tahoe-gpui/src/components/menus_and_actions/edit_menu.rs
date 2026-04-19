@@ -9,7 +9,8 @@
 //! This module provides:
 //! - [`EditCommand`] — the typed command set, mirroring the HIG table.
 //! - [`edit_menu_standard`] — a ready-made [`Vec<ContextMenuEntry>`] for
-//!   populating a [`ContextMenu`] or the Edit slot of a [`MenuBar`].
+//!   populating a [`super::context_menu::ContextMenu`] or the Edit slot of
+//!   a [`super::menu_bar::MenuBar`].
 //!
 //! The items carry no `on_click` handlers by default — callers wire up
 //! each command to their undo/pasteboard state via the `bind` helper on

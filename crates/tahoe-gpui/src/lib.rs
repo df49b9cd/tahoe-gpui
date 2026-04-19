@@ -1,4 +1,8 @@
 #![recursion_limit = "512"]
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/df49b9cd/tahoe-gpui/main/branding/tahoe-gpui-logo.png",
+    html_favicon_url = "https://raw.githubusercontent.com/df49b9cd/tahoe-gpui/main/branding/tahoe-gpui-logo.png"
+)]
 //! Human Interface Guidelines components for GPUI.
 //!
 //! This crate provides composable UI components structured around the

@@ -20,8 +20,9 @@
 //!   drawn at a given point in time, honouring Reduce Motion (when set,
 //!   the caret is permanently visible — HIG: "replace large, dramatic
 //!   transitions with subtle cross-fades or omit them entirely"),
-//! * callers can [`BlinkManager::observe`] for phase flips when they
-//!   need per-frame re-renders.
+//! * callers can subscribe to `BlinkManager` events via GPUI's
+//!   `EventEmitter` facility to get phase flips when they need per-frame
+//!   re-renders.
 
 use std::time::{Duration, Instant};
 

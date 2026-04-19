@@ -124,7 +124,7 @@ pub struct AudioCapture {
 
 impl AudioCapture {
     /// Start recording from the default input device, assuming the host has
-    /// not supplied an [`AVCaptureDevice`] authorization hint.
+    /// not supplied an `AVCaptureDevice` authorization hint.
     ///
     /// When cpal returns no default device, the error is reported as
     /// [`AudioCaptureError::NotDetermined`] — the most common initial state
@@ -250,7 +250,11 @@ impl AudioCapture {
 
     /// Returns the current audio level (0.0..1.0) based on recent RMS amplitude.
     pub fn current_level(&self) -> f32 {
-        *self.shared.current_level.lock().unwrap()
+        *self
+            .shared
+            .current_level
+            .lock()
+            .expect("audio-capture level mutex poisoned")
     }
 
     /// Stop recording and return the captured audio as WAV.
@@ -259,7 +263,11 @@ impl AudioCapture {
         // Drop the stream by consuming self, which stops the cpal thread.
         drop(self._stream);
 
-        let samples = self.shared.samples.lock().unwrap();
+        let samples = self
+            .shared
+            .samples
+            .lock()
+            .expect("audio-capture samples mutex poisoned");
         let duration_secs = samples.len() as f32 / self.sample_rate as f32;
         let wav_data = encode_wav(&samples, self.sample_rate);
 
@@ -274,7 +282,7 @@ impl AudioCapture {
 
 /// Enumerate all available audio input devices.
 ///
-/// Returns a list of [`AudioDevice`] structs. On macOS, if microphone
+/// Returns a list of [`super::AudioDevice`] structs. On macOS, if microphone
 /// permission has not been granted, `input_devices()` returns an empty
 /// iterator — cpal provides no generic device names in that case, so the
 /// caller sees zero devices rather than placeholders (issue #148 F4).
@@ -343,10 +351,17 @@ fn process_samples(shared: &SharedState, data: &[f32], channels: usize) {
         let rms = (sum_sq / mono.len() as f32).sqrt();
         // Scale RMS to 0..1 (typical speech RMS is 0.01..0.3).
         let level = (rms * 5.0).min(1.0);
-        *shared.current_level.lock().unwrap() = level;
+        *shared
+            .current_level
+            .lock()
+            .expect("audio-capture level mutex poisoned") = level;
     }
 
-    shared.samples.lock().unwrap().extend_from_slice(&mono);
+    shared
+        .samples
+        .lock()
+        .expect("audio-capture samples mutex poisoned")
+        .extend_from_slice(&mono);
 }
 
 /// Encode f32 samples as a 16-bit PCM WAV file.

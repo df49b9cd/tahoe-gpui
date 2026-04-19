@@ -114,7 +114,8 @@ impl RenderOnce for StackTraceError {
 
 /// Container for action buttons (copy, expand, etc.).
 ///
-/// Type alias for [`FlexActions`] -- a horizontal flex row with gap spacing.
+/// Type alias for [`crate::components::layout_and_organization::FlexActions`]
+/// — a horizontal flex row with gap spacing.
 pub type StackTraceActions = crate::components::layout_and_organization::FlexActions;
 
 /// Presentational header showing alert icon, error info, action children, and expand chevron.

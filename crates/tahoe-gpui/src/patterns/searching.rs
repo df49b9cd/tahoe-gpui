@@ -14,8 +14,8 @@
 //! - [`crate::foundations::icons::IconName::Search`] /
 //!   [`crate::foundations::icons::IconName::XmarkCircleFill`] — the
 //!   search leading icon and canonical clear-affordance.
-//! - [`crate::components::menus_and_actions::command_palette`] —
-//!   keyboard-first command palette (⌘K) for power-user search flows.
+//! - `crate::components::menus_and_actions::command_palette` —
+//!   keyboard-first command palette (⌘K) for power-user search flows (planned).
 //! - [`crate::components::navigation_and_search::path_control`] — when
 //!   the user's current location in a hierarchy should anchor the
 //!   search scope.

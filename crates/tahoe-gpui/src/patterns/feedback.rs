@@ -29,7 +29,7 @@
 //! - [`crate::components::selection_and_input::text_field::TextFieldValidation`]
 //!   — inline field-level error feedback (constructive, anchored to the
 //!   offending control).
-//! - `Zed` [`crates/workspace/src/notifications.rs`] — transient overlay
+//! - `Zed` `crates/workspace/src/notifications.rs` — transient overlay
 //!   notification pattern for events without a natural inline location;
 //!   treat as reference for a future toast implementation.
 //!
