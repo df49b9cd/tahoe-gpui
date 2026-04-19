@@ -19,7 +19,7 @@
 //!   pre-prompt explainer shown before triggering the system dialog.
 //!   HIG calls out that a custom explainer improves grant rates vs
 //!   showing the system dialog cold.
-//! - [`crate::voice`] (requires `voice` feature) — microphone
+//! - `crate::voice` (requires `voice` feature) — microphone
 //!   permission states are modelled via `SpeechInputState::{
 //!   PermissionRequired, PermissionDenied }` so the UI can route
 //!   denied users to settings.

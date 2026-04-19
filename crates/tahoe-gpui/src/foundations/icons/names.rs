@@ -73,8 +73,8 @@ pub enum IconName {
     Pause,
     Mic,
     /// Muted microphone — `mic.slash` in SF Symbols 7. Used by voice
-    /// components (issue #148 F10) to distinguish "microphone unavailable"
-    /// or "permission denied" states from the active mic glyph.
+    /// components to distinguish "microphone unavailable" or
+    /// "permission denied" states from the active mic glyph.
     MicOff,
     Phone,
     Video,

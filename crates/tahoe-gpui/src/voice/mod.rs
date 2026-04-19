@@ -41,16 +41,16 @@
 //!    [`AudioPlayerView::set_on_interruption_ended`] to forward
 //!    `AVAudioSessionInterruptionNotification` back into the UI.
 //!
-//! ## TODOs filed from the audit
+//! ## Open TODOs
 //!
-//! * **F17 (Siri):** investigate `INStartCallIntent` (or a custom
+//! * **Siri intent:** investigate `INStartCallIntent` (or a custom
 //!   `StartVoiceRecording` intent under the `Create` category) so users
 //!   can trigger recording via Shortcuts without opening the app. Blocked
-//!   on the permission-state machine being stable (F2 complete).
-//! * **F18 (Siri vocabulary):** when the Siri intent lands, register the
+//!   on the permission-state machine being stable.
+//! * **Siri vocabulary:** when the Siri intent lands, register the
 //!   [`VoiceOption::localized_name`] and `siri_vocabulary` fields so
 //!   "Hey Siri, use Echo voice" works.
-//! * **F20 (Scottish flag):** no stable Unicode ZWJ sequence for Scotland
+//! * **Scottish flag:** no stable Unicode ZWJ sequence for Scotland
 //!   renders across macOS's bundled fonts. Re-evaluate when Apple adds
 //!   support for `🏴󠁧󠁢󠁳󠁣󠁴󠁿`.
 

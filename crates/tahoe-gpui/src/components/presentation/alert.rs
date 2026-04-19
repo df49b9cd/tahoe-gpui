@@ -431,7 +431,7 @@ impl RenderOnce for Alert {
                             .mt(px(-2.0))
                             .border_r_2()
                             .border_b_2()
-                            .border_color(gpui::white()),
+                            .border_color(theme.text_on_accent),
                     )
                 } else {
                     None

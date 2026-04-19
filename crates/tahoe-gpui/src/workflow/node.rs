@@ -14,24 +14,24 @@ use gpui::{
 
 /// Callback type for select-state change notifications.
 type SelectChangeHandler = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
-/// Callback invoked on double-click of the node (F22 — HIG Gestures table:
-/// "Double tap → Zoom in; secondary action"). Canvas hosts wire this to
+/// Callback invoked on double-click of the node. Per HIG Gestures table:
+/// "Double tap → Zoom in; secondary action". Canvas hosts wire this to
 /// their inline-edit flow (focus a title TextField, open a detail sheet,
 /// etc.). No default action when unset.
 type DoubleClickHandler = Box<dyn Fn(&mut Window, &mut App) + 'static>;
 
 /// Node drag-state opacity while `drag_offset.is_some()`.
 ///
-/// F8 (#149) — HIG Drag and drop: "a subtle visual effect — like making
-/// the image slightly translucent — conveys that the item is in motion."
-/// Matches Freeform's ~0.75 opacity for dragged items.
+/// HIG Drag and drop: "a subtle visual effect — like making the image
+/// slightly translucent — conveys that the item is in motion." Matches
+/// Freeform's ~0.75 opacity for dragged items.
 const DRAG_OPACITY: f32 = 0.75;
 
 /// Minimum width of a workflow node (used for port position calculations).
 pub(super) const NODE_MIN_WIDTH: f32 = 384.0;
 /// Minimum height for an explicitly sized node — derived from the title bar
-/// plus bottom padding. Applied during resize (#149 F28) so a node can't be
-/// crushed below a usable interaction target.
+/// plus bottom padding. Applied during resize so a node can't be crushed
+/// below a usable interaction target.
 pub(super) const NODE_MIN_HEIGHT: f32 = 80.0;
 /// Y offset where the first port starts (below title bar + padding).
 pub(super) const PORT_START_Y: f32 = 40.0;
@@ -313,12 +313,12 @@ pub struct WorkflowNode {
     toolbar_builder: Option<Box<dyn Fn() -> NodeToolbar>>,
     /// Optional callback invoked when selected state changes.
     on_select: Option<SelectChangeHandler>,
-    /// Optional callback invoked on double-click (F22).
+    /// Optional callback invoked on double-click.
     on_double_click: Option<DoubleClickHandler>,
     /// Explicit size override. `None` → render at auto size (the old
     /// behaviour: `NODE_MIN_WIDTH` × content height). `Some((w, h))` →
     /// render at the supplied dimensions. Populated by the canvas when the
-    /// user drags a resize handle (F28).
+    /// user drags a resize handle.
     size: Option<(f32, f32)>,
 }
 
@@ -491,8 +491,8 @@ impl WorkflowNode {
     }
 
     /// True while the node is being dragged. Exposed so the canvas can
-    /// compose F9 cursor state and F13 multi-drag badges without reaching
-    /// into private fields.
+    /// compose the hover cursor state and multi-drag badges without
+    /// reaching into private fields.
     pub fn is_dragging(&self) -> bool {
         self.drag_offset.is_some()
     }
@@ -528,8 +528,8 @@ impl WorkflowNode {
     /// Returns `(port_name, world_x, world_y, port_type)` for each port.
     /// Input ports are on the left edge, output ports on the right edge —
     /// `right` being the node's current effective width (explicit or the
-    /// `NODE_MIN_WIDTH` auto fallback). Resized nodes (F28) therefore
-    /// place their output ports at the new right edge automatically.
+    /// `NODE_MIN_WIDTH` auto fallback). Resized nodes therefore place
+    /// their output ports at the new right edge automatically.
     pub fn port_positions(&self) -> Vec<(String, f32, f32, PortType)> {
         let width = self.size.map(|(w, _)| w).unwrap_or(NODE_MIN_WIDTH);
         let mut result = Vec::with_capacity(self.input_ports.len() + self.output_ports.len());
@@ -583,24 +583,25 @@ impl Render for WorkflowNode {
             .flex_col()
             .overflow_hidden();
 
-        // F28 (#149): apply explicit size when the user has resized the
-        // node. Auto-sized nodes keep the `min_w` + flex-content contract
+        // Apply explicit size when the user has resized the node.
+        // Auto-sized nodes keep the `min_w` + flex-content contract
         // above so the title column can expand to fit text.
         if let Some((w, h)) = self.size {
             card = card.w(px(w)).h(px(h));
         }
 
-        // F18 (#149): HIG Drag and drop + native Keynote behaviour — a
-        // selected object reads as "lifted" with a heavier shadow than its
-        // resting state. Keeps the baseline shadow_sm for unselected nodes.
+        // HIG Drag and drop + native Keynote behaviour — a selected
+        // object reads as "lifted" with a heavier shadow than its
+        // resting state. Keeps the baseline shadow_sm for unselected
+        // nodes.
         card = if self.selected {
             card.shadow_md()
         } else {
             card.shadow_sm()
         };
 
-        // F8 (#149): translucent affordance during active drag so the user
-        // perceives the item as in motion.
+        // Translucent affordance during active drag so the user perceives
+        // the item as in motion.
         if is_dragging {
             card = card.opacity(DRAG_OPACITY);
         }
@@ -642,9 +643,9 @@ impl Render for WorkflowNode {
                     }
                 }
             }))
-            // F22 (#149): double-click fires the host's inline-edit handler.
-            // Single clicks still fall through to the canvas's own click
-            // routing for selection, so this never races with selection.
+            // Double-click fires the host's inline-edit handler. Single
+            // clicks still fall through to the canvas's own click routing
+            // for selection, so this never races with selection.
             .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
                 if event.click_count() >= 2
                     && let Some(ref handler) = this.on_double_click
@@ -995,7 +996,7 @@ mod tests {
         let _action = NodeAction::new(div());
     }
 
-    // ── F28 explicit-size contract ────────────────────────────────
+    // ── Explicit-size contract ────────────────────────────────────
     //
     // These tests pin the arithmetic that `WorkflowNode::set_size` and
     // `effective_size` expose. They intentionally use the module's

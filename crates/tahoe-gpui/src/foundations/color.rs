@@ -926,7 +926,7 @@ pub fn lighten(color: Hsla, amount: f32) -> Hsla {
 /// yields ~4.3:1.
 ///
 /// If `bg.l` is NaN, the comparison `> 0.55` is false, so white is
-/// returned u2014 the conservative default for unknown backgrounds.
+/// returned — the conservative default for unknown backgrounds.
 pub fn text_on_background(bg: Hsla) -> Hsla {
     if bg.l > 0.55 {
         Hsla {

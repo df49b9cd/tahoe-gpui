@@ -31,7 +31,7 @@
 //! - **[`code`]**: Code display components (terminal, file tree, stack traces).
 //! - **[`context`]**: Token usage display and model identification.
 //! - **[`workflow`]**: Graph canvas components (nodes, edges, connections).
-//! - **[`voice`]**: Audio/speech components (behind `voice` feature).
+//! - **`voice`**: Audio/speech components (behind `voice` feature).
 //! - **[`prelude`]**: Flat re-export of the common public surface, ordered
 //!   by HIG subcategory.
 //!

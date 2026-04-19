@@ -5,55 +5,29 @@
 //! interaction model: scroll-to-pan, Ctrl/Cmd+scroll to zoom, drag-to-select,
 //! and Delete/Backspace to remove selected nodes.
 //!
-//! # HIG coverage (#149)
+//! # HIG coverage
 //!
-//! Issue #149 audited this module against the macOS 26 HIG pages for
-//! Drag and drop, Gestures, Pointing devices, Keyboards, Undo and redo,
-//! and Materials. The fixes in that audit are layered through the module:
+//! This module aligns with the macOS Tahoe HIG pages for Drag and drop,
+//! Gestures, Pointing devices, Keyboards, Undo and redo, and Materials.
+//! Concrete call sites: [`WorkflowCanvas::handle_key_down`] for ⌘+/⌘−/⌘0
+//! zoom and arrow-key nudge, [`super::controls::WorkflowControls::show_undo_redo`]
+//! for toolbar undo/redo, [`undo::UndoStack`] + [`undo::CanvasCommand`]
+//! for multi-level undo, [`PORT_HIT_RADIUS_SCREEN_PX`] +
+//! [`EDGE_HIT_TOLERANCE_SCREEN_PX`] for 44 pt HIG hit targets, and the
+//! [`resize`] module for resize-handle geometry. `WorkflowToolbar` and
+//! `NodeToolbar` render on Liquid Glass per HIG Materials.
 //!
-//! | Finding | Implementation site |
-//! |---------|---------------------|
-//! | F1 pinch zoom               | native `on_pinch` + Cmd+scroll fallback |
-//! | F2 ⌘+/⌘−/⌘0 zoom            | [`WorkflowCanvas::handle_key_down`] |
-//! | F3 arrow-key nudge          | `nudge_selected` in `selection.rs` |
-//! | F4 ⌘D duplicate             | `duplicate_selected` in `selection.rs` |
-//! | F5 ⌘-click vs Shift-range   | `on_mouse_down` modifier branch |
-//! | F6 multi-level undo         | [`undo::UndoStack`] + [`undo::CanvasCommand`] |
-//! | F7 Undo/Redo toolbar buttons | [`super::controls::WorkflowControls::show_undo_redo`] |
-//! | F8 drag translucency        | `DRAG_OPACITY` in `node.rs` |
-//! | F9 open/closed hand cursor  | `cursor_style` match in render |
-//! | F10 ⌥-drag copy             | `on_mouse_up` with `event.modifiers.alt` |
-//! | F11 auto-pan at edges       | `AUTO_PAN_MARGIN` / `AUTO_PAN_STEP` |
-//! | F12 drop-zone highlight     | port-ring render pass |
-//! | F13 multi-drag badge        | count pill in node render |
-//! | F14 restore on failed drop  | `on_mouse_up_out` restore |
-//! | F15 minimap click-to-pan    | [`super::WorkflowMiniMap`] `on_mouse_down` |
-//! | F16 minimap cursor          | `CursorStyle::PointingHand` on minimap |
-//! | F17 port hit radius 44 pt   | [`PORT_HIT_RADIUS_SCREEN_PX`] |
-//! | F18 shadow lift on select   | `shadow_md` branch in `node.rs` |
-//! | F19 edge tolerance zoom-aware | [`EDGE_HIT_TOLERANCE_SCREEN_PX`] |
-//! | F20 edge hover thickening   | `EdgeElement::hovered()` |
-//! | F21 NodeToolbar WhenHovered | `ToolbarVisibility::WhenHovered` |
-//! | F22 double-click            | `WorkflowNode::set_on_double_click` |
-//! | F23 WorkflowToolbar Liquid Glass | [`super::WorkflowToolbar`] render |
-//! | F24 NodeToolbar Liquid Glass | [`super::NodeToolbar`] render |
-//! | F26 Tab/Shift-Tab node focus | `selection::cycle_node_focus` |
-//! | F27 port hit target (a11y)  | Same as F17 — shared tolerance constant |
-//! | F28 resize handles          | [`resize`] module + Resize command |
-//! | F29 minimap overlap guard   | [`super::WorkflowMiniMap::extra_edge_padding`] |
-//! | OQ4 edge label rendering    | `EdgeElement::label()` |
+//! ## Upstream-blocked accessibility
 //!
-//! ## Upstream-blocked findings
-//!
-//! - **F25 / F26 VoiceOver** — GPUI `v0.231.1-pre` exposes no
-//!   accessibility / AX tree API (grep of `crates/gpui/src/**` for
-//!   `accessibility`, `AXRole`, or `NSAccessibility` yields no matches —
-//!   verified in the working tree). The crate carries
-//!   [`AccessibilityProps`] on every labelled element so the day GPUI
-//!   lands the API, the single `AccessibleExt::with_accessibility` site
-//!   will wire labels / roles / values without per-component changes.
-//!   The keyboard half of F26 — Tab / Shift-Tab graph navigation — is
-//!   implemented in [`selection::cycle_node_focus`] and works today.
+//! GPUI `v0.231.1-pre` exposes no accessibility / AX tree API (grep of
+//! `crates/gpui/src/**` for `accessibility`, `AXRole`, or `NSAccessibility`
+//! yields no matches — verified in the working tree). The crate carries
+//! [`crate::foundations::accessibility::AccessibilityProps`] on every
+//! labelled element so the day GPUI lands the API, the single
+//! `AccessibleExt::with_accessibility` site will wire labels / roles /
+//! values without per-component changes. Keyboard graph navigation —
+//! Tab / Shift-Tab — is implemented in `cycle_node_focus` and works
+//! today.
 
 mod viewport;
 use viewport::compute_fit_zoom_and_center;
@@ -84,17 +58,17 @@ use super::util::{point_to_cubic_bezier_distance, point_to_quadratic_bezier_dist
 
 /// Screen-space radius used for port hit-testing.
 ///
-/// Issue #149 F17/F27 flagged that the visual handle (8 px) combined with the
-/// previous 12 px hit tolerance produced a ~24 px effective target — well below
-/// the HIG 44 pt minimum for a touch/pointer target. We keep the visual handle
-/// small (ports are visually unobtrusive) but expand the hit circle to 22 px
-/// screen-space (44 pt diameter) so reach matches Apple's minimum regardless
-/// of zoom. The tolerance is applied in screen space so low-zoom sessions
-/// don't collapse the effective target.
+/// The visual handle (8 px) combined with a 12 px hit tolerance produces a
+/// ~24 px effective target — well below the HIG 44 pt minimum for a
+/// touch/pointer target. We keep the visual handle small (ports are visually
+/// unobtrusive) but expand the hit circle to 22 px screen-space (44 pt
+/// diameter) so reach matches Apple's minimum regardless of zoom. The
+/// tolerance is applied in screen space so low-zoom sessions don't collapse
+/// the effective target.
 pub(super) const PORT_HIT_RADIUS_SCREEN_PX: f32 = 22.0;
 /// Screen-space radius for edge hit-testing.
 ///
-/// F19: the old 8 px literal was applied after the world→screen transform,
+/// The old 8 px literal was applied after the world→screen transform,
 /// meaning zoom changed the *effective canvas-space* tolerance instead of
 /// leaving the pointer target constant. 11 px screen-space ≈ 22 px diameter
 /// which, for a 1-pt line, is a comfortable 44 pt pointer target along the
@@ -105,14 +79,14 @@ pub(super) const EDGE_HIT_TOLERANCE_SCREEN_PX: f32 = 11.0;
 /// click-to-select from polluting the history with a zero-delta move.
 const MOVE_COMMIT_THRESHOLD: f32 = 1.0;
 /// Extra padding (screen px) inside the viewport that triggers auto-pan while
-/// dragging a node near the edge. F11 (HIG Drag and drop §"Scroll contents of
-/// destination when necessary").
+/// dragging a node near the edge. Per HIG Drag and drop §"Scroll contents of
+/// destination when necessary".
 const AUTO_PAN_MARGIN: f32 = 40.0;
 /// Auto-pan velocity in screen-pixels per frame when the drag is pinned to
 /// the edge. Small enough that fast mouse movement still feels responsive.
 const AUTO_PAN_STEP: f32 = 12.0;
 
-/// In-flight resize operation driven by one of the 8 node handles (F28).
+/// In-flight resize operation driven by one of the 8 node handles.
 struct ResizeState {
     node_id: String,
     handle: ResizeHandle,
@@ -186,24 +160,24 @@ pub struct WorkflowCanvas {
     /// Active resize state. Populated when the user clicks a resize handle
     /// and cleared on mouse-up. Holds everything needed to compute the
     /// incremental new position / size and build the matching `Resize`
-    /// command on commit (F28).
+    /// command on commit.
     resizing: Option<ResizeState>,
-    /// Index of the node currently under the pointer — drives F9 (cursor)
-    /// and F18 (shadow lift hover hint). `None` when pointer is over empty
+    /// Index of the node currently under the pointer — drives the hover
+    /// cursor and shadow-lift hover hint. `None` when pointer is over empty
     /// canvas or a port / edge hit instead.
     hovered_node: Option<usize>,
-    /// Index of the edge currently under the pointer — drives F20's hover
+    /// Index of the edge currently under the pointer — drives edge hover
     /// thickening. Falls back to `None` when the pointer hits a node or
     /// empty canvas.
     hovered_edge: Option<usize>,
     /// Id of the port currently under the pointer while a connection drag
-    /// is in-flight. Drives F12's drop-zone highlight.
+    /// is in-flight. Drives the drop-zone highlight.
     hovered_port: Option<PortId>,
     /// Which of the 8 resize handles (if any) the pointer sits over —
-    /// drives the cursor shape when hovering a selected node's handles
-    /// (F28). Set only when `selected_nodes.len() == 1`.
+    /// drives the cursor shape when hovering a selected node's handles.
+    /// Set only when `selected_nodes.len() == 1`.
     hovered_resize_handle: Option<ResizeHandle>,
-    /// Reversible history (F6/F7). See `undo::UndoStack`.
+    /// Reversible history. See `undo::UndoStack`.
     history: UndoStack,
     /// Optional callback fired when undo/redo restores nodes the host had
     /// observed as deleted — lets the host re-register them in its source
@@ -212,7 +186,7 @@ pub struct WorkflowCanvas {
     /// Optional callback fired when undo/redo restores edges that had fired
     /// an `on_edges_delete` earlier. Host re-adds them to its model.
     on_edges_restore: Option<Box<dyn Fn(&[Connection], &mut Window, &mut App) + 'static>>,
-    /// Optional host-provided duplicate factory (⌘D, ⌥-drag copy — F4, F10).
+    /// Optional host-provided duplicate factory (⌘D, ⌥-drag copy).
     /// Called per source node; host returns a fresh entity or `None` to
     /// reject the duplicate request.
     #[allow(clippy::type_complexity)]
@@ -471,10 +445,10 @@ impl WorkflowCanvas {
     fn edge_at_screen_point(&self, screen_x: f32, screen_y: f32, cx: &App) -> Option<usize> {
         let pan = self.pan_offset;
         let zoom = self.zoom;
-        // F19 (#149): edge tolerance is expressed in screen-space pixels, so
-        // zoom doesn't distort the pointer target. With the bezier projection
-        // below already in screen coordinates, a constant 11 px ≈ 44 pt
-        // diameter target, matching the HIG pointer-target minimum.
+        // Edge tolerance is expressed in screen-space pixels, so zoom doesn't
+        // distort the pointer target. With the bezier projection below
+        // already in screen coordinates, a constant 11 px ≈ 44 pt diameter
+        // target, matching the HIG pointer-target minimum.
         let tolerance = EDGE_HIT_TOLERANCE_SCREEN_PX;
         let mut best: Option<(usize, f32)> = None;
 
@@ -549,14 +523,13 @@ impl WorkflowCanvas {
         self.on_edges_restore = Some(Box::new(handler));
     }
 
-    /// Register a duplicate factory — used by `Cmd+D` (F4) and ⌥-drag copy (F10).
+    /// Register a duplicate factory — used by `Cmd+D` and ⌥-drag copy.
     ///
     /// The host receives the source entity and the target world-space position
-    /// and returns a fresh `Entity<WorkflowNode>` (or `None` to decline). This
-    /// answers open question 6 from issue #149: duplicate is delegated because
-    /// `WorkflowNode` holds non-cloneable closures (`content_builder`,
-    /// `toolbar_builder`, `on_select`), which only the host knows how to
-    /// reconstitute.
+    /// and returns a fresh `Entity<WorkflowNode>` (or `None` to decline).
+    /// Duplicate is delegated because `WorkflowNode` holds non-cloneable
+    /// closures (`content_builder`, `toolbar_builder`, `on_select`), which
+    /// only the host knows how to reconstitute.
     #[allow(clippy::type_complexity)]
     pub fn set_on_node_duplicate(
         &mut self,
@@ -753,7 +726,7 @@ impl WorkflowCanvas {
     }
 
     /// Write a node's explicit size by id. `None` reverts to auto-sized.
-    /// Used by Resize command apply/revert (F28).
+    /// Used by Resize command apply/revert.
     pub(in crate::workflow::canvas) fn set_node_size_by_id(
         &mut self,
         node_id: &str,
@@ -768,9 +741,9 @@ impl WorkflowCanvas {
         }
     }
 
-    /// F10 (#149): produce a duplicate at a specific world-space point and
-    /// record it on the undo stack. No-op when the host hasn't registered
-    /// an `on_node_duplicate` factory — see OQ6.
+    /// Produce a duplicate at a specific world-space point and record it on
+    /// the undo stack. No-op when the host hasn't registered an
+    /// `on_node_duplicate` factory.
     fn duplicate_node_at(
         &mut self,
         source_node_id: &str,
@@ -818,9 +791,9 @@ impl WorkflowCanvas {
     ) -> Option<(PortId, PortType, (f32, f32))> {
         let pan = self.pan_offset;
         let zoom = self.zoom;
-        // F17/F27 (#149): 22 px ≈ 44 pt diameter HIG minimum pointer target.
-        // Applied in screen space so low zoom doesn't shrink the hit area
-        // below the minimum even though the visible handle is smaller.
+        // 22 px ≈ 44 pt diameter HIG minimum pointer target. Applied in
+        // screen space so low zoom doesn't shrink the hit area below the
+        // minimum even though the visible handle is smaller.
         let tolerance = PORT_HIT_RADIUS_SCREEN_PX;
 
         for node_entity in &self.nodes {
@@ -864,7 +837,7 @@ impl WorkflowCanvas {
                 };
                 // Snapshot the connection list so we can see what (if
                 // anything) the host added, then register that connection
-                // on the undo stack (F6). Hosts that don't insert into
+                // on the undo stack. Hosts that don't insert into
                 // `self.connections` (e.g. purely external models) still
                 // get the on_connect callback but no undo entry — their
                 // model owns reversibility.
@@ -913,7 +886,8 @@ impl WorkflowCanvas {
         None
     }
 
-    /// Single entry point for every HIG-defined canvas shortcut (F2, F3, F4, F6).
+    /// Single entry point for every HIG-defined canvas shortcut (zoom,
+    /// nudge, duplicate, undo/redo).
     ///
     /// Laid out as a flat branch cascade because the HIG tables for
     /// Keyboards and Gestures are equally flat — reordering here should
@@ -936,7 +910,7 @@ impl WorkflowCanvas {
             return;
         }
 
-        // F6 (#149): Cmd-Z / Shift-Cmd-Z — HIG-mandated macOS undo/redo.
+        // Cmd-Z / Shift-Cmd-Z — HIG-mandated macOS undo/redo.
         if cmd && key == "z" {
             if shift {
                 self.redo(window, cx);
@@ -946,7 +920,7 @@ impl WorkflowCanvas {
             return;
         }
 
-        // F2 (#149): Cmd-+, Cmd--, Cmd-0 zoom shortcuts per HIG Keyboards.
+        // Cmd-+, Cmd--, Cmd-0 zoom shortcuts per HIG Keyboards.
         // Several keyboards/layouts surface "+" as "=" (same physical key),
         // so we accept either.
         if cmd && (key == "=" || key == "+") {
@@ -964,27 +938,26 @@ impl WorkflowCanvas {
             return;
         }
 
-        // F4 (#149): Cmd-D duplicate. `on_node_duplicate` host callback is
-        // required — if absent, we intentionally no-op rather than guess a
-        // broken duplicate (see #149 OQ6).
+        // Cmd-D duplicate. `on_node_duplicate` host callback is required —
+        // if absent, we intentionally no-op rather than guess a broken
+        // duplicate.
         if cmd && key == "d" {
             self.duplicate_selected(window, cx);
             return;
         }
 
-        // F26 (#149) — keyboard graph navigation. Tab / Shift-Tab cycle
-        // through nodes in insertion order, setting selection to the
-        // landed node so both the visual focus ring and the VoiceOver
-        // announcement (once GPUI's AX API lands) track the same target.
-        // This is the keyboard half of F26; the VoiceOver half waits on
-        // upstream (see `foundations::accessibility` for status).
+        // Keyboard graph navigation. Tab / Shift-Tab cycle through nodes
+        // in insertion order, setting selection to the landed node so both
+        // the visual focus ring and the VoiceOver announcement (once
+        // GPUI's AX API lands) track the same target. The VoiceOver half
+        // waits on upstream (see `foundations::accessibility` for status).
         if key == "tab" && !cmd && !m.control && !m.alt {
             self.cycle_node_focus(!shift, window, cx);
             return;
         }
 
-        // F3 (#149): arrow-key nudge. 1 pt without modifier, 10 pt with
-        // Shift — matches Freeform / Keynote. Only applies to nodes; rect
+        // Arrow-key nudge. 1 pt without modifier, 10 pt with Shift —
+        // matches Freeform / Keynote. Only applies to nodes; rect
         // selection never owns focus while arrow nudging is expected.
         if no_mods || (shift && !cmd && !m.control && !m.alt) {
             let step = if shift { 10.0 } else { 1.0 };
@@ -1003,7 +976,7 @@ impl WorkflowCanvas {
         }
     }
 
-    /// F28: test the screen point against the 8 resize handles of each
+    /// Test the screen point against the 8 resize handles of each
     /// currently selected node. Returns the initial `ResizeState` the
     /// canvas should keep in-flight until mouse-up.
     fn resize_handle_hit(&self, screen_x: f32, screen_y: f32, cx: &App) -> Option<ResizeState> {
@@ -1193,14 +1166,14 @@ impl Render for WorkflowCanvas {
             _ => None,
         };
 
-        // F9 (#149): HIG pointer-shape table maps "open hand" to
-        // "hoverable draggable content" and "closed hand" to "actively
-        // dragging". The canvas applies the cursor here because the
-        // container captures all mouse hover / drag events — the nodes
-        // themselves only see clicks that land on them.
+        // HIG pointer-shape table maps "open hand" to "hoverable draggable
+        // content" and "closed hand" to "actively dragging". The canvas
+        // applies the cursor here because the container captures all
+        // mouse hover / drag events — the nodes themselves only see
+        // clicks that land on them.
         //
-        // Resize handles (F28) take priority: their cursor tells the
-        // user they're about to resize, not drag.
+        // Resize handles take priority: their cursor tells the user
+        // they're about to resize, not drag.
         let cursor_style = if let Some(state) = &self.resizing {
             state.handle.cursor()
         } else if let Some(handle) = self.hovered_resize_handle {
@@ -1235,9 +1208,9 @@ impl Render for WorkflowCanvas {
                     let mx = f32::from(event.position.x);
                     let my = f32::from(event.position.y);
 
-                    // F28 (#149): resize handles win before port hits and
-                    // node clicks, because a handle painted at the corner
-                    // sits on top of the node's own interactive area.
+                    // Resize handles win before port hits and node clicks,
+                    // because a handle painted at the corner sits on top
+                    // of the node's own interactive area.
                     if let Some(state) = this.resize_handle_hit(mx, my, cx) {
                         this.resizing = Some(state);
                         return;
@@ -1252,10 +1225,10 @@ impl Render for WorkflowCanvas {
                         return;
                     }
                     if let Some(idx) = this.node_at_screen_point(mx, my, cx) {
-                        // F5 (#149): macOS convention is Cmd (`platform`) for
-                        // toggle, Shift for range extend. Using Shift for toggle
-                        // (prior behaviour) conflicted with every native canvas
-                        // tool (Finder, Keynote, Freeform).
+                        // macOS convention is Cmd (`platform`) for toggle,
+                        // Shift for range extend. Using Shift for toggle
+                        // (prior behaviour) conflicted with every native
+                        // canvas tool (Finder, Keynote, Freeform).
                         if event.modifiers.platform {
                             this.toggle_node_selection(idx, window, cx);
                         } else if event.modifiers.shift {
@@ -1267,7 +1240,7 @@ impl Render for WorkflowCanvas {
                             this.select_node(Some(idx), window, cx);
                         }
                         this.select_edge(None, window, cx);
-                        // Snapshot drag start for Move-command generation (F6).
+                        // Snapshot drag start for Move-command generation.
                         if let Some(node) = this.nodes.get(idx) {
                             let n = node.read(cx);
                             this.drag_initial_pos = Some((n.id().to_string(), n.position()));
@@ -1294,13 +1267,13 @@ impl Render for WorkflowCanvas {
                         this.finish_connection(mx, my, window, cx);
                         return;
                     }
-                    // F28: commit any active resize to the undo stack.
+                    // Commit any active resize to the undo stack.
                     if this.resizing.is_some() {
                         this.finish_resize(window, cx);
                         return;
                     }
-                    // F6 / F10 (#149): resolve the node drag that's just
-                    // finished. Two outcomes:
+                    // Resolve the node drag that's just finished. Two
+                    // outcomes:
                     //  - Alt held → ⌥-drag copy: restore the original
                     //    position, then ask the host factory for a fresh
                     //    duplicate at the drag-end location.
@@ -1347,11 +1320,11 @@ impl Render for WorkflowCanvas {
                     // Cancel any in-progress connection drag.
                     this.connecting_from = None;
                     this.connecting_mouse = None;
-                    // F14 (#149): restore on failed drop — a drag that leaves
-                    // the canvas bounds is treated as a cancellation, so the
-                    // node snaps back to where it started. HIG Drag and drop:
-                    // "Preserve transparency of operations by restoring
-                    // content if the drag fails."
+                    // Restore on failed drop — a drag that leaves the
+                    // canvas bounds is treated as a cancellation, so the
+                    // node snaps back to where it started. HIG Drag and
+                    // drop: "Preserve transparency of operations by
+                    // restoring content if the drag fails."
                     if let Some((id, start)) = this.drag_initial_pos.take() {
                         this.set_node_position_by_id(&id, start, cx);
                     }
@@ -1371,8 +1344,8 @@ impl Render for WorkflowCanvas {
                 let mx = f32::from(event.position.x);
                 let my = f32::from(event.position.y);
 
-                // F28: active resize pulls everything else to a stop —
-                // no hover tracking, no selection rect, no auto-pan.
+                // Active resize pulls everything else to a stop — no
+                // hover tracking, no selection rect, no auto-pan.
                 if this.resizing.is_some() {
                     this.update_resize(mx, my, cx);
                     return;
@@ -1381,8 +1354,8 @@ impl Render for WorkflowCanvas {
                 // Connection drag tracking.
                 if this.connecting_from.is_some() {
                     this.connecting_mouse = Some((mx, my));
-                    // F12 (#149): highlight the port under the pointer while
-                    // a connection is in flight so compatible drop targets
+                    // Highlight the port under the pointer while a
+                    // connection is in flight so compatible drop targets
                     // are discoverable.
                     let new_port_hover = this.port_at_screen_point(mx, my, cx).map(|(id, _, _)| id);
                     if new_port_hover != this.hovered_port {
@@ -1392,10 +1365,10 @@ impl Render for WorkflowCanvas {
                     return;
                 }
 
-                // Hover tracking drives F9 (open/closed hand cursor), F18
-                // (subtle hover affordance), F20 (edge thickening), and
-                // F28 (resize cursor). Only recomputes when any of the
-                // tracked hovers changed so notify() stays rate-limited.
+                // Hover tracking drives the open/closed hand cursor,
+                // subtle hover affordance, edge thickening, and resize
+                // cursor. Only recomputes when any of the tracked hovers
+                // changed so notify() stays rate-limited.
                 let new_resize_hover = this.resize_handle_hit(mx, my, cx).map(|state| state.handle);
                 let new_node_hover = if new_resize_hover.is_none() {
                     this.node_at_screen_point(mx, my, cx)
@@ -1421,8 +1394,8 @@ impl Render for WorkflowCanvas {
                     cx.notify();
                 }
 
-                // F11 (#149): auto-pan when dragging a node near a viewport
-                // edge. The HIG mandates "Scroll contents of destination when
+                // Auto-pan when dragging a node near a viewport edge.
+                // The HIG mandates "Scroll contents of destination when
                 // necessary" during drag. We drive pan_offset by a constant
                 // step per frame so the effect is perceptibly smooth and
                 // predictable even on fast drags.
@@ -1489,7 +1462,7 @@ impl Render for WorkflowCanvas {
                     cx.notify();
                 }
             }))
-            // F1 (#149): native pinch-gesture support. GPUI surfaces
+            // Native pinch-gesture support. GPUI surfaces
             // NSMagnificationGesture as a dedicated `PinchEvent`, so zoom
             // reads the normalised `delta` field (0.1 = 10% zoom-in per the
             // GPUI docs) multiplicatively. Cmd+scroll remains wired below as
@@ -1603,12 +1576,12 @@ impl Render for WorkflowCanvas {
             container = container.child(ConnectionLine::new(*from_screen, mouse));
         }
 
-        // F12 (#149): drop-zone highlight during port-connection drag.
-        // Every port on a different node with the opposite type gets an
-        // accent ring so the user sees the valid drop targets at a glance.
-        // The hovered port (if any) gets a brighter ring; incompatible
-        // ports are left alone rather than marked with a "no" glyph to
-        // keep the canvas calm during drag.
+        // Drop-zone highlight during port-connection drag. Every port on
+        // a different node with the opposite type gets an accent ring so
+        // the user sees the valid drop targets at a glance. The hovered
+        // port (if any) gets a brighter ring; incompatible ports are left
+        // alone rather than marked with a "no" glyph to keep the canvas
+        // calm during drag.
         if let Some((source_id, source_type, _)) = self.connecting_from.clone() {
             let accent = theme.accent;
             let border_soft = Hsla { a: 0.4, ..accent };
@@ -1665,7 +1638,7 @@ impl Render for WorkflowCanvas {
                 .left(px(x))
                 .top(px(y))
                 .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                    // F5: Cmd toggles, Shift extends; plain click replaces.
+                    // Cmd toggles, Shift extends; plain click replaces.
                     if event.modifiers().platform {
                         this.toggle_node_selection(node_idx, window, cx);
                     } else if event.modifiers().shift {
@@ -1683,11 +1656,11 @@ impl Render for WorkflowCanvas {
                 }))
                 .child(node_entity.clone());
 
-            // F13 (#149): multi-item drag badge. When the user drags a node
-            // that is part of a selection of two or more, show a count pill
-            // anchored to the lead node's top-right corner — HIG Drag and
-            // drop: "Support multiple simultaneous drags … badge during
-            // multi-item drag operations."
+            // Multi-item drag badge. When the user drags a node that is
+            // part of a selection of two or more, show a count pill
+            // anchored to the lead node's top-right corner — HIG Drag
+            // and drop: "Support multiple simultaneous drags … badge
+            // during multi-item drag operations."
             if drag_in_flight && multi_count > 1 && self.selected_nodes.contains(&idx) {
                 let badge = div()
                     .absolute()
@@ -1729,11 +1702,10 @@ impl Render for WorkflowCanvas {
             }
         }
 
-        // F28 (#149): resize handles painted on the single selected
-        // node. Skipped during multi-select because resize semantics
-        // across a group are ambiguous (do we scale? translate? grow
-        // individually?) — Keynote and Freeform both suppress handles
-        // in the same case.
+        // Resize handles painted on the single selected node. Skipped
+        // during multi-select because resize semantics across a group
+        // are ambiguous (do we scale? translate? grow individually?) —
+        // Keynote and Freeform both suppress handles in the same case.
         if let Some(&idx) = self.selected_nodes.iter().next()
             && self.selected_nodes.len() == 1
         {

@@ -4,10 +4,10 @@
 //! AI SDK Elements Toolbar (React Flow NodeToolbar wrapper). Supports
 //! configurable position, alignment, visibility, and offset.
 //!
-//! The bar itself renders on a Liquid Glass material (F24 from #149) so it
-//! matches the rest of the macOS 26 chrome; the `WhenHovered` visibility
-//! variant (F21) matches Freeform and Keynote's contextual-format toolbar,
-//! which reveals on hover without requiring a selection click first.
+//! The bar itself renders on a Liquid Glass material so it matches the
+//! rest of the macOS 26 chrome; the `WhenHovered` visibility variant
+//! matches Freeform and Keynote's contextual-format toolbar, which
+//! reveals on hover without requiring a selection click first.
 
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
@@ -40,7 +40,7 @@ pub enum ToolbarVisibility {
     WhenSelected,
     /// Visible while the node is hovered — matches the Freeform / Keynote
     /// contextual-format toolbar that appears on hover without requiring
-    /// a prior click-selection. F21 from #149.
+    /// a prior click-selection.
     WhenHovered,
     /// Always visible.
     Always,
@@ -250,9 +250,9 @@ impl RenderOnce for NodeToolbar {
             ToolbarPosition::Left | ToolbarPosition::Right
         );
 
-        // F24 (#149): match the NodeToolbar chrome to the rest of the
-        // canvas (WorkflowControls already uses Liquid Glass). Size Small
-        // matches Apple's sizing for node-scoped contextual toolbars.
+        // Match the NodeToolbar chrome to the rest of the canvas
+        // (WorkflowControls already uses Liquid Glass). Size Small matches
+        // Apple's sizing for node-scoped contextual toolbars.
         let bar_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
         let mut bar = div()
             .flex()
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn should_show_when_hovered_reveals_on_hover_only() {
-        // F21: hover alone triggers visibility; neither a selection nor a
+        // Hover alone triggers visibility; neither a selection nor a
         // prior click is required.
         assert!(should_show(
             ToolbarVisibility::WhenHovered,

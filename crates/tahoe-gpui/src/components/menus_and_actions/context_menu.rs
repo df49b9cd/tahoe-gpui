@@ -464,14 +464,18 @@ fn nav_prev(items: &[ContextMenuEntry], current: Option<usize>) -> Option<usize>
     if actionable.is_empty() {
         return current;
     }
+    // `actionable` is non-empty: the early-return above handles the empty case.
+    let last = *actionable
+        .last()
+        .expect("actionable is non-empty: early-return above handles empty case");
     Some(match current {
         Some(idx) => actionable
             .iter()
             .rev()
             .find(|&&i| i < idx)
             .copied()
-            .unwrap_or(*actionable.last().unwrap()),
-        None => *actionable.last().unwrap(),
+            .unwrap_or(last),
+        None => last,
     })
 }
 
@@ -615,15 +619,22 @@ impl Render for ContextMenu {
 
         // Optional nested submenu overlay.
         let submenu_overlay = if let Some(parent_idx) = expanded {
-            // Grab a raw pointer to the nested items slice for the same
-            // reason as above; render_rows needs `&mut Context` while we
-            // still hold the immutable handle to the items.
+            // Grab a raw pointer to the nested items slice; the safety
+            // rationale matches the top-level borrow above.
             let nested_items_ptr: Option<*const [ContextMenuEntry]> =
                 match self.items.get(parent_idx) {
                     Some(ContextMenuEntry::Submenu { items, .. }) => Some(items.as_slice()),
                     _ => None,
                 };
             nested_items_ptr.map(|items_ptr| {
+                // SAFETY: `items_ptr` was produced from
+                // `self.items.get(parent_idx).items.as_slice()` in the same
+                // stack frame, so the backing buffer is alive for the full
+                // duration of this `render_rows` call. Nothing inside the
+                // rendered listeners mutates `self.items`; they only touch
+                // `expanded_submenu` / `selection_path`, so there is no
+                // aliased mutable borrow. Identical reasoning to the
+                // top-level `top_items` unsafe block above.
                 let rows = render_rows(
                     unsafe { &*items_ptr },
                     &style_tokens,

@@ -4,12 +4,12 @@
 //! interactive time slider, volume/mute, and time display. Consumers wire
 //! up actual audio playback via event callbacks.
 //!
-//! # HIG alignment (issue #148)
+//! # HIG alignment
 //!
-//! * F9 — All interactive controls (play/pause, skip ±10 s, mute, seek
+//! * All interactive controls (play/pause, skip ±10 s, mute, seek
 //!   slider, volume slider) carry an explicit `accessibility_label` so
 //!   VoiceOver announces them even though this view is visual-only.
-//! * F12 — The Playing audio HIG mandates:
+//! * The Playing audio HIG mandates:
 //!   * Now Playing metadata via `MPNowPlayingInfoCenter`.
 //!   * An audio-session category (`Playback`) registered with
 //!     `AVAudioSession` so audio continues in background.
@@ -93,8 +93,7 @@ pub struct AudioPlayerView {
     /// begin (phone call, Siri, another app taking exclusive audio). The
     /// view does not itself observe `AVAudioSessionInterruptionNotification` —
     /// consumers forward the notification here so the UI can show a paused
-    /// indicator or disable controls until the interruption resolves
-    /// (issue #148 F12).
+    /// indicator or disable controls until the interruption resolves.
     on_interruption_began: OnMutCallback,
     /// Invoked when `AVAudioSession` reports that the interruption ended.
     /// The view-side handler typically restores playback state.
@@ -110,8 +109,8 @@ impl AudioPlayerView {
             let mut s = Slider::new(cx);
             s.set_height(px(4.0));
             s.set_thumb_size(px(12.0));
-            // Issue #148 F9: label so VoiceOver announces this as the
-            // playback position control rather than a generic slider.
+            // Label so VoiceOver announces this as the playback position
+            // control rather than a generic slider.
             s.set_accessibility_label("Playback position");
             s
         });
@@ -139,7 +138,8 @@ impl AudioPlayerView {
             s.set_value(1.0, cx);
             s.set_height(px(4.0));
             s.set_thumb_size(px(10.0));
-            // Issue #148 F9.
+            // Accessibility label so VoiceOver announces this as the volume
+            // control rather than a generic slider.
             s.set_accessibility_label("Volume");
             s
         });
@@ -313,7 +313,7 @@ impl AudioPlayerView {
     }
 
     /// Register a handler fired by the consumer when the underlying
-    /// `AVAudioSession` reports an interruption begin. Issue #148 F12.
+    /// `AVAudioSession` reports an interruption begin.
     ///
     /// The consumer observes `AVAudioSessionInterruptionNotification` (or
     /// the platform equivalent) and forwards a call to
@@ -488,8 +488,8 @@ impl Render for AudioPlayerView {
             );
         }
 
-        // Play/pause button — issue #148 F9, label reflects current state
-        // so VoiceOver reads "Play" when paused and "Pause" when playing.
+        // Play/pause button — label reflects current state so VoiceOver
+        // reads "Play" when paused and "Pause" when playing.
         let play_label: SharedString = if self.is_playing {
             "Pause".into()
         } else {

@@ -22,7 +22,7 @@
 //! For keyboard graph navigation that does work today (per-component
 //! focus rings, Tab-order cycling), see
 //! [`crate::workflow::WorkflowCanvas::cycle_node_focus`] — the keyboard
-//! half of F26 from issue #149 that doesn't depend on the missing AX API.
+//! half of the HIG accessibility story that doesn't depend on the missing AX API.
 
 use gpui::{Hsla, SharedString};
 

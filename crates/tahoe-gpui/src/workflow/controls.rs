@@ -60,8 +60,8 @@ pub struct WorkflowControls {
     show_zoom: bool,
     show_fit_view: bool,
     show_interactive: bool,
-    /// F7 (#149): surface Undo / Redo as discoverable toolbar actions, not
-    /// just keyboard shortcuts. Off by default so existing callers don't
+    /// Surface Undo / Redo as discoverable toolbar actions, not just
+    /// keyboard shortcuts. Off by default so existing callers don't
     /// suddenly sprout new buttons; opt-in via `show_undo_redo(true)`.
     show_undo_redo: bool,
     /// Whether the Undo button should render enabled. Host supplies this
@@ -130,10 +130,10 @@ impl WorkflowControls {
 
     /// Expose Undo / Redo buttons on the controls bar. Required by the HIG
     /// Undo and redo page ("Consider adding Undo and Redo buttons to your
-    /// toolbar for content-editing contexts" — F7 from #149). The buttons
-    /// read their enabled state from `can_undo` / `can_redo`, which the
-    /// host supplies from `WorkflowCanvas::can_undo()` each render so the
-    /// affordance gray-outs when the stack is empty, matching HIG guidance.
+    /// toolbar for content-editing contexts"). The buttons read their
+    /// enabled state from `can_undo` / `can_redo`, which the host supplies
+    /// from `WorkflowCanvas::can_undo()` each render so the affordance
+    /// gray-outs when the stack is empty, matching HIG guidance.
     pub fn show_undo_redo(mut self, show: bool) -> Self {
         self.show_undo_redo = show;
         self
@@ -214,7 +214,7 @@ impl WorkflowControls {
         self
     }
 
-    /// Wire the Undo button (F7).
+    /// Wire the Undo button.
     pub fn on_undo(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -223,7 +223,7 @@ impl WorkflowControls {
         self
     }
 
-    /// Wire the Redo button (F7).
+    /// Wire the Redo button.
     pub fn on_redo(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -294,9 +294,9 @@ impl RenderOnce for WorkflowControls {
         // Track which groups are rendered for dividers
         let mut has_previous_group = false;
 
-        // Undo / Redo group (F7 — rendered leading of the zoom group so
-        // Undo is the first affordance a user's eye lands on, matching
-        // Keynote / Freeform anatomy).
+        // Undo / Redo group — rendered leading of the zoom group so Undo
+        // is the first affordance a user's eye lands on, matching
+        // Keynote / Freeform anatomy.
         if self.show_undo_redo {
             let can_undo = self.can_undo;
             let can_redo = self.can_redo;

@@ -24,8 +24,8 @@ pub enum MinimapPosition {
 /// A miniature overview of the workflow canvas showing all nodes and the current viewport.
 ///
 /// Click anywhere on the minimap to centre the main canvas viewport on the
-/// corresponding world-space point (F15 from #149). Hovering over the minimap
-/// reveals a pointing-hand cursor (F16) to advertise the interactivity.
+/// corresponding world-space point. Hovering over the minimap reveals a
+/// pointing-hand cursor to advertise the interactivity.
 #[derive(IntoElement)]
 pub struct WorkflowMiniMap {
     canvas: Entity<WorkflowCanvas>,
@@ -38,11 +38,11 @@ pub struct WorkflowMiniMap {
     offset_scale: f32,
     element_id: ElementId,
     /// Extra padding in pixels on the edge opposite the minimap's anchor,
-    /// applied on top of the theme spacing. F29 (#149): when the minimap
-    /// shares its corner with `WorkflowControls`, callers can stack them
-    /// by passing the controls' height as the vertical offset. Built as
-    /// an explicit knob rather than auto-detection because the minimap
-    /// doesn't have layout access to its sibling widgets at render time.
+    /// applied on top of the theme spacing. When the minimap shares its
+    /// corner with `WorkflowControls`, callers can stack them by passing
+    /// the controls' height as the vertical offset. Built as an explicit
+    /// knob rather than auto-detection because the minimap doesn't have
+    /// layout access to its sibling widgets at render time.
     extra_edge_padding: f32,
 }
 
@@ -65,7 +65,7 @@ impl WorkflowMiniMap {
     /// Add extra pixels of padding on the edge closest to the minimap's
     /// anchor corner. Use this when the minimap and `WorkflowControls`
     /// share a corner — pass the controls' height to stack the minimap
-    /// above them. See F29 in issue #149.
+    /// above them.
     pub fn extra_edge_padding(mut self, pixels: f32) -> Self {
         self.extra_edge_padding = pixels.max(0.0);
         self
@@ -287,7 +287,7 @@ impl RenderOnce for WorkflowMiniMap {
         );
 
         let mut wrapper = div().absolute();
-        // F29 (#149): stack above / below adjacent widgets by adding
+        // Stack above / below adjacent widgets by adding
         // `extra_edge_padding` to the anchor edge.
         let extra = self.extra_edge_padding;
         match position {
@@ -301,9 +301,9 @@ impl RenderOnce for WorkflowMiniMap {
             MinimapPosition::TopLeft => wrapper = wrapper.top(spacing + px(extra)).left(spacing),
         }
 
-        // Click handler (F15 #149): translate minimap-local coordinates into
-        // world space, then centre the main canvas viewport on that point.
-        // The transform is the inverse of `to_minimap`: we start with the
+        // Click handler: translate minimap-local coordinates into world
+        // space, then centre the main canvas viewport on that point. The
+        // transform is the inverse of `to_minimap`: we start with the
         // minimap-local delta (mouse pos - origin), unmap it back to world
         // coordinates, and then set pan so that world point lands at the
         // centre of the viewport.
@@ -325,7 +325,7 @@ impl RenderOnce for WorkflowMiniMap {
             .rounded(theme.radius_md)
             .shadow_sm()
             .overflow_hidden()
-            // F16 (#149): pointing-hand cursor advertises interactivity.
+            // Pointing-hand cursor advertises interactivity.
             .cursor(CursorStyle::PointingHand)
             .on_mouse_down(
                 MouseButton::Left,

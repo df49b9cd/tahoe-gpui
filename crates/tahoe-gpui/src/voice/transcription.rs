@@ -4,14 +4,14 @@
 //! Displays transcription segments from AI SDK `transcribe()` results with
 //! automatic active/past/future state styling based on current playback time.
 //!
-//! # HIG alignment (issue #148)
+//! # HIG alignment
 //!
-//! * F7 — the streaming indicator carries an accessibility label so
+//! * The streaming indicator carries an accessibility label so
 //!   VoiceOver users hear state transitions (pending full GPUI AX support).
-//! * F11 — [`TranscriptionSegment::is_hypothesis`] distinguishes unstable
+//! * [`TranscriptionSegment::is_hypothesis`] distinguishes unstable
 //!   streaming tokens from committed text; hypothesis tokens render muted
 //!   and italic, and do not participate in click-to-seek.
-//! * F15 — [`TranscriptionView::set_ai_disclosure`] renders an optional
+//! * [`TranscriptionView::set_ai_disclosure`] renders an optional
 //!   transparency caption.
 
 use gpui::prelude::*;
@@ -46,8 +46,7 @@ pub struct TranscriptionSegment {
     /// When `true`, this segment represents hypothesis text — unstable
     /// tokens that a streaming recognizer may replace before commit. The
     /// view renders hypothesis segments muted and italic, and skips them
-    /// when routing click-to-seek (their timestamps are unreliable). See
-    /// issue #148 F11.
+    /// when routing click-to-seek (their timestamps are unreliable).
     pub is_hypothesis: bool,
 }
 
@@ -101,7 +100,7 @@ pub struct TranscriptionView {
     segments: Vec<TranscriptionSegment>,
     is_streaming: bool,
     current_time: Option<f64>,
-    /// Optional transparency copy about AI transcription (issue #148 F15).
+    /// Optional transparency copy about AI transcription.
     ai_disclosure: Option<SharedString>,
     on_seek: OnF64Change,
 }
@@ -120,7 +119,7 @@ impl TranscriptionView {
 
     /// Set optional transparency copy displayed beneath the transcription
     /// (e.g. `"Audio is transcribed on-device and not stored."`). When
-    /// set, renders as a caption-styled line. Issue #148 F15.
+    /// set, renders as a caption-styled line.
     pub fn set_ai_disclosure(
         &mut self,
         disclosure: Option<impl Into<SharedString>>,
@@ -199,10 +198,9 @@ impl Render for TranscriptionView {
         for (idx, segment) in self.segments.iter().filter(|s| !s.is_empty()).enumerate() {
             let is_hypothesis = segment.is_hypothesis;
             let text_color = if is_hypothesis {
-                // Issue #148 F11: Apple Dictation renders hypothesis text
-                // lighter so users can distinguish unstable output from
-                // committed text. Use muted @60% + italic as the equivalent
-                // in Rust.
+                // Apple Dictation renders hypothesis text lighter so users
+                // can distinguish unstable output from committed text. Use
+                // muted @60% + italic as the equivalent in Rust.
                 theme.text_muted.opacity(0.6)
             } else {
                 match self.segment_state(segment) {
@@ -230,9 +228,9 @@ impl Render for TranscriptionView {
                     .into_any_element(),
             );
 
-            // Hypothesis segments never participate in click-to-seek
-            // (issue #148 F11) — their timestamps are unstable until the
-            // recognizer commits a final token.
+            // Hypothesis segments never participate in click-to-seek —
+            // their timestamps are unstable until the recognizer commits a
+            // final token.
             if has_seek && !is_hypothesis {
                 let start = segment.start_second;
                 container = container.child(
@@ -268,10 +266,10 @@ impl Render for TranscriptionView {
             }
         }
 
-        // Streaming indicator. Issue #148 F7 — carry an accessibility
-        // label so screen readers can announce "Listening" as a live
-        // region once GPUI exposes the AX API. Until then, the label is
-        // stored via `with_accessibility` and surfaces in debug tooling.
+        // Streaming indicator — carry an accessibility label so screen
+        // readers can announce "Listening" as a live region once GPUI
+        // exposes the AX API. Until then, the label is stored via
+        // `with_accessibility` and surfaces in debug tooling.
         if self.is_streaming {
             container = container.child(
                 div()
@@ -286,10 +284,9 @@ impl Render for TranscriptionView {
             );
         }
 
-        // Issue #148 F15: optional AI transparency caption below the
-        // transcription. Consumers set this when audio is routed through
-        // an external transcription service so users know what's
-        // happening.
+        // Optional AI transparency caption below the transcription.
+        // Consumers set this when audio is routed through an external
+        // transcription service so users know what's happening.
         if let Some(ref disclosure) = self.ai_disclosure {
             container = container.child(
                 div()

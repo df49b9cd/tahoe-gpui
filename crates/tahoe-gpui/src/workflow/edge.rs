@@ -34,9 +34,9 @@ pub struct EdgeElement {
     to: (f32, f32),
     color: Option<Hsla>,
     selected: bool,
-    /// F20 (#149): edge stroke thickens when hovered so a thin default line
-    /// is easier to target before a click. Set by the canvas when the
-    /// pointer hit-test resolves to this edge.
+    /// Edge stroke thickens when hovered so a thin default line is easier
+    /// to target before a click. Set by the canvas when the pointer
+    /// hit-test resolves to this edge.
     hovered: bool,
     stroke_width: f32,
     style: EdgeStyle,
@@ -48,9 +48,9 @@ pub struct EdgeElement {
     source_position: HandlePosition,
     /// Handle exit direction at the target node.
     target_position: HandlePosition,
-    /// Optional label text (F-OQ4 from #149). Rendered as a small pill
-    /// centred on the curve. `None` when the connection has no label or
-    /// when the caller explicitly hides labels at low zoom.
+    /// Optional label text. Rendered as a small pill centred on the
+    /// curve. `None` when the connection has no label or when the caller
+    /// explicitly hides labels at low zoom.
     label: Option<String>,
 }
 
@@ -75,7 +75,7 @@ impl EdgeElement {
 
     /// Flag the edge as hovered so the renderer draws a slightly thicker
     /// stroke — matches the HIG guidance that points-of-interest
-    /// enlarge on hover to help the pointer land (F20).
+    /// enlarge on hover to help the pointer land.
     pub fn hovered(mut self, hovered: bool) -> Self {
         self.hovered = hovered;
         self
@@ -301,7 +301,7 @@ impl RenderOnce for EdgeElement {
         // If there's a label, stack the canvas and a centred text pill
         // inside a common container. The pill floats over the curve at
         // t=0.5 with a subtle surface background so it remains readable
-        // against the canvas grid. OQ4 from #149.
+        // against the canvas grid.
         if let Some(text) = label_text {
             let pill = div()
                 .absolute()

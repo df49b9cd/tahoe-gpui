@@ -13,9 +13,9 @@ use gpui::{App, ClickEvent, ElementId, SharedString, Window, div};
 
 /// Where an action sits in the Apple toolbar anatomy.
 ///
-/// F23 (#149) — HIG Toolbars: actions form three groups — leading
-/// (navigation / disclosure), center (primary title or tool), trailing
-/// (document-scoped actions). The groups are divided by tiny separators.
+/// HIG Toolbars: actions form three groups — leading (navigation /
+/// disclosure), center (primary title or tool), trailing (document-scoped
+/// actions). The groups are divided by tiny separators.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ToolbarSection {
     /// Shown at the bar's leading edge (left in LTR).
@@ -62,7 +62,7 @@ impl ToolbarAction {
         self
     }
 
-    /// Mark the action disabled. Used for Undo/Redo affordances (F7).
+    /// Mark the action disabled. Used for Undo/Redo affordances.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -105,9 +105,9 @@ impl RenderOnce for WorkflowToolbar {
                 theme.spacing_sm,
                 theme.spacing_md,
                 theme.spacing_xs,
-                // F23 (#149): Liquid Glass material, per HIG Toolbars on
-                // macOS 26. `accessible_bg` respects `reduce_transparency`
-                // and high-contrast preferences so the bar stays legible
+                // Liquid Glass material, per HIG Toolbars on macOS 26.
+                // `accessible_bg` respects `reduce_transparency` and
+                // high-contrast preferences so the bar stays legible
                 // across a11y modes.
                 theme
                     .glass

@@ -319,7 +319,7 @@ fn grid_custom_dot_size_overrides_default() {
     assert_eq!(dot_size.unwrap_or(2.0), 3.5);
 }
 
-// ── HIG hit-target guardrails (#149 F17/F19/F27) ───────────────────
+// ── HIG hit-target guardrails ──────────────────────────────────────
 //
 // These assertions pin the screen-space tolerances so future refactors
 // don't silently shrink the target below Apple's 44 pt minimum. If the
@@ -348,7 +348,7 @@ fn edge_tolerance_is_screen_space_not_world() {
     assert_eq!(tolerance_at_zoom_1x, tolerance_at_zoom_10x);
 }
 
-// ── Auto-pan guardrails (#149 F11) ──────────────────────────────────
+// ── Auto-pan guardrails ────────────────────────────────────────────
 
 #[test]
 fn auto_pan_margin_is_at_least_one_node_height() {
@@ -364,7 +364,7 @@ fn auto_pan_step_is_perceptible_but_not_jarring() {
     const { assert!(AUTO_PAN_STEP >= 4.0 && AUTO_PAN_STEP <= 24.0) };
 }
 
-// ── Keyboard-shortcut coverage (#149 F2/F3/F4/F6) ───────────────────
+// ── Keyboard-shortcut coverage ─────────────────────────────────────
 //
 // These tests pin the modifier/key combinations handle_key_down accepts.
 // They mirror the HIG Keyboards table: if Apple documents a new shortcut
@@ -405,7 +405,7 @@ fn arrow_nudge_uses_shift_for_ten_pt_step() {
     assert!(!fine.modifiers.platform && !coarse.modifiers.platform);
 }
 
-// ── F1 pinch-gesture math ──────────────────────────────────────────
+// ── Pinch-gesture math ─────────────────────────────────────────────
 
 #[test]
 fn pinch_delta_applies_multiplicatively() {
@@ -428,7 +428,7 @@ fn pinch_zoom_is_clamped() {
     assert_eq!(floored, MIN_ZOOM);
 }
 
-// ── F26 Tab focus cycling ──────────────────────────────────────────
+// ── Tab focus cycling ──────────────────────────────────────────────
 //
 // The full cycle lives in `selection::cycle_node_focus`; these tests
 // pin the arithmetic invariants (wrap-around, reverse direction, empty

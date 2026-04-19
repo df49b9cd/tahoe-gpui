@@ -386,8 +386,12 @@ fn build_line_runs(
 
         if is_link {
             link_ranges.push(start..end);
-            // Safe: `is_link` implies `span.style.link.is_some()`.
-            link_urls.push(span.style.link.clone().unwrap());
+            link_urls.push(
+                span.style
+                    .link
+                    .clone()
+                    .expect("is_link was computed from `span.style.link.is_some()` just above"),
+            );
         }
 
         let weight = if span.style.bold {
