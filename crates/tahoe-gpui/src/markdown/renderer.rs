@@ -67,6 +67,7 @@ use super::selectable_text::SelectableText;
 use super::selection::MarkdownSelection;
 use super::settings::StreamSettings;
 use crate::citation::{CitationPopover, CitationSource, InlineCitation};
+use crate::foundations::layout::SPACING_8;
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -455,7 +456,7 @@ impl Render for StreamingMarkdown {
         div()
             .flex()
             .flex_col()
-            .gap(px(8.0))
+            .gap(px(SPACING_8))
             .cursor_text()
             .children(elements)
             .when(show_caret, |el| {

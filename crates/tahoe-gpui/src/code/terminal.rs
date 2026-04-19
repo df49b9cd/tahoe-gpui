@@ -39,6 +39,7 @@ use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVar
 use crate::components::menus_and_actions::copy_button::CopyButton;
 use crate::components::status::shimmer::Shimmer;
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::SPACING_4;
 use crate::foundations::theme::{ActiveTheme, AnsiColors, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 use crate::markdown::caret::{CaretKind, render_caret};
@@ -320,7 +321,7 @@ impl RenderOnce for TerminalContent {
         })
         .track_scroll(&self.scroll_handle)
         .px(spacing_md)
-        .py(px(4.0))
+        .py(px(SPACING_4))
         .max_h(self.max_height)
         .font_family(font_mono_outer)
         .text_size(font_size)

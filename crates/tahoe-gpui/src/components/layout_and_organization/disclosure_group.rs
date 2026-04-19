@@ -2,9 +2,10 @@
 
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::motion::accessible_spring_animation;
 use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, Window, div, px};
+use gpui::{AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, Window, div, px};
 
 /// A collapsible section with a header and expandable content.
 ///
@@ -95,6 +96,9 @@ impl RenderOnce for DisclosureGroup {
             .map(|h| h.is_focused(window))
             .unwrap_or(self.focused);
 
+        // Capture the id for the body fade-in animation before the header
+        // consumes `self.id`. Cheap clone — `ElementId` is small.
+        let id_for_body = self.id.clone();
         let header_selector = format!("disclosure-group-{}", self.id);
         let mut header = div()
             .id(self.id)
@@ -152,7 +156,25 @@ impl RenderOnce for DisclosureGroup {
         let mut container = div().flex().flex_col().gap(theme.spacing_sm).child(header);
 
         if self.is_open {
-            container = container.child(self.body);
+            // HIG Disclosure Controls: opening should feel like the section
+            // unveiled itself rather than a hard DOM swap. GPUI has no
+            // height-interpolation primitive (tracked upstream), so we use
+            // an opacity fade — the body still renders at full height the
+            // moment it's added, but it visually appears with a spring-eased
+            // fade. Under Reduce Motion the fade compresses to a 150 ms
+            // cross-fade so the affordance stays visible without dramatic
+            // motion. There is no fade-out: when `is_open` flips false the
+            // element is removed from the tree on the very next render.
+            let body_anim_id = ElementId::from((id_for_body, "disclosure-body-fade"));
+            let body_anim = accessible_spring_animation(
+                &theme.glass.motion,
+                theme.accessibility_mode.reduce_motion(),
+            );
+            container = container.child(div().child(self.body).with_animation(
+                body_anim_id,
+                body_anim,
+                |el, delta| el.opacity(delta.clamp(0.0, 1.0)),
+            ));
         }
 
         container

@@ -212,10 +212,10 @@ impl RenderOnce for TabView {
             .rounded(theme.radius_md)
             .p(theme.spacing_md);
 
-        if let Some(idx) = selected_idx {
-            if let Some(tab) = self.tabs.into_iter().nth(idx) {
-                body_container = body_container.child(tab.body);
-            }
+        if let Some(idx) = selected_idx
+            && let Some(tab) = self.tabs.into_iter().nth(idx)
+        {
+            body_container = body_container.child(tab.body);
         }
 
         let mut container = div()
@@ -228,23 +228,24 @@ impl RenderOnce for TabView {
 
         // Arrow-key navigation through the tab strip. HIG: tabs
         // behave as a radio group, so arrow keys cycle and wrap.
-        if !self.hide_control && tabs_len > 1 {
-            if let Some(cb) = on_select.clone() {
-                let ids = tab_ids;
-                container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    let key = event.keystroke.key.as_str();
-                    let delta: i32 = match key {
-                        "right" => 1,
-                        "left" => -1,
-                        _ => return,
-                    };
-                    cx.stop_propagation();
-                    let len = ids.len() as i32;
-                    let current = selected_idx.unwrap_or(0) as i32;
-                    let next = ((current + delta).rem_euclid(len)) as usize;
-                    cb(ids[next].clone(), window, cx);
-                });
-            }
+        if !self.hide_control
+            && tabs_len > 1
+            && let Some(cb) = on_select.clone()
+        {
+            let ids = tab_ids;
+            container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                let delta: i32 = match key {
+                    "right" => 1,
+                    "left" => -1,
+                    _ => return,
+                };
+                cx.stop_propagation();
+                let len = ids.len() as i32;
+                let current = selected_idx.unwrap_or(0) as i32;
+                let next = ((current + delta).rem_euclid(len)) as usize;
+                cb(ids[next].clone(), window, cx);
+            });
         }
 
         container = container.child(control).child(body_container);

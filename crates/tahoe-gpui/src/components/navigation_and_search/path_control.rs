@@ -19,6 +19,7 @@
 //! every public constructor reiterates this constraint so the misuse is
 //! visible at call sites.
 
+use crate::foundations::layout::SPACING_4;
 use gpui::prelude::*;
 use gpui::{App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
 
@@ -208,7 +209,7 @@ impl RenderOnce for PathControl {
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(4.0));
+            .gap(px(SPACING_4));
 
         row = apply_focus_ring(row, theme, self.focused, &[]);
 
@@ -294,7 +295,7 @@ impl RenderOnce for PathControl {
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(4.0))
+                .gap(px(SPACING_4))
                 .min_h(px(theme.target_size()));
 
             if let Some(icon_name) = segment.icon {
@@ -365,7 +366,7 @@ impl RenderOnce for PathControl {
                             .items_center()
                             .cursor_pointer()
                             .rounded(theme.radius_sm)
-                            .px(px(4.0))
+                            .px(px(SPACING_4))
                             .hover(|style| style.bg(hover_bg));
 
                         if let Some(ref handler) = on_select_rc {

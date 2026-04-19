@@ -300,12 +300,11 @@ impl RenderOnce for Picker {
                     _ => {
                         if crate::foundations::keyboard::is_activation_key(event) {
                             cx.stop_propagation();
-                            if let Some(idx) = highlighted_index {
-                                if idx < item_count {
-                                    if let Some(ref h) = key_change {
-                                        h(&item_values[idx], window, cx);
-                                    }
-                                }
+                            if let Some(idx) = highlighted_index
+                                && idx < item_count
+                                && let Some(ref h) = key_change
+                            {
+                                h(&item_values[idx], window, cx);
                             }
                         }
                     }
@@ -752,14 +751,14 @@ impl RenderOnce for Picker {
                     }
                     "enter" => {
                         cx.stop_propagation();
-                        if let Some(idx) = highlighted_index {
-                            if idx < item_count {
-                                if let Some(ref handler) = key_on_change {
-                                    handler(&item_values[idx], window, cx);
-                                }
-                                if let Some(ref handler) = key_on_toggle {
-                                    handler(false, window, cx);
-                                }
+                        if let Some(idx) = highlighted_index
+                            && idx < item_count
+                        {
+                            if let Some(ref handler) = key_on_change {
+                                handler(&item_values[idx], window, cx);
+                            }
+                            if let Some(ref handler) = key_on_toggle {
+                                handler(false, window, cx);
                             }
                         }
                     }

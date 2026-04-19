@@ -86,13 +86,15 @@ pub struct TextStyleAttrs {
     /// Letter-spacing in points (macOS SF Pro tracking value).
     /// Negative = tighter, positive = looser.
     ///
-    /// The value is kept on `TextStyleAttrs` to document the canonical
-    /// HIG tracking values and so consumers that composite their
-    /// own custom text runs can read the intended tracking. GPUI itself
-    /// currently ignores tracking when laying out text, so applying an
-    /// attrs-derived style via `TextStyledExt` has no visible effect on
-    /// tracking today. When GPUI lands letter-spacing, this field will
-    /// start rendering without any API break.
+    /// # Pending GPUI support
+    ///
+    /// GPUI currently ignores tracking when laying out text, so applying
+    /// an attrs-derived style via [`TextStyledExt`] has no visible
+    /// effect on tracking today. The field is retained so the canonical
+    /// HIG tracking values stay documented against each style and any
+    /// consumer compositing their own text runs (e.g. via a native
+    /// CoreText backend) can read them. When GPUI lands letter-spacing,
+    /// the existing values render with zero API churn.
     pub tracking: f32,
 }
 

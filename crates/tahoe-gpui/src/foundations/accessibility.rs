@@ -324,20 +324,31 @@ impl AccessibilityProps {
 
 /// Extension trait that attaches [`AccessibilityProps`] to a GPUI element.
 ///
-/// Today this is a structural tag: the element carries a `debug_selector`
-/// with the label so tests and the GPUI inspector can read the intent.
-/// When GPUI exposes `accessibility_label` / `accessibility_role` (tracked
-/// in `#138`) the single implementation below wires the props into the
-/// upstream AX tree — no per-component changes needed.
+/// # Important: pending GPUI support
+///
+/// GPUI v0.231.1-pre exposes no AX tree API. Props passed in here are
+/// dropped — VoiceOver, the AX inspector, and every assistive-tech
+/// consumer see nothing from this call. The trait is a forward-compat
+/// shim so that when GPUI lands `accessibility_label` /
+/// `accessibility_role`, rewiring the one impl below upgrades every
+/// existing call site to real AX coverage.
+///
+/// Consumers should still call `with_accessibility(...)` everywhere
+/// they would under a real AX API — it is the lift in the "file the
+/// upstream issue → land the impl → reap AX for free" plan. Callers
+/// relying on AX *today* must integrate with the host's native platform
+/// AX path (e.g. NSAccessibility on macOS) outside this trait.
+///
+/// Tracked in `#138`.
 pub trait AccessibleExt: gpui::Styled + Sized {
-    /// Attach the given accessibility props to `self`. No-op when the props
-    /// carry no information, so components can call this unconditionally.
+    /// Attach the given accessibility props to `self`. No-op at runtime
+    /// today (see type-level docs); callers should wire it as if it
+    /// worked so the upstream plumb is a one-line change.
     fn with_accessibility(self, _props: &AccessibilityProps) -> Self {
-        // GPUI gap: no public `accessibility_label` / `accessibility_role` API
-        // at v0.231.1-pre. Props are intentionally dropped here until upstream
-        // lands the API; the single call site means wiring will be a one-line
-        // change. `debug_selector` cannot be set on plain `Div` (it requires
-        // `Stateful<Div>`), so the baseline impl simply preserves the element.
+        // GPUI gap: no public `accessibility_label` / `accessibility_role`
+        // API at v0.231.1-pre. `debug_selector` cannot be set on plain
+        // `Div` (it requires `Stateful<Div>`), so the baseline impl
+        // simply preserves the element.
         self
     }
 }

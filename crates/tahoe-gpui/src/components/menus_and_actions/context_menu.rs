@@ -20,7 +20,7 @@ use crate::callback_types::OnMutCallback;
 use crate::components::layout_and_organization::separator::Separator;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
-use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH};
+use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, SPACING_4};
 use crate::foundations::materials::{SurfaceContext, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use crate::ids::next_element_id;
@@ -149,6 +149,11 @@ pub enum ContextMenuEntry {
     Item(ContextMenuItem),
     /// A visual separator divider between groups.
     Separator,
+    /// A non-interactive uppercase label that introduces a logical group of
+    /// items — HIG "section heading" pattern used in Finder's "Arrange By"
+    /// submenu, Safari's bookmarks sidebar, and System Settings groups.
+    /// Renders as a small caption and is skipped by keyboard navigation.
+    SectionHeader(SharedString),
     /// A submenu — renders a trailing chevron and opens a nested overlay
     /// on hover / right-arrow. Submenu items are themselves a flat list
     /// of `ContextMenuEntry` values so an arbitrary depth is possible,
@@ -328,10 +333,10 @@ impl ContextMenu {
 
     /// Return the items list at the depth currently receiving keyboard focus.
     fn active_items(&self) -> &[ContextMenuEntry] {
-        if let Some(parent_idx) = self.expanded_submenu {
-            if let Some(ContextMenuEntry::Submenu { items, .. }) = self.items.get(parent_idx) {
-                return items;
-            }
+        if let Some(parent_idx) = self.expanded_submenu
+            && let Some(ContextMenuEntry::Submenu { items, .. }) = self.items.get(parent_idx)
+        {
+            return items;
         }
         &self.items
     }
@@ -858,9 +863,25 @@ fn render_rows(
                 children.push(
                     div()
                         .w_full()
-                        .py(px(4.0))
+                        .py(px(SPACING_4))
                         .px(t.spacing_sm)
                         .child(Separator::horizontal())
+                        .into_any_element(),
+                );
+            }
+            ContextMenuEntry::SectionHeader(label) => {
+                // HIG section heading: uppercase caption in secondary
+                // label color. Not interactive, so no hit region — the
+                // click event handler in `Render` already skips this
+                // variant via `activate_item`'s `Item(..)` match.
+                children.push(
+                    div()
+                        .w_full()
+                        .pt(t.spacing_sm)
+                        .pb(px(2.0))
+                        .px(t.spacing_sm)
+                        .text_color(t.dim_secondary_label)
+                        .child(SharedString::from(label.to_uppercase()))
                         .into_any_element(),
                 );
             }
@@ -1133,9 +1154,18 @@ mod tests {
         let entry = ContextMenuEntry::Item(ContextMenuItem::new("Paste"));
         match entry {
             ContextMenuEntry::Item(item) => assert_eq!(item.label.as_ref(), "Paste"),
-            ContextMenuEntry::Separator | ContextMenuEntry::Submenu { .. } => {
-                panic!("expected Item variant")
-            }
+            ContextMenuEntry::Separator
+            | ContextMenuEntry::Submenu { .. }
+            | ContextMenuEntry::SectionHeader(_) => panic!("expected Item variant"),
+        }
+    }
+
+    #[test]
+    fn entry_section_header_constructs() {
+        let entry = ContextMenuEntry::SectionHeader("Arrange By".into());
+        match entry {
+            ContextMenuEntry::SectionHeader(label) => assert_eq!(label.as_ref(), "Arrange By"),
+            _ => panic!("expected SectionHeader variant"),
         }
     }
 

@@ -410,36 +410,36 @@ impl RenderOnce for List {
             container = container.child(section_el);
         }
 
-        if !all_ids.is_empty() {
-            if let Some(cb) = on_select.clone() {
-                let ids = all_ids;
-                let selected_at_render = selected_id.clone();
-                container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    let key = event.keystroke.key.as_str();
-                    let current = selected_at_render
-                        .as_ref()
-                        .and_then(|id| ids.iter().position(|x| x == id));
-                    let next_idx = match key {
-                        "down" => Some(match current {
-                            Some(i) if i + 1 < ids.len() => i + 1,
-                            Some(i) => i,
-                            None => 0,
-                        }),
-                        "up" => Some(match current {
-                            Some(0) | None => 0,
-                            Some(i) => i - 1,
-                        }),
-                        "home" => Some(0),
-                        "end" => Some(ids.len() - 1),
-                        "enter" | "space" => current,
-                        _ => None,
-                    };
-                    if let Some(idx) = next_idx {
-                        cx.stop_propagation();
-                        cb(ids[idx].clone(), window, cx);
-                    }
-                });
-            }
+        if !all_ids.is_empty()
+            && let Some(cb) = on_select.clone()
+        {
+            let ids = all_ids;
+            let selected_at_render = selected_id.clone();
+            container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                let current = selected_at_render
+                    .as_ref()
+                    .and_then(|id| ids.iter().position(|x| x == id));
+                let next_idx = match key {
+                    "down" => Some(match current {
+                        Some(i) if i + 1 < ids.len() => i + 1,
+                        Some(i) => i,
+                        None => 0,
+                    }),
+                    "up" => Some(match current {
+                        Some(0) | None => 0,
+                        Some(i) => i - 1,
+                    }),
+                    "home" => Some(0),
+                    "end" => Some(ids.len() - 1),
+                    "enter" | "space" => current,
+                    _ => None,
+                };
+                if let Some(idx) = next_idx {
+                    cx.stop_propagation();
+                    cb(ids[idx].clone(), window, cx);
+                }
+            });
         }
 
         container = apply_focus_ring(container, theme, self.focused, &[]);

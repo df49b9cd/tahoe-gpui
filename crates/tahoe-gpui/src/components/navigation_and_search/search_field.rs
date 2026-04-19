@@ -98,6 +98,11 @@ pub struct SearchField {
     on_scope_change: OnUsizeChange,
     tokens: Vec<TokenItem>,
     on_remove_token: OnSharedStringRefChange,
+    /// Fired when the keyboard highlight moves between suggestions (Up /
+    /// Down / Home / End). Parents should update their tracked
+    /// `highlighted_suggestion` to the emitted value; when `None` is
+    /// emitted the highlight has cleared (e.g. Home with no items).
+    on_highlight: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
 }
 
 impl SearchField {
@@ -123,6 +128,7 @@ impl SearchField {
             on_scope_change: None,
             tokens: Vec::new(),
             on_remove_token: None,
+            on_highlight: None,
         }
     }
 
@@ -270,10 +276,24 @@ impl SearchField {
         self.on_remove_token = Some(Box::new(handler));
         self
     }
+
+    /// Callback fired when the keyboard highlight moves between
+    /// suggestions in the dropdown (Up / Down / Home / End). The parent
+    /// is expected to update its tracked `highlighted_suggestion` value
+    /// in response so the next render reflects the new selection. HIG
+    /// *Searching*: arrow keys must walk the suggestion list when the
+    /// dropdown is open.
+    pub fn on_highlight(
+        mut self,
+        handler: impl Fn(Option<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_highlight = Some(Box::new(handler));
+        self
+    }
 }
 
 impl RenderOnce for SearchField {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
         let has_value = !self.value.is_empty();
@@ -581,6 +601,7 @@ impl RenderOnce for SearchField {
             // Keyboard nav: Up/Down/Enter/Home/End/Escape.
             let key_on_toggle = on_toggle.clone();
             let key_on_select = on_select.clone();
+            let key_on_highlight = self.on_highlight.take().map(std::rc::Rc::new);
             list = list.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
                     "escape" => {
@@ -596,8 +617,51 @@ impl RenderOnce for SearchField {
                             handler(&list_suggestion_values[idx], window, cx);
                         }
                     }
-                    "down" | "up" => {}
-                    "home" | "end" => {}
+                    "down" => {
+                        if suggestion_count == 0 {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        let next = match highlighted_suggestion {
+                            Some(i) if i + 1 < suggestion_count => Some(i + 1),
+                            Some(_) => Some(0), // wrap to first
+                            None => Some(0),
+                        };
+                        if let Some(ref handler) = key_on_highlight {
+                            handler(next, window, cx);
+                        }
+                    }
+                    "up" => {
+                        if suggestion_count == 0 {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        let next = match highlighted_suggestion {
+                            Some(0) | None => Some(suggestion_count - 1), // wrap to last
+                            Some(i) => Some(i - 1),
+                        };
+                        if let Some(ref handler) = key_on_highlight {
+                            handler(next, window, cx);
+                        }
+                    }
+                    "home" => {
+                        if suggestion_count == 0 {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        if let Some(ref handler) = key_on_highlight {
+                            handler(Some(0), window, cx);
+                        }
+                    }
+                    "end" => {
+                        if suggestion_count == 0 {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        if let Some(ref handler) = key_on_highlight {
+                            handler(Some(suggestion_count - 1), window, cx);
+                        }
+                    }
                     _ => {}
                 }
             });

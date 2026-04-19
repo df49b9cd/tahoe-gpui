@@ -3,6 +3,7 @@
 //! Renders an icon inside a translucent glass-effect container inspired by
 //! Apple's Liquid Glass design language. Supports optional category tinting.
 
+use crate::foundations::layout::SPACING_4;
 use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, SharedString, Window, div, px};
 
@@ -122,8 +123,8 @@ impl RenderOnce for GlassIconTile {
             .gap(px(6.0))
             .pt(px(14.0))
             .pb(px(10.0))
-            .pl(px(4.0))
-            .pr(px(4.0))
+            .pl(px(SPACING_4))
+            .pr(px(SPACING_4))
             .rounded(glass_tile_corner_radius(self.icon_size))
             .bg(bg)
             .border_1()

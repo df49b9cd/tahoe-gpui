@@ -1,5 +1,6 @@
 //! Interactive slider primitive with click-to-seek and drag support.
 
+use crate::foundations::layout::SPACING_8;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, ElementId, Entity, FocusHandle, GlobalElementId, Hsla,
@@ -572,7 +573,7 @@ impl Render for Slider {
 
         match self.orientation {
             SliderOrientation::Horizontal => {
-                let mut slider_row = div().w_full().flex().items_center().gap(px(8.0));
+                let mut slider_row = div().w_full().flex().items_center().gap(px(SPACING_8));
                 if let Some(icon) = min_icon_el {
                     slider_row = slider_row.child(div().flex_shrink_0().child(icon));
                 }
@@ -591,7 +592,7 @@ impl Render for Slider {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap(px(8.0));
+                    .gap(px(SPACING_8));
                 if let Some(icon) = max_icon_el {
                     slider_col = slider_col.child(div().flex_shrink_0().child(icon));
                 }

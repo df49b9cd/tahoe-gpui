@@ -5,6 +5,7 @@
 //! <https://developer.apple.com/design/human-interface-guidelines/components/navigation-and-search>
 
 pub mod navigation_bar;
+pub mod navigation_split_view;
 pub mod path_control;
 pub mod search_bar;
 pub mod search_field;
@@ -14,6 +15,7 @@ pub mod token_field;
 pub mod toolbar;
 
 pub use navigation_bar::NavigationBarIOS;
+pub use navigation_split_view::NavigationSplitView;
 pub use path_control::{PathControl, PathControlStyle, PathSegment};
 pub use search_bar::SearchBar;
 pub use search_field::SearchField;

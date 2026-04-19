@@ -4,6 +4,7 @@
 
 use super::node_toolbar::NodeToolbar;
 use crate::callback_types::ElementBuilder;
+use crate::foundations::layout::SPACING_12;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 use gpui::prelude::*;
@@ -113,7 +114,7 @@ impl RenderOnce for NodeHeader {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let mut container = div()
-            .p(px(12.0))
+            .p(px(SPACING_12))
             .bg(theme.hover)
             .border_b_1()
             .border_color(theme.border)
@@ -231,7 +232,10 @@ impl NodeContent {
 impl RenderOnce for NodeContent {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let mut container = div().border_t_1().border_color(theme.border).p(px(12.0));
+        let mut container = div()
+            .border_t_1()
+            .border_color(theme.border)
+            .p(px(SPACING_12));
         for child in self.children {
             container = container.child(child);
         }
@@ -275,7 +279,7 @@ impl RenderOnce for NodeFooter {
             .border_color(theme.border)
             .bg(theme.hover)
             .rounded_b(theme.radius_lg)
-            .p(px(12.0));
+            .p(px(SPACING_12));
         for child in self.children {
             container = container.child(child);
         }
@@ -663,7 +667,7 @@ impl Render for WorkflowNode {
             t_text
         };
         let mut header = div()
-            .p(px(12.0))
+            .p(px(SPACING_12))
             .bg(header_bg)
             .border_b_1()
             .border_color(t_border)
@@ -785,7 +789,7 @@ impl Render for WorkflowNode {
                 div()
                     .border_t_1()
                     .border_color(t_border)
-                    .p(px(12.0))
+                    .p(px(SPACING_12))
                     .child(content_builder(window, cx)),
             );
         }
@@ -798,7 +802,7 @@ impl Render for WorkflowNode {
                     .border_color(t_border)
                     .bg(t_hover)
                     .rounded_b(t_radius_lg)
-                    .p(px(12.0))
+                    .p(px(SPACING_12))
                     .child(footer_builder(window, cx)),
             );
         }

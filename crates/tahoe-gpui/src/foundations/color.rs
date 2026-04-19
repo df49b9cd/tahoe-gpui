@@ -662,6 +662,12 @@ const BROWN_DARK_HC: Hsla = Hsla {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // Gray
+//
+// Per Apple HIG (UIColor.systemGray): `systemGray` is the one gray-family
+// token that resolves to the *same* rgb value (rgb(142, 142, 147)) in both
+// light and dark default appearances. `systemGray2..6` diverge per mode.
+// Keeping the identical literals here is intentional — do not "dedupe" or
+// adjust without re-checking Apple's color table.
 const GRAY_LIGHT: Hsla = Hsla {
     h: 0.6667,
     s: 0.0226,
@@ -673,7 +679,7 @@ const GRAY_DARK: Hsla = Hsla {
     s: 0.0226,
     l: 0.5667,
     a: 1.0,
-}; // rgb(142, 142, 147)
+}; // rgb(142, 142, 147) — intentionally equal to GRAY_LIGHT, see note above.
 const GRAY_LIGHT_HC: Hsla = Hsla {
     h: 0.6667,
     s: 0.0182,
@@ -919,16 +925,21 @@ pub fn lighten(color: Hsla, amount: f32) -> Hsla {
 
 /// Choose white or black text for legibility over `bg`.
 ///
-/// The threshold `0.55` is a lightness heuristic that agrees with WCAG AA
-/// for the most common accent colors (system blue, green, purple, etc.).
-/// It favours white on medium blues (`l = 0.50`) which is the correct
-/// choice since white-on-blue yields ~4.7:1 contrast whereas black-on-blue
-/// yields ~4.3:1.
+/// Uses WCAG 2.1 relative luminance rather than raw HSL lightness so saturated
+/// accents (yellow, orange, cyan) pick the correct label — a naive `bg.l >
+/// 0.55` heuristic over-rotates on warm hues where perceived brightness
+/// diverges from HSL lightness (yellow at `l = 0.50` reads almost as bright
+/// as white).
 ///
-/// If `bg.l` is NaN, the comparison `> 0.55` is false, so white is
-/// returned — the conservative default for unknown backgrounds.
+/// The threshold 0.179 is the WCAG "flip point" where white-on-color and
+/// black-on-color achieve equal contrast ratio against sRGB midpoint; below
+/// it, white gives higher contrast, above it, black does.
+///
+/// If `bg.l` is NaN, `relative_luminance` propagates NaN, and the comparison
+/// `> 0.179` is false, so white is returned — the conservative default for
+/// unknown backgrounds.
 pub fn text_on_background(bg: Hsla) -> Hsla {
-    if bg.l > 0.55 {
+    if relative_luminance(bg) > 0.179 {
         Hsla {
             h: 0.0,
             s: 0.0,

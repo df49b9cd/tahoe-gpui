@@ -273,30 +273,73 @@ pub const MACOS_TOOLBAR_UNIFIED_HEIGHT: f32 = 52.0;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Content Spacing Ladder
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// HIG 4-pt baseline. The full ladder is exposed here so components can
+// reach for `SPACING_4/8/12/16/20/24/32/40/48` instead of scattering raw
+// `px(N.0)` literals — the latter defeat design-token overrides and drift
+// from the published scale. The semantic names (`CONTENT_MARGIN`,
+// `GROUP_SPACING`, `SECTION_SPACING`) stay around for intent-revealing
+// call sites; they remain equal to the corresponding numeric rung.
+
+/// HIG 4-pt spacing rung — used for tight inner padding inside controls
+/// (alert suppression tick, caption spacing).
+pub const SPACING_4: f32 = 4.0;
+
+/// HIG 8-pt spacing rung — the lowest "safe" gap between separate
+/// interactive elements. Equal to [`GROUP_SPACING`].
+pub const SPACING_8: f32 = 8.0;
+
+/// HIG 12-pt spacing rung — midpoint between tight (`8`) and standard (`16`).
+/// Used for row-level gaps inside tables and lists.
+pub const SPACING_12: f32 = 12.0;
+
+/// HIG 16-pt spacing rung — the default content margin. Equal to
+/// [`CONTENT_MARGIN`].
+pub const SPACING_16: f32 = 16.0;
+
+/// HIG 20-pt spacing rung — wide content margin. Equal to
+/// [`CONTENT_MARGIN_WIDE`].
+pub const SPACING_20: f32 = 20.0;
+
+/// HIG 24-pt spacing rung — section-break spacing. Equal to
+/// [`SECTION_SPACING`].
+pub const SPACING_24: f32 = 24.0;
+
+/// HIG 32-pt spacing rung — generous section breaks (e.g. between
+/// unrelated forms in a preferences pane).
+pub const SPACING_32: f32 = 32.0;
+
+/// HIG 40-pt spacing rung — large breathing room (hero layouts, empty
+/// states, onboarding).
+pub const SPACING_40: f32 = 40.0;
+
+/// HIG 48-pt spacing rung — the top of the common ladder. Beyond this
+/// switch to a percentage-of-container measure rather than a fixed rung.
+pub const SPACING_48: f32 = 48.0;
 
 /// HIG default content margin (16 pt).
-pub const CONTENT_MARGIN: f32 = 16.0;
+pub const CONTENT_MARGIN: f32 = SPACING_16;
 
 /// HIG wide content margin (20 pt).
-pub const CONTENT_MARGIN_WIDE: f32 = 20.0;
+pub const CONTENT_MARGIN_WIDE: f32 = SPACING_20;
 
 /// Horizontal inset from the window edge to primary content (20 pt).
 ///
 /// Same value as [`CONTENT_MARGIN_WIDE`]; the distinct name documents the
 /// semantic of a _window-edge inset_ vs. an interior margin.
-pub const CONTENT_HORIZONTAL_PADDING: f32 = 20.0;
+pub const CONTENT_HORIZONTAL_PADDING: f32 = SPACING_20;
 
 /// Vertical spacing between related controls within a group (8 pt).
 ///
 /// Use between labels and their controls, or between tightly-related rows
 /// in a Form. For unrelated groups use [`SECTION_SPACING`].
-pub const GROUP_SPACING: f32 = 8.0;
+pub const GROUP_SPACING: f32 = SPACING_8;
 
 /// Vertical spacing between major content sections (24 pt).
 ///
 /// The section-break spacing on macOS; used to visually separate groups of
 /// related controls within a single pane.
-pub const SECTION_SPACING: f32 = 24.0;
+pub const SECTION_SPACING: f32 = SPACING_24;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Readable Content Widths
@@ -773,5 +816,40 @@ mod tests {
         // rely on either form interchangeably.
         let wrapped: f32 = snap_to_window_margin().into();
         assert_eq!(wrapped, m);
+    }
+
+    #[test]
+    fn spacing_ladder_is_strictly_increasing_and_4pt_multiples() {
+        use super::{
+            SPACING_4, SPACING_8, SPACING_12, SPACING_16, SPACING_20, SPACING_24, SPACING_32,
+            SPACING_40, SPACING_48,
+        };
+        let ladder = [
+            SPACING_4, SPACING_8, SPACING_12, SPACING_16, SPACING_20, SPACING_24, SPACING_32,
+            SPACING_40, SPACING_48,
+        ];
+        for v in ladder.iter() {
+            assert!((v % 4.0).abs() < f32::EPSILON, "{v} is not a 4pt multiple");
+        }
+        for pair in ladder.windows(2) {
+            assert!(
+                pair[0] < pair[1],
+                "ladder not strictly increasing: {} vs {}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+
+    #[test]
+    fn semantic_spacings_map_to_ladder_rungs() {
+        use super::{
+            CONTENT_MARGIN, CONTENT_MARGIN_WIDE, GROUP_SPACING, SECTION_SPACING, SPACING_8,
+            SPACING_16, SPACING_20, SPACING_24,
+        };
+        assert!((CONTENT_MARGIN - SPACING_16).abs() < f32::EPSILON);
+        assert!((CONTENT_MARGIN_WIDE - SPACING_20).abs() < f32::EPSILON);
+        assert!((GROUP_SPACING - SPACING_8).abs() < f32::EPSILON);
+        assert!((SECTION_SPACING - SPACING_24).abs() < f32::EPSILON);
     }
 }

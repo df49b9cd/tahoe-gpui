@@ -1,14 +1,12 @@
 [profile.default]
-# Use 4 parallel test jobs
-parallel = 4
-
-# Don't retry failed tests immediately
-retry = { "0" = { delay = 100, exit-code = "all" } }
+# Number of concurrent test threads (cap at 4 to tame GPUI fixture cost).
+test-threads = 4
+retries = 0
 
 # Slow tests threshold: warn if a test takes longer than this
-slow-tests-threshold = "60s"
+slow-timeout = "60s"
 
 [profile.ci]
-# More aggressive retries in CI
-parallel = 8
-retry = { "0" = { delay = 50, exit-code = "all" } }
+# CI runs wider and retries flakes twice with 50ms backoff per nextest docs.
+test-threads = 8
+retries = { backoff = "fixed", count = 2, delay = "50ms" }

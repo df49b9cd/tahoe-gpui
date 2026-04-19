@@ -37,17 +37,42 @@ use crate::foundations::theme::ActiveTheme;
 
 /// Chart mark type.
 ///
-/// Mirrors Swift Charts' `Mark` vocabulary. v1 ships `Bar` and `Line`;
-/// the remaining variants reserve the surface area so future callers can
-/// opt into the full mark palette without an API break.
+/// Mirrors Swift Charts' `Mark` vocabulary. v1 ships bar-based and
+/// sparkline-based rendering; the remaining variants are approximated
+/// with the closest available mark so the API surface is stable while we
+/// wait for GPUI canvas-stroked lines and area fills.
+///
+/// # v1 rendering
+///
+/// | Variant | Rendered as              |
+/// |---------|--------------------------|
+/// | `Bar`   | Native bar columns       |
+/// | `Area`  | Bar columns (no fill)    |
+/// | `Range` | Bar columns (no range)   |
+/// | `Line`  | Point sparkline          |
+/// | `Point` | Point sparkline (native) |
+/// | `Rule`  | Point sparkline          |
+///
+/// `voice_label()` still returns the caller-supplied semantic name so the
+/// VoiceOver announcement stays honest about intent even when the visual
+/// is a fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ChartType {
+    /// Native bar columns. Full HIG coverage.
     #[default]
     Bar,
+    /// Point sparkline. HIG expects a stroked polyline — falls back to
+    /// points-only until GPUI canvas lands.
     Line,
+    /// Area mark. Falls back to `Bar` rendering in v1.
     Area,
+    /// Point sparkline. Full HIG coverage (no stroke needed).
     Point,
+    /// Range mark. Falls back to `Bar` rendering in v1 (min/max endpoints
+    /// not yet rendered).
     Range,
+    /// Rule mark (horizontal/vertical reference line). Falls back to point
+    /// sparkline in v1.
     Rule,
 }
 
@@ -162,7 +187,7 @@ impl Chart {
 }
 
 impl RenderOnce for Chart {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let bar_color = self.color.unwrap_or(theme.accent);
 
@@ -173,15 +198,17 @@ impl RenderOnce for Chart {
         let max = self.series.max_value().max(1e-3);
         let range = (max - min).max(1e-3);
 
-        let a11y_label: SharedString = self
-            .accessibility_label
-            .clone()
-            .unwrap_or_else(|| SharedString::from(self.default_accessibility_label()));
+        let a11y_label: SharedString = match self.accessibility_label.take() {
+            Some(label) => label,
+            None => SharedString::from(self.default_accessibility_label()),
+        };
         let a11y_props = AccessibilityProps::new()
             .label(a11y_label)
             .role(AccessibilityRole::Group);
 
-        let values = self.series.values.clone();
+        // Move the values out of `self` so the render path doesn't clone
+        // the full `Vec<f32>` on every frame.
+        let values = self.series.values;
 
         let mut plot = div()
             .w(width)

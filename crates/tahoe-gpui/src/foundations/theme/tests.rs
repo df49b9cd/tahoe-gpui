@@ -1478,21 +1478,21 @@ fn morph_state_lerp_clamped() {
 #[test]
 fn spring_easing_starts_at_zero() {
     use crate::foundations::motion::spring_easing;
-    let easing = spring_easing(0.85, 0.0);
+    let easing = spring_easing(0.85, 0.35, 0.0);
     assert!((easing(0.0) - 0.0).abs() < 0.01);
 }
 
 #[test]
 fn spring_easing_ends_at_one() {
     use crate::foundations::motion::spring_easing;
-    let easing = spring_easing(0.85, 0.0);
+    let easing = spring_easing(0.85, 0.35, 0.0);
     assert!((easing(1.0) - 1.0).abs() < 0.01);
 }
 
 #[test]
 fn spring_easing_monotonic_no_bounce() {
     use crate::foundations::motion::spring_easing;
-    let easing = spring_easing(0.85, 0.0);
+    let easing = spring_easing(0.85, 0.35, 0.0);
     let mut prev = 0.0;
     for i in 0..=100 {
         let t = i as f32 / 100.0;

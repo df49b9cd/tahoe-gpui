@@ -179,6 +179,14 @@ pub enum MaterialThickness {
     Thick,
     /// Most opaque frosting — nearly solid background.
     UltraThick,
+    /// HIG `.bar` / Chrome material — tuned for window toolbars, title
+    /// bars, and tab bars where content scrolls beneath chrome. Slightly
+    /// more opaque than `Thin` so labels stay legible while the tint of
+    /// the content under the chrome still reads through. Currently
+    /// routes to the same `thin_bg` fill as `Thin`; a dedicated
+    /// `chrome_bg` theme token is tracked as a future refinement once
+    /// toolbars consume this variant broadly.
+    Chrome,
 }
 
 /// HIG-named alias for [`MaterialThickness`].
@@ -696,6 +704,13 @@ impl GlassStyle {
     }
 
     /// Returns the shadow set for the given size variant.
+    ///
+    /// Callers typically hand this straight to GPUI's `Styled::shadow` via
+    /// `.shadow(glass.shadows(size).to_vec())`. The per-frame `Vec` allocation
+    /// is a GPUI API constraint — `Styled::shadow` takes `Vec<BoxShadow>` by
+    /// value, so a theme-owned `Arc<[BoxShadow]>` can't be reused without an
+    /// upstream API change. Keep the borrow-return here so we're not
+    /// double-cloning (one internal clone in the theme + one in `.shadow`).
     pub fn shadows(&self, size: GlassSize) -> &[BoxShadow] {
         match size {
             GlassSize::Small => &self.small_shadows,
@@ -761,7 +776,7 @@ impl GlassStyle {
     pub fn material_bg(&self, thickness: MaterialThickness) -> Hsla {
         match thickness {
             MaterialThickness::UltraThin => self.ultra_thin_bg,
-            MaterialThickness::Thin => self.thin_bg,
+            MaterialThickness::Thin | MaterialThickness::Chrome => self.thin_bg,
             MaterialThickness::Regular => self.medium_standard_bg,
             MaterialThickness::Thick => self.thick_bg,
             MaterialThickness::UltraThick => self.ultra_thick_bg,
@@ -2257,7 +2272,8 @@ mod tests {
         fn rank(m: MaterialThickness) -> u8 {
             match m {
                 MaterialThickness::UltraThin => 0,
-                MaterialThickness::Thin => 1,
+                // Chrome currently aliases to Thin's fill, so they share a rank.
+                MaterialThickness::Thin | MaterialThickness::Chrome => 1,
                 MaterialThickness::Regular => 2,
                 MaterialThickness::Thick => 3,
                 MaterialThickness::UltraThick => 4,

@@ -38,6 +38,16 @@ struct MermaidCacheKey {
 
 type MermaidCache = HashMap<MermaidCacheKey, MermaidRender>;
 
+/// Upper bound on the number of cached Mermaid renders.
+///
+/// Without a cap the cache grows unbounded as diagrams in long-lived
+/// sessions churn. 64 is large enough to cover every visible diagram
+/// plus recent history in a typical chat/notebook session; when the cap
+/// is hit the cache is cleared wholesale — simpler than a true LRU and
+/// acceptable because a Mermaid rasterisation is a few-millisecond
+/// operation, so re-filling the cache is cheap.
+const MERMAID_CACHE_CAP: usize = 64;
+
 /// Cached rasterization result. `Ok(image)` means a finished frame;
 /// `Err` means the render failed (invalid source, font issues) — the
 /// failure is memoized so we don't re-attempt on every frame.
@@ -91,6 +101,7 @@ fn rasterize_mermaid(
         Ok(svg) => svg,
         Err(_) => {
             if let Ok(mut guard) = cache().lock() {
+                cap_cache(&mut guard);
                 guard.insert(key, MermaidRender::Err);
             }
             return None;
@@ -102,6 +113,7 @@ fn rasterize_mermaid(
         Ok(image) => image,
         Err(_) => {
             if let Ok(mut guard) = cache().lock() {
+                cap_cache(&mut guard);
                 guard.insert(key, MermaidRender::Err);
             }
             return None;
@@ -109,9 +121,19 @@ fn rasterize_mermaid(
     };
 
     if let Ok(mut guard) = cache().lock() {
+        cap_cache(&mut guard);
         guard.insert(key, MermaidRender::Ok(image.clone()));
     }
     Some(image)
+}
+
+/// Drop all cache entries when we're about to cross the capacity
+/// threshold. Called before every `insert` so the cache never grows
+/// beyond `MERMAID_CACHE_CAP`.
+fn cap_cache(cache: &mut MermaidCache) {
+    if cache.len() >= MERMAID_CACHE_CAP {
+        cache.clear();
+    }
 }
 
 /// Build mermaid-rs render options appropriate for the current

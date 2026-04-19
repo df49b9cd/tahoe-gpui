@@ -4,6 +4,7 @@
 //! keyboard navigation, voice metadata (gender, accent, age), grouping,
 //! preview playback states, and selection callbacks.
 
+use crate::foundations::layout::SPACING_4;
 use std::collections::HashMap;
 
 use gpui::prelude::*;
@@ -800,7 +801,7 @@ impl Render for VoiceSelectorView {
                                 ))
                                 .cursor_pointer()
                                 .rounded(theme.radius_md)
-                                .p(px(4.0))
+                                .p(px(SPACING_4))
                                 .hover(|s| s.bg(theme.hover))
                                 .on_click(cx.listener(move |this, _event, window, cx| {
                                     if let Some(voice) = this.voices.get(original_idx).cloned()
