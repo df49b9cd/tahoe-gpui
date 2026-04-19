@@ -2,7 +2,7 @@
 //!
 //! Renders `IconName::Copy`, which maps to the canonical SF Symbol
 //! `document.on.document` (the SF Symbols 7 name for the glyph
-//! historically known as `doc.on.doc`) via [`IconName::sf_asset_path`].
+//! historically known as `doc.on.doc`) via `IconName::sf_asset_path`.
 //! The SF Symbol path takes priority over the custom Lucide-derived
 //! fallback SVG at `icons/ai-sdk/copy.svg`, so the rendered glyph matches
 //! the macOS Edit menu's Copy item.

@@ -1,24 +1,56 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+version = 2
+# Report unmaintained crates anywhere in the graph.
+unmaintained = "all"
+# Warn (rather than fail) on yanked crates so a single yank on a transitive
+# dependency does not block CI until the ecosystem catches up.
 yanked = "warn"
-notice = "warn"
+# Upstream-introduced advisories for crates we do not pull in directly.
+# Re-audit whenever bumping the gpui / image versions.
+ignore = [
+  # paste (1.0.15): archived by upstream — reached via metal → core-video
+  # → gpui and via rav1e → ravif → image. No direct usage.
+  "RUSTSEC-2024-0436",
+  # instant (0.1.13): unmaintained, pulled in by fastrand 1.x via gpui's
+  # async utilities. Not called from tahoe-gpui code.
+  "RUSTSEC-2024-0384",
+  # async-std: discontinued, pulled in transitively by gpui. Not used
+  # directly by tahoe-gpui.
+  "RUSTSEC-2025-0052",
+]
 
 [licenses]
-unlicensed = "deny"
+version = 2
+# Allowed licenses — kept to the permissive subset plus weak-copyleft
+# (MPL-2.0) that is fine for linking.
 allow = [
   "MIT",
   "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
   "ISC",
   "Unicode-3.0",
-  "Unicode-DFS-2016",
   "Zlib",
   "MPL-2.0",
   "CC0-1.0",
-  "OpenSSL",
   "BSL-1.0",
+  # Permissive, BSD-like — used by libfuzzer-sys.
+  "NCSA",
+]
+confidence-threshold = 0.8
+
+# Crate-specific license exceptions. Downstream users of tahoe-gpui who
+# link these into a distributed binary inherit GPL-3.0-or-later obligations
+# because these Zed crates are part of the gpui dependency graph.
+exceptions = [
+  # Zed workspace crates that ship under GPL-3.0-or-later.
+  { name = "ztracing", allow = ["GPL-3.0-or-later"] },
+  { name = "ztracing_macro", allow = ["GPL-3.0-or-later"] },
+  { name = "zlog", allow = ["GPL-3.0-or-later"] },
+  # `bzip2` / `libbz2-rs-sys` ship under the bzip2-specific permissive license.
+  { name = "bzip2", allow = ["bzip2-1.0.6"] },
+  { name = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
 ]
 
 [bans]
@@ -32,4 +64,7 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
   "https://github.com/zed-industries/zed",
   "https://github.com/zed-industries/mermaid-rs-renderer",
+  "https://github.com/zed-industries/font-kit",
+  "https://github.com/zed-industries/wgpu",
+  "https://github.com/proptest-rs/proptest",
 ]

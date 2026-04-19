@@ -25,8 +25,8 @@ use crate::foundations::theme::{ActiveTheme, TextStyle};
 /// A stateful digit-entry field for PIN/OTP input per HIG.
 ///
 /// Construct with `cx.new(|cx| DigitEntry::new(cx))` and pass the entity
-/// into your view. Parents listen to changes via [`set_on_change`] and
-/// the completion of the final box via [`set_on_complete`].
+/// into your view. Parents listen to changes via [`DigitEntry::set_on_change`]
+/// and the completion of the final box via [`DigitEntry::set_on_complete`].
 ///
 /// # Example
 ///

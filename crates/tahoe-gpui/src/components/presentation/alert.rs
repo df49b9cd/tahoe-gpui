@@ -180,7 +180,7 @@ impl Alert {
         self
     }
 
-    /// Add a single action. At most [`MAX_ACTIONS`] (3) actions are retained.
+    /// Add a single action. At most `MAX_ACTIONS` (3) actions are retained.
     pub fn action(mut self, action: AlertAction) -> Self {
         if self.actions.len() < MAX_ACTIONS {
             self.actions.push(action);
@@ -188,7 +188,7 @@ impl Alert {
         self
     }
 
-    /// Set all actions at once, truncating to [`MAX_ACTIONS`].
+    /// Set all actions at once, truncating to `MAX_ACTIONS`.
     pub fn actions(mut self, actions: Vec<AlertAction>) -> Self {
         self.actions = actions.into_iter().take(MAX_ACTIONS).collect();
         self

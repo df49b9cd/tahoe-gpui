@@ -1299,7 +1299,7 @@ pub enum ScrollEdgeStyle {
 /// Create a top scroll edge overlay.
 ///
 /// Returns an absolutely-positioned overlay that fades from the theme
-/// background to transparent at the given [`height`]. Use
+/// background to transparent at the given `height`. Use
 /// [`SCROLL_EDGE_HEIGHT`] for the default 40 pt tier or
 /// [`SCROLL_EDGE_HEIGHT_COMPACT`] for the narrower 16 pt variant;
 /// callers rendering into split views should pass identical heights to

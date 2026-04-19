@@ -582,7 +582,8 @@ impl RenderOnce for CommitMetadata {
 
 /// Container for action buttons (copy, etc.), rendered right-aligned.
 ///
-/// Type alias for [`FlexActions`] -- a horizontal flex row with gap spacing.
+/// Type alias for [`crate::components::layout_and_organization::FlexActions`]
+/// — a horizontal flex row with gap spacing.
 pub type CommitActions = crate::components::layout_and_organization::FlexActions;
 
 // -- CommitCopyButton ---------------------------------------------------------

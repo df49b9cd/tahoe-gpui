@@ -1,5 +1,8 @@
 edition = "2024"
 max_width = 100
 use_small_heuristics = "Default"
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
+
+# NOTE: `imports_granularity` and `group_imports` are nightly-only rustfmt
+# options. Stable rustfmt (used in CI) ignores them with a warning on
+# every run, so they are intentionally not enabled here. If you want the
+# aspirational import organization, run `cargo +nightly fmt` locally.

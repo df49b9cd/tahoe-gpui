@@ -1,7 +1,9 @@
 //! Read-only styled text display aligned with HIG Text views.
 //!
-//! Displays multiple lines of styled, non-editable text. Unlike [`Label`] (single-line)
-//! or [`TextField`] (editable), `TextView` is for presenting blocks of formatted content.
+//! Displays multiple lines of styled, non-editable text. Unlike
+//! [`super::label::Label`] (single-line) or
+//! [`crate::components::selection_and_input::text_field::TextField`] (editable),
+//! `TextView` is for presenting blocks of formatted content.
 //!
 //! # Dynamic Type
 //!

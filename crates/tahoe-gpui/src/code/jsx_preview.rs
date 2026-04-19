@@ -95,10 +95,10 @@ impl JsxPreview {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.error = Some(error.clone());
         if let Some(ref cb) = self.on_error {
-            cb(self.error.as_ref().unwrap(), window, cx);
+            cb(&error, window, cx);
         }
+        self.error = Some(error);
         cx.notify();
     }
 

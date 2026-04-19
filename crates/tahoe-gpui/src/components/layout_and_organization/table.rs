@@ -366,7 +366,7 @@ impl Table {
         self
     }
 
-    /// Attach a [`FocusHandle`] so the table participates in the host's
+    /// Attach a [`gpui::FocusHandle`] so the table participates in the host's
     /// focus graph. When set, the focus-ring is derived from
     /// `handle.is_focused(window)` and the root element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts

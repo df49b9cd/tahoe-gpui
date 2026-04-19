@@ -642,10 +642,7 @@ impl From<&str> for MenuShortcut {
             .collect();
         let (key_token, mod_tokens) = match parts.as_slice() {
             [] => ("", &[] as &[&str]),
-            _ => {
-                let (last, rest) = parts.split_last().unwrap();
-                (*last, rest)
-            }
+            [rest @ .., last] => (*last, rest),
         };
         let mut modifiers = Vec::new();
         for m in mod_tokens {

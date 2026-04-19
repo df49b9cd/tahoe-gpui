@@ -40,8 +40,8 @@ pub fn flex_direction_for_layout(direction: LayoutDirection) -> gpui::FlexDirect
 ///
 /// Prefer [`icon_direction`] for per-icon decisions — this helper only
 /// reports the reading direction and leaves the flip-vs-localized-variant
-/// choice to the caller. Directional behavior per [`IconName`] is
-/// authoritative on the `IconName` enum (`layout_behavior()` method).
+/// choice to the caller. Directional behavior per [`crate::foundations::icons::IconName`]
+/// is authoritative on the `IconName` enum (`layout_behavior()` method).
 pub fn should_flip_icon(direction: LayoutDirection) -> bool {
     direction.is_rtl()
 }

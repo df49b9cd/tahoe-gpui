@@ -24,9 +24,8 @@ pub const HOVER_CARD_DEFAULT_DELAY_MS: u64 = 300;
 ///
 /// Mirrors [`super::popover::PopoverPlacement`] so callers that know
 /// Popover's placement vocabulary can reuse it. Boundary clamping: if
-/// the requested placement would spill outside the viewport,
-/// [`Self::fallback_for_edge`] returns an alternate placement that
-/// stays inside bounds.
+/// the requested placement would spill outside the viewport, callers
+/// should pick an alternate placement that stays inside bounds.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HoverCardPlacement {
     /// Above the trigger, aligned to the left edge.

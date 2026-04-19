@@ -53,10 +53,17 @@ jobs:
   docs:
     name: rustdoc
     runs-on: macos-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Verifies doc code compiles. Broken intra-doc links are tracked as
-      # follow-up work and not yet enforced here.
       - run: cargo doc --workspace --no-deps --all-features
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

@@ -16,9 +16,9 @@
 //!
 //! # See also
 //!
-//! - [`crate::components::menus_and_actions::command_palette`] — the
-//!   in-app equivalent: a keyboard-first action surface consumers can
-//!   embed anywhere in the GPUI tree.
+//! - `crate::components::menus_and_actions::command_palette` — the
+//!   in-app equivalent (planned): a keyboard-first action surface consumers
+//!   can embed anywhere in the GPUI tree.
 //!
 //! # HIG Reference
 //!

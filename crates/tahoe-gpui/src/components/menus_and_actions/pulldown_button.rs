@@ -6,7 +6,7 @@
 //! does NOT represent selection -- each item fires its own action callback.
 //!
 //! Supports full keyboard navigation in the open dropdown (arrow keys,
-//! Home/End, Enter, Escape) mirroring [`PopupButton`].
+//! Home/End, Enter, Escape) mirroring [`super::popup_button::PopupButton`].
 
 use std::rc::Rc;
 
@@ -37,13 +37,20 @@ fn nav_next(actionable: &[usize], current: usize) -> usize {
 }
 
 /// Step to the previous actionable index (wrapping).
+///
+/// # Panics
+///
+/// Panics if `actionable` is empty. Callers must guard empty slices (the
+/// keyboard closure in [`PulldownButton::render`] does this with an early
+/// `return`).
 fn nav_prev(actionable: &[usize], current: usize) -> usize {
     actionable
         .iter()
         .rev()
         .find(|&&i| i < current)
         .copied()
-        .unwrap_or(*actionable.last().unwrap())
+        .or_else(|| actionable.last().copied())
+        .expect("nav_prev requires a non-empty actionable slice")
 }
 
 /// Visual style for a pull-down menu item.
@@ -394,7 +401,9 @@ impl RenderOnce for PulldownButton {
                         cx.stop_propagation();
                         let prev = match highlighted {
                             Some(current) => nav_prev(&key_actionable, current),
-                            None => *key_actionable.last().unwrap(),
+                            None => *key_actionable
+                                .last()
+                                .expect("key_actionable non-empty — guarded above"),
                         };
                         if let Some(handler) = &key_highlight {
                             handler(Some(prev), window, cx);
@@ -409,7 +418,15 @@ impl RenderOnce for PulldownButton {
                     "end" => {
                         cx.stop_propagation();
                         if let Some(handler) = &key_highlight {
-                            handler(Some(*key_actionable.last().unwrap()), window, cx);
+                            handler(
+                                Some(
+                                    *key_actionable
+                                        .last()
+                                        .expect("key_actionable non-empty — guarded above"),
+                                ),
+                                window,
+                                cx,
+                            );
                         }
                     }
                     "enter" => {

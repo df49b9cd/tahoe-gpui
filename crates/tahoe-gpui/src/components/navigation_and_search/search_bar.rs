@@ -71,17 +71,10 @@ impl RenderOnce for SearchBar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        let display_text = self
-            .value
-            .as_deref()
-            .map(|v| {
-                if v.is_empty() {
-                    self.placeholder.clone()
-                } else {
-                    self.value.clone().unwrap()
-                }
-            })
-            .unwrap_or_else(|| self.placeholder.clone());
+        let display_text = match self.value.as_ref() {
+            Some(v) if !v.is_empty() => v.clone(),
+            _ => self.placeholder.clone(),
+        };
 
         let has_value = self
             .value

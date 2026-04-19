@@ -18,8 +18,8 @@
 //! # Option-click expand all
 //!
 //! HIG: "Option-clicking the disclosure triangle expands all of its
-//! subfolders." [`on_expand_all`] receives the node id when the user
-//! Option-clicks; callers recursively expand the subtree.
+//! subfolders." [`OutlineView::on_expand_all`] receives the node id when the
+//! user Option-clicks; callers recursively expand the subtree.
 
 use std::rc::Rc;
 
@@ -112,8 +112,8 @@ impl OutlineNode {
 /// copy the inner body of [`OutlineView`]'s row renderer.
 ///
 /// `gpui::ListState` is re-exported at the crate root
-/// ([`crate::ListState`](crate::ListState)) and `gpui::list` is
-/// available as [`crate::list_element`](crate::list_element) for this
+/// ([`crate::ListState`]) and `gpui::list` is
+/// available as [`crate::list_element`] for this
 /// purpose. A fully automated virtualization wrapper would need to
 /// promote `OutlineView` from `RenderOnce` to a stateful entity — see
 /// [ButtonLike (Finding 15)](super::super::menus_and_actions::ButtonLike)
@@ -211,7 +211,7 @@ impl OutlineView {
         flatten_visible(&self.nodes, None)
     }
 
-    /// Return a [`ListState`] pre-sized for the current count of
+    /// Return a [`crate::ListState`] pre-sized for the current count of
     /// visible entries, ready to feed to [`crate::list_element`].
     ///
     /// Uses `ListAlignment::Top` and a 100 pt overdraw — matches
