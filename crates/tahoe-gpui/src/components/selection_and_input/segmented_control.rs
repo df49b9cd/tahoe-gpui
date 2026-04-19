@@ -41,7 +41,9 @@ impl SegmentItem {
 /// A segmented control per HIG.
 ///
 /// Renders a horizontal row of equal-width segments with glass styling.
-/// Exactly one segment is selected at a time.
+/// Exactly one segment is selected at a time, unless [`Self::momentary`]
+/// is enabled — in that mode no segment persists selection state and
+/// clicks fire `on_change` without visually marking a winner.
 #[derive(IntoElement)]
 pub struct SegmentedControl {
     id: ElementId,
@@ -49,6 +51,7 @@ pub struct SegmentedControl {
     selected: usize,
     on_change: OnUsizeChange,
     focused: bool,
+    momentary: bool,
 }
 
 impl SegmentedControl {
@@ -59,6 +62,7 @@ impl SegmentedControl {
             selected: 0,
             on_change: None,
             focused: false,
+            momentary: false,
         }
     }
 
@@ -100,6 +104,15 @@ impl SegmentedControl {
     /// Marks this control as keyboard-focused, showing a visible focus ring.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Toggle momentary mode. When enabled, clicks fire [`Self::on_change`]
+    /// but no segment persists a selected visual state — matches AppKit's
+    /// `NSSegmentStyleTexturedRounded` momentary trackingMode. Keyboard
+    /// still dispatches `on_change` via Left/Right/Home/End.
+    pub fn momentary(mut self, momentary: bool) -> Self {
+        self.momentary = momentary;
         self
     }
 }
@@ -166,8 +179,13 @@ impl RenderOnce for SegmentedControl {
 
         let item_count = self.items.len();
         let last_idx = item_count.saturating_sub(1);
+        let momentary = self.momentary;
         for (i, item) in self.items.into_iter().enumerate() {
-            let is_selected = i == self.selected;
+            // Momentary controls never persist a selected chip — every
+            // segment renders in its idle state regardless of
+            // `self.selected`. The field stays around so the keyboard
+            // handler can still compute relative nav targets.
+            let is_selected = !momentary && i == self.selected;
             let handler = on_change.clone();
             let text_color = if is_selected {
                 theme.text
@@ -229,8 +247,11 @@ impl RenderOnce for SegmentedControl {
 
             track = track.child(segment);
 
-            // Separator between non-selected adjacent segments
-            if i + 1 < item_count && !is_selected && i + 1 != self.selected {
+            // Separator between non-selected adjacent segments. In
+            // momentary mode no segment is selected, so a separator is
+            // drawn between every pair.
+            let next_is_selected = !momentary && i + 1 == self.selected;
+            if i + 1 < item_count && !is_selected && !next_is_selected {
                 track = track.child(
                     div()
                         .w(theme.separator_thickness)
@@ -295,5 +316,13 @@ mod tests {
         let item = SegmentItem::new("Test");
         assert_eq!(item.label.as_ref(), "Test");
         assert!(item.icon.is_none());
+    }
+
+    #[test]
+    fn momentary_defaults_to_false_and_builder_sets() {
+        let sc = SegmentedControl::new("test");
+        assert!(!sc.momentary);
+        let sc = SegmentedControl::new("test").momentary(true);
+        assert!(sc.momentary);
     }
 }
