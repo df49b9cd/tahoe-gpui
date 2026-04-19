@@ -420,12 +420,10 @@ impl RenderOnce for Icon {
 
         let render_mode = self.render_mode.unwrap_or_default();
 
-        // Select render strategy based on style
-        let strategy = if is_glass {
-            self.name.render_strategy_glass()
-        } else {
-            self.name.render_strategy()
-        };
+        // Standard and Liquid Glass themes share the same asset set; the
+        // glass appearance comes from layer tinting below, not a separate
+        // SVG. See `assets/icons/NOTICE.md`.
+        let strategy = self.name.render_strategy();
 
         if let Some(strategy) = strategy {
             let element: gpui::AnyElement = match strategy {

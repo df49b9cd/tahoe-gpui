@@ -222,51 +222,40 @@ fn fallback_symbols_contain_no_emoji_codepoints() {
     }
 }
 
-/// Every `system_name()` mapping must have a matching `sf_asset_path()`
-/// mapping and a registered asset that resolves to non-empty bytes —
-/// otherwise hosts that call `Icon::new(name)` will silently fall back to
-/// the Unicode placeholder for a symbol that should have rendered
-/// natively.
+/// Every `system_name()` mapping must point at a bundled asset that loads
+/// to non-empty bytes — otherwise hosts that call `Icon::new(name)` will
+/// silently fall back to the Unicode placeholder for a glyph that should
+/// have rendered natively.
 #[test]
-fn sf_symbol_mapping_invariants_hold() {
+fn system_name_mapping_invariants_hold() {
     let assets = EmbeddedIconAssets;
     let mut with_system_name = 0;
 
     for v in ALL_VARIANTS {
-        match (v.system_name(), v.sf_asset_path()) {
-            (Some(name), Some(path)) => {
-                with_system_name += 1;
-                assert!(
-                    path.starts_with("icons/sf/") && path.ends_with(".svg"),
-                    "{v:?}: sf_asset_path {path:?} should be icons/sf/<name>.svg",
-                );
-                let expected_suffix = format!("{name}.svg");
-                assert!(
-                    path.ends_with(&expected_suffix),
-                    "{v:?}: sf_asset_path {path:?} does not correspond to system_name {name:?}",
-                );
-                assert!(
-                    assets.load(path).unwrap().is_some_and(|b| !b.is_empty()),
-                    "{v:?}: SF asset {path:?} is not embedded in ICON_ENTRIES or is empty",
-                );
-            }
-            (None, None) => {
-                // Domain-specific icon (provider, git, dev-tools, lang) —
-                // no SF Symbol equivalent.
-            }
-            (Some(_), None) | (None, Some(_)) => {
-                panic!(
-                    "{v:?}: system_name() and sf_asset_path() disagree on SF Symbol presence — they must be updated together",
-                );
-            }
+        if v.system_name().is_some() {
+            with_system_name += 1;
+            let path =
+                v.bundled_asset_path().unwrap_or_else(|| {
+                    panic!(
+                        "{v:?}: system_name() returned Some but bundled_asset_path() returned None",
+                    );
+                });
+            assert!(
+                path.starts_with("icons/symbols/") && path.ends_with(".svg"),
+                "{v:?}: bundled_asset_path {path:?} should live under icons/symbols/",
+            );
+            assert!(
+                assets.load(path).unwrap().is_some_and(|b| !b.is_empty()),
+                "{v:?}: bundled asset {path:?} is not embedded in ICON_ENTRIES or is empty",
+            );
         }
     }
 
-    // Guard against a future refactor silently losing the SF Symbol
-    // mapping for every UI action.
+    // Guard against a future refactor silently losing the system_name
+    // mapping for the canonical UI-action set.
     assert!(
         with_system_name >= 60,
-        "expected >= 60 variants mapped to SF Symbols, found {with_system_name}",
+        "expected >= 60 variants mapped to a system_name, found {with_system_name}",
     );
 }
 
@@ -298,53 +287,44 @@ fn all_render_strategy_paths_resolve() {
     }
 }
 
+/// All bundled paths must live under `icons/symbols/` (generic UI) or one
+/// of the domain-specific roots `icons/{git,dev-tools,languages,providers}/`.
+/// Standard and Liquid Glass themes share the same asset set; the glass
+/// appearance is produced by tinting layers, not by swapping SVGs.
 #[test]
-fn all_glass_paths_resolve() {
+fn all_paths_live_under_known_roots() {
     let assets = EmbeddedIconAssets;
+    const ROOTS: &[&str] = &[
+        "icons/symbols/",
+        "icons/git/",
+        "icons/dev-tools/",
+        "icons/languages/",
+        "icons/providers/",
+    ];
+    let starts_with_root = |p: &str| -> bool { ROOTS.iter().any(|root| p.starts_with(root)) };
 
     for variant in ALL_VARIANTS {
-        let standard = variant.render_strategy();
-        let glass = variant.render_strategy_glass();
-
-        // Every icon with a standard render strategy should also have a glass variant
-        if standard.is_some() {
-            assert!(
-                glass.is_some(),
-                "{variant:?} has a standard render_strategy but no glass variant",
-            );
-        }
-
-        if let Some(strategy) = glass {
+        if let Some(strategy) = variant.render_strategy() {
             match strategy {
                 RenderStrategy::Monochrome(path) => {
-                    // Glass icons may be served from two trees:
-                    //   * `icons-glass/` — custom Lucide-derived strokes
-                    //     with 1.5 pt stroke-width tuned for frosted-glass
-                    //     tiles (providers / git / dev-tools / langs).
-                    //   * `icons/sf/`   — canonical SF Symbols 7 glyphs
-                    //     (fill-based, theme-invariant — see issue #139
-                    //     finding #1/#2). The same asset serves both
-                    //     standard and glass themes because fill-based
-                    //     SVGs do not have a stroke-width axis.
                     assert!(
-                        path.starts_with("icons-glass/") || path.starts_with("icons/sf/"),
-                        "{variant:?}: glass path {path:?} should start with 'icons-glass/' or 'icons/sf/'",
+                        starts_with_root(path),
+                        "{variant:?}: path {path:?} not under a known root {ROOTS:?}",
                     );
                     assert!(
                         assets.load(path).unwrap().is_some(),
-                        "{variant:?}: glass path {path:?} did not resolve",
+                        "{variant:?}: path {path:?} did not resolve",
                     );
                 }
                 RenderStrategy::MultiColor(layers) => {
                     for (layer_path, _role) in layers.iter() {
                         assert!(
-                            layer_path.starts_with("icons-glass/")
-                                || layer_path.starts_with("icons/sf/"),
-                            "{variant:?}: glass layer {layer_path:?} should start with 'icons-glass/' or 'icons/sf/'",
+                            starts_with_root(layer_path),
+                            "{variant:?}: layer {layer_path:?} not under a known root {ROOTS:?}",
                         );
                         assert!(
                             assets.load(layer_path).unwrap().is_some(),
-                            "{variant:?}: glass layer {layer_path:?} did not resolve",
+                            "{variant:?}: layer {layer_path:?} did not resolve",
                         );
                     }
                 }
