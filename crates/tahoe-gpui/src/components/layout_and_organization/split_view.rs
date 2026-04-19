@@ -659,8 +659,11 @@ mod interaction_tests {
         cx.drag_between_points(start, end);
 
         view.update_in(cx, |view, _window, _cx| {
+            // HIG macOS Tahoe: `theme.sidebar_width_default` aligned to
+            // 220pt; drag +80 ⇒ 300pt. Historical 340 was tied to the
+            // pre-Tahoe 260pt default.
             assert!(
-                (view.primary_width() - 340.0).abs() < 2.0,
+                (view.primary_width() - 300.0).abs() < 2.0,
                 "width was {}",
                 view.primary_width()
             );
@@ -675,7 +678,9 @@ mod interaction_tests {
         focus_divider(&view, cx);
         cx.press("right");
         view.update_in(cx, |view, _window, _cx| {
-            assert!((view.primary_width() - 270.0).abs() < f32::EPSILON);
+            // HIG macOS Tahoe: start width is the theme default (220pt);
+            // one coarse keyboard step of 10pt lands at 230pt.
+            assert!((view.primary_width() - 230.0).abs() < f32::EPSILON);
         });
 
         cx.press("end");
