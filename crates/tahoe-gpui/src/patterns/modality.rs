@@ -87,8 +87,14 @@ impl ModalGuard {
     /// so a bug doesn't trap the user.
     #[must_use = "drop the ActiveModal to release the depth counter"]
     pub fn present(&self) -> ActiveModal {
+        // Construct the drop-guard BEFORE debug_assert! so a debug-build
+        // panic on nested presentation unwinds through ActiveModal::drop,
+        // decrementing the counter instead of leaking it.
+        let active = ActiveModal {
+            depth: self.depth.clone(),
+        };
         let new_depth = {
-            let mut depth = self
+            let mut depth = active
                 .depth
                 .lock()
                 .expect("ModalGuard mutex poisoned — a previous `present()` panicked");
@@ -101,9 +107,7 @@ impl ModalGuard {
              Dismiss the existing modal before presenting another — stacking \
              modals traps the user."
         );
-        ActiveModal {
-            depth: self.depth.clone(),
-        }
+        active
     }
 
     /// Current presentation depth. Useful for tests and diagnostics.
@@ -197,6 +201,24 @@ mod tests {
         let guard = ModalGuard::new();
         let _outer = guard.present();
         let _inner = guard.present();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn nested_present_debug_panic_does_not_leak_depth() {
+        use std::panic;
+        let guard = ModalGuard::new();
+        let _outer = guard.present();
+        // Catch the debug_assert! panic triggered by the nested present.
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let _inner = guard.present();
+        }));
+        assert!(result.is_err(), "nested present should panic in debug");
+        // Outer is still active; inner unwound and decremented — depth
+        // must be back to 1, not 2.
+        assert_eq!(guard.depth(), 1);
+        drop(_outer);
+        assert_eq!(guard.depth(), 0);
     }
 
     #[test]

@@ -139,14 +139,15 @@ impl OnboardingFlow {
     }
 
     /// `true` once the flow has terminated (via `advance` past the last
-    /// step or via `skip`).
+    /// step or via `skip`), or when the flow has no steps at all — an
+    /// empty flow has nothing to present.
     pub fn is_complete(&self) -> bool {
-        self.completed
+        self.completed || self.steps.is_empty()
     }
 
     /// Whether the user may skip the remaining steps.
     pub fn can_skip(&self) -> bool {
-        self.skip_allowed && !self.completed
+        self.skip_allowed && !self.is_complete()
     }
 
     /// Accept the current step and advance to the next. Marks the flow
@@ -195,13 +196,13 @@ mod tests {
     }
 
     #[test]
-    fn new_flow_is_empty_not_complete() {
+    fn new_flow_with_no_steps_is_complete() {
         let flow = OnboardingFlow::new();
         assert_eq!(flow.step_count(), 0);
-        // Empty flow is considered complete because there is nothing to do.
-        // We only expose `current_step()` == None in both the empty and
-        // completed cases; the numeric `step_count == 0` is the
-        // disambiguator.
+        // An empty flow has nothing to present — treat it as complete so
+        // the documented `while !flow.is_complete()` idiom never calls
+        // `current_step().unwrap()` on None.
+        assert!(flow.is_complete());
         assert!(flow.current_step().is_none());
     }
 

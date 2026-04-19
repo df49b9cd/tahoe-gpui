@@ -40,7 +40,7 @@ pub enum LoadingState {
     /// Content is loading without a known duration — show placeholder or
     /// shimmer.
     Loading,
-    /// Content is loading with known progress (0.0u20131.0). Host components
+    /// Content is loading with known progress (0.0–1.0). Host components
     /// should render a determinate progress indicator.
     ///
     /// The fraction is clamped by [`LoadingState::progress`].
@@ -74,7 +74,7 @@ impl LoadingState {
         matches!(self, Self::Failed)
     }
 
-    /// Returns the determinate progress fraction (0.0u20131.0) when the state
+    /// Returns the determinate progress fraction (0.0–1.0) when the state
     /// is [`LoadingWithProgress`](Self::LoadingWithProgress), or `None`
     /// otherwise. Values are clamped into `0.0..=1.0` so callers can feed
     /// the result straight into a
