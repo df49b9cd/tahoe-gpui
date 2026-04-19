@@ -1,3 +1,7 @@
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/df49b9cd/tahoe-gpui/main/branding/tahoe-gpui-logo.png",
+    html_favicon_url = "https://raw.githubusercontent.com/df49b9cd/tahoe-gpui/main/branding/tahoe-gpui-logo.png"
+)]
 //! Streaming markdown preprocessor that auto-completes incomplete syntax.
 //!
 //! A Rust port of Vercel's [remend](https://github.com/vercel/streamdown/tree/main/packages/remend).
