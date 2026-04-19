@@ -447,7 +447,10 @@ fn parse_task_list_item_marker() {
                     _ => Vec::new(),
                 })
                 .find(|i| matches!(i, InlineContent::TaskMarker(_)));
-            assert!(matches!(first_marker, Some(InlineContent::TaskMarker(true))));
+            assert!(matches!(
+                first_marker,
+                Some(InlineContent::TaskMarker(true))
+            ));
             let second_marker = items[1]
                 .iter()
                 .flat_map(|b| match b {

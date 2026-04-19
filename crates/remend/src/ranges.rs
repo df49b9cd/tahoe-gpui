@@ -269,7 +269,6 @@ impl CodeBlockRanges {
 
         ranges
     }
-
 }
 
 #[cfg(test)]

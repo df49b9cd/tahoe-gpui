@@ -28,9 +28,7 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px,
-};
+use gpui::{AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::apply_focus_ring;
@@ -70,10 +68,7 @@ impl ListRow {
     /// actions are rendered off-screen behind the row and revealed via
     /// platform swipe gestures; on macOS, also reachable via
     /// right-click / Ctrl-click contextual menus.
-    pub fn swipe_actions(
-        mut self,
-        actions: impl IntoIterator<Item = impl IntoElement>,
-    ) -> Self {
+    pub fn swipe_actions(mut self, actions: impl IntoIterator<Item = impl IntoElement>) -> Self {
         self.swipe_actions = actions.into_iter().map(|a| a.into_any_element()).collect();
         self
     }
@@ -203,9 +198,10 @@ fn render_row(
 
     let row_id = row.id.clone();
     let mut row_el = div()
-        .id(ElementId::Name(
-            SharedString::from(format!("list-row-{}", row.id)),
-        ))
+        .id(ElementId::Name(SharedString::from(format!(
+            "list-row-{}",
+            row.id
+        ))))
         .flex()
         .flex_row()
         .items_center()
@@ -225,11 +221,7 @@ fn render_row(
     // at the trailing edge — on macOS they're normally surfaced via
     // right-click, which callers wire up themselves.
     if !row.swipe_actions.is_empty() {
-        let mut actions = div()
-            .flex()
-            .flex_row()
-            .gap(theme.spacing_xs)
-            .ml_auto();
+        let mut actions = div().flex().flex_row().gap(theme.spacing_xs).ml_auto();
         for action in row.swipe_actions {
             actions = actions.child(action);
         }
@@ -238,9 +230,7 @@ fn render_row(
 
     match style {
         ListStyle::Plain | ListStyle::Grouped => {
-            row_el = row_el
-                .border_b_1()
-                .border_color(theme.separator_color());
+            row_el = row_el.border_b_1().border_color(theme.separator_color());
         }
         ListStyle::Inset => {
             row_el = row_el.rounded(theme.radius_md);
@@ -270,12 +260,7 @@ impl RenderOnce for List {
             .flat_map(|s| s.rows.iter().map(|r| r.id.clone()))
             .collect();
 
-        let mut container = div()
-            .id(self.id)
-            .focusable()
-            .flex()
-            .flex_col()
-            .w_full();
+        let mut container = div().id(self.id).focusable().flex().flex_col().w_full();
 
         match style {
             ListStyle::Plain => {
@@ -412,7 +397,10 @@ mod tests {
             .header("Favorites")
             .row(ListRow::new("a", div()))
             .row(ListRow::new("b", div()));
-        assert_eq!(section.header.as_ref().map(|s| s.as_ref()), Some("Favorites"));
+        assert_eq!(
+            section.header.as_ref().map(|s| s.as_ref()),
+            Some("Favorites")
+        );
         assert_eq!(section.rows.len(), 2);
     }
 

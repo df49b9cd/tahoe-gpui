@@ -30,9 +30,7 @@ use gpui::prelude::*;
 use gpui::{Animation, AnimationExt, App, ElementId, SharedString, Task, Window, div, px};
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
-use crate::foundations::accessibility::{
-    AccessibilityProps, AccessibilityRole, AccessibleExt,
-};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
@@ -209,10 +207,7 @@ impl SpeechInputView {
     /// [`SpeechInputState::PermissionRequired`]. The host should call
     /// `AVCaptureDevice.requestAccess(for: .audio, …)` from this handler
     /// and update the view via [`Self::set_permission`] on completion.
-    pub fn set_on_request_permission(
-        &mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) {
+    pub fn set_on_request_permission(&mut self, handler: impl Fn(&mut Window, &mut App) + 'static) {
         self.on_request_permission = Some(Box::new(handler));
     }
 
@@ -476,7 +471,6 @@ impl SpeechInputView {
         }));
     }
 
-
     /// Returns the icon for a given state.
     ///
     /// Issue #148 F10: `Disabled` uses [`IconName::MicOff`] so disabled and
@@ -487,8 +481,7 @@ impl SpeechInputView {
             SpeechInputState::Listening => IconName::Square,
             SpeechInputState::Processing => IconName::Loader,
             SpeechInputState::PermissionRequired => IconName::Mic,
-            SpeechInputState::PermissionDenied
-            | SpeechInputState::Disabled => IconName::MicOff,
+            SpeechInputState::PermissionDenied | SpeechInputState::Disabled => IconName::MicOff,
         }
     }
 
@@ -691,9 +684,10 @@ impl Render for SpeechInputView {
                         .text_color(theme.text_muted)
                         .child("Microphone access is denied.")
                         .child(
-                            div().text_color(theme.accent).cursor_pointer().child(
-                                "Tap the microphone button to open Privacy Settings.",
-                            ),
+                            div()
+                                .text_color(theme.accent)
+                                .cursor_pointer()
+                                .child("Tap the microphone button to open Privacy Settings."),
                         ),
                 );
             }
@@ -780,7 +774,10 @@ mod tests {
     #[test]
     fn format_elapsed_minutes() {
         assert_eq!(SpeechInputView::format_elapsed_mmss(60.0).as_ref(), "01:00");
-        assert_eq!(SpeechInputView::format_elapsed_mmss(125.0).as_ref(), "02:05");
+        assert_eq!(
+            SpeechInputView::format_elapsed_mmss(125.0).as_ref(),
+            "02:05"
+        );
     }
 
     #[test]

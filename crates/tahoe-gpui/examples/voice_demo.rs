@@ -7,14 +7,14 @@ fn main() {
 
 #[cfg(feature = "voice")]
 fn main() {
-    use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
-    use tahoe_gpui::voice::*;
     use gpui::prelude::*;
     use gpui::{
         App, Bounds, Div, Entity, FontWeight, Window, WindowBackgroundAppearance, WindowBounds,
         WindowOptions, div, px, size,
     };
     use gpui_platform::application;
+    use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
+    use tahoe_gpui::voice::*;
 
     struct VoiceDemo {
         audio_player: Entity<AudioPlayerView>,

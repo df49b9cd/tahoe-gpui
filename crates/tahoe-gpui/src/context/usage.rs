@@ -136,5 +136,4 @@ mod tests {
         a += Usage::default();
         assert_eq!(a, Usage::new(100, 200, 50, 10));
     }
-
 }

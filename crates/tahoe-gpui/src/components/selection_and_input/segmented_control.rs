@@ -201,14 +201,10 @@ impl RenderOnce for SegmentedControl {
                 match (is_leading, is_trailing) {
                     (true, true) => segment = segment.rounded(inner_radius),
                     (true, false) => {
-                        segment = segment
-                            .rounded_tl(inner_radius)
-                            .rounded_bl(inner_radius);
+                        segment = segment.rounded_tl(inner_radius).rounded_bl(inner_radius);
                     }
                     (false, true) => {
-                        segment = segment
-                            .rounded_tr(inner_radius)
-                            .rounded_br(inner_radius);
+                        segment = segment.rounded_tr(inner_radius).rounded_br(inner_radius);
                     }
                     (false, false) => {
                         // Interior chip: stays square so it reads as a

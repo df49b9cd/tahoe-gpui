@@ -50,12 +50,8 @@ impl ResizeHandle {
     /// resize pointers.
     pub(super) fn cursor(self) -> CursorStyle {
         match self {
-            ResizeHandle::TopLeft | ResizeHandle::BottomRight => {
-                CursorStyle::ResizeUpLeftDownRight
-            }
-            ResizeHandle::TopRight | ResizeHandle::BottomLeft => {
-                CursorStyle::ResizeUpRightDownLeft
-            }
+            ResizeHandle::TopLeft | ResizeHandle::BottomRight => CursorStyle::ResizeUpLeftDownRight,
+            ResizeHandle::TopRight | ResizeHandle::BottomLeft => CursorStyle::ResizeUpRightDownLeft,
             ResizeHandle::Top | ResizeHandle::Bottom => CursorStyle::ResizeUpDown,
             ResizeHandle::Left | ResizeHandle::Right => CursorStyle::ResizeLeftRight,
         }
@@ -84,14 +80,7 @@ impl ResizeHandle {
 /// Return the handle under `(mx, my)` for a node whose screen rect is
 /// `(x, y, w, h)`, or `None` if the pointer is not within `HANDLE_HIT_RADIUS`
 /// of any handle centre.
-pub(super) fn handle_at(
-    mx: f32,
-    my: f32,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-) -> Option<ResizeHandle> {
+pub(super) fn handle_at(mx: f32, my: f32, x: f32, y: f32, w: f32, h: f32) -> Option<ResizeHandle> {
     // Check in reverse order so corner hits win over edge hits when the
     // pointer falls near an intersection — corners give better resize
     // control, so they're the friendlier default.

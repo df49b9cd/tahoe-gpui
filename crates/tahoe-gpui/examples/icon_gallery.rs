@@ -2,17 +2,17 @@
 
 use std::time::Duration;
 
-use tahoe_gpui::foundations::icons::{
-    AnimatedIcon, AnimatedProviderIcon, EmbeddedIconAssets, GlassIconTile, GlassTileTint, Icon,
-    IconAnimation, IconName,
-};
-use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, Div, Entity, FontWeight, Window, WindowBackgroundAppearance, WindowBounds,
     WindowOptions, div, px, size,
 };
 use gpui_platform::application;
+use tahoe_gpui::foundations::icons::{
+    AnimatedIcon, AnimatedProviderIcon, EmbeddedIconAssets, GlassIconTile, GlassTileTint, Icon,
+    IconAnimation, IconName,
+};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 struct IconGallery {
     provider_icons: Vec<(Entity<AnimatedProviderIcon>, &'static str)>,

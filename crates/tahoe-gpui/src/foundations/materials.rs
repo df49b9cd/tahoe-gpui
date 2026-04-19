@@ -1342,18 +1342,8 @@ fn scroll_edge(
     // of HIG's "hard" scroll edge effect without a backdrop-blur
     // primitive.
     let (top_color, top_stop, bottom_color, bottom_stop) = match style {
-        ScrollEdgeStyle::Soft => (
-            bg,
-            0.0,
-            hsla(bg.h, bg.s, bg.l, 0.0),
-            1.0,
-        ),
-        ScrollEdgeStyle::Hard => (
-            bg,
-            0.9,
-            hsla(bg.h, bg.s, bg.l, 0.0),
-            1.0,
-        ),
+        ScrollEdgeStyle::Soft => (bg, 0.0, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
+        ScrollEdgeStyle::Hard => (bg, 0.9, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
     };
 
     let (angle, first_stop, second_stop) = match side {
@@ -1658,12 +1648,7 @@ pub fn backdrop_blur_overlay(
     let _ = effect.radius;
     let _ = effect.corner_radius;
 
-    gpui::div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full()
-        .bg(bg)
+    gpui::div().absolute().top_0().left_0().size_full().bg(bg)
 }
 
 /// HIG-default backdrop-blur effect for full-viewport modal overlays.
@@ -1675,9 +1660,7 @@ pub fn backdrop_blur_overlay(
 /// Exposed so callers that want to customize only one axis (e.g. a
 /// lighter blur for a popover) can do
 /// `BlurEffect { radius: 20.0, ..default_backdrop_blur_effect(theme) }`.
-pub fn default_backdrop_blur_effect(
-    theme: &crate::foundations::theme::TahoeTheme,
-) -> BlurEffect {
+pub fn default_backdrop_blur_effect(theme: &crate::foundations::theme::TahoeTheme) -> BlurEffect {
     BlurEffect {
         radius: 40.0,
         corner_radius: 0.0,
@@ -2175,8 +2158,9 @@ mod tests {
 
     #[test]
     fn scroll_edge_overlays_build_with_custom_height() {
-        use super::{SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, scroll_edge_bottom,
-            scroll_edge_top};
+        use super::{
+            SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, scroll_edge_bottom, scroll_edge_top,
+        };
         let theme = TahoeTheme::dark();
         // Smoke test — confirms the public signature accepts a custom
         // `height` + `style` pair without panicking on theme access.

@@ -33,7 +33,7 @@ use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 
 /// Chart mark type.
 ///

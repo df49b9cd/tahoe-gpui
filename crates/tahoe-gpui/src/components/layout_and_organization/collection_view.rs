@@ -193,11 +193,7 @@ impl CollectionView {
     /// Append a labelled item. The label is exposed to VoiceOver and to
     /// on-screen debug selectors — use it to describe the tile's purpose
     /// (e.g. "Photo: Beach trip, June 2024").
-    pub fn labeled_child(
-        mut self,
-        label: impl Into<SharedString>,
-        item: impl IntoElement,
-    ) -> Self {
+    pub fn labeled_child(mut self, label: impl Into<SharedString>, item: impl IntoElement) -> Self {
         self.items.push(item.into_any_element());
         self.labels.push(Some(label.into()));
         self
@@ -228,10 +224,7 @@ impl CollectionView {
         self
     }
 
-    pub fn on_select(
-        mut self,
-        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_select(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(Rc::new(handler));
         self
     }

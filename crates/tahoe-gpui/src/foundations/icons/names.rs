@@ -1219,9 +1219,7 @@ impl IconName {
             IconName::Play => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/play.svg")),
             IconName::Pause => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/pause.svg")),
             IconName::Mic => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/mic.svg")),
-            IconName::MicOff => Some(RenderStrategy::Monochrome(
-                "icons-glass/ai-sdk/mic-off.svg",
-            )),
+            IconName::MicOff => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/mic-off.svg")),
             IconName::Phone => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/phone.svg")),
             IconName::Video => Some(RenderStrategy::Monochrome("icons-glass/ai-sdk/video.svg")),
             IconName::Settings => Some(RenderStrategy::Monochrome(

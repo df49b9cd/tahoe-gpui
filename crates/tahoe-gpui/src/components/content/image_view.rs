@@ -13,7 +13,7 @@ use gpui::prelude::*;
 use gpui::{App, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 
 /// Content mode for an image view — how the image fits its container.
 ///

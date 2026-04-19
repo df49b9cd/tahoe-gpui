@@ -208,8 +208,7 @@ type OnHighlight = Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>;
 
 /// Callback fired when a row is clicked, carrying the click modifiers so
 /// callers can implement `⌘-click` / `Shift-click` multi-select semantics.
-type OnSelectModified =
-    Box<dyn Fn(usize, Modifiers, &mut Window, &mut App) + 'static>;
+type OnSelectModified = Box<dyn Fn(usize, Modifiers, &mut Window, &mut App) + 'static>;
 type OnSelectModifiedRc = Option<Rc<OnSelectModified>>;
 
 /// Callback fired when the user starts a column-resize drag on a divider.
@@ -218,8 +217,7 @@ type OnSelectModifiedRc = Option<Rc<OnSelectModified>>;
 /// drag using its own `on_mouse_move` / `on_mouse_up` listeners. The
 /// Table itself is `RenderOnce`, so it can't track in-flight drag state;
 /// this event is the handoff point.
-type OnColumnResize =
-    Box<dyn Fn(SharedString, f32, &mut Window, &mut App) + 'static>;
+type OnColumnResize = Box<dyn Fn(SharedString, f32, &mut Window, &mut App) + 'static>;
 
 /// Boxed click-on-row handler with no modifier information.
 type OnRowClick = Box<dyn Fn(usize, &mut Window, &mut App) + 'static>;
@@ -421,11 +419,7 @@ fn render_data_row(
 ) -> AnyElement {
     // Row container wraps an inset capsule so the selection highlight
     // doesn't run to the container edge — HIG macOS 13+ inset style.
-    let mut container = div()
-        .flex()
-        .flex_row()
-        .w_full()
-        .px(theme.spacing_xs);
+    let mut container = div().flex().flex_row().w_full().px(theme.spacing_xs);
 
     if alternate_bg {
         // `NSTableView.usesAlternatingRowBackgroundColors`: a subtle
@@ -670,8 +664,7 @@ impl RenderOnce for Table {
                 .text_style(TextStyle::Body, theme)
                 .text_color(theme.text_muted);
             if let Some(icon) = self.empty_icon {
-                empty_col = empty_col
-                    .child(Icon::new(icon).size(px(32.0)).color(theme.text_muted));
+                empty_col = empty_col.child(Icon::new(icon).size(px(32.0)).color(theme.text_muted));
             }
             empty_col = empty_col.child(msg);
             div()
@@ -771,9 +764,7 @@ impl RenderOnce for Table {
                     }
                     "pageup" => {
                         cx.stop_propagation();
-                        let prev = highlighted_row
-                            .unwrap_or(0)
-                            .saturating_sub(PAGE_STEP);
+                        let prev = highlighted_row.unwrap_or(0).saturating_sub(PAGE_STEP);
                         scroll_to = Some(prev);
                         if let Some(cb) = &highlight_cb {
                             cb(Some(prev), window, cx);
@@ -781,8 +772,7 @@ impl RenderOnce for Table {
                     }
                     "pagedown" => {
                         cx.stop_propagation();
-                        let next = (highlighted_row.unwrap_or(0) + PAGE_STEP)
-                            .min(row_count - 1);
+                        let next = (highlighted_row.unwrap_or(0) + PAGE_STEP).min(row_count - 1);
                         scroll_to = Some(next);
                         if let Some(cb) = &highlight_cb {
                             cb(Some(next), window, cx);

@@ -285,10 +285,7 @@ impl DatePicker {
     /// Set the callback fired when arrow keys move the highlighted day.
     /// Parents that already render `highlighted_day` from their own state
     /// should update it with the emitted value.
-    pub fn on_highlight(
-        mut self,
-        handler: impl Fn(u8, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_highlight(mut self, handler: impl Fn(u8, &mut Window, &mut App) + 'static) -> Self {
         self.on_highlight = Some(Box::new(handler));
         self
     }
@@ -421,10 +418,7 @@ impl RenderOnce for DatePicker {
             // weekday. Example: first_weekday=1 (Monday-first) and a month
             // that starts on Sunday (dow=0) leaves 6 leading cells, not 0.
             // Per-component override wins over the theme-wide default.
-            let first_weekday = self
-                .first_weekday
-                .unwrap_or(theme.first_weekday)
-                .min(6);
+            let first_weekday = self.first_weekday.unwrap_or(theme.first_weekday).min(6);
             let raw_dow = SimpleDate::day_of_week(year, month, 1);
             let first_dow = ((raw_dow as i16 - first_weekday as i16).rem_euclid(7)) as u8;
             let highlighted_day = self.highlighted_day;
@@ -579,9 +573,8 @@ impl RenderOnce for DatePicker {
                     };
                     let in_range = min_date
                         .is_none_or(|d| date_cmp(cell_date, d) != std::cmp::Ordering::Less)
-                        && max_date.is_none_or(|d| {
-                            date_cmp(cell_date, d) != std::cmp::Ordering::Greater
-                        });
+                        && max_date
+                            .is_none_or(|d| date_cmp(cell_date, d) != std::cmp::Ordering::Greater);
                     let is_interactable = is_current_month && in_range;
 
                     let on_change_cell = on_change.clone();
@@ -721,8 +714,7 @@ impl RenderOnce for DatePicker {
                                 (year, month + 1)
                             };
                             let nd = target - days_in as i32;
-                            let nd =
-                                nd.min(SimpleDate::days_in_month(ny, nm) as i32).max(1);
+                            let nd = nd.min(SimpleDate::days_in_month(ny, nm) as i32).max(1);
                             (ny, nm, nd as u8)
                         } else {
                             (year, month, target as u8)

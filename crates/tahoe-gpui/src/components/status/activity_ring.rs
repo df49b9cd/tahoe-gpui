@@ -128,17 +128,20 @@ impl RenderOnce for ActivityRing {
                 // HIG-mandated black background when transparency is reduced.
                 hsla(0.0, 0.0, 0.15, 1.0)
             } else {
-                Hsla { a: 0.20, ..fill_color }
+                Hsla {
+                    a: 0.20,
+                    ..fill_color
+                }
             }
         });
 
-        let raw = if self.value.is_finite() { self.value } else { 0.0 };
-        let base_progress = raw.clamp(0.0, 1.0);
-        let wrap_progress = if raw > 1.0 {
-            (raw - 1.0).min(1.0)
+        let raw = if self.value.is_finite() {
+            self.value
         } else {
             0.0
         };
+        let base_progress = raw.clamp(0.0, 1.0);
+        let wrap_progress = if raw > 1.0 { (raw - 1.0).min(1.0) } else { 0.0 };
 
         let percent = (raw * 100.0).round() as i32;
         let a11y_label: SharedString = self
@@ -167,10 +170,16 @@ impl RenderOnce for ActivityRing {
                     size: size(px(radius * 2.0 + stroke), px(radius * 2.0 + stroke)),
                 };
                 window.paint_quad(
-                    fill(track_bounds, Hsla { a: 0.0, ..fill_color })
-                        .corner_radii(px(s / 2.0))
-                        .border_widths(px(stroke))
-                        .border_color(track_color),
+                    fill(
+                        track_bounds,
+                        Hsla {
+                            a: 0.0,
+                            ..fill_color
+                        },
+                    )
+                    .corner_radii(px(s / 2.0))
+                    .border_widths(px(stroke))
+                    .border_color(track_color),
                 );
 
                 paint_arc(
@@ -188,7 +197,10 @@ impl RenderOnce for ActivityRing {
                 // lighter tint. HIG leaves the exact tint unspecified; we
                 // use 60% alpha to read as clearly secondary.
                 if wrap_progress > 0.0 {
-                    let wrap_color = Hsla { a: 0.60, ..fill_color };
+                    let wrap_color = Hsla {
+                        a: 0.60,
+                        ..fill_color
+                    };
                     paint_arc(
                         window,
                         cx_f,
@@ -203,9 +215,7 @@ impl RenderOnce for ActivityRing {
         )
         .size(display_size);
 
-        gpui::div()
-            .with_accessibility(&a11y_props)
-            .child(canvas_el)
+        gpui::div().with_accessibility(&a11y_props).child(canvas_el)
     }
 }
 
@@ -235,9 +245,7 @@ fn paint_arc(
             origin: point(px(qx - dot_size / 2.0), px(qy - dot_size / 2.0)),
             size: size(px(dot_size), px(dot_size)),
         };
-        window.paint_quad(
-            fill(dot_bounds, color).corner_radii(px(dot_size / 2.0)),
-        );
+        window.paint_quad(fill(dot_bounds, color).corner_radii(px(dot_size / 2.0)));
     }
 
     let end_angle = start_angle + total_angle;
@@ -327,19 +335,14 @@ impl RenderOnce for ActivityRingSet {
                     .relative()
                     .size(outer)
                     .child(
-                        gpui::div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size(outer)
-                            .child(
-                                ActivityRing::new(self.move_progress)
-                                    .color(ACTIVITY_RING_MOVE)
-                                    .track_color(track_color)
-                                    .size(outer)
-                                    .stroke_width(stroke)
-                                    .label("Move"),
-                            ),
+                        gpui::div().absolute().top_0().left_0().size(outer).child(
+                            ActivityRing::new(self.move_progress)
+                                .color(ACTIVITY_RING_MOVE)
+                                .track_color(track_color)
+                                .size(outer)
+                                .stroke_width(stroke)
+                                .label("Move"),
+                        ),
                     )
                     .child(
                         gpui::div()

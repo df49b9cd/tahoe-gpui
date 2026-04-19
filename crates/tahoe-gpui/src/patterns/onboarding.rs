@@ -208,9 +208,15 @@ mod tests {
     #[test]
     fn advance_walks_steps_then_completes() {
         let mut flow = sample_flow();
-        assert_eq!(flow.current_step().map(|s| s.title.as_ref()), Some("Welcome"));
+        assert_eq!(
+            flow.current_step().map(|s| s.title.as_ref()),
+            Some("Welcome")
+        );
         flow.advance();
-        assert_eq!(flow.current_step().map(|s| s.title.as_ref()), Some("Connect"));
+        assert_eq!(
+            flow.current_step().map(|s| s.title.as_ref()),
+            Some("Connect")
+        );
         flow.advance();
         assert!(flow.is_complete());
         assert!(flow.current_step().is_none());

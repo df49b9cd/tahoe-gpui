@@ -9,7 +9,7 @@ use gpui::{AnyElement, Context, Window, div, px};
 
 use tahoe_gpui::components::presentation::window::WindowStyle;
 use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -51,13 +51,7 @@ pub fn render(
     let theme = &theme;
 
     let chrome = |style: WindowStyle, name: &'static str, body: &'static str| {
-        let dot = |color: gpui::Hsla| {
-            div()
-                .w(px(11.0))
-                .h(px(11.0))
-                .rounded(px(11.0))
-                .bg(color)
-        };
+        let dot = |color: gpui::Hsla| div().w(px(11.0)).h(px(11.0)).rounded(px(11.0)).bg(color);
         let traffic_lights = match style {
             WindowStyle::Document | WindowStyle::Welcome => div()
                 .flex()

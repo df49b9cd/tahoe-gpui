@@ -6,7 +6,7 @@
 //! to the semantic `NSColor.separatorColor` token (distinct from the label
 //! hierarchy colours used for text).
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, Window, div, px};
 

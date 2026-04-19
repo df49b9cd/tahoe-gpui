@@ -5,15 +5,15 @@
 
 use std::time::{Duration, Instant};
 
-use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
-use tahoe_gpui::markdown::animation::{AnimationKind, AnimationState, Easing};
-use tahoe_gpui::markdown::caret::{self, CaretKind};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Div, FontWeight, Window, WindowBackgroundAppearance, WindowBounds,
     WindowOptions, div, px, size,
 };
 use gpui_platform::application;
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::markdown::animation::{AnimationKind, AnimationState, Easing};
+use tahoe_gpui::markdown::caret::{self, CaretKind};
 
 const SAMPLE_TEXT: &str = "Rust is a systems programming language focused on safety, \
     concurrency, and performance. It achieves memory safety without a garbage collector \

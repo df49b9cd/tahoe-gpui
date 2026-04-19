@@ -26,9 +26,7 @@ use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::markdown::code_block::CodeBlockView;
 use gpui::prelude::*;
-use gpui::{
-    App, ClipboardItem, ImageSource, RenderImage, Window, div, img, px,
-};
+use gpui::{App, ClipboardItem, ImageSource, RenderImage, Window, div, img, px};
 
 /// Cache key combining content hash and dark-mode flag so light/dark
 /// appearances do not trample each other's rasterizations.
@@ -209,10 +207,7 @@ impl RenderOnce for MermaidBlock {
                         .p(theme.spacing_md)
                         .flex()
                         .justify_center()
-                        .child(
-                            img(ImageSource::Render(render_image))
-                                .max_w_full(),
-                        ),
+                        .child(img(ImageSource::Render(render_image)).max_w_full()),
                 )
                 .into_any_element(),
             None => fallback_source_view(self.code, theme).into_any_element(),
@@ -269,9 +264,7 @@ fn fallback_source_view(
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::Sm)
                         .on_click(move |_, _window, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(
-                                code_for_copy.clone(),
-                            ));
+                            cx.write_to_clipboard(ClipboardItem::new_string(code_for_copy.clone()));
                         }),
                 ),
         )
@@ -289,19 +282,31 @@ mod tests {
 
     #[test]
     fn hash_mermaid_is_deterministic() {
-        assert_eq!(hash_mermaid("flowchart LR; A-->B"), hash_mermaid("flowchart LR; A-->B"));
+        assert_eq!(
+            hash_mermaid("flowchart LR; A-->B"),
+            hash_mermaid("flowchart LR; A-->B")
+        );
     }
 
     #[test]
     fn hash_mermaid_distinguishes_content() {
-        assert_ne!(hash_mermaid("flowchart LR; A-->B"), hash_mermaid("flowchart LR; A-->C"));
+        assert_ne!(
+            hash_mermaid("flowchart LR; A-->B"),
+            hash_mermaid("flowchart LR; A-->C")
+        );
     }
 
     #[test]
     fn cache_keys_distinguish_dark_and_light() {
         let h = hash_mermaid("x");
-        let light = MermaidCacheKey { content_hash: h, dark: false };
-        let dark = MermaidCacheKey { content_hash: h, dark: true };
+        let light = MermaidCacheKey {
+            content_hash: h,
+            dark: false,
+        };
+        let dark = MermaidCacheKey {
+            content_hash: h,
+            dark: true,
+        };
         assert_ne!(light, dark);
     }
 
@@ -312,7 +317,10 @@ mod tests {
         assert_eq!(light.theme.background, "#FFFFFF");
         assert_ne!(light.theme.background, dark.theme.background);
         assert_ne!(light.theme.text_color, dark.theme.text_color);
-        assert_ne!(light.theme.primary_text_color, dark.theme.primary_text_color);
+        assert_ne!(
+            light.theme.primary_text_color,
+            dark.theme.primary_text_color
+        );
     }
 
     #[test]

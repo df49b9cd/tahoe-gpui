@@ -780,7 +780,11 @@ fn render_rows(
 
                 // Leading slot: checkmark (checked) wins over icon.
                 if item.checked {
-                    row = row.child(Icon::new(IconName::Check).size(t.icon_size_inline).color(icon_color));
+                    row = row.child(
+                        Icon::new(IconName::Check)
+                            .size(t.icon_size_inline)
+                            .color(icon_color),
+                    );
                 } else if let Some(icon_name) = item.icon {
                     row = row.child(Icon::new(icon_name).size(px(16.0)).color(icon_color));
                 }

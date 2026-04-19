@@ -10,13 +10,13 @@
 
 use std::collections::HashSet;
 
-use gpui::{Entity, Window};
 use gpui::prelude::*;
+use gpui::{Entity, Window};
 
-use super::WorkflowCanvas;
-use super::undo::CanvasCommand;
 use super::super::connection::Connection;
 use super::super::node::WorkflowNode;
+use super::WorkflowCanvas;
+use super::undo::CanvasCommand;
 
 impl WorkflowCanvas {
     pub fn selected_nodes(&self) -> &HashSet<usize> {
@@ -77,12 +77,7 @@ impl WorkflowCanvas {
     /// GPUI accessibility-tree API. The VoiceOver half, which announces
     /// "Node 2 of 5, selected" on each Tab, still waits on upstream
     /// `accessibility_label` support (see `foundations::accessibility`).
-    pub fn cycle_node_focus(
-        &mut self,
-        forward: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn cycle_node_focus(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.nodes.is_empty() {
             return;
         }
@@ -107,12 +102,7 @@ impl WorkflowCanvas {
     /// without dropping existing members. Distinct from `toggle_node_selection`
     /// (Cmd-click): Shift never *removes* a node that was already part of
     /// the selection — matching Finder / Keynote "extend" semantics.
-    pub fn extend_selection(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn extend_selection(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_nodes.contains(&index) {
             self.selected_nodes.insert(index);
             if let Some(node) = self.nodes.get(index) {
@@ -164,11 +154,7 @@ impl WorkflowCanvas {
 
     /// F4 (#149): duplicate every selected node via the host's factory
     /// callback. No-op when `on_node_duplicate` isn't set (see OQ6).
-    pub fn duplicate_selected(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn duplicate_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected_nodes.is_empty() || self.on_node_duplicate.is_none() {
             return;
         }

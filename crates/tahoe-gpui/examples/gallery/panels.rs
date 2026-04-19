@@ -93,15 +93,13 @@ pub fn render(
                     ),
             )
             .child(
-                div()
-                    .pt(theme.spacing_md)
-                    .child(
-                        Button::new("panel-close")
-                            .label("Close")
-                            .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
-                            .on_click(move |_, window, cx| dismiss_for_close(window, cx)),
-                    ),
+                div().pt(theme.spacing_md).child(
+                    Button::new("panel-close")
+                        .label("Close")
+                        .variant(ButtonVariant::Outline)
+                        .size(ButtonSize::Md)
+                        .on_click(move |_, window, cx| dismiss_for_close(window, cx)),
+                ),
             );
 
         Panel::new("gallery-panel")

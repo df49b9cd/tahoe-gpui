@@ -183,7 +183,10 @@ impl Render for CopyButton {
         let duration_ms = effective_duration(&theme, 150);
         let animated_icon: AnyElement = if duration_ms == 0 {
             div()
-                .id(ElementId::NamedInteger("copy-icon-static".into(), copied_key))
+                .id(ElementId::NamedInteger(
+                    "copy-icon-static".into(),
+                    copied_key,
+                ))
                 .child(icon)
                 .into_any_element()
         } else {

@@ -590,10 +590,7 @@ mod tests {
             None // only match at 0 but content "a_b" contains '_'
         );
         assert_eq!(find_trailing_delimiter("no delimiters", b"__"), None);
-        assert_eq!(
-            find_trailing_delimiter("__", b"__"),
-            Some((0, ""))
-        );
+        assert_eq!(find_trailing_delimiter("__", b"__"), Some((0, "")));
     }
 
     #[test]

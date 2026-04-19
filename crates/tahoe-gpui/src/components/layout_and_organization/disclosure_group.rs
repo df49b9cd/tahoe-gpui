@@ -2,7 +2,7 @@
 
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, Window, div, px};
 
@@ -140,10 +140,7 @@ impl RenderOnce for DisclosureGroup {
                     let should_fire = if crate::foundations::keyboard::is_activation_key(event) {
                         true
                     } else {
-                        matches!(
-                            (key, is_open),
-                            ("right", false) | ("left", true)
-                        )
+                        matches!((key, is_open), ("right", false) | ("left", true))
                     };
                     if should_fire {
                         cx.stop_propagation();

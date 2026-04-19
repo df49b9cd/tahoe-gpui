@@ -71,8 +71,8 @@ use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledEx
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ElementId, Entity, FontStyle, FontWeight, HighlightStyle, ObjectFit,
-    SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
-    TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
+    SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun, TextStyle as GpuiTextStyle,
+    UnderlineStyle, Window, div, img, px,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -431,8 +431,7 @@ impl Render for StreamingMarkdown {
         // set it explicitly; otherwise fall back to the theme flag so the
         // caret honours the user's system-wide accessibility preference
         // without requiring every caller to forward it manually.
-        let reduce_motion =
-            self.settings.reduce_motion || theme.accessibility_mode.reduce_motion();
+        let reduce_motion = self.settings.reduce_motion || theme.accessibility_mode.reduce_motion();
         let caret_kind = self.settings.caret.unwrap_or(CaretKind::Block);
         let show_caret = is_streaming && self.settings.caret.is_some();
         // HIG Motion `foundations.md:1100`: under Reduce Motion, steady
@@ -594,9 +593,11 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                                 .flex()
                                 .flex_col()
                                 .gap(ctx.theme.spacing_xs)
-                                .children(item_blocks.iter().map(|b| {
-                                    render_block_at_depth(b, ctx, depth + 1)
-                                })),
+                                .children(
+                                    item_blocks
+                                        .iter()
+                                        .map(|b| render_block_at_depth(b, ctx, depth + 1)),
+                                ),
                         )
                 }))
                 .into_any_element()
@@ -653,7 +654,8 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             rows,
             alignments,
         } => {
-            let align_at = |idx: usize| alignments.get(idx).copied().unwrap_or(TableAlignment::None);
+            let align_at =
+                |idx: usize| alignments.get(idx).copied().unwrap_or(TableAlignment::None);
             div()
                 .flex()
                 .flex_col()
@@ -691,10 +693,7 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                     } else {
                         None
                     };
-                    let mut row_el = div()
-                        .flex()
-                        .border_t_1()
-                        .border_color(ctx.theme.border);
+                    let mut row_el = div().flex().border_t_1().border_color(ctx.theme.border);
                     if let Some(bg) = zebra_bg {
                         row_el = row_el.bg(bg);
                     }
@@ -891,7 +890,11 @@ fn render_inlines_flat(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElement
     let styled = StyledText::new(text.clone()).with_runs(builder.runs);
     let id = ctx.id_counter.get();
     ctx.id_counter.set(id + 1);
-    let urls: Vec<SharedString> = builder.link_urls.into_iter().map(SharedString::from).collect();
+    let urls: Vec<SharedString> = builder
+        .link_urls
+        .into_iter()
+        .map(SharedString::from)
+        .collect();
     // macOS NSTextView selection tint: accent color at ~25% alpha.
     // HIG: selection highlights use the system accent hue.
     let selection_bg = {

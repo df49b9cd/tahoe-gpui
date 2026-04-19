@@ -9,7 +9,7 @@ use tahoe_gpui::components::presentation::scroll_view::{ScrollAxis, ScrollView};
 use tahoe_gpui::foundations::materials::{
     SCROLL_EDGE_HEIGHT, ScrollEdgeStyle, glass_surface, scroll_edge_bottom, scroll_edge_top,
 };
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -74,11 +74,7 @@ pub fn render(
             )
             .child(
                 glass_surface(
-                    div()
-                        .w(px(220.0))
-                        .h(px(220.0))
-                        .relative()
-                        .overflow_hidden(),
+                    div().w(px(220.0)).h(px(220.0)).relative().overflow_hidden(),
                     theme,
                     GlassSize::Medium,
                 )

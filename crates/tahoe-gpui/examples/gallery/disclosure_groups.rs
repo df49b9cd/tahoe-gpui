@@ -11,8 +11,6 @@ use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
-
-
 pub fn render(
     state: &mut ComponentGallery,
     _window: &mut Window,

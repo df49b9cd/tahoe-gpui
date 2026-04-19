@@ -468,11 +468,12 @@ impl Render for MicSelectorView {
                 theme,
                 GlassSize::Medium,
             );
-            let mut dropdown = glass_panel.id("mic-selector-dropdown").on_mouse_down_out(
-                cx.listener(|this, _: &MouseDownEvent, window, cx| {
-                    this.close(window, cx);
-                }),
-            );
+            let mut dropdown =
+                glass_panel
+                    .id("mic-selector-dropdown")
+                    .on_mouse_down_out(cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                        this.close(window, cx);
+                    }));
 
             dropdown = if let Some(w) = self.dropdown_width {
                 dropdown.w(w)
@@ -584,58 +585,59 @@ impl Render for MicSelectorView {
                     // Issue #148 F3: Pair the denied state with an explicit
                     // remediation path. The Privacy & Security deep-link is
                     // documented by Apple for exactly this pattern.
-                    list = list.child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(theme.spacing_sm)
-                            .px(theme.spacing_md)
-                            .py(theme.spacing_lg)
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(theme.spacing_sm)
-                                    .child(
-                                        Icon::new(IconName::AlertTriangle)
-                                            .size(theme.icon_size_inline)
-                                            .color(theme.warning),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_style(TextStyle::Subheadline, theme)
-                                            .text_color(theme.text)
-                                            .child("Microphone access is denied"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_style(TextStyle::Caption1, theme)
-                                    .text_color(theme.text_muted)
-                                    .child(
-                                        "Grant access in System Settings to see \
-                                         your available microphones.",
-                                    ),
-                            )
-                            .child(
-                                Button::new(ElementId::from(SharedString::from(format!(
-                                    "{}-open-settings",
-                                    self.element_id
-                                ))))
-                                .label("Open Privacy Settings")
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Sm)
-                                .accessibility_label(
-                                    "Open System Settings, Privacy and Security, Microphone",
+                    list =
+                        list.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap(theme.spacing_sm)
+                                .px(theme.spacing_md)
+                                .py(theme.spacing_lg)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(theme.spacing_sm)
+                                        .child(
+                                            Icon::new(IconName::AlertTriangle)
+                                                .size(theme.icon_size_inline)
+                                                .color(theme.warning),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_style(TextStyle::Subheadline, theme)
+                                                .text_color(theme.text)
+                                                .child("Microphone access is denied"),
+                                        ),
                                 )
-                                .on_click(cx.listener(|this, _event, window, cx| {
-                                    if let Some(ref handler) = this.on_open_privacy_settings {
-                                        handler(window, &mut *cx);
-                                    }
-                                })),
-                            ),
-                    );
+                                .child(
+                                    div()
+                                        .text_style(TextStyle::Caption1, theme)
+                                        .text_color(theme.text_muted)
+                                        .child(
+                                            "Grant access in System Settings to see \
+                                         your available microphones.",
+                                        ),
+                                )
+                                .child(
+                                    Button::new(ElementId::from(SharedString::from(format!(
+                                        "{}-open-settings",
+                                        self.element_id
+                                    ))))
+                                    .label("Open Privacy Settings")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Sm)
+                                    .accessibility_label(
+                                        "Open System Settings, Privacy and Security, Microphone",
+                                    )
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        if let Some(ref handler) = this.on_open_privacy_settings {
+                                            handler(window, &mut *cx);
+                                        }
+                                    })),
+                                ),
+                        );
                 }
                 MicSelectorState::Idle if self.permission == MicPermission::Unknown => {
                     // Issue #148 F3: when permission has not yet been

@@ -206,16 +206,17 @@ impl RenderOnce for Stepper {
             minus_btn = minus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
             let h = handler.clone();
-            minus_btn = minus_btn
-                .cursor_pointer()
-                .on_click(move |event: &gpui::ClickEvent, window, cx| {
-                    let next = if event.modifiers().shift {
-                        shift_decremented
-                    } else {
-                        decremented
-                    };
-                    h(next, window, cx);
-                });
+            minus_btn =
+                minus_btn
+                    .cursor_pointer()
+                    .on_click(move |event: &gpui::ClickEvent, window, cx| {
+                        let next = if event.modifiers().shift {
+                            shift_decremented
+                        } else {
+                            decremented
+                        };
+                        h(next, window, cx);
+                    });
         }
 
         // ── Plus button ─────────────────────────────────────────────────
@@ -238,16 +239,17 @@ impl RenderOnce for Stepper {
             plus_btn = plus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
             let h = handler.clone();
-            plus_btn = plus_btn
-                .cursor_pointer()
-                .on_click(move |event: &gpui::ClickEvent, window, cx| {
-                    let next = if event.modifiers().shift {
-                        shift_incremented
-                    } else {
-                        incremented
-                    };
-                    h(next, window, cx);
-                });
+            plus_btn =
+                plus_btn
+                    .cursor_pointer()
+                    .on_click(move |event: &gpui::ClickEvent, window, cx| {
+                        let next = if event.modifiers().shift {
+                            shift_incremented
+                        } else {
+                            incremented
+                        };
+                        h(next, window, cx);
+                    });
         }
 
         // ── Vertical divider (centered, partial height per HIG) ──
@@ -267,11 +269,10 @@ impl RenderOnce for Stepper {
             .child(divider)
             .child(plus_btn);
 
-        let mut container =
-            apply_standard_control_styling(row, theme, GlassSize::Small, focused)
-                .rounded(capsule_radius)
-                .id(self.id.clone())
-                .focusable();
+        let mut container = apply_standard_control_styling(row, theme, GlassSize::Small, focused)
+            .rounded(capsule_radius)
+            .id(self.id.clone())
+            .focusable();
 
         if let Some(handle) = self.focus_handle.as_ref() {
             container = container.track_focus(handle);

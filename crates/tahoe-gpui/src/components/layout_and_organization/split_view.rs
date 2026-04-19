@@ -138,23 +138,15 @@ impl SplitView {
     /// Hosts that skip this step get the same behaviour as before —
     /// the render path falls back to `focus_handle.is_focused(window)`.
     /// Finding 13 in the Zed cross-reference audit.
-    pub fn install_focus_subscriptions(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn install_focus_subscriptions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let focus_in = cx.on_focus_in(&self.focus_handle, window, |this, _window, cx| {
             this.divider_focused = true;
             cx.notify();
         });
-        let focus_out = cx.on_focus_out(
-            &self.focus_handle,
-            window,
-            |this, _event, _window, cx| {
-                this.divider_focused = false;
-                cx.notify();
-            },
-        );
+        let focus_out = cx.on_focus_out(&self.focus_handle, window, |this, _event, _window, cx| {
+            this.divider_focused = false;
+            cx.notify();
+        });
         self._focus_subscriptions = Some([focus_in, focus_out]);
     }
 
@@ -408,14 +400,8 @@ impl Render for SplitView {
         let hairline_thickness = theme.separator_thickness;
 
         let hairline = match orientation {
-            SplitOrientation::Horizontal => div()
-                .w(hairline_thickness)
-                .h_full()
-                .bg(hairline_color),
-            SplitOrientation::Vertical => div()
-                .h(hairline_thickness)
-                .w_full()
-                .bg(hairline_color),
+            SplitOrientation::Horizontal => div().w(hairline_thickness).h_full().bg(hairline_color),
+            SplitOrientation::Vertical => div().h(hairline_thickness).w_full().bg(hairline_color),
         };
 
         let hit_area_overhang = (SPLIT_DIVIDER_HIT_AREA - SPLIT_DIVIDER_WIDTH) / 2.0;

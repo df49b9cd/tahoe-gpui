@@ -1,7 +1,7 @@
 use super::{
-    AccessibilityMode, ActiveTheme, TahoeTheme, DynamicTypeSize, FontDesign, GlassSize,
-    GlassTintColor, GlassVariant, LeadingStyle, TextStyle, bold_step, contrast_ratio,
-    macos_tracking, meets_contrast,
+    AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
+    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, bold_step, contrast_ratio, macos_tracking,
+    meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
