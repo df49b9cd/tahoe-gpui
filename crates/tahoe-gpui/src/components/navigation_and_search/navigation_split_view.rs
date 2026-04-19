@@ -9,8 +9,10 @@
 //! Resize handles are *not* yet wired — column widths are caller-owned
 //! values. When `Sidebar`'s draggable separator generalises beyond a
 //! 2-column layout, this component can adopt the same pattern. For now
-//! callers expose toggle affordances via [`NavigationSplitView::on_sidebar_toggle`]
-//! and [`NavigationSplitView::on_inspector_toggle`].
+//! callers drive collapse / visibility via the
+//! [`NavigationSplitView::sidebar_collapsed`] and
+//! [`NavigationSplitView::inspector_visible`] builders, typically wired
+//! to a toolbar action.
 //!
 //! # HIG Reference
 //!

@@ -1,6 +1,6 @@
 //! Checkbox primitive (HIG macOS).
 //!
-//! Distinct from [`Toggle`], which renders a switch. HIG macOS uses checkboxes
+//! Distinct from [`Toggle`](super::Toggle), which renders a switch. HIG macOS uses checkboxes
 //! inside Forms, preference panes, and multi-select lists where the user picks
 //! one or more options from a list — situations where the binary on/off
 //! affordance of a switch reads as too prominent. Toggles are reserved for

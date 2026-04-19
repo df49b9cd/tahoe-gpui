@@ -133,10 +133,11 @@ impl RenderOnce for Tooltip {
     }
 }
 
-/// Returns a `.tooltip(...)` closure that renders a [`TooltipView`] with the
-/// given text and optional keybinding glyph.
+/// Returns a `.tooltip(...)` closure that renders the canonical tahoe
+/// tooltip surface for the given text and optional keybinding glyph.
 ///
-/// Exposed so component builders (e.g. [`Button::tooltip`][crate::components::menus_and_actions::button::Button::tooltip])
+/// Exposed so component builders (e.g.
+/// [`Button::tooltip`][crate::components::menus_and_actions::button::Button::tooltip])
 /// can attach the canonical tahoe tooltip style without wrapping their
 /// element in a full [`Tooltip`] component (which would introduce an extra
 /// `div` layer and break ID-based targeting).
