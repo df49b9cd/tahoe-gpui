@@ -18,9 +18,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::callback_types::OnF64Change;
-use crate::foundations::accessibility::{
-    AccessibilityProps, AccessibilityRole, AccessibleExt,
-};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 
@@ -262,10 +260,7 @@ impl Render for TranscriptionView {
                         .children(inner),
                 );
             } else {
-                let mut segment_div = div()
-                    .text_color(text_color)
-                    .cursor_default()
-                    .py(px(2.0));
+                let mut segment_div = div().text_color(text_color).cursor_default().py(px(2.0));
                 if is_hypothesis {
                     segment_div = segment_div.italic();
                 }

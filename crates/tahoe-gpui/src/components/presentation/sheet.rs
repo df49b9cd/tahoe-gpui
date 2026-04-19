@@ -31,7 +31,7 @@ use crate::callback_types::{OnMutCallback, rc_wrap};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{backdrop_overlay, glass_surface};
 use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 
 // ── Constants ───────────────────────────────────────────────────────────────
 

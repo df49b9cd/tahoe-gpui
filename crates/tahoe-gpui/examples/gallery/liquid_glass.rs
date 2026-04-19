@@ -15,7 +15,7 @@ use tahoe_gpui::foundations::icons::{GlassIconTile, GlassTileTint, IconName};
 use tahoe_gpui::foundations::materials::{
     GlassTintColor, accent_tinted_glass_surface, tinted_glass_surface,
 };
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 

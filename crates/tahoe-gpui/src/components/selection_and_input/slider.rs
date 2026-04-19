@@ -297,7 +297,11 @@ impl Render for Slider {
         let hit_area_height = self.thumb_size.max(px(theme.target_size()));
 
         let rtl = theme.is_rtl();
-        let tick_count = if self.show_ticks { self.step_count } else { None };
+        let tick_count = if self.show_ticks {
+            self.step_count
+        } else {
+            None
+        };
         let is_dragging = self.is_dragging;
         let tooltip_text = self
             .value_formatter
@@ -553,10 +557,7 @@ impl Element for SliderTrackElement {
                     raw_x - tick_w / 2.0
                 };
                 window.paint_quad(fill(
-                    Bounds::new(
-                        gpui::point(tick_x, tick_y),
-                        gpui::size(tick_w, tick_h),
-                    ),
+                    Bounds::new(gpui::point(tick_x, tick_y), gpui::size(tick_w, tick_h)),
                     self.tick_color,
                 ));
             }
@@ -577,13 +578,11 @@ impl Element for SliderTrackElement {
                 underline: None,
                 strikethrough: None,
             };
-            if let Ok(shaped) = window.text_system().shape_text(
-                text.clone(),
-                font_size,
-                &[run],
-                None,
-                None,
-            ) && let Some(line) = shaped.into_vec().into_iter().next()
+            if let Ok(shaped) =
+                window
+                    .text_system()
+                    .shape_text(text.clone(), font_size, &[run], None, None)
+                && let Some(line) = shaped.into_vec().into_iter().next()
             {
                 let pad_x = px(6.0);
                 let pad_y = px(3.0);
@@ -599,9 +598,7 @@ impl Element for SliderTrackElement {
                     gpui::point(tooltip_x, tooltip_y),
                     gpui::size(tooltip_w, tooltip_h),
                 );
-                window.paint_quad(
-                    fill(tooltip_bounds, self.tooltip_bg).corner_radii(px(4.0)),
-                );
+                window.paint_quad(fill(tooltip_bounds, self.tooltip_bg).corner_radii(px(4.0)));
                 let _ = line.paint(
                     point(tooltip_x + pad_x, tooltip_y + pad_y),
                     line_h,

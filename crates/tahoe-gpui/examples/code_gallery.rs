@@ -125,14 +125,8 @@ impl CodeGallery {
                                 "components",
                                 "src/components",
                                 vec![
-                                    TreeNode::file(
-                                        "button.rs",
-                                        "src/components/button.rs",
-                                    ),
-                                    TreeNode::file(
-                                        "modal.rs",
-                                        "src/components/modal.rs",
-                                    ),
+                                    TreeNode::file("button.rs", "src/components/button.rs"),
+                                    TreeNode::file("modal.rs", "src/components/modal.rs"),
                                 ],
                             ),
                         ],
@@ -144,9 +138,7 @@ impl CodeGallery {
             );
             tree.set_default_expanded(HashSet::from(["src".to_string()]), cx);
             tree.set_on_select(|path, _, _| println!("Selected: {path}"));
-            tree.set_on_expanded_change(|expanded, _, _| {
-                println!("Expanded: {expanded:?}")
-            });
+            tree.set_on_expanded_change(|expanded, _, _| println!("Expanded: {expanded:?}"));
             tree
         });
 
@@ -178,8 +170,7 @@ impl CodeGallery {
 
         // ── API endpoint ────────────────────────────────────────────────
         let api_endpoint = cx.new(|cx| {
-            let mut endpoint =
-                ApiEndpointView::new(HttpMethod::Post, "/api/users", cx);
+            let mut endpoint = ApiEndpointView::new(HttpMethod::Post, "/api/users", cx);
             endpoint.description("Create a new user account");
             endpoint.parameters(vec![
                 EndpointParameter::new("page", "integer")
@@ -201,10 +192,9 @@ impl CodeGallery {
         let test_results = cx.new(|cx| {
             let mut results = TestResultsView::new(cx);
             let failing_case = {
-                let mut case =
-                    TestCase::new("handles_expired_session", TestStatus::Failed)
-                        .duration_ms(18)
-                        .suite("auth::tests");
+                let mut case = TestCase::new("handles_expired_session", TestStatus::Failed)
+                    .duration_ms(18)
+                    .suite("auth::tests");
                 case.error_message = Some("expected 401, got 500".into());
                 case
             };
@@ -441,158 +431,188 @@ impl Render for CodeGallery {
             .gap(px(24.0))
             .overflow_y_scroll()
             .child(header)
-            .child(section("Code Block (Rust)", theme).child(
-                CodeBlockView::new(RUST_SAMPLE)
-                    .language(Some("rust".to_string()))
-                    .show_line_numbers(true)
-                    .filename("fibonacci.rs")
-                    .copy_button(self.code_block_rust_copy.clone()),
-            ))
-            .child(section("Code Block (Python)", theme).child(
-                CodeBlockView::new(PYTHON_SAMPLE)
-                    .language(Some("python".to_string()))
-                    .show_line_numbers(true)
-                    .copy_button(self.code_block_python_copy.clone()),
-            ))
-            .child(section("Code Block (language selector)", theme).child(
-                CodeBlockView::new("")
-                    .show_line_numbers(true)
-                    .language_variants(vec![
-                        LanguageVariant {
-                            label: "TypeScript".into(),
-                            language: "typescript".into(),
-                            code: TS_SAMPLE.to_string(),
-                        },
-                        LanguageVariant {
-                            label: "Rust".into(),
-                            language: "rust".into(),
-                            code: RUST_SAMPLE.to_string(),
-                        },
-                    ])
-                    .active_variant_index(0)
-                    .copy_button(self.code_block_variants_copy.clone()),
-            ))
-            .child(section("Code Block (collapsed)", theme).child(
-                CodeBlockView::new(RUST_SAMPLE)
-                    .language(Some("rust".to_string()))
-                    .show_line_numbers(true)
-                    .max_lines(5)
-                    .copy_button(self.code_block_collapsed_copy.clone()),
-            ))
-            .child(section("Snippet", theme).child(
-                Snippet::new("npm install @ai-sdk/react")
-                    .copy_button(self.snippet_copies[0].clone()),
-            ))
-            .child(section("Snippet (with prefix)", theme).child(
-                Snippet::new("cargo add tahoe-gpui")
-                    .prefix("$")
-                    .copy_button(self.snippet_copies[1].clone()),
-            ))
-            .child(section("Snippet (custom timeout)", theme).child(
-                Snippet::new("git push origin main")
-                    .prefix("$")
-                    .timeout(Duration::from_secs(5))
-                    .copy_button(self.snippet_copies[2].clone()),
-            ))
-            .child(section("Snippet (on_copy)", theme).child(
-                Snippet::new("export API_KEY=sk-...")
-                    .on_copy(Arc::new(|| println!("Copied API key command!")))
-                    .copy_button(self.snippet_copies[3].clone()),
-            ))
-            .child(section("Snippet (disabled)", theme).child(
-                Snippet::new("echo 'Disabled example'")
-                    .prefix("$")
-                    .disabled(true)
-                    .copy_button(self.snippet_copies[4].clone()),
-            ))
-            .child(section("Snippet (multiple addons)", theme).child(
-                Snippet::new("world")
-                    .addon(div().child("hello "))
-                    .addon(div().child("beautiful "))
-                    .copy_button(self.snippet_copies[5].clone()),
-            ))
-            .child(section("Snippet (on_error callback)", theme).child(
-                Snippet::new("sensitive-cmd")
-                    .on_error(Arc::new(|err| eprintln!("Copy failed: {err}")))
-                    .copy_button(self.snippet_copies[6].clone()),
-            ))
-            .child(section("Commit", theme).child(
-                Commit::new("abc1234", "Fix streaming animation for markdown renderer")
-                    .author("dev@example.com")
-                    .date("2026-04-04")
-                    .open(true)
-                    .copy_button(self.commit_copy.clone())
-                    .file_changes(vec![
-                        CommitFileData::new("src/markdown/renderer.rs", FileStatus::Modified)
-                            .additions(42)
-                            .deletions(15),
-                        CommitFileData::new("src/markdown/animation.rs", FileStatus::Added)
-                            .additions(78),
-                        CommitFileData::new("tests/markdown_test.rs", FileStatus::Modified)
-                            .additions(23)
-                            .deletions(5),
-                    ]),
-            ))
-            .child(section("Package Info (convenience API)", theme).child(
-                PackageInfoView::new("tahoe-gpui", "0.1.0")
-                    .new_version("0.2.0")
-                    .change_type(ChangeType::Minor)
-                    .description("Tahoe HIG-aligned UI components for GPUI")
-                    .license("Apache-2.0")
-                    .dependencies(vec![
-                        Dependency::new("gpui").version("0.1.0"),
-                        Dependency::new("serde"),
-                    ]),
-            ))
-            .child(section("Package Info (compound API)", theme).child(
-                PackageInfoView::from_parts()
-                    .child(
-                        PackageInfoHeader::new()
-                            .child(PackageInfoName::new("react"))
-                            .child(PackageInfoChangeType::new(ChangeType::Major)),
-                    )
-                    .child(
-                        PackageInfoVersion::new()
-                            .current("18.2.0")
-                            .new_ver("19.0.0"),
-                    )
-                    .child(PackageInfoDescription::new(
-                        "The library for web and native user interfaces",
-                    ))
-                    .child(
-                        PackageInfoContent::new().child(
-                            PackageInfoDependencies::new()
-                                .child(
-                                    PackageInfoDependency::new("scheduler").version("0.23.0"),
-                                )
-                                .child(PackageInfoDependency::new("loose-envify")),
+            .child(
+                section("Code Block (Rust)", theme).child(
+                    CodeBlockView::new(RUST_SAMPLE)
+                        .language(Some("rust".to_string()))
+                        .show_line_numbers(true)
+                        .filename("fibonacci.rs")
+                        .copy_button(self.code_block_rust_copy.clone()),
+                ),
+            )
+            .child(
+                section("Code Block (Python)", theme).child(
+                    CodeBlockView::new(PYTHON_SAMPLE)
+                        .language(Some("python".to_string()))
+                        .show_line_numbers(true)
+                        .copy_button(self.code_block_python_copy.clone()),
+                ),
+            )
+            .child(
+                section("Code Block (language selector)", theme).child(
+                    CodeBlockView::new("")
+                        .show_line_numbers(true)
+                        .language_variants(vec![
+                            LanguageVariant {
+                                label: "TypeScript".into(),
+                                language: "typescript".into(),
+                                code: TS_SAMPLE.to_string(),
+                            },
+                            LanguageVariant {
+                                label: "Rust".into(),
+                                language: "rust".into(),
+                                code: RUST_SAMPLE.to_string(),
+                            },
+                        ])
+                        .active_variant_index(0)
+                        .copy_button(self.code_block_variants_copy.clone()),
+                ),
+            )
+            .child(
+                section("Code Block (collapsed)", theme).child(
+                    CodeBlockView::new(RUST_SAMPLE)
+                        .language(Some("rust".to_string()))
+                        .show_line_numbers(true)
+                        .max_lines(5)
+                        .copy_button(self.code_block_collapsed_copy.clone()),
+                ),
+            )
+            .child(
+                section("Snippet", theme).child(
+                    Snippet::new("npm install @ai-sdk/react")
+                        .copy_button(self.snippet_copies[0].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (with prefix)", theme).child(
+                    Snippet::new("cargo add tahoe-gpui")
+                        .prefix("$")
+                        .copy_button(self.snippet_copies[1].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (custom timeout)", theme).child(
+                    Snippet::new("git push origin main")
+                        .prefix("$")
+                        .timeout(Duration::from_secs(5))
+                        .copy_button(self.snippet_copies[2].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (on_copy)", theme).child(
+                    Snippet::new("export API_KEY=sk-...")
+                        .on_copy(Arc::new(|| println!("Copied API key command!")))
+                        .copy_button(self.snippet_copies[3].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (disabled)", theme).child(
+                    Snippet::new("echo 'Disabled example'")
+                        .prefix("$")
+                        .disabled(true)
+                        .copy_button(self.snippet_copies[4].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (multiple addons)", theme).child(
+                    Snippet::new("world")
+                        .addon(div().child("hello "))
+                        .addon(div().child("beautiful "))
+                        .copy_button(self.snippet_copies[5].clone()),
+                ),
+            )
+            .child(
+                section("Snippet (on_error callback)", theme).child(
+                    Snippet::new("sensitive-cmd")
+                        .on_error(Arc::new(|err| eprintln!("Copy failed: {err}")))
+                        .copy_button(self.snippet_copies[6].clone()),
+                ),
+            )
+            .child(
+                section("Commit", theme).child(
+                    Commit::new("abc1234", "Fix streaming animation for markdown renderer")
+                        .author("dev@example.com")
+                        .date("2026-04-04")
+                        .open(true)
+                        .copy_button(self.commit_copy.clone())
+                        .file_changes(vec![
+                            CommitFileData::new("src/markdown/renderer.rs", FileStatus::Modified)
+                                .additions(42)
+                                .deletions(15),
+                            CommitFileData::new("src/markdown/animation.rs", FileStatus::Added)
+                                .additions(78),
+                            CommitFileData::new("tests/markdown_test.rs", FileStatus::Modified)
+                                .additions(23)
+                                .deletions(5),
+                        ]),
+                ),
+            )
+            .child(
+                section("Package Info (convenience API)", theme).child(
+                    PackageInfoView::new("tahoe-gpui", "0.1.0")
+                        .new_version("0.2.0")
+                        .change_type(ChangeType::Minor)
+                        .description("Tahoe HIG-aligned UI components for GPUI")
+                        .license("Apache-2.0")
+                        .dependencies(vec![
+                            Dependency::new("gpui").version("0.1.0"),
+                            Dependency::new("serde"),
+                        ]),
+                ),
+            )
+            .child(
+                section("Package Info (compound API)", theme).child(
+                    PackageInfoView::from_parts()
+                        .child(
+                            PackageInfoHeader::new()
+                                .child(PackageInfoName::new("react"))
+                                .child(PackageInfoChangeType::new(ChangeType::Major)),
+                        )
+                        .child(
+                            PackageInfoVersion::new()
+                                .current("18.2.0")
+                                .new_ver("19.0.0"),
+                        )
+                        .child(PackageInfoDescription::new(
+                            "The library for web and native user interfaces",
+                        ))
+                        .child(
+                            PackageInfoContent::new().child(
+                                PackageInfoDependencies::new()
+                                    .child(
+                                        PackageInfoDependency::new("scheduler").version("0.23.0"),
+                                    )
+                                    .child(PackageInfoDependency::new("loose-envify")),
+                            ),
                         ),
-                    ),
-            ))
+                ),
+            )
             .child(section("Environment Variables", theme).child(self.env_vars.clone()))
-            .child(section("Artifact", theme).child(
-                Artifact::new("Generated Component")
-                    .content(
+            .child(
+                section("Artifact", theme).child(
+                    Artifact::new("Generated Component").content(
                         CodeBlockView::new(ARTIFACT_SAMPLE.to_string())
                             .copy_button(self.artifact_copy.clone()),
                     ),
-            ))
+                ),
+            )
             .child(section("JSX Preview (static)", theme).child(self.jsx_static.clone()))
             .child(section("JSX Preview (streaming)", theme).child(self.jsx_streaming.clone()))
             // FileTreeView uses `uniform_list` which needs a bounded
             // height to allocate rows; wrap in a fixed-height container so
             // the vertical scroll doesn't collapse it to zero height.
-            .child(section("File Tree", theme).child(
-                div().h(px(220.0)).child(self.file_tree.clone()),
-            ))
+            .child(
+                section("File Tree", theme).child(div().h(px(220.0)).child(self.file_tree.clone())),
+            )
             .child(section("Terminal", theme).child(self.terminal.clone()))
             .child(section("Stack Trace", theme).child(self.stack_trace.clone()))
             .child(section("API Endpoint", theme).child(self.api_endpoint.clone()))
             .child(section("Test Results", theme).child(self.test_results.clone()))
             .child(section("Sandbox", theme).child(self.sandbox.clone()))
-            .child(section("Web Preview", theme).child(
-                WebPreview::new("https://app.example.com/dashboard"),
-            ))
+            .child(
+                section("Web Preview", theme)
+                    .child(WebPreview::new("https://app.example.com/dashboard")),
+            )
             .child(section("Agent", theme).child(self.agent.clone()))
     }
 }

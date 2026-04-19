@@ -128,7 +128,11 @@ mod tests {
         let interval = Duration::from_millis(500);
         // First half-cycle: visible.
         assert!(caret_visible_at(epoch, epoch, interval));
-        assert!(caret_visible_at(epoch, epoch + Duration::from_millis(250), interval));
+        assert!(caret_visible_at(
+            epoch,
+            epoch + Duration::from_millis(250),
+            interval
+        ));
         // Second half-cycle: hidden.
         assert!(!caret_visible_at(
             epoch,

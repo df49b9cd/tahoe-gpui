@@ -9,7 +9,7 @@
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, SharedString, Window, div, px};
 
@@ -306,8 +306,7 @@ impl RenderOnce for WorkflowControls {
                 .size(ButtonSize::IconSm)
                 .disabled(!can_undo);
             if let Some(handler) = self.on_undo.take() {
-                undo_btn =
-                    undo_btn.on_click(move |event, window, cx| handler(event, window, cx));
+                undo_btn = undo_btn.on_click(move |event, window, cx| handler(event, window, cx));
             }
             bar = bar.child(undo_btn);
 
@@ -317,8 +316,7 @@ impl RenderOnce for WorkflowControls {
                 .size(ButtonSize::IconSm)
                 .disabled(!can_redo);
             if let Some(handler) = self.on_redo.take() {
-                redo_btn =
-                    redo_btn.on_click(move |event, window, cx| handler(event, window, cx));
+                redo_btn = redo_btn.on_click(move |event, window, cx| handler(event, window, cx));
             }
             bar = bar.child(redo_btn);
 

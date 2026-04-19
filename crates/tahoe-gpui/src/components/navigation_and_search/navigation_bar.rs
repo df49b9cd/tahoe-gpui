@@ -173,5 +173,4 @@ mod tests {
         assert!(bar.trailing.is_none());
         assert_eq!(bar.height, Some(px(50.0)));
     }
-
 }

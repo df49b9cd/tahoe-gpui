@@ -356,10 +356,7 @@ impl Artifact {
     /// Set a callback fired when the collapse chevron is clicked. Receives
     /// the new collapsed state (post-toggle). No-op when the artifact is
     /// not [`Self::collapsible`].
-    pub fn on_toggle(
-        mut self,
-        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_toggle = Some(Box::new(handler));
         self
     }

@@ -1,6 +1,6 @@
 //! Workflow minimap component.
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use crate::ids::next_element_id;
 use gpui::prelude::*;
 use gpui::{
@@ -297,12 +297,8 @@ impl RenderOnce for WorkflowMiniMap {
             MinimapPosition::BottomLeft => {
                 wrapper = wrapper.bottom(spacing + px(extra)).left(spacing)
             }
-            MinimapPosition::TopRight => {
-                wrapper = wrapper.top(spacing + px(extra)).right(spacing)
-            }
-            MinimapPosition::TopLeft => {
-                wrapper = wrapper.top(spacing + px(extra)).left(spacing)
-            }
+            MinimapPosition::TopRight => wrapper = wrapper.top(spacing + px(extra)).right(spacing),
+            MinimapPosition::TopLeft => wrapper = wrapper.top(spacing + px(extra)).left(spacing),
         }
 
         // Click handler (F15 #149): translate minimap-local coordinates into

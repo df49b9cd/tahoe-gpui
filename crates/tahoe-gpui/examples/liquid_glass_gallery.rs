@@ -4,17 +4,15 @@
 //! multi-shadow edge definition, tinted variants, and pill-shaped controls.
 //! Uses Apple iOS 26 shadow system (no borders on glass surfaces).
 
+use gpui::prelude::*;
+use gpui::{App, Bounds, Div, FontWeight, Window, WindowBounds, WindowOptions, div, px, size};
+use gpui_platform::application;
 use tahoe_gpui::components::content::badge::{Badge, BadgeVariant};
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
 use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
-use tahoe_gpui::foundations::theme::{
-    TahoeTheme, GlassSize, GlassTint, TextStyle, TextStyledExt,
-};
-use gpui::prelude::*;
-use gpui::{App, Bounds, Div, FontWeight, Window, WindowBounds, WindowOptions, div, px, size};
-use gpui_platform::application;
+use tahoe_gpui::foundations::theme::{GlassSize, GlassTint, TahoeTheme, TextStyle, TextStyledExt};
 
 struct LiquidGlassGallery;
 

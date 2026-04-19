@@ -4,6 +4,12 @@
 //! TabBar, Modal, Popover, Tooltip, HoverCard, Toggle, DisclosureGroup, ProgressIndicator.
 //! All surfaces use translucent glass styling with macOS window blur.
 
+use gpui::prelude::*;
+use gpui::{
+    AnyElement, App, Bounds, Entity, FontWeight, SharedString, Window, WindowBounds, WindowOptions,
+    div, hsla, px, size,
+};
+use gpui_platform::application;
 use tahoe_gpui::components::content::badge::{Badge, BadgeVariant};
 use tahoe_gpui::components::layout_and_organization::disclosure_group::DisclosureGroup;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
@@ -17,13 +23,7 @@ use tahoe_gpui::components::status::progress_indicator::ProgressIndicator;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
 use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
-use gpui::prelude::*;
-use gpui::{
-    AnyElement, App, Bounds, Entity, FontWeight, SharedString, Window, WindowBounds, WindowOptions,
-    div, hsla, px, size,
-};
-use gpui_platform::application;
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 // ─── Static Data ─────────────────────────────────────────────────────────────
 

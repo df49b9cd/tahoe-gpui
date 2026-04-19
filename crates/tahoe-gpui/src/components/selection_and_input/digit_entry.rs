@@ -138,7 +138,12 @@ impl DigitEntry {
         cx.notify();
     }
 
-    fn handle_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn handle_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let key = event.keystroke.key.as_str();
         let platform = event.keystroke.modifiers.platform;
 

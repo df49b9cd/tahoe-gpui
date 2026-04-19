@@ -246,7 +246,10 @@ mod tests {
         // In LTR, every symbol reports Neutral regardless of its RTL
         // classification.
         assert_eq!(
-            icon_direction(IconLayoutBehavior::Directional, LayoutDirection::LeftToRight),
+            icon_direction(
+                IconLayoutBehavior::Directional,
+                LayoutDirection::LeftToRight
+            ),
             IconDirection::Neutral
         );
         assert_eq!(
@@ -264,7 +267,10 @@ mod tests {
             IconDirection::Neutral
         );
         assert_eq!(
-            icon_direction(IconLayoutBehavior::Directional, LayoutDirection::RightToLeft),
+            icon_direction(
+                IconLayoutBehavior::Directional,
+                LayoutDirection::RightToLeft
+            ),
             IconDirection::Flip
         );
         assert_eq!(

@@ -10,7 +10,7 @@ use gpui::prelude::*;
 use gpui::{Bounds, Hsla, PathBuilder, Pixels, Window, canvas, point, px};
 
 use super::IconName;
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 
 /// A canvas-drawn animated provider icon with per-element animation control.
 ///

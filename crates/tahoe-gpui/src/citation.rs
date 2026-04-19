@@ -428,11 +428,13 @@ impl RenderOnce for InlineCitation {
             (Some(title), false) => format!("Citation {index}, {title}"),
             (None, false) => format!("Citation {index}"),
         };
-        let a11y = AccessibilityProps::new().label(a11y_label).role(if has_url {
-            AccessibilityRole::Button
-        } else {
-            AccessibilityRole::StaticText
-        });
+        let a11y = AccessibilityProps::new()
+            .label(a11y_label)
+            .role(if has_url {
+                AccessibilityRole::Button
+            } else {
+                AccessibilityRole::StaticText
+            });
 
         let mut el = div()
             .id(self.id)

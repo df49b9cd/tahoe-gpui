@@ -17,7 +17,7 @@ tahoe-gpui/
 │   ├── tahoe-gpui/   # Main UI component library
 │   └── remend/       # Streaming Markdown preprocessor (internal)
 ├── rustfmt.toml      # Formatter config (edition 2024, max_width 100)
-├── clippy.toml       # Linter config (MSRV 1.87.0)
+├── clippy.toml       # Linter config (MSRV 1.87.0 — see AGENTS.md)
 ├── deny.toml         # Dependency audit policy
 ├── .config/
 │   └── nextest.toml  # Test runner profiles (default, ci)
@@ -61,7 +61,7 @@ See [`crates/tahoe-gpui/CLAUDE.md`](crates/tahoe-gpui/CLAUDE.md) for the full ex
 ## Code style
 
 - **Formatter**: `rustfmt` with edition 2024, `max_width = 100`, `imports_granularity = "Crate"`, `group_imports = "StdExternalCrate"`.
-- **Linting**: clippy with MSRV 1.87.0. No warnings allowed on CI.
+- **Linting**: clippy with MSRV 1.87.0 (intentionally lower than the workspace `rust-version`). No warnings allowed on CI.
 - **No glob imports in tests** — always spell out `use crate::foo::{Bar, Baz};` rather than `use super::*;`.
 - **Comments**: default to none. Only add one when the *why* is non-obvious (hidden constraint, workaround, surprising behavior).
 - **Unsafe code**: every `unsafe` block must carry a multi-line `// SAFETY:` justification (uppercase, colon suffix).

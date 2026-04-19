@@ -1,15 +1,15 @@
 //! Example: workflow canvas with nodes, edges, and overlay controls.
 
-use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
-use tahoe_gpui::foundations::icons::{Icon, IconName};
-use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
-use tahoe_gpui::workflow::*;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, Entity, FontWeight, Window, WindowBackgroundAppearance, WindowBounds,
     WindowOptions, div, px, size,
 };
 use gpui_platform::application;
+use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
+use tahoe_gpui::foundations::icons::{Icon, IconName};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::workflow::*;
 
 struct WorkflowDemo {
     canvas: Entity<WorkflowCanvas>,

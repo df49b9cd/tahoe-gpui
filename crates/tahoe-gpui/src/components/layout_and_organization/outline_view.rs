@@ -616,8 +616,8 @@ mod tests {
         let folder = OutlineNode::new("f", "folder")
             .expanded(true)
             .children(vec![visible_child, collapsed_child]);
-        let hidden_folder = OutlineNode::new("h", "hidden")
-            .children(vec![OutlineNode::new("hc", "hidden-child")]);
+        let hidden_folder =
+            OutlineNode::new("h", "hidden").children(vec![OutlineNode::new("hc", "hidden-child")]);
 
         let view = OutlineView::new("test").nodes(vec![folder, hidden_folder]);
         let flat = view.visible_entries();

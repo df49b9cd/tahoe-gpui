@@ -11,7 +11,7 @@ use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyEntity, Animation, AnimationExt, AnyElement, App, DismissEvent, ElementId, EventEmitter,
+    Animation, AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter,
     FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, SharedString, Window, div, px,
 };
 
@@ -255,24 +255,23 @@ impl RenderOnce for Modal {
 
         let on_dismiss_rc: Option<std::rc::Rc<Box<DismissFn>>> =
             if inner_dismiss.is_some() || dismiss_emitter.is_some() {
-                let wrapped: Box<DismissFn> =
-                    Box::new(move |window: &mut Window, cx: &mut App| {
-                        if let Some(handle) = restore.as_ref() {
-                            handle.focus(window, cx);
-                        }
-                        // Event-emitter path (Finding 5): subscribers wired
-                        // via `cx.subscribe` receive DismissEvent here.
-                        if let (Some(emitter), Some(emit_fn)) =
-                            (dismiss_emitter.as_ref(), dismiss_emit_fn.as_ref())
-                        {
-                            emit_fn(emitter, window, cx);
-                        }
-                        // Closure path: for callers that pass a dismiss
-                        // handler directly via the `on_dismiss` builder.
-                        if let Some(ref inner) = inner_dismiss {
-                            inner(window, cx);
-                        }
-                    });
+                let wrapped: Box<DismissFn> = Box::new(move |window: &mut Window, cx: &mut App| {
+                    if let Some(handle) = restore.as_ref() {
+                        handle.focus(window, cx);
+                    }
+                    // Event-emitter path (Finding 5): subscribers wired
+                    // via `cx.subscribe` receive DismissEvent here.
+                    if let (Some(emitter), Some(emit_fn)) =
+                        (dismiss_emitter.as_ref(), dismiss_emit_fn.as_ref())
+                    {
+                        emit_fn(emitter, window, cx);
+                    }
+                    // Closure path: for callers that pass a dismiss
+                    // handler directly via the `on_dismiss` builder.
+                    if let Some(ref inner) = inner_dismiss {
+                        inner(window, cx);
+                    }
+                });
                 Some(std::rc::Rc::new(wrapped))
             } else {
                 None

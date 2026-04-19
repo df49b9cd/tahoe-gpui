@@ -329,18 +329,12 @@ fn grid_custom_dot_size_overrides_default() {
 #[test]
 fn port_hit_target_meets_hig_minimum() {
     // 22 px radius ≈ 44 pt diameter.
-    assert!(
-        PORT_HIT_RADIUS_SCREEN_PX * 2.0 >= 44.0,
-        "port hit diameter must meet HIG 44 pt minimum (#149 F17/F27)"
-    );
+    const { assert!(PORT_HIT_RADIUS_SCREEN_PX * 2.0 >= 44.0) };
 }
 
 #[test]
 fn edge_hit_target_meets_hig_minimum() {
-    assert!(
-        EDGE_HIT_TOLERANCE_SCREEN_PX * 2.0 >= 22.0,
-        "edge hit diameter should be large enough to reach per HIG (#149 F19)"
-    );
+    const { assert!(EDGE_HIT_TOLERANCE_SCREEN_PX * 2.0 >= 22.0) };
 }
 
 #[test]
@@ -361,16 +355,13 @@ fn auto_pan_margin_is_at_least_one_node_height() {
     // A node dropped within the margin should trigger scroll. A 40 px
     // margin exceeds half the default NODE_HEIGHT (80 px / 2 = 40) so
     // the node is at least visibly edging out before pan kicks in.
-    assert!(AUTO_PAN_MARGIN >= 40.0, "#149 F11");
+    const { assert!(AUTO_PAN_MARGIN >= 40.0) };
 }
 
 #[test]
 fn auto_pan_step_is_perceptible_but_not_jarring() {
     // Too small (<4 px) feels stuck; too large (>24 px) overshoots.
-    assert!(
-        AUTO_PAN_STEP >= 4.0 && AUTO_PAN_STEP <= 24.0,
-        "auto-pan step outside the comfortable range"
-    );
+    const { assert!(AUTO_PAN_STEP >= 4.0 && AUTO_PAN_STEP <= 24.0) };
 }
 
 // ── Keyboard-shortcut coverage (#149 F2/F3/F4/F6) ───────────────────

@@ -32,7 +32,7 @@ use crate::callback_types::rc_wrap;
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
 use crate::foundations::materials::glass_surface;
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// A single menu in the menu bar.
 pub struct Menu {
@@ -276,10 +276,8 @@ impl RenderOnce for MenuBar {
             bar = bar.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 match key {
-                    "escape" => {
-                        if open.is_some() {
-                            h(None, window, cx);
-                        }
+                    "escape" if open.is_some() => {
+                        h(None, window, cx);
                     }
                     "enter" | "space" | "down" => {
                         h(Some(highlighted), window, cx);

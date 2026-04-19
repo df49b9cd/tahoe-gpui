@@ -182,8 +182,7 @@ impl RenderOnce for Gauge {
 
         let gauge_body: gpui::AnyElement = match self.style {
             GaugeStyle::Linear => {
-                render_linear(self.value, fill_color, track_bg, px(8.0), px(4.0))
-                    .into_any_element()
+                render_linear(self.value, fill_color, track_bg, px(8.0), px(4.0)).into_any_element()
             }
             GaugeStyle::Compact => {
                 render_linear(self.value, fill_color, track_bg, px(16.0), px(8.0))
@@ -205,8 +204,7 @@ impl RenderOnce for Gauge {
                 // HIG relevancy bars render as a short, low-contrast line
                 // segment instead of a filled bar; we dim the fill to match.
                 let dimmed = hsla(fill_color.h, fill_color.s, fill_color.l, 0.6);
-                render_linear(self.value, dimmed, track_bg, px(3.0), px(1.5))
-                    .into_any_element()
+                render_linear(self.value, dimmed, track_bg, px(3.0), px(1.5)).into_any_element()
             }
         };
 
@@ -299,13 +297,7 @@ fn render_discrete(
         .h(px(8.0));
     for i in 0..segments {
         let bg = if i < filled { fill_color } else { track_bg };
-        row = row.child(
-            div()
-                .h_full()
-                .flex_1()
-                .rounded(px(2.0))
-                .bg(bg),
-        );
+        row = row.child(div().h_full().flex_1().rounded(px(2.0)).bg(bg));
     }
     row
 }
@@ -334,10 +326,16 @@ fn render_circular(value: f32, fill_color: Hsla, track_bg: Hsla) -> impl IntoEle
                 size: size(px(radius * 2.0 + stroke), px(radius * 2.0 + stroke)),
             };
             window.paint_quad(
-                fill(track_bounds, Hsla { a: 0.0, ..fill_color })
-                    .corner_radii(px(s / 2.0))
-                    .border_widths(px(stroke))
-                    .border_color(track_bg),
+                fill(
+                    track_bounds,
+                    Hsla {
+                        a: 0.0,
+                        ..fill_color
+                    },
+                )
+                .corner_radii(px(s / 2.0))
+                .border_widths(px(stroke))
+                .border_color(track_bg),
             );
 
             if proportion > 0.0 {
@@ -354,9 +352,8 @@ fn render_circular(value: f32, fill_color: Hsla, track_bg: Hsla) -> impl IntoEle
                         origin: point(px(qx - dot_size / 2.0), px(qy - dot_size / 2.0)),
                         size: size(px(dot_size), px(dot_size)),
                     };
-                    window.paint_quad(
-                        fill(dot_bounds, fill_color).corner_radii(px(dot_size / 2.0)),
-                    );
+                    window
+                        .paint_quad(fill(dot_bounds, fill_color).corner_radii(px(dot_size / 2.0)));
                 }
             }
         },

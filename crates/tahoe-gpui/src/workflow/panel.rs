@@ -10,7 +10,7 @@
 //!
 //! The parent element must have `relative()` for overlay positioning.
 
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Window, div, px};
 

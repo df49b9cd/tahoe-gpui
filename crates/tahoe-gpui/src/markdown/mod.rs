@@ -25,9 +25,9 @@ pub use code_block::{
     CodeBlockLanguageSelector, CodeBlockTitle, CodeBlockView, LanguageVariant,
 };
 pub use parser::{IncrementalMarkdownParser, InlineContent, MarkdownBlock, TableAlignment};
-pub use selection::MarkdownSelection;
 pub use renderer::{
     GenerativeLoadingState, MarkdownSecurity, StreamingMarkdown, render_block,
     render_block_at_depth,
 };
+pub use selection::MarkdownSelection;
 pub use settings::StreamSettings;

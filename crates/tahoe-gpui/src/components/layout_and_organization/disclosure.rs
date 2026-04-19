@@ -6,7 +6,7 @@ use gpui::{App, ElementId, KeyDownEvent, Window, div, px};
 use crate::callback_types::OnToggle;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::glass_interactive_hover;
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 
 /// A standalone disclosure indicator (expand/collapse triangle) per HIG.
 ///
@@ -107,10 +107,7 @@ impl RenderOnce for Disclosure {
                     let should_fire = if crate::foundations::keyboard::is_activation_key(event) {
                         true
                     } else {
-                        matches!(
-                            (key, is_expanded),
-                            ("right", false) | ("left", true)
-                        )
+                        matches!((key, is_expanded), ("right", false) | ("left", true))
                     };
                     if should_fire {
                         cx.stop_propagation();

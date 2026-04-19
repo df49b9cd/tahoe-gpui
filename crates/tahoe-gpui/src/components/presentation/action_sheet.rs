@@ -29,7 +29,7 @@ use std::rc::Rc;
 use crate::callback_types::OnMutCallback;
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
-use crate::foundations::theme::{ActiveTheme, TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Where the action sheet attaches on screen. Choose
 /// [`Self::BottomDrawer`] on iOS/iPadOS/watchOS and [`Self::Centered`]

@@ -2,14 +2,14 @@
 //!
 //! Demonstrates the `ContextView` compound component and its sub-components.
 
-use tahoe_gpui::context::{ContextPill, ContextView, ModelId, Usage};
-use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, FontWeight, Window, WindowBackgroundAppearance, WindowBounds, WindowOptions, div,
     px, size,
 };
 use gpui_platform::application;
+use tahoe_gpui::context::{ContextPill, ContextView, ModelId, Usage};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 struct ContextExample;
 

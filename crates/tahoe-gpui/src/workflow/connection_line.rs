@@ -5,7 +5,7 @@
 //! (mouse) position.
 
 use super::util::{HandlePosition, compute_bezier_control_points, cubic_bezier};
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, Bounds, Hsla, Window, canvas, fill, point, px, size};
 

@@ -26,7 +26,7 @@
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::theme::{ActiveTheme};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, ElementId, KeyDownEvent, SharedString, Window, div, px};
 

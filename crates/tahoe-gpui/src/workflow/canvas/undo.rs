@@ -56,7 +56,10 @@ pub(super) enum CanvasCommand {
     /// A connection was added (via port drag).
     AddConnection { connection: Connection },
     /// A connection was removed (explicit edge selection + delete).
-    DeleteConnection { index: usize, connection: Connection },
+    DeleteConnection {
+        index: usize,
+        connection: Connection,
+    },
     /// Nodes were duplicated (⌥-drag copy or ⌘D).
     ///
     /// Stores the new entities so redo can re-attach them and undo can pull

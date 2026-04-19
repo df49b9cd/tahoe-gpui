@@ -108,7 +108,10 @@ impl ModalGuard {
 
     /// Current presentation depth. Useful for tests and diagnostics.
     pub fn depth(&self) -> u32 {
-        *self.depth.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        *self
+            .depth
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// `true` when at least one modal is currently presented.

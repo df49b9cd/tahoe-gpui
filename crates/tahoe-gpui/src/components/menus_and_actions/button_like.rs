@@ -37,7 +37,9 @@
 //! styles.
 
 use gpui::prelude::*;
-use gpui::{App, BoxShadow, ClickEvent, ElementId, FocusHandle, KeyDownEvent, Stateful, Window, div};
+use gpui::{
+    App, BoxShadow, ClickEvent, ElementId, FocusHandle, KeyDownEvent, Stateful, Window, div,
+};
 
 use crate::foundations::keyboard::is_activation_key;
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};

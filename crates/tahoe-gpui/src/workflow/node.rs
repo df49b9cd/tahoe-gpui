@@ -8,8 +8,8 @@ use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, FontWeight, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, SharedString, Window, div, px,
 };
 
 /// Callback type for select-state change notifications.
@@ -486,10 +486,7 @@ impl WorkflowNode {
     /// inline-edit mode on the clicked item — typically focusing a title
     /// field or opening a detail sheet. The node itself makes no UI
     /// assumption; the host provides that behaviour in the handler.
-    pub fn set_on_double_click(
-        &mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) {
+    pub fn set_on_double_click(&mut self, handler: impl Fn(&mut Window, &mut App) + 'static) {
         self.on_double_click = Some(Box::new(handler));
     }
 
@@ -501,11 +498,7 @@ impl WorkflowNode {
     }
 
     /// Set an explicit size. `None` reverts to auto sizing.
-    pub fn set_size(
-        &mut self,
-        size: Option<(f32, f32)>,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_size(&mut self, size: Option<(f32, f32)>, cx: &mut Context<Self>) {
         self.size = size.map(|(w, h)| (w.max(NODE_MIN_WIDTH), h.max(NODE_MIN_HEIGHT)));
         cx.notify();
     }
@@ -521,10 +514,8 @@ impl WorkflowNode {
     /// auto-sized mode the height is unknown until layout resolves, so we
     /// fall back to the historical `NODE_HEIGHT` estimate used elsewhere.
     pub(super) fn effective_size(&self) -> (f32, f32) {
-        self.size.unwrap_or((
-            NODE_MIN_WIDTH,
-            super::canvas::NODE_HEIGHT,
-        ))
+        self.size
+            .unwrap_or((NODE_MIN_WIDTH, super::canvas::NODE_HEIGHT))
     }
 
     /// Toggle selected state. Fires the `on_select` callback if set.

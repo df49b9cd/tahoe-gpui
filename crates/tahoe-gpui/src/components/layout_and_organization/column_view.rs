@@ -18,9 +18,7 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, App, ElementId, KeyDownEvent, Pixels, SharedString, Window, div, px,
-};
+use gpui::{AnyElement, App, ElementId, KeyDownEvent, Pixels, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::apply_focus_ring;
@@ -157,9 +155,10 @@ fn render_column(
     on_select: &OnSelect,
 ) -> AnyElement {
     let mut col_el = div()
-        .id(ElementId::Name(
-            SharedString::from(format!("column-{}", column.id)),
-        ))
+        .id(ElementId::Name(SharedString::from(format!(
+            "column-{}",
+            column.id
+        ))))
         .flex()
         .flex_col()
         .w(column_width)
@@ -194,9 +193,10 @@ fn render_column(
         let item_id_for_click = item.id.clone();
         let column_id_for_click = column.id.clone();
         let mut row = div()
-            .id(ElementId::Name(
-                SharedString::from(format!("column-{}-{}", column.id, item.id)),
-            ))
+            .id(ElementId::Name(SharedString::from(format!(
+                "column-{}-{}",
+                column.id, item.id
+            ))))
             .flex()
             .flex_row()
             .items_center()
@@ -209,7 +209,13 @@ fn render_column(
             .hover(|s| s.bg(theme.hover))
             .text_style(TextStyle::Body, theme)
             .text_color(text_color)
-            .child(div().flex_1().min_w(px(0.0)).truncate().child(item.label.clone()));
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
+                    .child(item.label.clone()),
+            );
 
         if item.has_children {
             row = row.child(
@@ -221,7 +227,12 @@ fn render_column(
 
         if let Some(cb) = on_select.clone() {
             row = row.on_click(move |_event, window, cx| {
-                cb(column_id_for_click.clone(), item_id_for_click.clone(), window, cx);
+                cb(
+                    column_id_for_click.clone(),
+                    item_id_for_click.clone(),
+                    window,
+                    cx,
+                );
             });
         }
 

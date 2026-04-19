@@ -8,7 +8,7 @@ use gpui::{AnyElement, Context, FontWeight, Window, div, px};
 use tahoe_gpui::components::content::avatar::Avatar;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{TahoeTheme, GlassSize, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
