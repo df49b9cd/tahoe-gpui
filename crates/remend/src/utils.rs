@@ -567,13 +567,18 @@ pub fn is_horizontal_rule(text: &str, marker_index: usize, marker: u8) -> bool {
 
 /// Finds the matching opening bracket `[` for a closing bracket at `close_index`,
 /// handling nested brackets.
-pub fn find_matching_opening_bracket(text: &str, close_index: usize) -> Option<usize> {
+pub fn find_matching_opening_bracket(
+    text: &str,
+    close_index: usize,
+    ranges: &super::ranges::CodeBlockRanges,
+) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut depth: i32 = 1;
     let mut i = close_index;
     while i > 0 {
         i -= 1;
         match bytes[i] {
+            b']' | b'[' if ranges.is_inside_code(i) => continue,
             b']' => depth += 1,
             b'[' => {
                 depth -= 1;
@@ -589,12 +594,17 @@ pub fn find_matching_opening_bracket(text: &str, close_index: usize) -> Option<u
 
 /// Finds the matching closing bracket `]` for an opening bracket at `open_index`,
 /// handling nested brackets.
-pub fn find_matching_closing_bracket(text: &str, open_index: usize) -> Option<usize> {
+pub fn find_matching_closing_bracket(
+    text: &str,
+    open_index: usize,
+    ranges: &super::ranges::CodeBlockRanges,
+) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut depth: i32 = 1;
     let mut i = open_index + 1;
     while i < bytes.len() {
         match bytes[i] {
+            b'[' | b']' if ranges.is_inside_code(i) => {}
             b'[' => depth += 1,
             b']' => {
                 depth -= 1;
@@ -666,6 +676,7 @@ pub(crate) fn cow_append<'a>(text: &str, suffix: &str) -> Cow<'a, str> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ranges::CodeBlockRanges;
     use super::{
         FenceScanner, count_single_backticks, find_matching_closing_bracket,
         find_matching_opening_bracket, find_trailing_delimiter, is_empty_or_markers,
@@ -729,12 +740,44 @@ mod tests {
         assert!(!is_within_math_block("\\$x", 2));
     }
 
+    fn ranges(text: &str) -> CodeBlockRanges {
+        CodeBlockRanges::new(text)
+    }
+
     #[test]
     fn test_find_matching_brackets() {
-        assert_eq!(find_matching_opening_bracket("[hello]", 6), Some(0));
-        assert_eq!(find_matching_closing_bracket("[hello]", 0), Some(6));
-        assert_eq!(find_matching_opening_bracket("a[b[c]]", 6), Some(1));
-        assert_eq!(find_matching_opening_bracket("hello]", 5), None);
+        let r = ranges("[hello]");
+        assert_eq!(find_matching_opening_bracket("[hello]", 6, &r), Some(0));
+        assert_eq!(find_matching_closing_bracket("[hello]", 0, &r), Some(6));
+        let r = ranges("a[b[c]]");
+        assert_eq!(find_matching_opening_bracket("a[b[c]]", 6, &r), Some(1));
+        let r = ranges("hello]");
+        assert_eq!(find_matching_opening_bracket("hello]", 5, &r), None);
+    }
+
+    #[test]
+    fn test_brackets_skip_inline_code() {
+        // ] inside inline code should not count as a bracket.
+        // [`code]text`] — the ] at position 6 is inside `code]text`, so the [ at 0
+        // should match the ] at the end.
+        let text = "[`code]text`]";
+        let r = ranges(text);
+        // Closing ] is at position 12. Find matching [ — should be position 0.
+        assert_eq!(find_matching_opening_bracket(text, 12, &r), Some(0));
+        // Opening [ at 0 should match closing ] at 12, skipping the ] at 6.
+        assert_eq!(find_matching_closing_bracket(text, 0, &r), Some(12));
+
+        // Multiple ] inside inline code.
+        let text = "[`a]]b`]";
+        let r = ranges(text);
+        assert_eq!(find_matching_closing_bracket(text, 0, &r), Some(7));
+
+        // [ inside inline code should not count.
+        let text = "`[text` ](url";
+        let r = ranges(text);
+        // ]( is at position 8. Find matching [ — the [ at position 1 is inside code,
+        // so no match should be found.
+        assert_eq!(find_matching_opening_bracket(text, 8, &r), None);
     }
 
     #[test]
