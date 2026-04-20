@@ -62,7 +62,11 @@ impl Badge {
             count: (count > 0).then_some(count),
         };
         let label = if count > 0 {
-            SharedString::from(count.to_string())
+            if count > 99 {
+                SharedString::from("99+")
+            } else {
+                SharedString::from(count.to_string())
+            }
         } else {
             SharedString::from("")
         };
@@ -282,5 +286,23 @@ mod tests {
     fn interactive_builder() {
         let b = Badge::new("Filter").interactive(true);
         assert!(b.interactive);
+    }
+
+    #[test]
+    fn notification_count_at_99_shows_99() {
+        let b = Badge::notification(99);
+        assert_eq!(b.label.as_ref(), "99");
+    }
+
+    #[test]
+    fn notification_count_capped_at_99() {
+        let b = Badge::notification(100);
+        assert_eq!(b.label.as_ref(), "99+");
+    }
+
+    #[test]
+    fn notification_count_capped_large() {
+        let b = Badge::notification(999_999_999);
+        assert_eq!(b.label.as_ref(), "99+");
     }
 }
