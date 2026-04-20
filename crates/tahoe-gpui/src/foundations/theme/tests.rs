@@ -241,6 +241,29 @@ fn liquid_glass_background_is_dark() {
 }
 
 #[test]
+fn for_appearance_glass_with_a11y_promotes_to_hc_when_requested() {
+    let mode = AccessibilityMode::INCREASE_CONTRAST;
+    let dark = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert!(dark.appearance.is_high_contrast());
+    assert!(dark.appearance.is_dark());
+
+    let light = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Light, mode);
+    assert!(light.appearance.is_high_contrast());
+    assert!(!light.appearance.is_dark());
+}
+
+#[test]
+fn for_appearance_glass_with_a11y_no_hc_matches_base() {
+    let base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Dark);
+    let same = TahoeTheme::for_appearance_glass_with_a11y(
+        gpui::WindowAppearance::Dark,
+        AccessibilityMode::DEFAULT,
+    );
+    assert_eq!(base.appearance, same.appearance);
+    assert!(!same.appearance.is_high_contrast());
+}
+
+#[test]
 fn liquid_glass_window_is_blurred() {
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(matches!(

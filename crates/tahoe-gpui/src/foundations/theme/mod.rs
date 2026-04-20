@@ -1403,6 +1403,33 @@ impl TahoeTheme {
         }
     }
 
+    /// Like [`Self::for_appearance_glass`] but promotes to a HighContrast
+    /// appearance when `mode.increase_contrast()` is set.
+    ///
+    /// Mirrors [`Self::for_appearance_with_a11y`] for the Liquid Glass path so
+    /// hosts installing a glass theme can honour
+    /// [`AccessibilityMode::INCREASE_CONTRAST`](crate::foundations::accessibility::AccessibilityMode::INCREASE_CONTRAST)
+    /// without additional plumbing.
+    pub fn for_appearance_glass_with_a11y(
+        appearance: WindowAppearance,
+        mode: crate::foundations::accessibility::AccessibilityMode,
+    ) -> Self {
+        let base = Self::for_appearance_glass(appearance);
+        if mode.increase_contrast() {
+            let hc_appearance = if base.appearance.is_dark() {
+                Appearance::DarkHighContrast
+            } else {
+                Appearance::LightHighContrast
+            };
+            let mut theme = base;
+            theme.appearance = hc_appearance;
+            theme.palette = SystemPalette::new(hc_appearance);
+            theme
+        } else {
+            base
+        }
+    }
+
     /// Install a non-glass theme that tracks the window's system appearance.
     ///
     /// Applies `Self::for_appearance(window.appearance())` immediately and returns
