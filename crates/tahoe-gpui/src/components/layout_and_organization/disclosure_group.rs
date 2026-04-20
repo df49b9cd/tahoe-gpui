@@ -173,7 +173,7 @@ impl RenderOnce for DisclosureGroup {
             container = container.child(div().child(self.body).with_animation(
                 body_anim_id,
                 body_anim,
-                |el, delta| el.opacity(delta.clamp(0.0, 1.0)),
+                |el, delta| el.opacity(delta),
             ));
         }
 
