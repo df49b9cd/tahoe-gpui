@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::utils::is_inside_code_block;
+use super::utils::{is_inside_code_block, is_plausible_tag_remainder};
 
 /// Strips incomplete HTML tags at the end of streaming text.
 /// E.g. `text <custom` → `text`.
@@ -12,28 +12,24 @@ pub fn handle(text: &str) -> Cow<'_, str> {
     while i > 0 {
         i -= 1;
         if bytes[i] == b'>' {
-            // Found a closing `>` — no incomplete tag at end.
             return Cow::Borrowed(text);
         }
         if bytes[i] == b'<' {
-            // Check that it starts a valid tag (followed by letter or /).
-            let next = if i + 1 < bytes.len() { bytes[i + 1] } else { 0 };
-            if next.is_ascii_alphabetic() || next == b'/' {
-                // Check there's no `>` after this `<` (which would close the tag).
-                if !text[i..].contains('>') {
-                    // Don't strip if inside a code block.
-                    if is_inside_code_block(text, i) {
-                        return Cow::Borrowed(text);
-                    }
-                    // Strip the incomplete tag and trailing whitespace.
-                    let trimmed = text[..i].trim_end();
-                    return Cow::Owned(trimmed.to_owned());
-                }
+            // Inline `a<b`-style text has `<` adjacent to a word char; skip those
+            // rather than treat as a tag start.
+            if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
+                return Cow::Borrowed(text);
             }
-            return Cow::Borrowed(text);
+            if !is_plausible_tag_remainder(&bytes[i + 1..]) {
+                return Cow::Borrowed(text);
+            }
+            if is_inside_code_block(text, i) {
+                return Cow::Borrowed(text);
+            }
+            let trimmed = text[..i].trim_end();
+            return Cow::Owned(trimmed.to_owned());
         }
         if bytes[i] == b'\n' {
-            // Tags don't span lines; stop scanning.
             return Cow::Borrowed(text);
         }
     }
@@ -72,5 +68,52 @@ mod tests {
     #[test]
     fn inside_code_block() {
         assert!(matches!(handle("```\n<custom\n```"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn preserves_comparison_like_text() {
+        // Issue #15: `a<b` is not a tag — `<` follows a word char.
+        assert!(matches!(handle("a<b"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn preserves_partial_tag_with_invalid_name_char() {
+        // Issue #15: `.` is not a valid tag-name char.
+        assert!(matches!(handle("name@<example.com"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn strips_incomplete_tag_with_attributes() {
+        assert_eq!(handle("text <div class=\"x\"").as_ref(), "text");
+    }
+
+    #[test]
+    fn leaves_lone_angle_at_eof() {
+        assert!(matches!(handle("text <"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn leaves_digit_after_angle() {
+        assert!(matches!(handle("text <123"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn strips_bare_incomplete_close_tag() {
+        assert_eq!(handle("text </").as_ref(), "text");
+    }
+
+    #[test]
+    fn strips_incomplete_self_closing() {
+        assert_eq!(handle("text <br/").as_ref(), "text");
+    }
+
+    #[test]
+    fn leaves_digit_before_angle() {
+        assert!(matches!(handle("1<b"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn leaves_underscore_before_angle() {
+        assert!(matches!(handle("foo_<b"), Cow::Borrowed(_)));
     }
 }

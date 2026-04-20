@@ -316,6 +316,39 @@ pub fn is_within_link_or_image_url(text: &str, position: usize) -> bool {
     false
 }
 
+/// Returns `true` if `remainder` (content after `<`) looks like a plausible
+/// HTML tag prefix per CommonMark: optional `/`, then an ASCII letter,
+/// then zero or more `[A-Za-z0-9-]`, then either EOF or whitespace
+/// (attributes begin). Any other byte means it is not a tag.
+pub(crate) fn is_plausible_tag_remainder(remainder: &[u8]) -> bool {
+    let mut j = 0;
+    if remainder.first() == Some(&b'/') {
+        j = 1;
+    }
+    if j >= remainder.len() {
+        // `</` alone is a valid incomplete close-tag prefix; bare `<` is not.
+        return j > 0;
+    }
+    if !remainder[j].is_ascii_alphabetic() {
+        return false;
+    }
+    j += 1;
+    while j < remainder.len() {
+        let b = remainder[j];
+        if b.is_ascii_alphanumeric() || b == b'-' {
+            j += 1;
+        } else if b == b' ' || b == b'\t' {
+            return true;
+        } else if b == b'/' && j == remainder.len() - 1 {
+            // Self-closing `/` at EOF: `<br/`.
+            return true;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 /// Returns `true` if `position` is inside an HTML tag (between `<` and `>`).
 pub fn is_within_html_tag(text: &str, position: usize) -> bool {
     let bytes = text.as_bytes();
@@ -328,12 +361,12 @@ pub fn is_within_html_tag(text: &str, position: usize) -> bool {
         match bytes[i] {
             b'>' => return false,
             b'<' => {
-                // Check that it starts a valid tag (followed by letter or /).
-                let next = if i + 1 < bytes.len() { bytes[i + 1] } else { 0 };
-                if next.is_ascii_alphabetic() || next == b'/' {
-                    return true;
+                // Must look like a real HTML tag, not inline text like `a<b` or
+                // `name@<example.com`.
+                if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
+                    return false;
                 }
-                return false;
+                return is_plausible_tag_remainder(&bytes[i + 1..]);
             }
             b'\n' => return false,
             _ => {}
@@ -572,6 +605,10 @@ mod tests {
         assert!(is_within_html_tag("<a href=\"test\">", 5));
         assert!(!is_within_html_tag("<a href=\"test\">after", 16));
         assert!(!is_within_html_tag("text", 2));
+        // Issue #15: `<example.com` is not a valid HTML tag.
+        assert!(!is_within_html_tag("name@<example.com", 10));
+        // Issue #15: `a<b` is inline text, not a tag.
+        assert!(!is_within_html_tag("a<b", 2));
     }
 
     #[test]
