@@ -1826,19 +1826,28 @@ pub fn default_backdrop_blur_effect(theme: &crate::foundations::theme::TahoeThem
     }
 }
 
-/// Apply a dark dimming layer behind Clear Liquid Glass for bright content.
+/// Wrap a Clear Liquid Glass surface with a 35%-opacity dark dimming layer
+/// behind it.
 ///
-/// Per HIG: "If the underlying content is bright, consider adding a
-/// dark dimming layer of 35% opacity behind Liquid Glass in the clear style."
+/// Per HIG: "If the underlying content is bright, consider adding a dark
+/// dimming layer of 35% opacity behind Liquid Glass in the clear style."
 ///
-/// Returns a div with 35% black background to be placed behind a Clear glass surface.
-pub fn clear_glass_dimming_layer() -> gpui::Div {
+/// The dimming layer is rendered before the glass element in the element
+/// tree, so z-order is guaranteed by the wrapper — callers cannot reorder
+/// the two children. Pair with [`glass_clear_surface`] or a clear-variant
+/// [`tinted_glass_surface`].
+pub fn clear_glass_dimmed(glass: Div) -> Div {
     gpui::div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full()
-        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.35))
+        .relative()
+        .child(
+            gpui::div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.35)),
+        )
+        .child(glass)
 }
 
 #[cfg(test)]
@@ -1924,6 +1933,17 @@ mod tests {
         // the theme has the right tokens
         assert!((f32::from(theme.glass.small_radius) - 20.0).abs() < f32::EPSILON);
         assert!((f32::from(theme.glass.radius(GlassSize::Small)) - 20.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clear_glass_dimmed_builds_without_panic() {
+        // Structural guarantee is the type signature (Div -> Div means the
+        // wrapper owns both children and callers can't reorder them). GPUI
+        // elements aren't introspectable, so this smoke test just confirms
+        // the composition builds.
+        let theme = TahoeTheme::liquid_glass();
+        let glass = super::glass_clear_surface(gpui::div(), &theme, GlassSize::Small);
+        let _wrapped: gpui::Div = super::clear_glass_dimmed(glass);
     }
 
     // ─── Motion & Accessibility Tests ────────────────────────────────────────
