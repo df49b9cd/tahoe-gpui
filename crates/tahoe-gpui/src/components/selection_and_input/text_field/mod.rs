@@ -1725,11 +1725,20 @@ mod interaction_tests {
 
         field.update_in(cx, |field, window, cx| {
             assert_eq!(field.text(), "");
+            assert_eq!(field.selected_range, 0..0);
             field.handle_undo(&crate::text_actions::Undo, window, cx);
             assert_eq!(
                 field.text(),
                 "search",
                 "clear button must be undoable — issue #35",
+            );
+            // `push_undo_snapshot` captures `(content, selected_range)`, so
+            // undo must restore the cursor to its pre-clear end-of-text park
+            // (`set_text` lands the cursor at `len..len`).
+            assert_eq!(
+                field.selected_range,
+                6..6,
+                "undo must restore the pre-clear cursor",
             );
         });
     }
