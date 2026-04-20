@@ -1349,6 +1349,14 @@ fn liquid_glass_light_text_synced_with_semantic() {
     assert_eq!(theme.text_muted, theme.semantic.secondary_label);
 }
 
+#[test]
+fn liquid_glass_info_synced_with_semantic() {
+    let dark = TahoeTheme::liquid_glass();
+    assert_eq!(dark.info, dark.semantic.info);
+    let light = TahoeTheme::liquid_glass_light();
+    assert_eq!(light.info, light.semantic.info);
+}
+
 // ─── Phase 4: Clear Glass Variant Tests ─────────────────────────────────
 
 #[test]
