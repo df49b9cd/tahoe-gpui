@@ -58,7 +58,8 @@ pub fn render(
                     "A sidebar provides app-level navigation and organizes content \
                      into a hierarchy. Rows use the `SidebarItem` primitive, which \
                      provides keyboard focus, Enter/Space activation, a visible \
-                     focus ring, and the 44pt minimum touch target from HIG.",
+                     focus ring, and a platform-appropriate minimum row height \
+                     (28 pt macOS / 44 pt iOS).",
                 ),
         )
         .child(div().h(theme.spacing_sm))

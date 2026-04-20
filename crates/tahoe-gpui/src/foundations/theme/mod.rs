@@ -166,7 +166,7 @@ pub struct TahoeTheme {
     pub icon_size_xs: Pixels,
     /// Vertical offset applied to dropdowns (popover, popup_button,
     /// pulldown_button, search_field, combo_box, picker) from the bottom
-    /// of their trigger. Replaces the `MIN_TOUCH_TARGET + 4.0` magic.
+    /// of their trigger.
     pub dropdown_offset: Pixels,
     /// Hairline thickness used by `Separator::horizontal/vertical`. 1pt
     /// on standard displays; consumers that want sub-pixel hairlines on

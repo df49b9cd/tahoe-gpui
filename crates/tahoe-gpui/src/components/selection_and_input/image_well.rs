@@ -261,7 +261,8 @@ impl RenderOnce for ImageWell {
         let theme = cx.theme();
 
         let well_size = self.size.unwrap_or(DEFAULT_SIZE);
-        // Ensure at least 44pt touch target when interactive.
+        // Floor the well size at the platform's default control height when
+        // interactive so tiny wells still meet the platform target.
         let touch_size = if f32::from(well_size) < theme.target_size() {
             px(theme.target_size())
         } else {

@@ -238,8 +238,7 @@ impl Render for DigitEntry {
             // HIG NSTextField/PIN-entry cells: `DIGIT_CELL_MIN_H` (62pt) tall
             // when rendered at the regular Dynamic Type scale. The width stays
             // bound to the shared `theme.target_size()` token so the cell's
-            // horizontal footprint remains HIG-compliant (44pt touch target
-            // minimum).
+            // horizontal footprint tracks the platform's default control width.
             let inner = div()
                 .min_w(px(theme.target_size()))
                 .min_h(px(DIGIT_CELL_MIN_H))

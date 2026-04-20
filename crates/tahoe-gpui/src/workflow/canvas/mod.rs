@@ -13,9 +13,10 @@
 //! zoom and arrow-key nudge, [`super::controls::WorkflowControls::show_undo_redo`]
 //! for toolbar undo/redo, [`undo::UndoStack`] + [`undo::CanvasCommand`]
 //! for multi-level undo, [`PORT_HIT_RADIUS_SCREEN_PX`] +
-//! [`EDGE_HIT_TOLERANCE_SCREEN_PX`] for 44 pt HIG hit targets, and the
-//! [`resize`] module for resize-handle geometry. `WorkflowToolbar` and
-//! `NodeToolbar` render on Liquid Glass per HIG Materials.
+//! [`EDGE_HIT_TOLERANCE_SCREEN_PX`] for comfortable mouse-pointing hit
+//! regions on top of the small visual handles, and the [`resize`] module
+//! for resize-handle geometry. `WorkflowToolbar` and `NodeToolbar` render
+//! on Liquid Glass per HIG Materials.
 //!
 //! ## Upstream-blocked accessibility
 //!
@@ -58,21 +59,19 @@ use super::util::{point_to_cubic_bezier_distance, point_to_quadratic_bezier_dist
 
 /// Screen-space radius used for port hit-testing.
 ///
-/// The visual handle (8 px) combined with a 12 px hit tolerance produces a
-/// ~24 px effective target — well below the HIG 44 pt minimum for a
-/// touch/pointer target. We keep the visual handle small (ports are visually
-/// unobtrusive) but expand the hit circle to 22 px screen-space (44 pt
-/// diameter) so reach matches Apple's minimum regardless of zoom. The
-/// tolerance is applied in screen space so low-zoom sessions don't collapse
-/// the effective target.
+/// The visual handle is 8 px — small enough that ports stay visually
+/// unobtrusive on a dense canvas. We expand the hit circle to 22 px
+/// screen-space so reach stays comfortable for mouse pointing well above
+/// macOS's 28 pt regular control metric. Applied in screen space so low-zoom
+/// sessions don't collapse the effective target.
 pub(super) const PORT_HIT_RADIUS_SCREEN_PX: f32 = 22.0;
 /// Screen-space radius for edge hit-testing.
 ///
 /// The old 8 px literal was applied after the world→screen transform,
 /// meaning zoom changed the *effective canvas-space* tolerance instead of
 /// leaving the pointer target constant. 11 px screen-space ≈ 22 px diameter
-/// which, for a 1-pt line, is a comfortable 44 pt pointer target along the
-/// minor axis without swallowing nearby clicks.
+/// which, for a 1-pt line, gives a comfortable mouse-pointing target along
+/// the minor axis without swallowing nearby clicks.
 pub(super) const EDGE_HIT_TOLERANCE_SCREEN_PX: f32 = 11.0;
 /// Distance (screen px) the pointer must move between mouse-down and mouse-up
 /// for a drag to register as a Move command on the undo stack. Stops a bare
@@ -811,9 +810,10 @@ impl WorkflowCanvas {
     ) -> Option<(PortId, PortType, (f32, f32))> {
         let pan = self.pan_offset;
         let zoom = self.zoom;
-        // 22 px ≈ 44 pt diameter HIG minimum pointer target. Applied in
-        // screen space so low zoom doesn't shrink the hit area below the
-        // minimum even though the visible handle is smaller.
+        // 22 px screen-space radius — comfortable mouse-pointing target on
+        // top of the 8 px visual handle. Applied in screen space so low zoom
+        // doesn't shrink the hit area even though the visible handle is
+        // smaller.
         let tolerance = PORT_HIT_RADIUS_SCREEN_PX;
 
         for node_entity in &self.nodes {

@@ -48,7 +48,7 @@ pub fn render(
         .child(
             div()
                 .id("menu-trigger")
-                .min_h(px(44.0))
+                .min_h(px(theme.target_size()))
                 .w(px(220.0))
                 .flex()
                 .items_center()
