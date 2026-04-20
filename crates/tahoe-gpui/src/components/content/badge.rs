@@ -161,7 +161,12 @@ impl RenderOnce for Badge {
                 let bg = theme.palette.red;
                 (bg, theme.text_on_accent, false, true)
             }
-            BadgeVariant::Dot => unreachable!("handled above"),
+            BadgeVariant::Dot => {
+                let bg = theme.palette.red;
+                let mut el = div().size(px(8.0)).rounded(theme.radius_full).bg(bg);
+                el = crate::foundations::materials::apply_high_contrast_border(el, theme);
+                return el.into_any_element();
+            }
         };
 
         // HIG: interactive filter chips must reach the 20 pt minimum
