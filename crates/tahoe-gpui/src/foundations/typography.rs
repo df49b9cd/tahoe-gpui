@@ -579,7 +579,7 @@ pub fn macos_tracking(size_pt: f32) -> f32 {
     if !size_pt.is_finite() {
         return 0.0;
     }
-    let size_pt = size_pt.round().clamp(0.0, u32::MAX as f32) as u32;
+    let size_pt = size_pt.round().clamp(0.0, 10_000.0) as u32;
     match size_pt {
         0..=5 => 0.0,
         6 => 0.24,
