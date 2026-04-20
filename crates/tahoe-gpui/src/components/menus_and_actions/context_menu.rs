@@ -665,6 +665,7 @@ impl Render for ContextMenu {
             dim_secondary_label,
             error_color,
             icon_size_inline,
+            icon_size_small,
         );
         {
             let theme = cx.theme();
@@ -679,6 +680,7 @@ impl Render for ContextMenu {
             dim_secondary_label = theme.secondary_label_color(SurfaceContext::GlassDim);
             error_color = theme.error;
             icon_size_inline = theme.icon_size_inline;
+            icon_size_small = theme.icon_size_small;
         }
 
         let style_tokens = RowStyleTokens {
@@ -692,6 +694,7 @@ impl Render for ContextMenu {
             dim_secondary_label,
             error_color,
             icon_size_inline,
+            icon_size_small,
         };
 
         let raw_pos = self.position.unwrap_or_else(|| Point {
@@ -715,7 +718,7 @@ impl Render for ContextMenu {
             .iter()
             .filter(|e| matches!(e, ContextMenuEntry::Separator))
             .count() as f32;
-        let est_height = row_count * 28.0 + sep_rows * 9.0 + 8.0;
+        let est_height = row_count * row_h + sep_rows * 9.0 + 8.0;
         let est_width = MENU_MAX_WIDTH;
         let max_x = (f32::from(window_bounds.size.width) - est_width).max(0.0);
         let max_y = (f32::from(window_bounds.size.height) - est_height).max(0.0);
@@ -821,7 +824,7 @@ impl Render for ContextMenu {
                 )
                 .debug_selector(|| "context-submenu-content".into())
                 .children(rows);
-                let row_top = parent_idx as f32 * 28.0 + f32::from(spacing_xs);
+                let row_top = parent_idx as f32 * row_h + f32::from(spacing_xs);
                 div()
                     .absolute()
                     .left(px(MENU_MIN_WIDTH - 4.0))
@@ -866,6 +869,7 @@ struct RowStyleTokens {
     dim_secondary_label: gpui::Hsla,
     error_color: gpui::Hsla,
     icon_size_inline: Pixels,
+    icon_size_small: Pixels,
 }
 
 /// Build the list of row elements for a given items slice.
@@ -973,7 +977,11 @@ fn render_rows(
                             .color(icon_color),
                     );
                 } else if let Some(icon_name) = item.icon {
-                    row = row.child(Icon::new(icon_name).size(px(16.0)).color(icon_color));
+                    row = row.child(
+                        Icon::new(icon_name)
+                            .size(t.icon_size_inline)
+                            .color(icon_color),
+                    );
                 }
 
                 row = row.child(div().flex_1().child(item.label.clone()));
@@ -1042,12 +1050,16 @@ fn render_rows(
                 }
 
                 if let Some(icon_name) = icon {
-                    row = row.child(Icon::new(*icon_name).size(px(16.0)).color(icon_color));
+                    row = row.child(
+                        Icon::new(*icon_name)
+                            .size(t.icon_size_inline)
+                            .color(icon_color),
+                    );
                 }
                 row = row.child(div().flex_1().child(label.clone()));
                 row = row.child(
                     Icon::new(IconName::ChevronRight)
-                        .size(px(12.0))
+                        .size(t.icon_size_small)
                         .color(icon_color),
                 );
 
