@@ -763,8 +763,9 @@ impl TextField {
         self.redo_stack
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = prev_content;
-        self.selected_range =
-            prev_range.start.min(self.content.len())..prev_range.end.min(self.content.len());
+        let start = self.clamp_to_grapheme(prev_range.start);
+        let end = self.clamp_to_grapheme_forward(prev_range.end);
+        self.selected_range = start..end.max(start);
         self.marked_range = None;
         cx.notify();
         if let Some(on_change) = &self.on_change {
@@ -782,8 +783,9 @@ impl TextField {
         self.undo_stack
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = next_content;
-        self.selected_range =
-            next_range.start.min(self.content.len())..next_range.end.min(self.content.len());
+        let start = self.clamp_to_grapheme(next_range.start);
+        let end = self.clamp_to_grapheme_forward(next_range.end);
+        self.selected_range = start..end.max(start);
         self.marked_range = None;
         cx.notify();
         if let Some(on_change) = &self.on_change {
@@ -1861,5 +1863,108 @@ mod interaction_tests {
         });
         // Blur by focusing a transient dummy and letting the field lose focus.
         assert_element_exists(cx, TEXT_FIELD_ROOT);
+    }
+
+    // Regression test for #41: undo/redo must snap selection to grapheme
+    // boundaries, not leave the cursor mid-grapheme after restoring content
+    // of a different byte length.
+    #[gpui::test]
+    async fn undo_snaps_selection_to_grapheme_boundaries(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+
+        // "aé" — "é" is U+00E9 (2 bytes UTF-8). Total = 3 bytes, 2 graphemes.
+        field.update_in(cx, |field, window, cx| {
+            field.set_text("aé", window, cx);
+            // Cursor at end (byte 3). Snapshot is ("aé", 3..3).
+        });
+
+        // Type a character so undo will revert to "aé" state.
+        focus_text_field(&field, cx);
+        cx.type_text("b");
+        field.update_in(cx, |field, _window, _cx| {
+            assert_eq!(field.text(), "aéb");
+        });
+
+        // Undo back to "aé". The saved range was 3..3 which is valid for
+        // "aé" (byte 3 = end). This verifies the normal case.
+        field.update_in(cx, |field, window, cx| {
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(field.text(), "aé");
+            assert_eq!(field.selected_range, 3..3);
+        });
+
+        // Now set up a scenario where the saved range is invalid after restore.
+        // Start with a long multi-byte string, snapshot its range, then replace
+        // with a shorter string so the old range overshoots.
+        field.update_in(cx, |field, window, cx| {
+            // "👨‍👩‍👧" = 18 bytes, 1 grapheme.
+            field.set_text("a👨\u{200D}👩\u{200D}👧b", window, cx);
+            // selected_range at end = 19..19
+        });
+
+        // Type to push a new undo snapshot.
+        cx.type_text("!");
+        field.update_in(cx, |field, _window, _cx| {
+            assert_eq!(field.text(), "a👨\u{200D}👩\u{200D}👧b!");
+        });
+
+        // Undo: restores "a👨‍👩‍👧b" with range 19..19 (valid).
+        field.update_in(cx, |field, window, cx| {
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(field.text(), "a👨\u{200D}👩\u{200D}👧b");
+            assert_eq!(field.selected_range.start, field.content.len());
+        });
+
+        // Now manually corrupt the undo snapshot to simulate a range that
+        // would land mid-grapheme after restore. We push a snapshot whose
+        // range is valid for the current content but will be invalid after
+        // restoring shorter content.
+        field.update_in(cx, |field, _window, _cx| {
+            // Simulate a snapshot with range pointing to byte 15 — inside
+            // the ZWJ emoji family (18 bytes starting at byte 1).
+            // After restoring "ab" (2 bytes), 15 overshoots and must clamp
+            // to grapheme boundary.
+            field
+                .undo_stack
+                .push_back((gpui::SharedString::from("ab"), 15..15));
+        });
+
+        field.update_in(cx, |field, window, cx| {
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(field.text(), "ab");
+            // Range must snap to 2 (end of "ab"), not be mid-grapheme.
+            assert_eq!(
+                field.selected_range,
+                2..2,
+                "undo must snap clamped range to grapheme boundary"
+            );
+        });
+
+        // Redo should also snap mid-grapheme ranges. The redo stack now
+        // holds the snapshot we just stepped out of ("a👨‍👩‍👧b", 19..19).
+        // After redo restores the longer content, 19..19 is valid again —
+        // so verify redo at least doesn't panic. To exercise the mid-grapheme
+        // path for redo, we fabricate a redo snapshot with an invalid range.
+        field.update_in(cx, |field, _window, _cx| {
+            // "e\u{0301}" = e + combining acute = 3 bytes, 1 grapheme.
+            // Byte 1 is a valid char boundary but mid-grapheme (between 'e'
+            // and the combining mark).
+            field
+                .redo_stack
+                .push_back((gpui::SharedString::from("e\u{0301}"), 1..1));
+        });
+
+        field.update_in(cx, |field, window, cx| {
+            field.handle_redo(&crate::text_actions::Redo, window, cx);
+            assert_eq!(field.text(), "e\u{0301}");
+            // start=1 is mid-grapheme. clamp_to_grapheme snaps back to 0;
+            // clamp_to_grapheme_forward on end=1 snaps ahead to 3 (full
+            // grapheme length). end.max(start) = 3.
+            assert_eq!(
+                field.selected_range,
+                0..3,
+                "redo must snap clamped range to grapheme boundaries"
+            );
+        });
     }
 }
