@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="macOS" />
 </p>
 
-A component library that brings Apple's macOS Tahoe HIG (San Francisco typography, SF Symbols, Liquid Glass materials, Dynamic Type, spring motion) to applications built on [Zed's GPUI framework][gpui]. Standalone — no AI SDK dependency required.
+A component library that brings Tahoe HIG to applications built on [Zed's GPUI framework][gpui].
 
 ## Crates
 
