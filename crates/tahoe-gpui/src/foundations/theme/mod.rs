@@ -277,8 +277,11 @@ pub struct TahoeTheme {
     /// Text shimmer spread multiplier (default 2.0).
     /// Higher values create a wider highlight sweep area.
     pub shimmer_spread: f32,
-    /// Semi-transparent panel/overlay background. With `WindowBackgroundAppearance::Blurred`,
-    /// the macOS window blur shows through for a true glass effect.
+    /// Semi-transparent panel/overlay background. On macOS the library installs
+    /// `WindowBackgroundAppearance::Blurred` (NSVisualEffectView), so this fill
+    /// is translucent to the **desktop wallpaper behind the window**, not to
+    /// sibling GPUI elements inside it. GPUI exposes no per-element backdrop
+    /// blur; see `foundations::materials::glass_surface` for the full caveat.
     pub panel_surface: Hsla,
 
     // ─── Liquid Glass ────────────────────────────────────────────────────────
