@@ -674,6 +674,167 @@ fn parse_citation_streaming_split() {
     );
 }
 
+fn parse_without_citations(input: &str) -> Rc<Vec<MarkdownBlock>> {
+    let mut p = IncrementalMarkdownParser::new().with_citations(false);
+    p.push_delta(input);
+    p.parse()
+}
+
+#[test]
+fn parse_citation_default_is_on() {
+    // Guard against silent default flips — new() with NO builder call must
+    // still split citations. Also covers the citations_enabled() accessor.
+    let mut p = IncrementalMarkdownParser::new();
+    assert!(
+        p.citations_enabled(),
+        "default must keep citation splitting on"
+    );
+    p.push_delta("See [1] for details");
+    let blocks = p.parse();
+    let inlines = get_paragraph_inlines(&blocks);
+    assert!(matches!(&inlines[1], InlineContent::Citation(1)));
+}
+
+#[test]
+fn parse_citation_disabled_accessor_reflects_toggle() {
+    let p = IncrementalMarkdownParser::new().with_citations(false);
+    assert!(!p.citations_enabled());
+}
+
+#[test]
+fn parse_citation_disabled_keeps_literal_brackets() {
+    // "item [5] of 10" must round-trip unchanged when splitting is off —
+    // the regression from the issue report.
+    let blocks = parse_without_citations("item [5] of 10");
+    let inlines = get_paragraph_inlines(&blocks);
+    assert_eq!(inlines.len(), 1);
+    assert!(matches!(&inlines[0], InlineContent::Text(t) if t == "item [5] of 10"));
+    assert!(
+        !inlines
+            .iter()
+            .any(|i| matches!(i, InlineContent::Citation(_)))
+    );
+}
+
+#[test]
+fn parse_citation_disabled_inside_bold() {
+    // The flag lives on &self and collect_inlines recurses through &self, so
+    // nested contexts inherit the opt-out automatically.
+    let blocks = parse_without_citations("**item [5] of 10**");
+    let inlines = get_paragraph_inlines(&blocks);
+    assert_eq!(inlines.len(), 1);
+    match &inlines[0] {
+        InlineContent::Bold(inner) => {
+            assert_eq!(inner.len(), 1);
+            assert!(matches!(&inner[0], InlineContent::Text(t) if t == "item [5] of 10"));
+            assert!(
+                !inner
+                    .iter()
+                    .any(|i| matches!(i, InlineContent::Citation(_)))
+            );
+        }
+        other => panic!("expected bold, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_citation_disabled_inside_heading() {
+    // collect_inlines runs for headings via parse_block on TagEnd::Heading.
+    let blocks = parse_without_citations("# Section [5] of 10");
+    match &blocks[0] {
+        MarkdownBlock::Heading { level, content } => {
+            assert_eq!(*level, 1);
+            assert_eq!(content.len(), 1);
+            assert!(matches!(&content[0], InlineContent::Text(t) if t == "Section [5] of 10"));
+        }
+        other => panic!("expected heading, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_citation_disabled_inside_table_cell() {
+    // Table cells run through collect_inlines on TagEnd::TableCell.
+    let blocks = parse_without_citations("| a | b |\n|---|---|\n| item [5] of 10 | x |");
+    match &blocks[0] {
+        MarkdownBlock::Table { rows, .. } => {
+            assert_eq!(rows.len(), 1);
+            let cell = &rows[0][0];
+            assert_eq!(cell.len(), 1);
+            assert!(matches!(&cell[0], InlineContent::Text(t) if t == "item [5] of 10"));
+        }
+        other => panic!("expected table, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_citation_disabled_inside_image_alt() {
+    // Image alt text is built by joining only InlineContent::Text fragments
+    // from inner collect_inlines. When citations are on, a leaked Citation
+    // would silently disappear from alt; when off, the literal [5] survives.
+    let blocks = parse_without_citations("![item [5] of 10](https://example.com/x.png)");
+    let inlines = get_paragraph_inlines(&blocks);
+    match &inlines[0] {
+        InlineContent::Image { alt, .. } => {
+            assert!(
+                alt.contains("[5]"),
+                "expected literal [5] in alt, got {alt:?}"
+            );
+        }
+        other => panic!("expected image, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_citation_disabled_streaming_split() {
+    // Mirror of parse_citation_streaming_split with the flag off — guards
+    // against the toggle leaking across buffered flushes.
+    let mut p = IncrementalMarkdownParser::new().with_citations(false);
+    p.push_delta("item [");
+    p.push_delta("5] of 10");
+    let blocks = p.parse();
+    let inlines = get_paragraph_inlines(&blocks);
+    let text: String = inlines
+        .iter()
+        .filter_map(|i| match i {
+            InlineContent::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        text.contains("[5]"),
+        "expected literal [5] across streaming split, got {text:?}"
+    );
+    assert!(
+        !inlines
+            .iter()
+            .any(|i| matches!(i, InlineContent::Citation(_)))
+    );
+}
+
+#[test]
+fn parse_citation_toggle_invalidates_cache() {
+    // with_citations promises to invalidate the block cache. Parse with the
+    // default (on), then toggle off, parse again, and confirm the cache did
+    // not serve a stale Citation tree.
+    let mut p = IncrementalMarkdownParser::new();
+    p.push_delta("See [1] for details");
+    let first = p.parse();
+    assert!(matches!(
+        &get_paragraph_inlines(&first)[1],
+        InlineContent::Citation(1)
+    ));
+
+    let mut p = p.with_citations(false);
+    let blocks = p.parse();
+    let inlines = get_paragraph_inlines(&blocks);
+    assert!(
+        !inlines
+            .iter()
+            .any(|i| matches!(i, InlineContent::Citation(_))),
+        "toggle should invalidate cache; got {inlines:?}"
+    );
+}
+
 use proptest::prelude::*;
 
 proptest! {
@@ -686,6 +847,20 @@ proptest! {
         }
         parser.finish();
         let _ = parser.parse(); // must not panic after finish either
+    }
+
+    #[test]
+    fn fuzz_markdown_deltas_toggle(
+        deltas in prop::collection::vec("[# *`\\-\\[\\](){}\n a-zA-Z0-9]*", 0..15),
+        enable in prop::bool::ANY,
+    ) {
+        let mut parser = IncrementalMarkdownParser::new().with_citations(enable);
+        for delta in &deltas {
+            parser.push_delta(delta);
+            let _ = parser.parse();
+        }
+        parser.finish();
+        let _ = parser.parse();
     }
 }
 

@@ -650,6 +650,26 @@ fn setext_heading_triple_dash_unchanged() {
     assert_eq!(r("Heading\n---").as_ref(), "Heading\n---");
 }
 
+#[test]
+fn setext_heading_four_space_indent_is_code_block() {
+    assert_eq!(r("Head\n    -").as_ref(), "Head\n    -");
+}
+
+#[test]
+fn setext_heading_three_space_indent_fires() {
+    assert_eq!(r("Head\n   -").as_ref(), "Head\n   -\u{200B}");
+}
+
+#[test]
+fn setext_heading_tab_indent_is_code_block() {
+    assert_eq!(r("Head\n\t-").as_ref(), "Head\n\t-");
+}
+
+#[test]
+fn setext_heading_blank_line_between_unchanged() {
+    assert_eq!(r("a\n\n-").as_ref(), "a\n\n-");
+}
+
 // ===========================================================================
 // HTML tags
 // ===========================================================================
@@ -1172,6 +1192,16 @@ fn streaming_table_with_bold() {
         r("| Col1 | Col2 |\n|------|------|\n| **dat").as_ref(),
         "| Col1 | Col2 |\n|------|------|\n| **dat**"
     );
+}
+
+#[test]
+fn streaming_crlf_between_bracket_and_url() {
+    // Stream-chunk boundary splitting `](` from the URL with CRLF in between
+    // must not mis-complete a URL whose `)` is on the following line.
+    assert!(matches!(
+        r("[text](\r\nhttp://example.com)"),
+        Cow::Borrowed(_)
+    ));
 }
 
 // ===========================================================================

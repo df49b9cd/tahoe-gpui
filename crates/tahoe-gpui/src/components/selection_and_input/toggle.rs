@@ -282,8 +282,16 @@ impl RenderOnce for Toggle {
 
         track = apply_focus_ring(track, theme, focused, &[]);
 
+        // HIG: disabled tint is a fixed muted color, not a proportional
+        // opacity — opacity(0.5) fails WCAG 4.5:1 on low-contrast variants.
+        // Same pattern as `button.rs` disabled branch: Toggle has no text
+        // to mute, so disabled state is signalled via `cursor_default()`
+        // and the lack of click/hover handlers. The control's track and
+        // thumb keep their active colors so thumb position still reads
+        // as the on/off cue in context (a Forms row label or surrounding
+        // copy carries the "disabled" signal).
         if self.disabled {
-            track = track.opacity(0.5);
+            track = track.cursor_default();
         } else if let Some(handler) = self.on_change {
             let handler = std::rc::Rc::new(handler);
             let click_handler = handler.clone();
@@ -353,6 +361,7 @@ mod interaction_tests {
     const TOGGLE_SWITCH: &str = "switch-toggle";
 
     struct ToggleHarness {
+        disabled: bool,
         checked: bool,
         changes: Vec<bool>,
     }
@@ -360,6 +369,15 @@ mod interaction_tests {
     impl ToggleHarness {
         fn new(_cx: &mut Context<Self>) -> Self {
             Self {
+                disabled: false,
+                checked: false,
+                changes: Vec::new(),
+            }
+        }
+
+        fn new_disabled(_cx: &mut Context<Self>) -> Self {
+            Self {
+                disabled: true,
                 checked: false,
                 changes: Vec::new(),
             }
@@ -375,6 +393,7 @@ mod interaction_tests {
             let entity = cx.entity().clone();
             Toggle::new("toggle")
                 .checked(self.checked)
+                .disabled(self.disabled)
                 .on_change(move |checked, _window, cx| {
                     entity.update(cx, |this, cx| {
                         this.checked = checked;
@@ -401,6 +420,23 @@ mod interaction_tests {
         host.update_in(cx, |host, _window, _cx| {
             assert!(!host.checked);
             assert_eq!(host.changes, vec![true, false]);
+        });
+    }
+
+    #[gpui::test]
+    async fn disabled_toggle_ignores_click_and_activation_key(cx: &mut TestAppContext) {
+        // Pins the invariant behind the #34 fix: the disabled branch replaces
+        // interactivity with `cursor_default()` only, without attaching
+        // `on_click`/`on_key_down`. If a future edit reinstates a handler in
+        // the disabled branch, this test fails.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToggleHarness::new_disabled(cx));
+
+        cx.click_on(TOGGLE_SWITCH);
+        cx.press("enter");
+
+        host.update_in(cx, |host, _window, _cx| {
+            assert!(!host.checked);
+            assert!(host.changes.is_empty());
         });
     }
 }

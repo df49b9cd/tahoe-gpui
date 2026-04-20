@@ -19,6 +19,7 @@ mod gallery {
     pub mod boxes;
     pub mod button_groups;
     pub mod buttons;
+    pub mod checkboxes;
     pub mod collections;
     pub mod color_wells;
     pub mod colors;
@@ -93,6 +94,7 @@ use tahoe_gpui::components::menus_and_actions::context_menu::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle,
 };
 use tahoe_gpui::components::presentation::hover_card::HoverCard;
+use tahoe_gpui::components::selection_and_input::checkbox::CheckboxState;
 use tahoe_gpui::components::selection_and_input::date_picker::SimpleDate;
 use tahoe_gpui::foundations::accessibility::AccessibilityMode;
 
@@ -173,6 +175,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Buttons",
         render: gallery::buttons::render,
+    },
+    Demo {
+        label: "Checkboxes",
+        render: gallery::checkboxes::render,
     },
     Demo {
         label: "Collections",
@@ -407,6 +413,7 @@ pub struct ComponentGallery {
 
     // ── Interactive state for gallery pages ──────────────────────────────
     pub toggle_on: bool,
+    pub checkbox_state: CheckboxState,
     pub stepper_value: f64,
     pub picker_selected: Option<SharedString>,
     pub picker_open: bool,
@@ -500,6 +507,7 @@ impl ComponentGallery {
             }),
             // Interactive state for gallery pages
             toggle_on: false,
+            checkbox_state: CheckboxState::Unchecked,
             stepper_value: 5.0,
             picker_selected: Some(SharedString::from("cherry")),
             picker_open: false,

@@ -178,6 +178,18 @@ impl RenderOnce for Checkbox {
         };
         let border = if filled { theme.accent } else { theme.border };
 
+        // HIG: disabled tint is a fixed muted color, not a proportional
+        // opacity — opacity(0.5) fails WCAG 4.5:1 on low-contrast variants.
+        // Same pattern as `button.rs` disabled branch: the label is muted
+        // via `text_disabled()` and the cursor reverts; the box keeps its
+        // active fill/border/glyph so filled-vs-unfilled and checked-vs-
+        // unchecked stay visually distinct.
+        let label_color = if self.disabled {
+            theme.text_disabled()
+        } else {
+            theme.text
+        };
+
         let glyph: Option<gpui::AnyElement> = match self.state {
             CheckboxState::Checked => Some(
                 Icon::new(IconName::Check)
@@ -231,7 +243,7 @@ impl RenderOnce for Checkbox {
             row = row.child(
                 div()
                     .text_style(TextStyle::Body, theme)
-                    .text_color(theme.text)
+                    .text_color(label_color)
                     .child(label_text),
             );
         }
@@ -243,7 +255,7 @@ impl RenderOnce for Checkbox {
         row = apply_focus_ring(row, theme, focused, &[]);
 
         if self.disabled {
-            row = row.opacity(0.5);
+            row = row.cursor_default();
         } else if let Some(handler) = self.on_change {
             let handler = std::rc::Rc::new(handler);
             let click = handler.clone();
