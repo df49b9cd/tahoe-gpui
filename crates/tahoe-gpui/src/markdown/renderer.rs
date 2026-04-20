@@ -73,9 +73,10 @@ use crate::foundations::layout::{SPACING_4, SPACING_8};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontFallbacks, FontStyle, FontWeight, HighlightStyle, Hsla,
-    ObjectFit, Pixels, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
-    TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
+    AnyElement, App, ElementId, Entity, FocusHandle, FontFallbacks, FontStyle, FontWeight,
+    HighlightStyle, Hsla, KeyDownEvent, MouseButton, ObjectFit, Pixels, SharedString, SharedUri,
+    StrikethroughStyle, StyledText, TextRun, TextStyle as GpuiTextStyle, UnderlineStyle, Window,
+    div, img, px,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -373,11 +374,14 @@ pub struct StreamingMarkdown {
     /// fragment-link clicks are silently ignored (previously they were
     /// passed to `cx.open_url`, which treated them as broken HTTP URLs).
     anchor_click: Option<AnchorClickHandler>,
+    /// Focus handle for routing keyboard events (Cmd+C / Cmd+A) to a
+    /// single handler on the root div rather than per-paragraph handlers.
+    focus_handle: FocusHandle,
 }
 
 impl StreamingMarkdown {
     /// Creates a new streaming markdown renderer (remend disabled).
-    pub fn new(_cx: &mut App) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             parser: IncrementalMarkdownParser::new(),
             is_streaming: false,
@@ -390,11 +394,12 @@ impl StreamingMarkdown {
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
             anchor_click: None,
+            focus_handle: cx.focus_handle(),
         }
     }
 
     /// Creates a new streaming markdown renderer with remend preprocessing.
-    pub fn with_remend(options: remend::RemendOptions, _cx: &mut App) -> Self {
+    pub fn with_remend(options: remend::RemendOptions, cx: &mut Context<Self>) -> Self {
         Self {
             parser: IncrementalMarkdownParser::with_remend(options),
             is_streaming: false,
@@ -407,6 +412,7 @@ impl StreamingMarkdown {
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
             anchor_click: None,
+            focus_handle: cx.focus_handle(),
         }
     }
 
@@ -658,11 +664,37 @@ impl Render for StreamingMarkdown {
         // GPUI scopes interactive child ids under the nearest stateful
         // ancestor, and each entity's root differs.
         let entity_id = cx.entity_id().as_u64();
+
+        // Single focus-scoped key handler for Cmd+C / Cmd+A, replacing
+        // the former N per-paragraph `window.on_key_event()` handlers.
+        // Clicking inside the markdown region focuses this handle; key
+        // events then route here instead of through each paragraph.
+        let focus_handle = self.focus_handle.clone();
+        let selection = self.selection.clone();
         div()
             .id(ElementId::NamedInteger(
                 "tahoe-streaming-markdown".into(),
                 entity_id,
             ))
+            .track_focus(&self.focus_handle)
+            .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                focus_handle.focus(window, cx);
+            })
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let cmd_or_ctrl =
+                    event.keystroke.modifiers.platform || event.keystroke.modifiers.control;
+                if !cmd_or_ctrl {
+                    return;
+                }
+                match event.keystroke.key.as_str() {
+                    "c" => selection.copy_to_clipboard(cx),
+                    "a" => {
+                        selection.select_all();
+                        window.refresh();
+                    }
+                    _ => {}
+                }
+            })
             .flex()
             .flex_col()
             .gap(px(SPACING_8))
