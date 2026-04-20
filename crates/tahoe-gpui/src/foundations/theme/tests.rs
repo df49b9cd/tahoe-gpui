@@ -1872,6 +1872,35 @@ fn with_font_scale_factor_rejects_invalid_values() {
 }
 
 #[test]
+fn effective_font_scale_factor_returns_stored_value_when_valid() {
+    for good in [0.5, 1.0, 1.25, 2.0] {
+        let mut theme = TahoeTheme::dark();
+        theme.font_scale_factor = good;
+        assert!(
+            (theme.effective_font_scale_factor() - good).abs() < f32::EPSILON,
+            "valid scale {good} should pass through, got {}",
+            theme.effective_font_scale_factor()
+        );
+    }
+}
+
+#[test]
+fn effective_font_scale_factor_clamps_invalid_field_values() {
+    // Direct pub-field assignment bypasses `with_font_scale_factor`'s guard,
+    // so the reader must enforce the same contract to prevent invisible or
+    // infinite text. Regression test for #66.
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut theme = TahoeTheme::dark();
+        theme.font_scale_factor = bad;
+        assert!(
+            (theme.effective_font_scale_factor() - 1.0).abs() < f32::EPSILON,
+            "invalid field value {bad} should read as 1.0, got {}",
+            theme.effective_font_scale_factor()
+        );
+    }
+}
+
+#[test]
 fn ios_attrs_emphasized_large_titles_are_bold() {
     for size in [
         DynamicTypeSize::XSmall,

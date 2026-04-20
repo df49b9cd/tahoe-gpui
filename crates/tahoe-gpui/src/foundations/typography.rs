@@ -548,7 +548,7 @@ pub trait TextStyledExt: Styled {
 }
 
 fn apply_text_style_attrs<E: Styled>(el: E, attrs: TextStyleAttrs, theme: &TahoeTheme) -> E {
-    let scale = theme.font_scale_factor.max(0.0);
+    let scale = theme.effective_font_scale_factor();
     el.text_size(px(f32::from(attrs.size) * scale))
         .font_weight(theme.effective_weight(attrs.weight))
         .line_height(DefiniteLength::from(px(f32::from(attrs.leading) * scale)))

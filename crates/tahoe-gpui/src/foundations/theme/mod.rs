@@ -221,6 +221,12 @@ pub struct TahoeTheme {
     /// factor so vertical rhythm is preserved. GPUI does not currently
     /// expose `NSFontDescriptor`'s preferred body size, so hosts must drive
     /// this field themselves via `with_font_scale_factor`.
+    ///
+    /// Rendering code reads this via
+    /// [`effective_font_scale_factor`](Self::effective_font_scale_factor),
+    /// which treats non-finite or non-positive values as `1.0` — so direct
+    /// assignment of `0.0`, a negative, `NaN`, or infinity renders as if
+    /// the factor were `1.0`.
     pub font_scale_factor: f32,
     /// User-controlled Dynamic Type size (iOS-style enum). Defaults to
     /// [`DynamicTypeSize::Large`] — the HIG baseline — so LTR macOS apps
@@ -1281,6 +1287,24 @@ impl TahoeTheme {
         }
     }
 
+    /// Returns the sanitized font scale factor used by the type scale at
+    /// render time. Mirrors the guard in
+    /// [`with_font_scale_factor`](Self::with_font_scale_factor): returns
+    /// `font_scale_factor` when it is finite and strictly positive,
+    /// otherwise falls back to `1.0`.
+    ///
+    /// The setter already rejects invalid inputs, but `font_scale_factor`
+    /// is a public field — direct assignment (`theme.font_scale_factor =
+    /// 0.0`) would bypass the setter and produce `px(0.0)` text. Rendering
+    /// code should read the scale through this helper.
+    pub fn effective_font_scale_factor(&self) -> f32 {
+        if self.font_scale_factor.is_finite() && self.font_scale_factor > 0.0 {
+            self.font_scale_factor
+        } else {
+            1.0
+        }
+    }
+
     /// Returns the vertical offset for dropdown menus from their trigger.
     /// Uses the theme's `dropdown_offset` field (defaults to 4pt above the touch target).
     pub fn dropdown_top(&self) -> Pixels {
@@ -1717,7 +1741,7 @@ impl TahoeTheme {
                 f32::from(style.attrs().size) * dynamic_type_multiplier(self.dynamic_type_size)
             }
         };
-        Pixels::from(base_pt * self.font_scale_factor)
+        Pixels::from(base_pt * self.effective_font_scale_factor())
     }
 
     /// Replace the theme's accent colour and propagate it through the
