@@ -383,22 +383,12 @@ define_language!(
     tree_sitter_yaml::HIGHLIGHTS_QUERY
 );
 
-fn markdown_config() -> &'static HighlightConfiguration {
-    static CONFIG: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        let language = tree_sitter_md::LANGUAGE;
-        let mut config = HighlightConfiguration::new(
-            language.into(),
-            "markdown",
-            tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
-            "",
-            "",
-        )
-        .expect("Failed to create highlight config for markdown");
-        config.configure(HIGHLIGHT_NAMES);
-        config
-    })
-}
+define_language!(
+    markdown_config,
+    tree_sitter_md::LANGUAGE,
+    "markdown",
+    tree_sitter_md::HIGHLIGHT_QUERY_BLOCK
+);
 
 define_language!(
     java_config,
@@ -414,22 +404,12 @@ define_language!(
     tree_sitter_ruby::HIGHLIGHTS_QUERY
 );
 
-fn php_config() -> &'static HighlightConfiguration {
-    static CONFIG: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        let language = tree_sitter_php::LANGUAGE_PHP;
-        let mut config = HighlightConfiguration::new(
-            language.into(),
-            "php",
-            tree_sitter_php::HIGHLIGHTS_QUERY,
-            "",
-            "",
-        )
-        .expect("Failed to create highlight config for php");
-        config.configure(HIGHLIGHT_NAMES);
-        config
-    })
-}
+define_language!(
+    php_config,
+    tree_sitter_php::LANGUAGE_PHP,
+    "php",
+    tree_sitter_php::HIGHLIGHTS_QUERY
+);
 
 define_language!(
     sql_config,
@@ -437,6 +417,35 @@ define_language!(
     "sql",
     tree_sitter_sequel::HIGHLIGHTS_QUERY
 );
+
+/// Labels that AI assistants commonly emit as code-block fences but that we
+/// don't (yet) ship a grammar for. Kept as a grep-able list so a future
+/// maintainer adding e.g. `swift` support is nudged to remove the entry —
+/// and so the `known_unsupported_aliases_fall_back_gracefully` test can
+/// iterate it. If a grammar is added here without removing the label, that
+/// test fails: the label now returns highlighted spans, not the single
+/// unhighlighted span the test asserts.
+///
+/// `plain` / `text` are listed because models occasionally emit them as
+/// explicit "no syntax" labels; we want to recognise them as intentional
+/// rather than typos.
+#[cfg(test)]
+const KNOWN_UNSUPPORTED: &[&str] = &[
+    "xml",
+    "swift",
+    "kotlin",
+    "kt",
+    "dockerfile",
+    "diff",
+    "elixir",
+    "ex",
+    "scala",
+    "lua",
+    "r",
+    "zig",
+    "plain",
+    "text",
+];
 
 /// Look up a language highlight configuration by name.
 fn get_language_config(name: &str) -> Option<&'static HighlightConfiguration> {
@@ -460,20 +469,13 @@ fn get_language_config(name: &str) -> Option<&'static HighlightConfiguration> {
         "ruby" | "rb" => Some(ruby_config()),
         "php" => Some(php_config()),
         "sql" => Some(sql_config()),
-        // Recognised labels we don't (yet) ship a grammar for. Listed
-        // explicitly — rather than falling through to `_` — so the intent
-        // is grep-able and the compiler forces the maintainer to edit this
-        // function before silently dropping support. `plain`/`text` are the
-        // sentinels `code_block` falls back to when no language is set.
-        "xml" | "swift" | "kotlin" | "kt" | "dockerfile" | "diff" | "elixir" | "ex" | "scala"
-        | "lua" | "r" | "zig" | "plain" | "text" => None,
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_styled_highlights, highlight_code, highlight_color};
+    use super::{KNOWN_UNSUPPORTED, build_styled_highlights, highlight_code, highlight_color};
     use crate::foundations::theme::TahoeTheme;
     use core::prelude::v1::test;
 
@@ -587,6 +589,10 @@ mod tests {
             ("java", "class C {}"),
             ("php", "<?php echo 1; ?>"),
             ("sql", "SELECT 1;"),
+            // Mixed case — get_language_config lowercases before matching.
+            ("Rust", "fn main() {}"),
+            ("YAML", "key: value"),
+            ("SQL", "SELECT 1;"),
         ];
         for (alias, code) in cases {
             let spans = highlight_code(code, alias);
@@ -599,27 +605,16 @@ mod tests {
 
     #[test]
     fn known_unsupported_aliases_fall_back_gracefully() {
-        // Labels we recognise but don't ship a grammar for, plus a genuinely
-        // unknown label. Both must emit the source verbatim as a single
-        // unhighlighted span without panicking.
-        let aliases = [
-            "xml",
-            "swift",
-            "kotlin",
-            "kt",
-            "dockerfile",
-            "diff",
-            "elixir",
-            "ex",
-            "scala",
-            "lua",
-            "r",
-            "zig",
-            "plain",
-            "text",
-            "not-a-real-language-xyz",
-        ];
-        for alias in aliases {
+        // Every label listed in KNOWN_UNSUPPORTED plus a genuinely unknown
+        // label must emit the source verbatim as a single unhighlighted span
+        // without panicking. This test is the enforcement mechanism for the
+        // KNOWN_UNSUPPORTED list: adding a grammar for any of these labels
+        // without removing it from the list causes this test to fail.
+        for alias in KNOWN_UNSUPPORTED
+            .iter()
+            .copied()
+            .chain(std::iter::once("not-a-real-language-xyz"))
+        {
             let code = "arbitrary source";
             let spans = highlight_code(code, alias);
             assert_eq!(spans.len(), 1, "alias {alias:?}");
