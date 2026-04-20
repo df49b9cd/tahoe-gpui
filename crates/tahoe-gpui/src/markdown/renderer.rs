@@ -93,15 +93,24 @@ pub struct CitationContext {
     pub sources: HashMap<usize, Vec<CitationSource>>,
 }
 
+/// URL schemes that are always rejected by [`MarkdownSecurity`] regardless of
+/// allowlist configuration, because opening them via `cx.open_url` is XSS- or
+/// local-file-disclosure equivalent. Comparison is ASCII case-insensitive.
+const DANGEROUS_SCHEMES: &[&str] = &["javascript", "vbscript", "file", "data"];
+
 /// Security configuration for markdown rendering.
 ///
 /// Controls which URLs are allowed for links and images.
 /// An empty list blocks all; a list containing `"*"` allows all.
+///
+/// A hardcoded blocklist of dangerous schemes (`javascript:`, `vbscript:`,
+/// `file:`, `data:`) is applied before the allowlist and cannot be overridden;
+/// wildcards never permit these schemes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarkdownSecurity {
-    /// Allowed URL prefixes for links. Default: `["*"]` (allow all).
+    /// Allowed URL prefixes for links. Default: `["*"]` (allow all safe schemes).
     pub allowed_link_prefixes: Vec<String>,
-    /// Allowed URL prefixes for images. Default: `["*"]` (allow all).
+    /// Allowed URL prefixes for images. Default: `["*"]` (allow all safe schemes).
     pub allowed_image_prefixes: Vec<String>,
     /// Default origin to prepend to relative URLs in links and images.
     /// When set, relative URLs (not starting with `http://`, `https://`, or `//`)
@@ -133,13 +142,45 @@ impl MarkdownSecurity {
             .any(|prefix| url.starts_with(prefix.as_str()))
     }
 
-    /// Check if a link URL is allowed.
+    /// Detect a dangerous URL scheme (`javascript:`, `vbscript:`, `file:`,
+    /// `data:`) that must never reach `cx.open_url`.
+    ///
+    /// Leading ASCII whitespace is stripped and the scheme is compared
+    /// case-insensitively, matching browser URL-parsing leniency. Relative
+    /// paths (no colon, or a colon after `/`, `?`, `#`) return `false`.
+    fn is_dangerous_scheme(url: &str) -> bool {
+        let trimmed = url.trim_start_matches(|c: char| c.is_ascii_whitespace());
+        let Some(colon_pos) = trimmed.find(':') else {
+            return false;
+        };
+        let scheme = &trimmed[..colon_pos];
+        if scheme
+            .as_bytes()
+            .iter()
+            .any(|&b| b == b'/' || b == b'?' || b == b'#')
+        {
+            return false;
+        }
+        DANGEROUS_SCHEMES
+            .iter()
+            .any(|&s| scheme.eq_ignore_ascii_case(s))
+    }
+
+    /// Check if a link URL is allowed. Dangerous schemes are always rejected,
+    /// even when `allowed_link_prefixes` contains `"*"`.
     pub fn is_link_allowed(&self, url: &str) -> bool {
+        if Self::is_dangerous_scheme(url) {
+            return false;
+        }
         Self::is_url_allowed(url, &self.allowed_link_prefixes)
     }
 
-    /// Check if an image URL is allowed.
+    /// Check if an image URL is allowed. Dangerous schemes are always rejected,
+    /// even when `allowed_image_prefixes` contains `"*"`.
     pub fn is_image_allowed(&self, url: &str) -> bool {
+        if Self::is_dangerous_scheme(url) {
+            return false;
+        }
         Self::is_url_allowed(url, &self.allowed_image_prefixes)
     }
 
@@ -1291,6 +1332,9 @@ mod tests {
         );
     }
 
+    // `resolve_url` is a pure resolution layer; authorization (including the
+    // dangerous-scheme blocklist) happens in `is_link_allowed` /
+    // `is_image_allowed`. See `is_link_allowed_blocks_*` tests below.
     #[test]
     fn resolve_url_dangerous_schemes_unchanged() {
         let sec = MarkdownSecurity {
@@ -1311,5 +1355,80 @@ mod tests {
             "mailto:user@example.com"
         );
         assert_eq!(&*sec.resolve_url("tel:+1234567890"), "tel:+1234567890");
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_javascript_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("javascript:alert(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_vbscript_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("vbscript:msgbox(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_data_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("data:text/html,<script>alert(1)</script>"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_file_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("file:///etc/passwd"));
+    }
+
+    #[test]
+    fn is_link_allowed_is_case_insensitive() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("JaVaScRiPt:alert(1)"));
+        assert!(!sec.is_link_allowed("DATA:text/html,x"));
+        assert!(!sec.is_link_allowed("File:///tmp/x"));
+    }
+
+    #[test]
+    fn is_link_allowed_strips_leading_whitespace() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed(" javascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\tjavascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\njavascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\r\n javascript:alert(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_allows_safe_schemes() {
+        let sec = MarkdownSecurity::default();
+        assert!(sec.is_link_allowed("https://example.com"));
+        assert!(sec.is_link_allowed("http://example.com"));
+        assert!(sec.is_link_allowed("mailto:user@example.com"));
+        assert!(sec.is_link_allowed("tel:+1234567890"));
+        assert!(sec.is_link_allowed("#anchor"));
+        assert!(sec.is_link_allowed("/relative/path"));
+        assert!(sec.is_link_allowed("relative/path.html"));
+    }
+
+    #[test]
+    fn is_image_allowed_blocks_dangerous_schemes() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_image_allowed("javascript:alert(1)"));
+        assert!(!sec.is_image_allowed("data:text/html,<script>alert(1)</script>"));
+        assert!(!sec.is_image_allowed("file:///etc/passwd"));
+        assert!(!sec.is_image_allowed("vbscript:msgbox(1)"));
+        assert!(sec.is_image_allowed("https://example.com/img.png"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocklist_overrides_explicit_allowlist() {
+        // Blocklist is absolute: even a caller that explicitly allows
+        // `javascript:` in their prefix list cannot bypass it.
+        let sec = MarkdownSecurity {
+            allowed_link_prefixes: vec!["javascript:".into(), "https://".into()],
+            ..Default::default()
+        };
+        assert!(!sec.is_link_allowed("javascript:alert(1)"));
+        assert!(sec.is_link_allowed("https://example.com"));
     }
 }
