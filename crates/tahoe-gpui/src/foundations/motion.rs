@@ -412,7 +412,6 @@ pub fn spring_easing(damping: f32, response: f32, bounce: f32) -> impl Fn(f32) -
     // (450 ms), so the curve may run in a shorter window than `4 * response`
     // seconds. This is intentional: the exponential decay is already
     // imperceptible at that boundary.
-    // frequency so shorter response yields tighter wobble, matching SwiftUI.
     let response = response.max(1e-3);
     let periods = (4.0 / response).clamp(1.0, 12.0);
     move |t: f32| {
