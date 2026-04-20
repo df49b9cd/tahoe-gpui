@@ -17,7 +17,8 @@
 //! `apply_accessibility` entry point below can wire labels to the AX
 //! tree without any per-component changes.
 //!
-//! Tracked upstream: see `#138` — file GPUI issue in Zed if not yet present.
+//! Tracked in <https://github.com/df49b9cd/tahoe-gpui/issues/47>; file a GPUI
+//! upstream issue in zed-industries/zed if one does not yet exist.
 //!
 //! For keyboard graph navigation that does work today (per-component
 //! focus rings, Tab-order cycling), see
@@ -290,9 +291,9 @@ pub enum AccessibilityRole {
 ///
 /// The struct is carried with the component until paint; currently GPUI does
 /// not ship an AX tree API, so [`AccessibleExt::with_accessibility`] is a
-/// structural no-op that tags the element with a debug selector for
-/// introspection. When GPUI lands the AX API, the trait wires into it in one
-/// place rather than across ~30 components.
+/// structural no-op that emits a one-shot debug-build warning to stderr
+/// when non-empty props are discarded. When GPUI lands the AX API, the trait
+/// wires into it in one place rather than across ~30 components.
 #[derive(Debug, Clone, Default)]
 pub struct AccessibilityProps {
     /// VoiceOver label (what VoiceOver reads for this element).
@@ -350,21 +351,44 @@ impl AccessibilityProps {
 /// relying on AX *today* must integrate with the host's native platform
 /// AX path (e.g. NSAccessibility on macOS) outside this trait.
 ///
-/// Tracked in `#138`.
+/// Tracked in <https://github.com/df49b9cd/tahoe-gpui/issues/47>.
 pub trait AccessibleExt: gpui::Styled + Sized {
-    /// Attach the given accessibility props to `self`. No-op at runtime
-    /// today (see type-level docs); callers should wire it as if it
-    /// worked so the upstream plumb is a one-line change.
-    fn with_accessibility(self, _props: &AccessibilityProps) -> Self {
-        // GPUI gap: no public `accessibility_label` / `accessibility_role`
-        // API at v0.231.1-pre. `debug_selector` cannot be set on plain
-        // `Div` (it requires `Stateful<Div>`), so the baseline impl
-        // simply preserves the element.
+    /// Attach the given accessibility props to `self`.
+    ///
+    /// No-op at runtime today (see type-level docs). On first call with
+    /// non-empty props in a debug build, emits a one-shot stderr warning
+    /// pointing at the caller so the gap does not go unnoticed.
+    #[track_caller]
+    fn with_accessibility(self, props: &AccessibilityProps) -> Self {
+        if cfg!(debug_assertions) && !cfg!(test) && props.is_some() {
+            warn_once_a11y_dropped(std::panic::Location::caller());
+        }
         self
     }
 }
 
 impl<E: gpui::Styled + Sized> AccessibleExt for E {}
+
+/// Emits at most one stderr warning per process when an [`AccessibilityProps`]
+/// value is dropped by [`AccessibleExt::with_accessibility`]. Gated by an
+/// [`AtomicBool`](std::sync::atomic::AtomicBool) so a gallery with dozens of
+/// a11y-annotated components does not flood stderr.
+fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if WARNED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    eprintln!(
+        "[tahoe-gpui] AccessibleExt::with_accessibility dropped \
+         AccessibilityProps at {}:{} — GPUI v0.231.1-pre has no AX API, \
+         so VoiceOver/AX tree see nothing. Tracked in \
+         https://github.com/df49b9cd/tahoe-gpui/issues/47 (this warning \
+         fires once per process).",
+        loc.file(),
+        loc.line(),
+    );
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tests
@@ -372,7 +396,7 @@ impl<E: gpui::Styled + Sized> AccessibleExt for E {}
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibilityMode, AccessibilityProps, AccessibilityRole};
+    use super::{AccessibilityMode, AccessibilityProps, AccessibilityRole, AccessibleExt};
     use core::prelude::v1::test;
 
     #[test]
@@ -555,5 +579,26 @@ mod tests {
         theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
         // Matches REDUCE_MOTION_CROSSFADE in super::motion (150 ms).
         assert_eq!(reduce_motion_substitute_ms(&theme, 350), 150);
+    }
+
+    #[test]
+    fn with_accessibility_is_passthrough() {
+        // Contract: `with_accessibility` must return its receiver unchanged
+        // until GPUI lands an AX API. Starting from a mutated refinement
+        // (visibility = Hidden via `invisible()`) catches both in-place
+        // mutation and "returns a fresh default" failure modes. If this
+        // test starts failing, it is the cue to thread props into the
+        // real AX path.
+        use gpui::Styled;
+
+        let props = AccessibilityProps::new()
+            .role(AccessibilityRole::Button)
+            .label("Send message");
+
+        let before = gpui::StyleRefinement::default().invisible();
+        let after = gpui::StyleRefinement::default()
+            .invisible()
+            .with_accessibility(&props);
+        assert_eq!(after, before);
     }
 }
