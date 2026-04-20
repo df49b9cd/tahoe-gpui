@@ -420,8 +420,6 @@ impl RenderOnce for Alert {
         let action_count = self.actions.len();
         let use_horizontal = action_count == 2;
 
-        let hover_bg = theme.hover_bg();
-
         let separator_border = if theme.accessibility_mode.increase_contrast() {
             theme.glass.accessibility.high_contrast_border
         } else {
@@ -505,29 +503,24 @@ impl RenderOnce for Alert {
         };
 
         // -- Help button (macOS only) -----------------------------------------
+        // Delegates to `Button` + `ButtonVariant::Help` so it inherits
+        // ButtonLike's Space/Return activation and AccessibilityRole::Button
+        // instead of shipping a bespoke div.
         let help_el = if is_macos {
             self.on_help.map(|handler| {
                 let handler = std::rc::Rc::new(handler);
                 div()
-                    .id(ElementId::from((self.id.clone(), "help")))
-                    .debug_selector(|| "alert-help".into())
                     .absolute()
                     .left(theme.spacing_md)
                     .bottom(theme.spacing_md)
-                    .w(px(20.0))
-                    .h(px(20.0))
-                    .rounded(px(10.0))
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_style(TextStyle::Caption1, theme)
-                    .text_color(theme.label_color(SurfaceContext::GlassDim))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(hover_bg))
-                    .on_click(move |_event, window, cx| handler(window, cx))
-                    .child("?")
+                    .child(
+                        Button::new(ElementId::from((self.id.clone(), "help")))
+                            .variant(ButtonVariant::Help)
+                            .label("?")
+                            .accessibility_label("Help")
+                            .tooltip("Help")
+                            .on_click(move |_event, window, cx| handler(window, cx)),
+                    )
             })
         } else {
             None
