@@ -190,6 +190,13 @@ impl TokenField {
         field.update(cx, |tf, _cx| {
             tf.set_on_change(move |text, window, cx| {
                 let current = text.to_string();
+                // Re-entry guard: `set_text("", …)` below now fires this very
+                // callback with an empty string. The commit-key branch
+                // already skips empty input, but the early return makes the
+                // no-re-entry precondition explicit and cheap.
+                if current.is_empty() {
+                    return;
+                }
                 // Detect trailing commit-key character (e.g. comma).
                 // Enter is handled separately via the TextField's submit
                 // binding when wired by the host.
@@ -213,7 +220,7 @@ impl TokenField {
                             on_add(&trimmed_final, window, cx);
                         }
                         if let Some(ref tf) = this.text_field {
-                            tf.update(cx, |tf, cx| tf.set_text("", cx));
+                            tf.update(cx, |tf, cx| tf.set_text("", window, cx));
                         }
                         cx.notify();
                     }
@@ -721,7 +728,7 @@ impl Render for TokenField {
                             on_add(added.as_ref(), window, cx);
                         }
                         if let Some(ref tf) = this.text_field {
-                            tf.update(cx, |tf, cx| tf.set_text("", cx));
+                            tf.update(cx, |tf, cx| tf.set_text("", window, cx));
                         }
                         this.input_text.clear();
                         cx.notify();
@@ -1127,7 +1134,7 @@ mod interaction_tests {
         });
         let tf = embed_text_field(&field, cx);
         focus_inner_text_field(&tf, cx);
-        tf.update_in(cx, |t, _window, cx| t.set_text("hello", cx));
+        tf.update_in(cx, |t, window, cx| t.set_text("hello", window, cx));
 
         cx.press("cmd-a");
 
