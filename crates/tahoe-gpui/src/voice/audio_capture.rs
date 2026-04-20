@@ -256,7 +256,7 @@ impl AudioCapture {
             .shared
             .current_level
             .lock()
-            .expect("audio-capture level mutex poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Stop recording and return the captured audio as WAV.
@@ -269,7 +269,7 @@ impl AudioCapture {
             .shared
             .samples
             .lock()
-            .expect("audio-capture samples mutex poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let duration_secs = samples.len() as f32 / self.sample_rate as f32;
         let wav_data = encode_wav(&samples, self.sample_rate);
 
@@ -356,13 +356,13 @@ fn process_samples(shared: &SharedState, data: &[f32], channels: usize) {
         *shared
             .current_level
             .lock()
-            .expect("audio-capture level mutex poisoned") = level;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = level;
     }
 
     shared
         .samples
         .lock()
-        .expect("audio-capture samples mutex poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .extend_from_slice(&mono);
 }
 
@@ -536,6 +536,43 @@ mod tests {
 
         process_samples(&shared, &[0.5, 0.5], 1);
         assert!(shared.samples.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn process_samples_survives_poisoned_mutex() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let shared = Arc::new(SharedState {
+            samples: Mutex::new(Vec::new()),
+            current_level: Mutex::new(0.0),
+            stop: AtomicBool::new(false),
+        });
+
+        // Simulate a cpal-thread panic while holding both guards — poisons
+        // both mutexes, so any naive `.lock().expect(...)` from the UI
+        // thread (`current_level`, `stop`) would abort the window.
+        let poisoner = Arc::clone(&shared);
+        let _ = thread::spawn(move || {
+            let _s = poisoner.samples.lock().unwrap();
+            let _l = poisoner.current_level.lock().unwrap();
+            panic!("poison-the-mutexes");
+        })
+        .join();
+        assert!(shared.samples.is_poisoned());
+        assert!(shared.current_level.is_poisoned());
+
+        // Callback must not panic despite the poison.
+        process_samples(&shared, &[0.4, 0.4], 1);
+
+        // Data still accumulated after poison recovery.
+        let samples = shared.samples.lock().unwrap_or_else(|p| p.into_inner());
+        assert_eq!(samples.len(), 2);
+        let level = *shared
+            .current_level
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        assert!(level > 0.0);
     }
 
     #[test]
