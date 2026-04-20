@@ -844,6 +844,9 @@ fn control_thumb_varies_by_appearance() {
     let light = TahoeTheme::light().control_thumb;
     let dark = TahoeTheme::dark().control_thumb;
     let light_hc = TahoeTheme::light_high_contrast().control_thumb;
+    let dark_hc = TahoeTheme::dark_high_contrast().control_thumb;
+    let glass_dark = TahoeTheme::liquid_glass().control_thumb;
+    let glass_light = TahoeTheme::liquid_glass_light().control_thumb;
 
     // Light thumb must be dark enough to read on near-white track.
     assert!(light.l < 0.6, "light thumb too pale: {}", light.l);
@@ -851,6 +854,17 @@ fn control_thumb_varies_by_appearance() {
     assert!(dark.l > 0.95);
     // HC pushes farther from the track than the default light value.
     assert!(light_hc.l < light.l);
+    // Dark HC keeps max contrast against the dark track.
+    assert!(dark_hc.l > 0.95);
+    // Liquid-glass variants inherit from their parent constructors —
+    // pin the contract so a future override in liquid_glass*() that
+    // accidentally reintroduces a white puck in light mode is caught.
+    assert!(glass_dark.l > 0.95, "glass dark too dim: {}", glass_dark.l);
+    assert!(
+        glass_light.l < 0.6,
+        "glass light too pale: {}",
+        glass_light.l
+    );
     assert_ne!(light, dark);
 }
 
