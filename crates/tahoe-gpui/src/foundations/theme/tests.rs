@@ -314,9 +314,9 @@ fn apple_accent_blue() {
 
 #[test]
 fn with_accent_color_propagates_to_derived_tokens() {
-    // Switching the accent updates accent / ring / focus_ring / text_on_accent
-    // and the glass accent tint, so a host that detects a runtime accent
-    // change can rebuild without losing the rest of the theme.
+    // Switching the accent updates accent / ring / focus_ring / text_on_accent,
+    // the glass accent tint, and selected_bg, so a host that detects a runtime
+    // accent change can rebuild without losing the rest of the theme.
     let base = TahoeTheme::dark();
     let purple = base.clone().with_accent_color(AccentColor::Purple);
     assert_ne!(purple.accent, base.accent);
@@ -325,9 +325,21 @@ fn with_accent_color_propagates_to_derived_tokens() {
     assert_eq!(purple.focus_ring_color, purple.accent);
     assert_eq!(purple.glass.accent_tint.bg, purple.accent);
     assert_eq!(purple.accent_color, AccentColor::Purple);
+    // selected_bg tracks the new accent with the dark-mode alpha.
+    assert_eq!(purple.selected_bg.h, purple.accent.h);
+    assert_eq!(purple.selected_bg.s, purple.accent.s);
+    assert_eq!(purple.selected_bg.l, purple.accent.l);
+    assert!((purple.selected_bg.a - 0.28).abs() < f32::EPSILON);
+    assert_ne!(purple.selected_bg, base.selected_bg);
+    // Tool tints are palette-keyed (green/red), not accent-keyed — invariant.
+    assert_eq!(purple.tool_approved_bg, base.tool_approved_bg);
+    assert_eq!(purple.tool_rejected_bg, base.tool_rejected_bg);
     // Non-accent fields stay put.
     assert_eq!(purple.background, base.background);
     assert_eq!(purple.text, base.text);
+    // Light mode exercises the other arm of the appearance-conditional alpha (0.18).
+    let light_purple = TahoeTheme::light().with_accent_color(AccentColor::Purple);
+    assert!((light_purple.selected_bg.a - 0.18).abs() < f32::EPSILON);
 }
 
 #[test]

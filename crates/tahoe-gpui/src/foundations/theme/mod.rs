@@ -424,13 +424,8 @@ impl TahoeTheme {
             // Tinted accent fill for selected rows. Mirrors Finder's
             // `selectedContentBackgroundColor` when the window is key: a
             // low-alpha accent tint that stays legible against both the
-            // default and high-contrast appearances. Dark mode gets a
-            // slightly higher alpha so the fill remains visible against
-            // the darker background.
-            selected_bg: Hsla {
-                a: if is_dark { 0.28 } else { 0.18 },
-                ..accent
-            },
+            // default and high-contrast appearances.
+            selected_bg: Self::selected_bg_for(accent, is_dark),
             text_on_accent: text_colors.text_on_accent,
             overlay_bg: if is_dark {
                 hsla(0.0, 0.0, 0.0, 0.5)
@@ -550,6 +545,18 @@ impl TahoeTheme {
             // ring with a 3pt breathing gap to the element edge.
             focus_ring_width: px(3.0),
             focus_ring_offset: px(3.0),
+        }
+    }
+
+    /// Tinted accent fill for selected rows. Dark mode uses a
+    /// slightly higher alpha so the fill stays visible against the
+    /// darker background. Shared between the primary constructor and
+    /// [`TahoeTheme::with_accent_color`] so a runtime accent swap
+    /// cannot drift from the initial derivation.
+    fn selected_bg_for(accent: Hsla, is_dark: bool) -> Hsla {
+        Hsla {
+            a: if is_dark { 0.28 } else { 0.18 },
+            ..accent
         }
     }
 
@@ -1525,11 +1532,14 @@ impl TahoeTheme {
 
     /// Replace the theme's accent colour and propagate it through the
     /// derived tokens (`accent`, `ring`, `focus_ring_color`,
-    /// `glass.accent_tint`, and `text_on_accent`).
+    /// `glass.accent_tint`, `text_on_accent`, and `selected_bg`).
     ///
     /// Useful when the host detects a runtime accent change after the
     /// theme has been built — call this before `apply` (or on a clone),
     /// then re-apply.
+    ///
+    /// Note: `tool_approved_bg` and `tool_rejected_bg` are palette-keyed
+    /// (green / red), not accent-keyed, so they intentionally stay put.
     pub fn with_accent_color(mut self, accent: AccentColor) -> Self {
         let resolved = accent.resolve(&self.palette);
         self.accent_color = accent;
@@ -1541,6 +1551,7 @@ impl TahoeTheme {
             bg: resolved,
             bg_hover: crate::foundations::color::lighten(resolved, 0.08),
         };
+        self.selected_bg = Self::selected_bg_for(resolved, self.appearance.is_dark());
         self
     }
 }
