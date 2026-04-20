@@ -9,11 +9,14 @@
 //!
 //! # See also
 //!
-//! - `crate::components::status::rating_indicator::RatingIndicator`
-//!   (macOS only) — 5-star display/input widget; pairs with
-//!   [`crate::foundations::icons::IconName::Star`] /
-//!   [`crate::foundations::icons::IconName::StarFill`] /
-//!   [`crate::foundations::icons::IconName::StarLeadingHalfFilled`].
+#![cfg_attr(
+    target_os = "macos",
+    doc = "- [`crate::components::status::rating_indicator::RatingIndicator`] — 5-star display/input widget; pairs with [`crate::foundations::icons::IconName::Star`] / [`crate::foundations::icons::IconName::StarFill`] / [`crate::foundations::icons::IconName::StarLeadingHalfFilled`]."
+)]
+#![cfg_attr(
+    not(target_os = "macos"),
+    doc = "- `RatingIndicator` (macOS only) — 5-star display/input widget; pairs with [`crate::foundations::icons::IconName::Star`] / [`crate::foundations::icons::IconName::StarFill`] / [`crate::foundations::icons::IconName::StarLeadingHalfFilled`]."
+)]
 //! - [`crate::components::selection_and_input::text_field::TextField`]
 //!   — optional free-form review entry.
 //! - [`crate::components::menus_and_actions::button::Button`] — Submit,
