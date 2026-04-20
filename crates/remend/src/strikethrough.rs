@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 
 use super::emphasis::find_trailing_strikethrough;
-use super::utils::{
-    cow_append, is_empty_or_markers, is_inside_code_block, is_within_complete_inline_code,
-};
+use super::ranges::CodeBlockRanges;
+use super::utils::{cow_append, is_empty_or_markers};
 
 /// Counts `~~` pairs in the text.
 fn count_double_tildes(text: &str) -> usize {
@@ -45,14 +44,20 @@ fn find_half_complete_tilde(text: &str) -> Option<usize> {
     None
 }
 
-/// Completes incomplete strikethrough formatting (`~~`).
-pub fn handle(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle(text: &str) -> Cow<'_, str> {
+    handle_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+/// Completes incomplete strikethrough formatting, using pre-computed code block ranges.
+pub(crate) fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
     if let Some((marker_index, content)) = find_trailing_strikethrough(text) {
         if content.is_empty() || is_empty_or_markers(content) {
             return Cow::Borrowed(text);
         }
-        if is_inside_code_block(text, marker_index)
-            || is_within_complete_inline_code(text, marker_index)
+        if ranges.is_inside_code(marker_index)
+            || ranges.is_within_complete_inline_code(marker_index)
         {
             return Cow::Borrowed(text);
         }
@@ -64,8 +69,8 @@ pub fn handle(text: &str) -> Cow<'_, str> {
     } else {
         // Check for half-complete: ~~content~ → ~~content~~.
         if let Some(marker_index) = find_half_complete_tilde(text)
-            && !is_inside_code_block(text, marker_index)
-            && !is_within_complete_inline_code(text, marker_index)
+            && !ranges.is_inside_code(marker_index)
+            && !ranges.is_within_complete_inline_code(marker_index)
         {
             let pairs = count_double_tildes(text);
             if pairs % 2 == 1 {

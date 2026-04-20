@@ -1160,6 +1160,16 @@ fn link_text_only_image_removed() {
     assert_eq!(remend("Text ![incomplete image", &opts).as_ref(), "Text");
 }
 
+#[test]
+fn link_text_only_rebuilds_ranges_after_bracket_strip() {
+    // Regression: TextOnly mode strips the `[` byte mid-text, which shifts every
+    // subsequent byte and invalidates pre-computed CodeBlockRanges. The italic
+    // handler must see fresh ranges so it correctly classifies `*` as outside
+    // the inline-code span and closes the emphasis.
+    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    assert_eq!(remend("[abc`def`*xyz", &opts).as_ref(), "abc`def`*xyz*");
+}
+
 // ===========================================================================
 // Streaming simulation
 // ===========================================================================

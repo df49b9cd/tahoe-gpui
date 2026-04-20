@@ -1,10 +1,17 @@
 use std::borrow::Cow;
 
-use super::utils::{is_inside_code_block, is_plausible_tag_remainder};
+use super::ranges::CodeBlockRanges;
+use super::utils::is_plausible_tag_remainder;
 
-/// Strips incomplete HTML tags at the end of streaming text.
-/// E.g. `text <custom` → `text`.
-pub fn handle(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+/// The real pipeline calls [`handle_with_ranges`] directly with shared ranges.
+#[cfg(test)]
+fn handle(text: &str) -> Cow<'_, str> {
+    handle_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+/// Strips incomplete HTML tags, using pre-computed code block ranges.
+pub(crate) fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
     let bytes = text.as_bytes();
 
     // Scan backward for `<` that starts an incomplete tag.
@@ -23,7 +30,7 @@ pub fn handle(text: &str) -> Cow<'_, str> {
             if !is_plausible_tag_remainder(&bytes[i + 1..]) {
                 return Cow::Borrowed(text);
             }
-            if is_inside_code_block(text, i) {
+            if ranges.is_inside_code(i) {
                 return Cow::Borrowed(text);
             }
             let trimmed = text[..i].trim_end();
