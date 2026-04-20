@@ -87,4 +87,73 @@ mod tests {
     fn mixed_case_and_numbers() {
         assert_eq!(slugify("Section 2: Overview"), "section-2-overview");
     }
+
+    #[test]
+    fn cjk_letters_survive() {
+        // `is_alphanumeric` returns true for CJK ideographs; they're
+        // retained verbatim since they have no case-folding.
+        assert_eq!(slugify("中文 标题"), "中文-标题");
+    }
+
+    #[test]
+    fn emoji_is_dropped() {
+        // Most emoji are `Other_Symbol`, not alphanumeric, so they fall
+        // out of the slug. Surrounding words keep their spacing.
+        assert_eq!(slugify("Hello 🎉 World"), "hello-world");
+    }
+
+    #[test]
+    fn numeric_leading_preserved() {
+        assert_eq!(slugify("1. Overview"), "1-overview");
+    }
+
+    #[test]
+    fn combining_diacritic_is_dropped() {
+        // Decomposed form: base letter + combining mark. The combining
+        // mark (`\u{0301}`) is not alphanumeric and gets dropped, so the
+        // result diverges from the NFC form. Documented so callers that
+        // feed externally-normalized text know what to expect.
+        let decomposed = "cafe\u{0301}";
+        assert_eq!(slugify(decomposed), "cafe");
+    }
+
+    #[test]
+    fn tab_is_treated_as_whitespace() {
+        assert_eq!(slugify("foo\tbar"), "foo-bar");
+    }
+
+    #[test]
+    fn very_long_input_does_not_panic() {
+        // Pathological input should not allocate beyond O(n) or panic.
+        let long = "a".repeat(10_000);
+        let out = slugify(&long);
+        assert_eq!(out.len(), 10_000);
+    }
+
+    // Property tests pin three invariants that any future rewrite of
+    // `slugify` must preserve: idempotence (a slug slugifies to itself),
+    // no edge dashes, no consecutive dashes.
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn slug_is_idempotent(s in ".{0,80}") {
+            let once = slugify(&s);
+            let twice = slugify(&once);
+            prop_assert_eq!(once, twice);
+        }
+
+        #[test]
+        fn slug_has_no_edge_dashes(s in ".{0,80}") {
+            let out = slugify(&s);
+            prop_assert!(!out.starts_with('-'), "slug {:?} starts with '-'", out);
+            prop_assert!(!out.ends_with('-'), "slug {:?} ends with '-'", out);
+        }
+
+        #[test]
+        fn slug_has_no_consecutive_dashes(s in ".{0,80}") {
+            let out = slugify(&s);
+            prop_assert!(!out.contains("--"), "slug {:?} contains '--'", out);
+        }
+    }
 }

@@ -329,6 +329,43 @@ fn parse_heading_empty_or_punct_has_no_anchor() {
 }
 
 #[test]
+fn parse_heading_duplicate_explicit_ids_are_disambiguated() {
+    // Two headings with the same explicit `{#x}` must produce unique
+    // anchors so fragment links remain resolvable. We disambiguate the
+    // second occurrence as `x-2`, matching how GitHub treats both
+    // explicit and auto-generated duplicates.
+    let blocks = parse("## A {#x}\n\n## B {#x}");
+    assert_eq!(heading_anchor(&blocks[0]), Some("x"));
+    assert_eq!(heading_anchor(&blocks[1]), Some("x-2"));
+}
+
+#[test]
+fn parse_heading_explicit_id_is_slugified() {
+    // Explicit `{#id}` attributes are passed through `slugify` so
+    // mixed-case or stylised ids normalize to the same fragment-safe
+    // form as auto-generated ones. pulldown-cmark's attribute parser
+    // already rejects whitespace inside the id, but pass-through still
+    // matters for non-canonical case and for Unicode punctuation.
+    let blocks = parse("## Section {#CamelCaseID}");
+    assert_eq!(heading_anchor(&blocks[0]), Some("camelcaseid"));
+}
+
+#[test]
+fn parse_heading_slug_ignores_citation_number() {
+    // Citations inside a heading don't leak their number text into the
+    // slug, and they act as a word separator so `foo[^1]bar` doesn't
+    // slug as `foobar`.
+    let blocks = parse("## See [^1] now\n\n[^1]: First note");
+    assert_eq!(heading_anchor(&blocks[0]), Some("see-now"));
+}
+
+#[test]
+fn parse_heading_slug_includes_image_alt() {
+    let blocks = parse("## ![Logo](logo.png) Project");
+    assert_eq!(heading_anchor(&blocks[0]), Some("logo-project"));
+}
+
+#[test]
 fn parse_empty() {
     let blocks = parse("");
     assert!(blocks.is_empty());

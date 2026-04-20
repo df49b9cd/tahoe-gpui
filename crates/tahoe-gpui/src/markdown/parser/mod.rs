@@ -212,12 +212,23 @@ impl IncrementalMarkdownParser {
                 let level_num = *level as u8;
                 let end_tag = TagEnd::Heading(*level);
                 let (inlines, end) = self.collect_inlines(events, start + 1, end_tag);
+                // Both explicit `{#id}` attributes and auto-derived
+                // heading text go through `slugify` so the resulting
+                // anchor is always URL-fragment safe. Explicit ids like
+                // `{#My Custom ID}` become `my-custom-id`; this matches
+                // GFM's treatment and means consumers don't have to
+                // second-guess whether an id contains whitespace or
+                // other characters that would break fragment matching.
                 let explicit = id.as_ref().map(|s| s.as_ref()).unwrap_or("").trim();
-                let anchor_id = if !explicit.is_empty() {
-                    Some(explicit.to_string())
+                let candidate = if !explicit.is_empty() {
+                    slug::slugify(explicit)
                 } else {
-                    let slug = slug::slugify(&inline_plain_text(&inlines));
-                    if slug.is_empty() { None } else { Some(slug) }
+                    slug::slugify(&inline_plain_text(&inlines))
+                };
+                let anchor_id = if candidate.is_empty() {
+                    None
+                } else {
+                    Some(candidate)
                 };
                 (
                     Some(MarkdownBlock::Heading {
@@ -532,9 +543,12 @@ impl Default for IncrementalMarkdownParser {
 
 /// Flatten inline content to plain text for slug computation. Concatenates
 /// text runs, recurses through nesting (bold/italic/strikethrough/link),
-/// maps line breaks to a single space, and drops non-textual inlines
-/// (images, math, citations, task markers) so the resulting slug reflects
-/// only what a reader would speak aloud.
+/// maps line breaks to a single space, and includes image alt text so
+/// `## ![Logo](logo.png) Project` slugs as `logo-project` (matching
+/// GitHub). Non-textual inlines (citations, math, task markers) emit a
+/// single space rather than vanishing so adjacent text doesn't merge —
+/// `## foo[^1]bar` slugs as `foo-bar`, not `foobar`. The extra spaces
+/// collapse to single `-` separators in `slugify`.
 fn inline_plain_text(inlines: &[InlineContent]) -> String {
     fn walk(inlines: &[InlineContent], out: &mut String) {
         for inline in inlines {
@@ -545,11 +559,11 @@ fn inline_plain_text(inlines: &[InlineContent]) -> String {
                 | InlineContent::Italic(inner)
                 | InlineContent::Strikethrough(inner) => walk(inner, out),
                 InlineContent::Link { content, .. } => walk(content, out),
+                InlineContent::Image { alt, .. } => out.push_str(alt),
                 InlineContent::SoftBreak | InlineContent::HardBreak => out.push(' '),
                 InlineContent::Citation(_)
-                | InlineContent::Image { .. }
                 | InlineContent::InlineMath(_)
-                | InlineContent::TaskMarker(_) => {}
+                | InlineContent::TaskMarker(_) => out.push(' '),
             }
         }
     }
@@ -570,23 +584,35 @@ fn dedupe_heading_anchors(blocks: &mut [MarkdownBlock]) {
             ..
         } = block
         {
-            if !seen.contains_key(id.as_str()) {
-                seen.insert(id.clone(), 1);
-                continue;
-            }
-            let base = id.clone();
-            let start = seen.get(&base).copied().unwrap_or(1) + 1;
-            let mut n = start;
-            let unique = loop {
-                let candidate = format!("{base}-{n}");
-                if !seen.contains_key(&candidate) {
-                    break candidate;
+            match seen.get(id.as_str()).copied() {
+                None => {
+                    // First occurrence — register the id as seen with
+                    // counter 1. We clone rather than `mem::take`
+                    // because the block must retain its slug as the
+                    // block's `anchor_id`.
+                    seen.insert(id.clone(), 1);
                 }
-                n += 1;
-            };
-            seen.insert(base, n);
-            seen.insert(unique.clone(), 1);
-            *id = unique;
+                Some(last) => {
+                    // Collision — scan `{id}-{n}` candidates starting
+                    // from `last + 1` until we find one not already in
+                    // `seen` (covers prior generated AND prior explicit
+                    // ids). Update both the base counter and the new
+                    // unique id's counter so further collisions resume
+                    // past this suffix.
+                    let mut n = last + 1;
+                    let unique = loop {
+                        let candidate = format!("{id}-{n}");
+                        if !seen.contains_key(&candidate) {
+                            break candidate;
+                        }
+                        n += 1;
+                    };
+                    let base = id.clone();
+                    seen.insert(base, n);
+                    seen.insert(unique.clone(), 1);
+                    *id = unique;
+                }
+            }
         }
     }
 }

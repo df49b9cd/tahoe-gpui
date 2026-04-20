@@ -268,6 +268,12 @@ pub enum AccessibilityRole {
     Group,
     /// Image / decorative media.
     Image,
+    /// Heading at the given level (1–6). Carries the level so
+    /// VoiceOver's "next heading" and "headings at level N" gestures can
+    /// land on the right rung of the document outline when GPUI exposes
+    /// an AX tree. Consumers that pattern-match this role should treat
+    /// the payload as the HTML / HIG h-level.
+    Heading(u8),
 }
 
 /// Accessibility metadata for a single element.

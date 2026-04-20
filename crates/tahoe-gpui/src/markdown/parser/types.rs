@@ -31,7 +31,12 @@ impl From<pulldown_cmark::Alignment> for TableAlignment {
 }
 
 /// A parsed block of markdown content.
+///
+/// Marked `#[non_exhaustive]` so future HIG or GFM block additions can
+/// land without forcing downstream consumers to update exhaustive
+/// matches. Add a `_ => …` arm when pattern-matching this enum.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum MarkdownBlock {
     /// A paragraph of inline content.
     Paragraph(Vec<InlineContent>),
