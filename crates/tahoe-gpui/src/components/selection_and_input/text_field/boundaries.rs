@@ -32,6 +32,22 @@ impl TextField {
                 .map_or(0, str::len)
     }
 
+    /// Clamp `offset` to `content.len()`, then snap to the nearest grapheme
+    /// boundary if it landed mid-grapheme (e.g. after an undo restored shorter
+    /// content). Offsets already at a valid boundary are returned unchanged.
+    pub(super) fn clamp_to_grapheme(&self, offset: usize) -> usize {
+        let clamped = offset.min(self.content.len());
+        if clamped == 0 || clamped == self.content.len() {
+            return clamped;
+        }
+        let prev = self.previous_boundary(clamped);
+        if self.next_boundary(prev) == clamped {
+            clamped
+        } else {
+            prev
+        }
+    }
+
     /// Find the previous word boundary.
     pub(super) fn previous_word_boundary(&self, offset: usize) -> usize {
         if offset == 0 {
