@@ -3,6 +3,20 @@
 use super::InlineContent;
 
 /// Split text on citation markers `[N]` into alternating `Text` and `Citation` variants.
+///
+/// The splitter treats **any** bracketed ASCII-digit sequence as an inline
+/// citation, which is the convention for AI-generated content. The tradeoff
+/// is that legitimate prose like `"item [5] of 10"` is claimed as a citation
+/// marker too, and downstream renderers will treat the number as a footnote
+/// reference.
+///
+/// Callers that render non-AI Markdown should disable splitting via
+/// [`IncrementalMarkdownParser::with_citations(false)`][with_citations] (or
+/// [`StreamingMarkdown::with_citations(false)`][sm_with_citations]) so the
+/// bracketed number is preserved verbatim.
+///
+/// [with_citations]: super::IncrementalMarkdownParser::with_citations
+/// [sm_with_citations]: crate::markdown::StreamingMarkdown::with_citations
 pub fn split_citations(text: &str, out: &mut Vec<InlineContent>) {
     let mut last = 0;
     let bytes = text.as_bytes();

@@ -576,6 +576,92 @@ fn parse_citation_streaming_split() {
     );
 }
 
+fn parse_without_citations(input: &str) -> Rc<Vec<MarkdownBlock>> {
+    let mut p = IncrementalMarkdownParser::new().with_citations(false);
+    p.push_delta(input);
+    p.parse()
+}
+
+#[test]
+fn parse_citation_disabled_keeps_literal_brackets() {
+    // "item [5] of 10" must round-trip unchanged when splitting is off —
+    // this is the regression from the issue report.
+    let blocks = parse_without_citations("item [5] of 10");
+    let inlines = get_paragraph_inlines(&blocks);
+    assert_eq!(inlines.len(), 1);
+    assert!(matches!(&inlines[0], InlineContent::Text(t) if t == "item [5] of 10"));
+    assert!(
+        !inlines
+            .iter()
+            .any(|i| matches!(i, InlineContent::Citation(_)))
+    );
+}
+
+#[test]
+fn parse_citation_disabled_reference_definition_like() {
+    // A line that looks like a reference definition but is forced into a
+    // paragraph (pulldown-cmark may or may not consume the definition; this
+    // is a regression guard for either path).
+    let blocks = parse_without_citations("See [1]: footnote-target");
+    let text: String = blocks
+        .iter()
+        .flat_map(|b| match b {
+            MarkdownBlock::Paragraph(inlines) => inlines.clone(),
+            _ => vec![],
+        })
+        .filter_map(|i| match i {
+            InlineContent::Text(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        text.contains("[1]"),
+        "expected literal bracketed number, got {text:?}"
+    );
+    let has_citation = blocks.iter().any(|b| match b {
+        MarkdownBlock::Paragraph(inlines) => inlines
+            .iter()
+            .any(|i| matches!(i, InlineContent::Citation(_))),
+        _ => false,
+    });
+    assert!(
+        !has_citation,
+        "citation splitting must not fire when disabled"
+    );
+}
+
+#[test]
+fn parse_citation_disabled_default_is_on() {
+    // Guard against silent default flips — with_citations(true) (or no call)
+    // must keep the existing AI-content behaviour.
+    let mut p = IncrementalMarkdownParser::new().with_citations(true);
+    p.push_delta("See [1] for details");
+    let blocks = p.parse();
+    let inlines = get_paragraph_inlines(&blocks);
+    assert!(matches!(&inlines[1], InlineContent::Citation(1)));
+}
+
+#[test]
+fn parse_citation_disabled_inside_bold() {
+    // The flag lives on &self and collect_inlines recurses through &self, so
+    // nested contexts (bold here) inherit the opt-out automatically.
+    let blocks = parse_without_citations("**item [5] of 10**");
+    let inlines = get_paragraph_inlines(&blocks);
+    assert_eq!(inlines.len(), 1);
+    match &inlines[0] {
+        InlineContent::Bold(inner) => {
+            assert_eq!(inner.len(), 1);
+            assert!(matches!(&inner[0], InlineContent::Text(t) if t == "item [5] of 10"));
+            assert!(
+                !inner
+                    .iter()
+                    .any(|i| matches!(i, InlineContent::Citation(_)))
+            );
+        }
+        other => panic!("expected bold, got {other:?}"),
+    }
+}
+
 use proptest::prelude::*;
 
 proptest! {
