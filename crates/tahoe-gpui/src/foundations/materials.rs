@@ -1107,6 +1107,10 @@ pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
 /// Accessibility: falls back to the opaque ReduceTransparency fill
 /// irrespective of blur support — users who disable transparency never see
 /// the blur either way.
+///
+/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
+/// this fallback runs. Install a `tracing` subscriber (e.g.
+/// `tracing_subscriber::fmt().init()`) to surface it.
 pub fn glass_blur_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1120,7 +1124,7 @@ pub fn glass_blur_surface(
             .rounded(px(effect.corner_radius));
     }
 
-    warn_blur_fallback_once("glass_blur_surface");
+    warn_blur_fallback_once(BlurFallbackSite::Blur);
 
     // GPUI blocker: no per-element backdrop-blur API exists today.
     // GPUI ships `Window::set_background_appearance(WindowBackgroundAppearance::Blurred)`
@@ -1154,6 +1158,10 @@ pub fn glass_blur_surface(
 ///
 /// Accessibility: falls back to the opaque ReduceTransparency fill
 /// irrespective of lens support.
+///
+/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
+/// this fallback runs. Install a `tracing` subscriber (e.g.
+/// `tracing_subscriber::fmt().init()`) to surface it.
 pub fn glass_lens_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1167,7 +1175,7 @@ pub fn glass_lens_surface(
             .rounded(px(effect.blur.corner_radius));
     }
 
-    warn_blur_fallback_once("glass_lens_surface");
+    warn_blur_fallback_once(BlurFallbackSite::Lens);
 
     // GPUI blocker: lens rendering needs a render-to-texture pass GPUI
     // doesn't expose today. The shader stack (dual Kawase blur,
@@ -1190,32 +1198,44 @@ pub fn glass_lens_surface(
     glass_surface(el, theme, size)
 }
 
-/// Emit a one-shot warning the first time a glass blur/lens surface falls
-/// back to the non-blurred implementation. A per-fn `OnceLock` keeps the log
-/// out of hot paths while still flagging the missing GPU pipeline clearly to
-/// anyone running with `RUST_LOG`-style diagnostics.
+/// Callsite tag for [`warn_blur_fallback_once`] — see that fn for the
+/// rationale behind making this an enum instead of an `&'static str`.
+#[derive(Copy, Clone)]
+enum BlurFallbackSite {
+    Blur,
+    Lens,
+}
+
+/// Emit a one-shot `tracing::warn!` the first time a glass blur/lens surface
+/// falls back to the non-blurred implementation. Taking a [`BlurFallbackSite`]
+/// rather than an `&'static str` means any new fallback callsite must be wired
+/// into the dispatch below before it compiles — the previous `_ => return`
+/// fallthrough silently dropped warnings for typos or new callers.
+///
+/// A per-variant `OnceLock` keeps the event out of hot paths; release builds
+/// collapse the whole helper to a no-op.
 #[cfg(debug_assertions)]
-fn warn_blur_fallback_once(fn_name: &'static str) {
+fn warn_blur_fallback_once(site: BlurFallbackSite) {
     use std::sync::OnceLock;
     static BLUR_WARN: OnceLock<()> = OnceLock::new();
     static LENS_WARN: OnceLock<()> = OnceLock::new();
-    let slot = match fn_name {
-        "glass_blur_surface" => &BLUR_WARN,
-        "glass_lens_surface" => &LENS_WARN,
-        _ => return,
+    let (slot, name) = match site {
+        BlurFallbackSite::Blur => (&BLUR_WARN, "glass_blur_surface"),
+        BlurFallbackSite::Lens => (&LENS_WARN, "glass_lens_surface"),
     };
     slot.get_or_init(|| {
-        eprintln!(
-            "[tahoe-gpui] {fn_name}: per-element backdrop blur is not yet \
-             implemented; falling back to glass_surface(). Track the GPUI \
-             upstream paint_blur_rect() / paint_lens_rect() contribution to \
-             re-enable real refractive rendering."
+        tracing::warn!(
+            site = name,
+            "per-element backdrop blur is not yet implemented; falling back \
+             to glass_surface(). Track the GPUI upstream paint_blur_rect() / \
+             paint_lens_rect() contribution to re-enable real refractive \
+             rendering."
         );
     });
 }
 
 #[cfg(not(debug_assertions))]
-fn warn_blur_fallback_once(_fn_name: &'static str) {}
+fn warn_blur_fallback_once(_site: BlurFallbackSite) {}
 
 /// Apply accent-tinted glass surface styling.
 /// Uses the theme's accent color as the glass tint, suitable for

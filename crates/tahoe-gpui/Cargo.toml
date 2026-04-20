@@ -76,6 +76,11 @@ rustc-hash = "2"
 # Fast integer-to-string conversion for line number rendering.
 itoa = "1"
 
+# Structured diagnostics for dev-only warnings (e.g. the materials.rs
+# blur/lens fallback). Transitively present via GPUI's `ztracing`, so the
+# direct dep adds no extra compile cost.
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+
 # Optional
 cpal = { version = "0.17", optional = true }
 image = { workspace = true, optional = true }
