@@ -26,7 +26,12 @@ fn handle_incomplete_url(
         return None;
     }
 
-    let is_image = open > 0 && text.as_bytes()[open - 1] == b'!';
+    // `open` is a byte offset pointing at `[`. Using `str::ends_with` here
+    // is UTF-8-safe whereas raw byte indexing could land on a continuation
+    // byte of a multibyte code point. `b'!'` (0x21) never collides with a
+    // UTF-8 continuation byte (0x80–0xBF), but the safer form also reads
+    // more clearly to future maintainers.
+    let is_image = text[..open].ends_with('!');
     let start = if is_image { open - 1 } else { open };
     let before = &text[..start];
 
@@ -63,7 +68,7 @@ fn handle_incomplete_text(
     open_index: usize,
     link_mode: LinkMode,
 ) -> Option<Cow<'_, str>> {
-    let is_image = open_index > 0 && text.as_bytes()[open_index - 1] == b'!';
+    let is_image = text[..open_index].ends_with('!');
     let start = if is_image { open_index - 1 } else { open_index };
 
     // Check if there's a closing bracket after this.
@@ -100,7 +105,7 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize) -> usize {
     while j < max_pos {
         if bytes[j] == b'[' && !is_inside_code_block(text, j) {
             // Skip images.
-            if j > 0 && bytes[j - 1] == b'!' {
+            if text[..j].ends_with('!') {
                 j += 1;
                 continue;
             }
@@ -170,7 +175,7 @@ pub fn handle(
     {
         // Check if this is an image (preceded by `![`).
         let open = find_matching_opening_bracket(text, pos);
-        let is_image = open.is_some_and(|o| o > 0 && text.as_bytes()[o - 1] == b'!');
+        let is_image = open.is_some_and(|o| text[..o].ends_with('!'));
         if ((is_image && images_enabled) || (!is_image && links_enabled))
             && let Some(result) = handle_incomplete_url(text, pos, link_mode)
         {
@@ -183,7 +188,7 @@ pub fn handle(
     while i > 0 {
         i -= 1;
         if bytes[i] == b'[' && !is_inside_code_block(text, i) {
-            let is_image = i > 0 && bytes[i - 1] == b'!';
+            let is_image = text[..i].ends_with('!');
             if (is_image && !images_enabled) || (!is_image && !links_enabled) {
                 continue;
             }

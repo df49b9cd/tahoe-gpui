@@ -64,7 +64,7 @@ pub enum MarkdownBlock {
         alignments: Vec<TableAlignment>,
     },
     /// A display math block (e.g. `$$x^2 + y^2 = z^2$$`).
-    DisplayMath(String),
+    DisplayMath(gpui::SharedString),
     /// A GFM task-list item at top level. Nested inside a `List` the
     /// parent renders the checkbox glyph; this variant is used for
     /// stray task items the pulldown-cmark event stream emits outside

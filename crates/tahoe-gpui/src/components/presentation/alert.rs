@@ -20,11 +20,13 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, FocusHandle, FontWeight, KeyDownEvent, MouseDownEvent,
-    SharedString, Window, div, px,
+    AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window,
+    div, px,
 };
 
 use crate::callback_types::OnMutCallback;
+use crate::components::menus_and_actions::button::{Button, ButtonVariant};
+use crate::components::selection_and_input::checkbox::{Checkbox, CheckboxState};
 use crate::foundations::icons::Icon;
 use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
 use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
@@ -395,61 +397,20 @@ impl RenderOnce for Alert {
         let suppression_el = if is_macos {
             self.suppression_label.map(|label| {
                 let checked = self.suppression_checked;
-                let on_change = self.on_suppression_change.map(std::rc::Rc::new);
-                let box_color = if checked {
-                    theme.accent
-                } else {
-                    theme
-                        .glass
-                        .accessible_bg(GlassSize::Small, theme.accessibility_mode)
-                };
-                let border_color = if checked { theme.accent } else { theme.border };
-                let label_color = theme.label_color(SurfaceContext::GlassDim);
-                let mut row = div()
-                    .id(ElementId::from((self.id.clone(), "suppression")))
-                    .debug_selector(|| "alert-suppression".into())
-                    .w_full()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(theme.spacing_xs)
-                    .px(theme.spacing_md)
-                    .pb(theme.spacing_sm)
-                    .text_style(TextStyle::Subheadline, theme)
-                    .text_color(label_color)
-                    .cursor_pointer();
-                if let Some(handler) = on_change.clone() {
-                    row = row.on_click(move |_event, window, cx| {
-                        handler(!checked, window, cx);
+                let suppression_id = ElementId::from((self.id.clone(), "suppression"));
+                let mut cb = Checkbox::new(suppression_id)
+                    .state(CheckboxState::from_bool(checked))
+                    .label(label);
+                if let Some(handler) = self.on_suppression_change {
+                    cb = cb.on_change(move |state, window, cx| {
+                        handler(state.is_filled(), window, cx);
                     });
                 }
-                let tick: Option<gpui::Div> = if checked {
-                    Some(
-                        div()
-                            .w(px(3.0))
-                            .h(px(8.0))
-                            .mt(px(-2.0))
-                            .border_r_2()
-                            .border_b_2()
-                            .border_color(theme.text_on_accent),
-                    )
-                } else {
-                    None
-                };
-                let mut checkbox = div()
-                    .w(px(14.0))
-                    .h(px(14.0))
-                    .rounded(px(3.0))
-                    .border_1()
-                    .border_color(border_color)
-                    .bg(box_color)
-                    .flex()
-                    .items_center()
-                    .justify_center();
-                if let Some(tick) = tick {
-                    checkbox = checkbox.child(tick);
-                }
-                row.child(checkbox).child(label)
+                div()
+                    .w_full()
+                    .px(theme.spacing_md)
+                    .pb(theme.spacing_sm)
+                    .child(cb)
             })
         } else {
             None
@@ -469,28 +430,46 @@ impl RenderOnce for Alert {
 
         // Build buttons, extracting the first-Default click for Return.
         let mut default_return: Option<ActionClick> = None;
-        let mut built_buttons: Vec<(AlertActionRole, gpui::Stateful<gpui::Div>)> =
-            Vec::with_capacity(action_count);
+        // Each entry: (role, wrapper div that holds the Button).
+        let mut built_buttons: Vec<(AlertActionRole, gpui::Div)> = Vec::with_capacity(action_count);
         for (idx, action) in self.actions.into_iter().enumerate() {
             let role = action.role;
-            let layout = if use_horizontal {
-                ActionLayout::Horizontal
-            } else {
-                ActionLayout::Vertical
+            let variant = match role {
+                AlertActionRole::Default => ButtonVariant::Primary,
+                AlertActionRole::Cancel => ButtonVariant::Cancel,
+                AlertActionRole::Destructive => ButtonVariant::Destructive,
             };
-            let (btn, click_rc) = build_action_button(
-                self.id.clone(),
-                idx,
-                action,
-                theme,
-                hover_bg,
-                separator_border,
-                layout,
-            );
+            let btn_id =
+                ElementId::NamedInteger(format!("{:?}-action", self.id).into(), idx as u64);
+            let mut btn = Button::new(btn_id)
+                .label(action.label.clone())
+                .variant(variant)
+                .full_width(true);
+
+            let mut click_rc: Option<ActionClick> = None;
+            if let Some(handler) = action.on_click {
+                let handler: ActionClick = std::rc::Rc::from(handler);
+                let btn_h = handler.clone();
+                btn = btn.on_click(move |_event, window, cx| btn_h(window, cx));
+                click_rc = Some(handler);
+            }
             if role == AlertActionRole::Default && default_return.is_none() {
                 default_return = click_rc;
             }
-            built_buttons.push((role, btn));
+
+            // Wrap in a flex container that carries the separator border and
+            // sizing. Horizontal: flex_1 so both halves are equal width.
+            // Vertical: w_full.
+            let mut wrapper = div().border_t_1().border_color(separator_border).child(btn);
+            if use_horizontal {
+                wrapper = wrapper.flex_1();
+                if idx == 1 {
+                    wrapper = wrapper.border_l_1().border_color(separator_border);
+                }
+            } else {
+                wrapper = wrapper.w_full();
+            }
+            built_buttons.push((role, wrapper));
         }
 
         // HIG Alerts (macOS + iOS): in a horizontal two-button row, Cancel
@@ -513,14 +492,14 @@ impl RenderOnce for Alert {
 
         let actions_container = if use_horizontal {
             let mut row = div().w_full().flex().flex_row();
-            for (_, btn) in built_buttons.into_iter() {
-                row = row.child(btn);
+            for (_, wrapper) in built_buttons.into_iter() {
+                row = row.child(wrapper);
             }
             row
         } else {
             let mut col = div().w_full().flex().flex_col();
-            for (_, btn) in built_buttons.into_iter() {
-                col = col.child(btn);
+            for (_, wrapper) in built_buttons.into_iter() {
+                col = col.child(wrapper);
             }
             col
         };
@@ -617,101 +596,6 @@ impl RenderOnce for Alert {
 
         backdrop.child(content_div).into_any_element()
     }
-}
-
-/// Returns `(text_color, font_weight)` for the given action role.
-/// Respects BoldText accessibility mode via `theme.effective_weight()`.
-fn action_style(theme: &TahoeTheme, role: AlertActionRole) -> (gpui::Hsla, FontWeight) {
-    match role {
-        AlertActionRole::Default => (theme.accent, theme.effective_weight(FontWeight::NORMAL)),
-        // HIG `#buttons` roles: Cancel is secondary to the primary action;
-        // rendered with the label color, semibold for emphasis.
-        AlertActionRole::Cancel => (
-            theme.label_color(SurfaceContext::GlassDim),
-            theme.effective_weight(FontWeight::SEMIBOLD),
-        ),
-        // Destructive uses semibold to reinforce severity per HIG roles.
-        AlertActionRole::Destructive => (theme.error, theme.effective_weight(FontWeight::SEMIBOLD)),
-    }
-}
-
-/// Which layout the action buttons are arranged in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ActionLayout {
-    /// Two actions side-by-side. Last button gets a left-border separator.
-    Horizontal,
-    /// Stacked vertically. Full-width buttons.
-    Vertical,
-}
-
-/// Build a single alert action button. Returns the rendered button *and*
-/// (optionally) the `Rc`-wrapped click handler so the caller can bind
-/// Return to the first `Default`-role action.
-///
-/// Alert buttons were previously click-only `div`s; this helper adds
-/// `.focusable()` and an `on_key_down` handler so Full-Keyboard-Access
-/// users (ctrl-F7) can Tab to each action and press Enter/Space to fire
-/// the click handler — HIG Keyboards: "Never use keyboard shortcuts as the
-/// only way to perform an action."
-fn build_action_button(
-    alert_id: ElementId,
-    idx: usize,
-    action: AlertAction,
-    theme: &TahoeTheme,
-    hover_bg: gpui::Hsla,
-    separator_border: gpui::Hsla,
-    layout: ActionLayout,
-) -> (gpui::Stateful<gpui::Div>, Option<ActionClick>) {
-    let (text_color, weight) = action_style(theme, action.role);
-
-    let mut btn = div()
-        .id(ElementId::NamedInteger(
-            format!("{:?}-action", alert_id).into(),
-            idx as u64,
-        ))
-        .flex()
-        .items_center()
-        .justify_center()
-        .min_h(px(theme.target_size()))
-        .border_t_1()
-        .border_color(separator_border)
-        .text_style(TextStyle::Body, theme)
-        .text_color(text_color)
-        .font_weight(weight)
-        .cursor_pointer()
-        .focusable()
-        .hover(|style| style.bg(hover_bg))
-        .child(action.label);
-
-    match layout {
-        ActionLayout::Horizontal => {
-            btn = btn.flex_1();
-            if idx == 1 {
-                btn = btn.border_l_1().border_color(separator_border);
-            }
-        }
-        ActionLayout::Vertical => {
-            btn = btn.w_full();
-        }
-    }
-
-    let mut click_rc: Option<ActionClick> = None;
-    if let Some(handler) = action.on_click {
-        let handler: ActionClick = std::rc::Rc::from(handler);
-        let click_h = handler.clone();
-        let key_h = handler.clone();
-        btn = btn
-            .on_click(move |_event, window, cx| click_h(window, cx))
-            .on_key_down(move |event, window, cx| {
-                if crate::foundations::keyboard::is_activation_key(event) {
-                    cx.stop_propagation();
-                    key_h(window, cx);
-                }
-            });
-        click_rc = Some(handler);
-    }
-
-    (btn, click_rc)
 }
 
 #[cfg(test)]

@@ -64,6 +64,12 @@ tree-sitter-html = "0.23"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Fast, deterministic hashing for caches (FNV-like, no seed randomisation).
+rustc-hash = "2"
+
+# Fast integer-to-string conversion for line number rendering.
+itoa = "1"
+
 # Optional
 cpal = { version = "0.17", optional = true }
 image = { workspace = true, optional = true }

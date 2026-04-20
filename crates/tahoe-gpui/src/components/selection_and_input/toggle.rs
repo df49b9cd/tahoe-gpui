@@ -1,5 +1,6 @@
 //! Toggle switch primitive.
 
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::text_on_background;
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::materials::apply_high_contrast_border;
@@ -145,6 +146,8 @@ impl RenderOnce for Toggle {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let new_state = !self.checked;
+        let ax_label = self.accessibility_label.clone();
+        let ax_checked = self.checked;
         // When a focus handle is supplied (Finding 19), derive the
         // focus-ring state from the handle — otherwise use the explicit
         // `focused` bool.
@@ -297,7 +300,14 @@ impl RenderOnce for Toggle {
                 });
         }
 
-        track
+        // VoiceOver name + on/off value announcement per HIG Switches.
+        let mut props = AccessibilityProps::new()
+            .role(AccessibilityRole::Toggle)
+            .value(if ax_checked { "On" } else { "Off" });
+        if let Some(label) = ax_label {
+            props = props.label(label);
+        }
+        track.with_accessibility(&props)
     }
 }
 

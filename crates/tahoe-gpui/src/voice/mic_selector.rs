@@ -442,7 +442,7 @@ impl Render for MicSelectorView {
                 .icon(Icon::new(IconName::Mic).size(theme.icon_size_inline))
                 .label(current_label)
                 .variant(ButtonVariant::Outline)
-                .size(ButtonSize::Sm)
+                .size(ButtonSize::Small)
                 .on_click(cx.listener(|this, _event, window, cx| {
                     this.toggle(window, cx);
                 })),
@@ -626,7 +626,7 @@ impl Render for MicSelectorView {
                                     ))))
                                     .label("Open Privacy Settings")
                                     .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Sm)
+                                    .size(ButtonSize::Small)
                                     .accessibility_label(
                                         "Open System Settings, Privacy and Security, Microphone",
                                     )

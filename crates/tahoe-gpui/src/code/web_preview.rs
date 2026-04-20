@@ -182,7 +182,7 @@ impl RenderOnce for WebPreviewNavigationButton {
         Button::new(self.id)
             .icon(Icon::new(self.icon).size(theme.icon_size_inline))
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm)
+            .size(ButtonSize::IconSmall)
             .disabled(self.disabled)
     }
 }
@@ -338,7 +338,7 @@ impl RenderOnce for WebPreviewBody {
                     .label("Open in Browser")
                     .icon(Icon::new(IconName::ExternalLink).size(theme.icon_size_inline))
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(move |_event, _window, cx| {
                         cx.open_url(url.as_ref());
                     }),
@@ -468,7 +468,7 @@ impl RenderOnce for WebPreview {
                     .label("Open in Browser")
                     .icon(Icon::new(IconName::ExternalLink).size(theme.icon_size_inline))
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(move |_event, _window, cx| {
                         cx.open_url(url_for_click.as_ref());
                     }),

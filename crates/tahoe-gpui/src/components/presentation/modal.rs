@@ -12,7 +12,7 @@ use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter,
-    FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, SharedString, Window, div, px,
+    FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, Window, div, px,
 };
 
 /// Scope of the modal blocking behavior per HIG `#modality`.
@@ -67,7 +67,7 @@ type DismissEmitFn = std::rc::Rc<dyn Fn(&AnyEntity, &mut Window, &mut App) + 'st
 use crate::callback_types::OnMutCallback;
 #[derive(IntoElement)]
 pub struct Modal {
-    id: SharedString,
+    id: ElementId,
     is_open: bool,
     content: AnyElement,
     width: Option<Pixels>,
@@ -90,7 +90,7 @@ pub struct Modal {
 }
 
 impl Modal {
-    pub fn new(id: impl Into<SharedString>, content: impl IntoElement) -> Self {
+    pub fn new(id: impl Into<ElementId>, content: impl IntoElement) -> Self {
         Self {
             id: id.into(),
             is_open: false,
@@ -235,7 +235,7 @@ impl RenderOnce for Modal {
             ModalLevel::App => "modal-backdrop-app",
         };
         let backdrop = crate::foundations::materials::backdrop_overlay(theme)
-            .id(ElementId::Name(self.id.clone()))
+            .id(self.id.clone())
             .debug_selector(move || level_selector.into())
             .flex()
             .items_center()
@@ -278,7 +278,8 @@ impl RenderOnce for Modal {
             };
 
         // Build content container with optional focus tracking and escape key support
-        let content_id = ElementId::Name(format!("{}-content", self.id).into());
+        let content_id =
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "content".into());
         let mut content_div = crate::foundations::materials::glass_surface(
             div()
                 .w(width)
@@ -371,7 +372,7 @@ impl RenderOnce for Modal {
         } else {
             Duration::from_millis(theme.glass.motion.lift_duration_ms)
         };
-        let anim_id = ElementId::Name(format!("{}-present", self.id).into());
+        let anim_id = ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "present".into());
         let animated_body = div().child(self.content).with_animation(
             anim_id,
             Animation::new(anim_duration),

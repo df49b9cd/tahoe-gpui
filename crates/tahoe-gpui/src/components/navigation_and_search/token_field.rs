@@ -54,19 +54,19 @@ pub struct TokenItem {
 
 impl TokenItem {
     /// Creates a new removable token.
-    pub fn new(label: impl Into<SharedString>, id: impl Into<SharedString>) -> Self {
+    pub fn new(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
         Self {
-            label: label.into(),
             id: id.into(),
+            label: label.into(),
             removable: true,
         }
     }
 
     /// Creates a non-removable token.
-    pub fn fixed(label: impl Into<SharedString>, id: impl Into<SharedString>) -> Self {
+    pub fn fixed(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
         Self {
-            label: label.into(),
             id: id.into(),
+            label: label.into(),
             removable: false,
         }
     }
@@ -264,11 +264,11 @@ impl TokenField {
     /// Append a single token.
     pub fn add_token(
         &mut self,
-        label: impl Into<SharedString>,
         id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) {
-        self.tokens.push(TokenItem::new(label, id));
+        self.tokens.push(TokenItem::new(id, label));
         cx.notify();
     }
 
@@ -800,7 +800,7 @@ mod tests {
 
     #[test]
     fn token_item_new_is_removable() {
-        let item = TokenItem::new("Rust", "rust");
+        let item = TokenItem::new("rust", "Rust");
         assert_eq!(item.label.as_ref(), "Rust");
         assert_eq!(item.id.as_ref(), "rust");
         assert!(item.removable);
@@ -808,13 +808,13 @@ mod tests {
 
     #[test]
     fn token_item_fixed_is_not_removable() {
-        let item = TokenItem::fixed("Required", "req");
+        let item = TokenItem::fixed("req", "Required");
         assert!(!item.removable);
     }
 
     #[test]
     fn token_vec_operations() {
-        let mut tokens = vec![TokenItem::new("A", "a"), TokenItem::new("B", "b")];
+        let mut tokens = vec![TokenItem::new("a", "A"), TokenItem::new("b", "B")];
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].label.as_ref(), "A");
         assert_eq!(tokens[1].id.as_ref(), "b");
@@ -979,7 +979,7 @@ mod interaction_tests {
 
         wire_callbacks(&field, cx, added, removed.clone());
         field.update_in(cx, |field, _window, cx| {
-            field.set_tokens(vec![TokenItem::new("Rust", "rust")], cx);
+            field.set_tokens(vec![TokenItem::new("rust", "Rust")], cx);
         });
 
         assert_element_exists(cx, TOKEN_REMOVE_RUST);
@@ -1002,8 +1002,8 @@ mod interaction_tests {
         field.update_in(cx, |field, _window, cx| {
             field.set_tokens(
                 vec![
-                    TokenItem::fixed("Required", "req"),
-                    TokenItem::new("Rust", "rust"),
+                    TokenItem::fixed("req", "Required"),
+                    TokenItem::new("rust", "Rust"),
                 ],
                 cx,
             );
@@ -1029,7 +1029,7 @@ mod interaction_tests {
         let (field, cx) = setup_test_window(cx, |_window, cx| TokenField::new(cx));
 
         field.update_in(cx, |field, _window, cx| {
-            field.set_tokens(vec![TokenItem::new("Rust", "rust")], cx);
+            field.set_tokens(vec![TokenItem::new("rust", "Rust")], cx);
             field.set_on_context_menu_items(|_id, _cx| {
                 vec![
                     TokenContextMenuItem::new("Edit"),
@@ -1089,7 +1089,7 @@ mod interaction_tests {
         wire_callbacks(&field, cx, added, removed);
         field.update_in(cx, |field, _window, cx| {
             field.set_tokens(
-                vec![TokenItem::new("Rust", "rust"), TokenItem::new("Go", "go")],
+                vec![TokenItem::new("rust", "Rust"), TokenItem::new("go", "Go")],
                 cx,
             );
         });
@@ -1119,7 +1119,7 @@ mod interaction_tests {
 
         wire_callbacks(&field, cx, added, removed);
         field.update_in(cx, |field, _window, cx| {
-            field.set_tokens(vec![TokenItem::new("Rust", "rust")], cx);
+            field.set_tokens(vec![TokenItem::new("rust", "Rust")], cx);
         });
         let tf = embed_text_field(&field, cx);
         focus_inner_text_field(&tf, cx);
@@ -1145,9 +1145,9 @@ mod interaction_tests {
         field.update_in(cx, |field, _window, cx| {
             field.set_tokens(
                 vec![
-                    TokenItem::fixed("Required", "req"),
-                    TokenItem::new("Rust", "rust"),
-                    TokenItem::new("Go", "go"),
+                    TokenItem::fixed("req", "Required"),
+                    TokenItem::new("rust", "Rust"),
+                    TokenItem::new("go", "Go"),
                 ],
                 cx,
             );

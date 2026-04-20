@@ -144,7 +144,7 @@ impl RenderOnce for ShareButton {
                 .size(if self.icon_only {
                     ButtonSize::Icon
                 } else {
-                    ButtonSize::Md
+                    ButtonSize::Regular
                 })
                 .disabled(self.disabled)
                 .focused(self.focused);

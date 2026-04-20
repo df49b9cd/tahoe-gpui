@@ -22,6 +22,7 @@
 use gpui::prelude::*;
 use gpui::{App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
@@ -153,6 +154,11 @@ impl RenderOnce for Checkbox {
         let theme = cx.theme();
         let next_state = self.state.toggled();
         let filled = self.state.is_filled();
+        let ax_label = self
+            .accessibility_label
+            .clone()
+            .or_else(|| self.label.clone());
+        let ax_state = self.state;
 
         // HIG macOS checkbox: 14pt square, 3pt corner radius (matches the
         // suppression checkbox in Alert).
@@ -252,7 +258,20 @@ impl RenderOnce for Checkbox {
                 });
         }
 
-        row
+        // VoiceOver name + tri-state value per HIG. "Mixed" is the macOS
+        // name for the indeterminate state; AppKit announces it verbatim.
+        let value = match ax_state {
+            CheckboxState::Checked => "Checked",
+            CheckboxState::Unchecked => "Unchecked",
+            CheckboxState::Mixed => "Mixed",
+        };
+        let mut props = AccessibilityProps::new()
+            .role(AccessibilityRole::Checkbox)
+            .value(value);
+        if let Some(label) = ax_label {
+            props = props.label(label);
+        }
+        row.with_accessibility(&props)
     }
 }
 

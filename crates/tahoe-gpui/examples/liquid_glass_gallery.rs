@@ -105,7 +105,7 @@ impl Render for LiquidGlassGallery {
                             Button::new("gb7")
                                 .label("Small")
                                 .variant(ButtonVariant::Outline)
-                                .size(ButtonSize::Sm),
+                                .size(ButtonSize::Small),
                         ),
                 ),
             )

@@ -93,6 +93,8 @@ impl std::fmt::Display for AudioCaptureError {
     }
 }
 
+impl std::error::Error for AudioCaptureError {}
+
 /// Callback fired from the cpal thread when the underlying audio stream
 /// errors mid-recording (e.g. device disconnected, sample-rate change).
 ///

@@ -64,7 +64,7 @@ pub fn render(
             Button::new("sheet-show-cardlike")
                 .label("Show macOS cardlike sheet")
                 .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.sheet_open = true;
                     cx.notify();
@@ -104,7 +104,7 @@ pub fn render(
                         Button::new("sheet-cancel")
                             .label("Cancel")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_event, window, cx| {
                                 dismiss_for_button(window, cx);
                             }),

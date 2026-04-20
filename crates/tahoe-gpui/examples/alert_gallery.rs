@@ -83,7 +83,7 @@ impl Render for AlertGallery {
                 Button::new("show-side-by-side")
                     .label("Side-by-side")
                     .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Regular)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open(AlertKind::SideBySide, cx);
                     })),
@@ -92,7 +92,7 @@ impl Render for AlertGallery {
                 Button::new("show-stacked")
                     .label("Stacked (3 actions)")
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Regular)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open(AlertKind::Stacked, cx);
                     })),
@@ -101,7 +101,7 @@ impl Render for AlertGallery {
                 Button::new("show-single")
                     .label("Single action")
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Regular)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open(AlertKind::Single, cx);
                     })),
@@ -110,7 +110,7 @@ impl Render for AlertGallery {
                 Button::new("show-destructive")
                     .label("Destructive")
                     .variant(ButtonVariant::Destructive)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Regular)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.open(AlertKind::Destructive, cx);
                     })),

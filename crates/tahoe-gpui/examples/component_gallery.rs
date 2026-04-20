@@ -573,7 +573,7 @@ impl ComponentGallery {
                 menu
             }),
             context_menu_status: SharedString::from("Right-click the target area above"),
-            hover_card: cx.new(|cx| HoverCard::new("gallery-hover-card", cx)),
+            hover_card: cx.new(|_cx| HoverCard::new("gallery-hover-card")),
             page_current: 0,
             sheet_open: false,
             modal_open: false,
@@ -584,10 +584,10 @@ impl ComponentGallery {
                     let mut tf = TokenField::new(cx);
                     tf.set_tokens(
                         vec![
-                            TokenItem::new("Rust", "rust"),
-                            TokenItem::new("Swift", "swift"),
-                            TokenItem::new("TypeScript", "ts"),
-                            TokenItem::fixed("Required", "required"),
+                            TokenItem::new("rust", "Rust"),
+                            TokenItem::new("swift", "Swift"),
+                            TokenItem::new("ts", "TypeScript"),
+                            TokenItem::fixed("required", "Required"),
                         ],
                         cx,
                     );
@@ -723,7 +723,7 @@ impl Render for ComponentGallery {
                     } else {
                         ButtonVariant::Outline
                     })
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_accessibility(flag, cx);
                     }))
@@ -753,7 +753,7 @@ impl Render for ComponentGallery {
                         "\u{263E} Toggle to Dark"
                     })
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.toggle_theme(cx);
                     })),

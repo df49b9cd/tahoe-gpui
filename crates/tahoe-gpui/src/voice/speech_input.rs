@@ -100,6 +100,12 @@ impl SpeechInputState {
 #[allow(clippy::type_complexity)]
 pub struct SpeechInputView {
     element_id: ElementId,
+    /// Precomputed per-instance ElementIds derived from `element_id`.
+    id_rec: ElementId,
+    id_ring_static: ElementId,
+    id_ring_0: ElementId,
+    id_ring_1: ElementId,
+    id_ring_2: ElementId,
     state: SpeechInputState,
     /// Audio level from the capture device (0.0–1.0). Updated by the timer
     /// task during recording. Retained for planned audio-reactive ring animation.
@@ -136,8 +142,24 @@ impl SpeechInputView {
     pub const DEFAULT_IDLE_VARIANT: ButtonVariant = ButtonVariant::Primary;
 
     pub fn new(_cx: &mut Context<Self>) -> Self {
+        let element_id = next_element_id("speech-input");
+        let base: SharedString = match &element_id {
+            ElementId::Name(s) => s.clone(),
+            ElementId::NamedInteger(s, n) => SharedString::from(format!("{s}-{n}")),
+            other => SharedString::from(format!("{other:?}")),
+        };
+        let id_rec = ElementId::from(SharedString::from(format!("{base}-rec")));
+        let id_ring_static = ElementId::from(SharedString::from(format!("{base}-ring-static")));
+        let id_ring_0 = ElementId::from(SharedString::from(format!("{base}-ring-0")));
+        let id_ring_1 = ElementId::from(SharedString::from(format!("{base}-ring-1")));
+        let id_ring_2 = ElementId::from(SharedString::from(format!("{base}-ring-2")));
         Self {
-            element_id: next_element_id("speech-input"),
+            element_id,
+            id_rec,
+            id_ring_static,
+            id_ring_0,
+            id_ring_1,
+            id_ring_2,
             state: SpeechInputState::Idle,
             audio_level: 0.0,
             elapsed_secs: 0.0,
@@ -476,7 +498,7 @@ impl SpeechInputView {
     fn icon_for_state(state: SpeechInputState) -> IconName {
         match state {
             SpeechInputState::Idle => IconName::Mic,
-            SpeechInputState::Listening => IconName::Square,
+            SpeechInputState::Listening => IconName::StopFill,
             SpeechInputState::Processing => IconName::Loader,
             SpeechInputState::PermissionRequired => IconName::Mic,
             SpeechInputState::PermissionDenied | SpeechInputState::Disabled => IconName::MicOff,
@@ -529,15 +551,12 @@ impl Render for SpeechInputView {
 
         let icon = Icon::new(icon_name).size(theme.icon_size_inline);
 
-        let mut button = Button::new(ElementId::from(SharedString::from(format!(
-            "{}-rec",
-            self.element_id
-        ))))
-        .icon(icon)
-        .variant(btn_variant)
-        .size(self.size)
-        .round(true)
-        .accessibility_label(Self::accessibility_label_for_state(state));
+        let mut button = Button::new(self.id_rec.clone())
+            .icon(icon)
+            .variant(btn_variant)
+            .size(self.size)
+            .round(true)
+            .accessibility_label(Self::accessibility_label_for_state(state));
 
         // Activation wiring depends on state:
         //   Idle → start recording
@@ -573,13 +592,9 @@ impl Render for SpeechInputView {
                 // visible while recording so the active state is communicated
                 // without oscillating motion. Matches the HIG guidance that
                 // motion must not be the sole carrier of state.
-                let static_id = ElementId::from(SharedString::from(format!(
-                    "{}-ring-static",
-                    self.element_id
-                )));
                 btn_wrapper = btn_wrapper.child(
                     div()
-                        .id(static_id)
+                        .id(self.id_ring_static.clone())
                         .absolute()
                         .top_0()
                         .left_0()
@@ -593,12 +608,13 @@ impl Render for SpeechInputView {
                 // animation). Each ring expands outward via negative margins
                 // while fading, creating an expanding-ripple effect.
                 let ring_color = theme.error.opacity(0.3);
-                for i in 0..3 {
+                let ring_ids = [
+                    self.id_ring_0.clone(),
+                    self.id_ring_1.clone(),
+                    self.id_ring_2.clone(),
+                ];
+                for (i, ring_id) in ring_ids.into_iter().enumerate() {
                     let delay = i as f32 * 0.25; // stagger: ring 0 starts first
-                    let ring_id = ElementId::from(SharedString::from(format!(
-                        "{}-ring-{}",
-                        self.element_id, i
-                    )));
                     // Maximum outward expansion in pixels per ring.
                     let max_expand = 4.0 + i as f32 * 3.0;
                     btn_wrapper = btn_wrapper.child(
@@ -703,7 +719,7 @@ impl Render for SpeechInputView {
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
                     .child(
-                        Icon::new(IconName::AlertTriangle)
+                        Icon::new(IconName::Info)
                             .size(px(10.0))
                             .color(theme.text_muted),
                     )
@@ -819,7 +835,7 @@ mod tests {
         );
         assert_eq!(
             SpeechInputView::icon_for_state(SpeechInputState::Listening),
-            IconName::Square
+            IconName::StopFill
         );
         assert_eq!(
             SpeechInputView::icon_for_state(SpeechInputState::Processing),

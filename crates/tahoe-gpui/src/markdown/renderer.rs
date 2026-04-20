@@ -521,12 +521,18 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             // preserves visual hierarchy at sub-h3 depth. Apply the
             // "emphasized" (semibold/bold/heavy) weight per HIG so the
             // heading reads as heavier than surrounding body text.
+            // h5 previously collapsed into `Body` which rendered at the
+            // exact same size and weight as surrounding paragraph text,
+            // leaving h5 and p indistinguishable. Mapping h5→Callout and
+            // h6→Subheadline restores a monotonic decrease in size and
+            // keeps the emphasized weight (applied below) producing a
+            // visible hierarchy step.
             let ts = match level {
                 1 => TextStyle::Title1,
                 2 => TextStyle::Title2,
                 3 => TextStyle::Title3,
                 4 => TextStyle::Headline,
-                5 => TextStyle::Body,
+                5 => TextStyle::Callout,
                 _ => TextStyle::Subheadline,
             };
 
@@ -640,7 +646,9 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                     .rounded(ctx.theme.radius_md)
                     .text_style(TextStyle::Body, ctx.theme)
                     .child(
-                        StyledText::new(SharedString::from(math.clone())).with_highlights(vec![(
+                        // `math` is now `SharedString` — `.clone()` is a cheap
+                        // refcount bump instead of a heap allocation.
+                        StyledText::new(math.clone()).with_highlights(vec![(
                             0..math.len(),
                             HighlightStyle {
                                 color: Some(ctx.theme.text),

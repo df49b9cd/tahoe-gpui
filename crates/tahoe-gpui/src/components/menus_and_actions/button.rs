@@ -3,12 +3,13 @@
 use crate::callback_types::OnClick;
 use crate::components::menus_and_actions::button_like::ButtonLike;
 use crate::components::status::activity_indicator::ActivityIndicator;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::{darken, lighten, with_alpha};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, ElementId, SharedString, Window, div, point, px,
-    transparent_black,
+    Action, AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, SharedString, Window,
+    div, point, px, transparent_black,
 };
 
 /// Visual variant for buttons.
@@ -166,33 +167,33 @@ pub enum ButtonShape {
 /// HIG naming (mini / small / regular / large) with their approximate
 /// minimum heights:
 ///
-/// | Variant   | HIG name | Min height | Text style     |
-/// |-----------|----------|------------|----------------|
-/// | `Mini`    | mini     | ~16 pt     | Caption1       |
-/// | `Sm`      | small    | ~22 pt     | Subheadline    |
-/// | `Md`      | regular  | ~28 pt     | Body (default) |
-/// | `Lg`      | large    | ~32 pt     | Body           |
-/// | `IconSm`  | small    | ~22 pt     | —              |
-/// | `Icon`    | regular  | ~28 pt     | —              |
+/// | Variant       | HIG name | Min height | Text style     |
+/// |---------------|----------|------------|----------------|
+/// | `Mini`        | mini     | ~16 pt     | Caption1       |
+/// | `Small`       | small    | ~22 pt     | Subheadline    |
+/// | `Regular`     | regular  | ~28 pt     | Body (default) |
+/// | `Large`       | large    | ~32 pt     | Body           |
+/// | `IconSmall`   | small    | ~22 pt     | —              |
+/// | `Icon`        | regular  | ~28 pt     | —              |
 ///
 /// The `Icon*` variants apply icon-only chrome (square aspect, equal insets);
 /// text variants include label padding.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ButtonSize {
     /// Mini / HIG `mini` — ~16pt min-height. Use inside dense inspectors,
-    /// color-well labels, and toolbar palette items where the full `Sm`
+    /// color-well labels, and toolbar palette items where the full `Small`
     /// control tier is still too tall.
     Mini,
     /// Small / HIG `small` — ~22pt min-height.
-    Sm,
+    Small,
     /// Regular / HIG `regular` — ~28pt min-height. Default.
     #[default]
-    Md,
+    Regular,
     /// Large / HIG `large` — ~32pt min-height. Use for prominent CTAs that
     /// need to read at a glance (onboarding, primary page actions).
-    Lg,
+    Large,
     /// Small icon-only button — ~22pt square.
-    IconSm,
+    IconSmall,
     /// Regular icon-only button — ~28pt square.
     Icon,
 }
@@ -214,6 +215,13 @@ pub struct Button {
     focused: bool,
     loading: bool,
     on_click: OnClick,
+    /// Host-supplied focus handle. When present, the button participates
+    /// in the host's keyboard focus graph (Tab/Shift-Tab cycling, arrow
+    /// navigation) and the focus ring is driven by the handle's reactive
+    /// state rather than the `focused: bool` fallback. Zed-style pattern:
+    /// every interactive stateless control can opt into the focus graph
+    /// via a caller-owned handle.
+    focus_handle: Option<FocusHandle>,
     /// Accessibility label for screen readers. Defaults to the button's text label.
     accessibility_label: Option<SharedString>,
     /// Pointer-hover tooltip. Attached via GPUI's `.tooltip()` so the hover
@@ -242,10 +250,38 @@ impl Button {
             focused: false,
             loading: false,
             on_click: None,
+            focus_handle: None,
             accessibility_label: None,
             tooltip: None,
             tooltip_key_binding: None,
         }
+    }
+
+    /// Attach a host-owned focus handle so the button participates in
+    /// the keyboard focus graph. HIG Accessibility Keyboard: every
+    /// actionable control must be focusable and reachable via Tab/
+    /// Shift-Tab. The host configures `tab_index` / `tab_stop` on the
+    /// supplied handle — tahoe-gpui stays out of the ordering policy.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
+
+    /// Dispatch a GPUI action when the button activates. Same dispatch
+    /// path as a keyboard shortcut, so one action works from click,
+    /// keybinding, and command palette. Runs *before* any `on_click`
+    /// handler if both are supplied. The action is cloned via
+    /// `Action::boxed_clone` on every click so repeated activations each
+    /// dispatch a fresh instance.
+    pub fn action(mut self, action: Box<dyn Action>) -> Self {
+        let prior = self.on_click.take();
+        self.on_click = Some(Box::new(move |event, window, cx| {
+            window.dispatch_action(action.boxed_clone(), cx);
+            if let Some(handler) = prior.as_ref() {
+                handler(event, window, cx);
+            }
+        }));
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -360,7 +396,7 @@ impl Button {
     ///
     /// Attached via GPUI's `.tooltip()` so the hover delay honours the HIG
     /// ~500 ms reveal (see `TOOLTIP_SHOW_DELAY_MS`). Icon-only buttons —
-    /// `ButtonSize::Icon` and `ButtonSize::IconSm` — should always carry a
+    /// `ButtonSize::Icon` and `ButtonSize::IconSmall` — should always carry a
     /// tooltip so pointer users and VoiceOver have a discoverable name per
     /// HIG *Buttons > Tooltips*.
     pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
@@ -566,19 +602,19 @@ impl RenderOnce for Button {
                 TextStyle::Caption1,
                 theme.min_target_size() - 4.0,
             ),
-            ButtonSize::Sm => (
+            ButtonSize::Small => (
                 theme.spacing_sm,
                 theme.spacing_xs,
                 TextStyle::Subheadline,
                 theme.min_target_size() + 2.0,
             ),
-            ButtonSize::IconSm => (
+            ButtonSize::IconSmall => (
                 theme.spacing_xs,
                 theme.spacing_xs,
                 TextStyle::Subheadline,
                 theme.min_target_size() + 2.0,
             ),
-            ButtonSize::Md => (
+            ButtonSize::Regular => (
                 theme.spacing_md,
                 theme.spacing_sm,
                 TextStyle::Body,
@@ -591,7 +627,7 @@ impl RenderOnce for Button {
                 theme.target_size(),
             ),
             // HIG large control tier — 32pt on macOS (target + 4).
-            ButtonSize::Lg => (
+            ButtonSize::Large => (
                 theme.spacing_md,
                 theme.spacing_sm,
                 TextStyle::Body,
@@ -738,6 +774,9 @@ impl RenderOnce for Button {
         let mut bl = ButtonLike::new(id.clone())
             .focused(self.focused)
             .base_shadows(base);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            bl = bl.focus_handle(handle);
+        }
         if let Some(handler) = self.on_click
             && !interactive_blocked
         {
@@ -749,9 +788,9 @@ impl RenderOnce for Button {
         if self.loading {
             let indicator_size = match self.size {
                 ButtonSize::Mini => px(10.0),
-                ButtonSize::Sm | ButtonSize::IconSm => px(14.0),
-                ButtonSize::Md | ButtonSize::Icon => px(16.0),
-                ButtonSize::Lg => px(18.0),
+                ButtonSize::Small | ButtonSize::IconSmall => px(14.0),
+                ButtonSize::Regular | ButtonSize::Icon => px(16.0),
+                ButtonSize::Large => px(18.0),
             };
             el = el.child(
                 ActivityIndicator::new(ElementId::from((id.clone(), "loading")))
@@ -774,11 +813,24 @@ impl RenderOnce for Button {
         // HIG tooltips: pointer hover reveal after ~500 ms (GPUI default).
         // Icon-only buttons and toolbar actions rely on these for both
         // pointer discoverability and VoiceOver name fallback.
-        if let Some(text) = self.tooltip {
+        if let Some(text) = self.tooltip.clone() {
             el = el.tooltip(crate::components::presentation::tooltip::text_tooltip_view(
                 text,
                 self.tooltip_key_binding,
             ));
+        }
+
+        // Attach VoiceOver metadata. Tooltip falls back to the accessible
+        // name for icon-only buttons when no explicit label is provided —
+        // HIG Buttons > Tooltips: "tooltips act as the accessibility name
+        // for icon-only buttons unless one is specified."
+        let ax_label = self.accessibility_label.clone().or(self.tooltip.clone());
+        if ax_label.is_some() {
+            let mut props = AccessibilityProps::new().role(AccessibilityRole::Button);
+            if let Some(label) = ax_label {
+                props = props.label(label);
+            }
+            el = el.with_accessibility(&props);
         }
 
         el
@@ -851,18 +903,18 @@ mod tests {
 
     #[test]
     fn button_size_default() {
-        assert_eq!(ButtonSize::default(), ButtonSize::Md);
+        assert_eq!(ButtonSize::default(), ButtonSize::Regular);
     }
 
     #[test]
     fn button_size_all_distinct() {
         let sizes = [
             ButtonSize::Mini,
-            ButtonSize::Sm,
-            ButtonSize::Md,
-            ButtonSize::Lg,
+            ButtonSize::Small,
+            ButtonSize::Regular,
+            ButtonSize::Large,
             ButtonSize::Icon,
-            ButtonSize::IconSm,
+            ButtonSize::IconSmall,
         ];
         for i in 0..sizes.len() {
             for j in 0..sizes.len() {
@@ -881,11 +933,11 @@ mod tests {
     fn sizes_are_exhaustive(s: ButtonSize) -> &'static str {
         match s {
             ButtonSize::Mini => "mini",
-            ButtonSize::Sm => "sm",
-            ButtonSize::Md => "md",
-            ButtonSize::Lg => "lg",
+            ButtonSize::Small => "small",
+            ButtonSize::Regular => "regular",
+            ButtonSize::Large => "large",
             ButtonSize::Icon => "icon",
-            ButtonSize::IconSm => "icon_sm",
+            ButtonSize::IconSmall => "icon_small",
         }
     }
 

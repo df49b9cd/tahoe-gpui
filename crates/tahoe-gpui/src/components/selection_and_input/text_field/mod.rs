@@ -24,6 +24,7 @@ use gpui::{
 };
 
 use crate::callback_types::OnStrChange;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::with_alpha;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
@@ -206,6 +207,20 @@ pub struct TextField {
     /// Redo history: snapshots of `(content, selected_range)` that were
     /// popped by an undo. Cleared on any fresh mutation.
     redo_stack: VecDeque<(SharedString, Range<usize>)>,
+    /// VoiceOver / AX label. Falls back to the placeholder when absent
+    /// (HIG: "a field's placeholder serves as its accessibility name when
+    /// no external label is associated with the field").
+    accessibility_label: Option<SharedString>,
+    /// Optional label rendered above the field. HIG Text Fields:
+    /// "a label describes the field's purpose and accompanies the input."
+    /// Separate from `placeholder` (shown inside the field) and
+    /// `help_text` (shown below the field).
+    label: Option<SharedString>,
+    /// Optional help text rendered below the field. HIG Text Fields:
+    /// "Include additional guidance as help text when callers need more
+    /// context than the label provides." Hidden while the field is
+    /// rendering a validation error (the error message takes priority).
+    help_text: Option<SharedString>,
 }
 
 const UNDO_STACK_LIMIT: usize = 100;
@@ -239,7 +254,34 @@ impl TextField {
             submit_label: SubmitLabel::Return,
             undo_stack: VecDeque::new(),
             redo_stack: VecDeque::new(),
+            accessibility_label: None,
+            label: None,
+            help_text: None,
         }
+    }
+
+    /// Set the VoiceOver / AX label for this field. When unset, the
+    /// placeholder (if any) is used so icon-only or visually-label-less
+    /// fields still announce something meaningful.
+    pub fn set_accessibility_label(&mut self, label: impl Into<SharedString>) {
+        self.accessibility_label = Some(label.into());
+    }
+
+    /// Set the visible label rendered above the field.
+    ///
+    /// HIG distinguishes three text slots: **label** (describes purpose,
+    /// rendered above the field), **placeholder** (hint shown inside the
+    /// empty field), and **help text** (secondary guidance rendered
+    /// below).  All three can be populated at once.
+    pub fn set_label(&mut self, label: impl Into<SharedString>) {
+        self.label = Some(label.into());
+    }
+
+    /// Set the help text rendered below the field. Hidden when a
+    /// validation error is displayed (the error takes priority to avoid
+    /// stacking two messages under the field).
+    pub fn set_help_text(&mut self, text: impl Into<SharedString>) {
+        self.help_text = Some(text.into());
     }
 
     /// Select the text-field visual style. Defaults to
@@ -994,6 +1036,12 @@ impl Render for TextField {
             TextFieldValidation::Valid => {
                 container = container.border_color(theme.success);
             }
+            TextFieldValidation::Warning(_) => {
+                container = container.border_color(theme.warning);
+                if theme.accessibility_mode.differentiate_without_color() {
+                    container = container.border_2();
+                }
+            }
             TextFieldValidation::None => {}
         }
 
@@ -1012,10 +1060,24 @@ impl Render for TextField {
         let show_clear =
             self.show_clear_button && !self.content.is_empty() && !self.disabled && is_focused;
 
+        // VoiceOver / AX: prefer an explicit accessibility_label; fall
+        // back to the placeholder so bare search boxes still announce.
+        let ax_label = self.accessibility_label.clone().or_else(|| {
+            if self.placeholder.is_empty() {
+                None
+            } else {
+                Some(self.placeholder.clone())
+            }
+        });
         let mut input_container = container
             .key_context(TEXT_FIELD_CONTEXT)
             .track_focus(&self.focus_handle)
             .debug_selector(|| "text-field-root".into());
+        let mut ax_props = AccessibilityProps::new().role(AccessibilityRole::TextField);
+        if let Some(label) = ax_label {
+            ax_props = ax_props.label(label);
+        }
+        input_container = input_container.with_accessibility(&ax_props);
 
         if self.disabled {
             input_container = input_container.opacity(0.5);
@@ -1152,43 +1214,65 @@ impl Render for TextField {
             );
         }
 
-        // Wrap with validation error message if needed
-        let error_msg = match &self.validation {
-            TextFieldValidation::Invalid(msg) => Some(msg.clone()),
+        // HIG Text Fields: the slot order is label (top), field,
+        // help/validation (bottom). Invalid or Warning messages take
+        // priority over help_text — showing both would stack noise under
+        // the field.
+        let validation_below: Option<(SharedString, gpui::Hsla, bool)> = match &self.validation {
+            TextFieldValidation::Invalid(msg) => Some((msg.clone(), theme.error, true)),
+            TextFieldValidation::Warning(msg) => Some((msg.clone(), theme.warning, true)),
             _ => None,
         };
 
-        if let Some(msg) = error_msg {
+        let mut outer = div().w_full().flex().flex_col();
+
+        if let Some(label) = self.label.as_ref() {
+            outer = outer.child(
+                div()
+                    .pb(theme.spacing_xs)
+                    .text_style(TextStyle::Subheadline, theme)
+                    .text_color(theme.text)
+                    .child(label.clone()),
+            );
+        }
+
+        outer = outer.child(input_container);
+
+        if let Some((msg, color, validation_icon)) = validation_below {
             // HIG Accessibility (Color): don't rely on colour alone. When
             // the user has "Differentiate Without Color" turned on, pair
-            // the error text with a warning glyph so the invalid state
-            // reads regardless of colour perception.
-            let include_icon = theme.accessibility_mode.differentiate_without_color();
-            let mut error_row = div()
+            // the message with an icon so the state reads regardless of
+            // colour perception.
+            let include_icon =
+                validation_icon && theme.accessibility_mode.differentiate_without_color();
+            let mut row = div()
                 .flex()
                 .flex_row()
                 .items_center()
                 .gap(theme.spacing_xs)
                 .pt(px(SPACING_4))
                 .text_style(TextStyle::Callout, theme)
-                .text_color(theme.error);
+                .text_color(color);
             if include_icon {
-                error_row = error_row.child(
+                row = row.child(
                     Icon::new(IconName::AlertTriangle)
                         .size(px(12.0))
-                        .color(theme.error),
+                        .color(color),
                 );
             }
-            error_row = error_row.child(msg.to_string());
-            div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .child(input_container)
-                .child(error_row)
-        } else {
-            div().w_full().flex().flex_col().child(input_container)
+            row = row.child(msg.to_string());
+            outer = outer.child(row);
+        } else if let Some(help) = self.help_text.as_ref() {
+            outer = outer.child(
+                div()
+                    .pt(px(SPACING_4))
+                    .text_style(TextStyle::Callout, theme)
+                    .text_color(theme.text_muted)
+                    .child(help.clone()),
+            );
         }
+
+        outer
     }
 }
 

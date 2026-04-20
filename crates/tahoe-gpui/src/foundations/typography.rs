@@ -103,9 +103,12 @@ impl TextStyle {
     /// Default platform size is 13pt (Body); minimum is 10pt.
     pub fn attrs(self) -> TextStyleAttrs {
         match self {
+            // macOS Tahoe aligned `LargeTitle` with iOS's bold treatment:
+            // the default weight is Bold, not Regular. Sheet and Modal
+            // titles now render with the correct emphasis out of the box.
             Self::LargeTitle => TextStyleAttrs {
                 size: px(26.0),
-                weight: FontWeight::NORMAL,
+                weight: FontWeight::BOLD,
                 leading: px(32.0),
                 tracking: 0.22,
             },

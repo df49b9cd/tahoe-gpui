@@ -76,6 +76,10 @@ pub enum IconName {
     /// components to distinguish "microphone unavailable" or
     /// "permission denied" states from the active mic glyph.
     MicOff,
+    /// Filled stop square — `stop.fill` in SF Symbols 7. HIG audio-recording
+    /// stop affordance; distinct from [`IconName::Square`] (an empty square)
+    /// and from [`IconName::Pause`] (two vertical bars).
+    StopFill,
     Phone,
     Video,
     Settings,
@@ -102,6 +106,10 @@ pub enum IconName {
     CircleFilled,
     CircleOutline,
     AlertTriangle,
+    /// Circled information glyph — `info.circle` in SF Symbols 7.
+    /// HIG-specified icon for informational disclosures and help text;
+    /// distinct from [`IconName::AlertTriangle`] which signals a warning.
+    Info,
     Image,
     Plus,
     Minus,
@@ -318,6 +326,9 @@ impl IconName {
             IconName::Mic => "\u{25CF}", // black circle — mic indicator
             // ⊘ U+2298 CIRCLED DIVISION SLASH — non-emoji "mic disabled" stand-in.
             IconName::MicOff => "\u{2298}",
+            // ■ U+25A0 BLACK SQUARE — same glyph as Square; fill distinguishes it
+            // semantically (stop.fill maps to the filled variant in SF Symbols).
+            IconName::StopFill => "\u{25A0}",
             IconName::Phone => "\u{260E}", // black telephone (non-emoji BMP)
             IconName::Video => "\u{25B7}", // triangle
             IconName::Settings => "\u{2699}",
@@ -341,6 +352,8 @@ impl IconName {
             IconName::CircleFilled => "\u{25CF}",
             IconName::CircleOutline => "\u{25CB}",
             IconName::AlertTriangle => "\u{26A0}",
+            // ⓘ U+24D8 CIRCLED LATIN SMALL LETTER I — non-emoji info stand-in.
+            IconName::Info => "\u{24D8}",
             IconName::Image => "\u{25A2}", // square with rounded corners
             IconName::Plus => "\u{002B}",
             IconName::Minus => "\u{2212}",
@@ -537,6 +550,7 @@ impl IconName {
             IconName::Pause => Some("pause.fill"),
             IconName::Mic => Some("microphone"),
             IconName::MicOff => Some("microphone.slash"),
+            IconName::StopFill => Some("stop.fill"),
             IconName::Phone => Some("phone"),
             IconName::Video => Some("film"),
             IconName::Settings => Some("gear"),
@@ -554,6 +568,7 @@ impl IconName {
             IconName::CircleFilled => Some("circle.fill"),
             IconName::CircleOutline => Some("circle"),
             IconName::AlertTriangle => Some("exclamationmark.triangle"),
+            IconName::Info => Some("info.circle"),
             IconName::Image => Some("photo"),
             IconName::Plus => Some("plus"),
             IconName::Minus => Some("minus"),
@@ -631,6 +646,7 @@ impl IconName {
             IconName::Pause => Some("icons/symbols/pause-fill.svg"),
             IconName::Mic => Some("icons/symbols/microphone.svg"),
             IconName::MicOff => Some("icons/symbols/microphone-slash.svg"),
+            IconName::StopFill => Some("icons/symbols/stop-fill.svg"),
             IconName::Phone => Some("icons/symbols/phone.svg"),
             IconName::Video => Some("icons/symbols/film.svg"),
             IconName::Settings => Some("icons/symbols/gear.svg"),
@@ -647,6 +663,7 @@ impl IconName {
             IconName::CircleFilled => Some("icons/symbols/circle-fill.svg"),
             IconName::CircleOutline => Some("icons/symbols/circle.svg"),
             IconName::AlertTriangle => Some("icons/symbols/exclamationmark-triangle.svg"),
+            IconName::Info => Some("icons/symbols/info-circle.svg"),
             IconName::Image => Some("icons/symbols/photo.svg"),
             IconName::Plus => Some("icons/symbols/plus.svg"),
             IconName::Minus => Some("icons/symbols/minus.svg"),

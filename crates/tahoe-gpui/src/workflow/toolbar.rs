@@ -99,7 +99,7 @@ impl RenderOnce for WorkflowToolbar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         // Capture theme tokens as owned values so we can mutably borrow `cx`
         // while building the action buttons below (Button::new takes &mut App).
-        let (spacing_sm, spacing_md, spacing_xs, bar_bg, shadows, theme_clone) = {
+        let (spacing_sm, spacing_md, spacing_xs, bar_bg, shadows, increase_contrast, hc_border) = {
             let theme = cx.theme();
             (
                 theme.spacing_sm,
@@ -113,7 +113,8 @@ impl RenderOnce for WorkflowToolbar {
                     .glass
                     .accessible_bg(GlassSize::Medium, theme.accessibility_mode),
                 theme.glass.shadows(GlassSize::Medium).to_vec(),
-                theme.clone(),
+                theme.accessibility_mode.increase_contrast(),
+                theme.glass.accessibility.high_contrast_border,
             )
         };
 
@@ -125,7 +126,9 @@ impl RenderOnce for WorkflowToolbar {
             .py(spacing_sm)
             .bg(bar_bg)
             .shadow(shadows);
-        bar = crate::foundations::materials::apply_high_contrast_border(bar, &theme_clone);
+        if increase_contrast {
+            bar = bar.border_1().border_color(hc_border);
+        }
 
         // Sort actions into their anatomy sections. Stable partition keeps
         // the within-section order the caller supplied.
@@ -171,7 +174,7 @@ fn render_action(idx: usize, action: ToolbarAction, _cx: &mut App) -> gpui::AnyE
     .icon(Icon::new(action.icon))
     .label(action.label)
     .variant(ButtonVariant::Ghost)
-    .size(ButtonSize::Sm);
+    .size(ButtonSize::Small);
     if action.disabled {
         btn = btn.disabled(true);
     } else {

@@ -1,7 +1,7 @@
 //! Popover component for floating content (HIG `#popovers`).
 //!
 //! Uses absolute positioning to render content below/beside a trigger.
-//! The parent manages the `is_visible` state.
+//! The parent manages the `is_open` state.
 //!
 //! The popover renders a directional arrow pointing at the trigger
 //! (HIG: "Make sure a popover's arrow points as directly as possible
@@ -55,11 +55,11 @@ impl PopoverPlacement {
 
 /// A popover that shows floating content relative to a trigger.
 ///
-/// The parent manages `is_visible` and toggles it via hover/click.
+/// The parent manages `is_open` and toggles it via hover/click.
 #[derive(IntoElement)]
 pub struct Popover {
     id: ElementId,
-    is_visible: bool,
+    is_open: bool,
     trigger: AnyElement,
     content: AnyElement,
     placement: PopoverPlacement,
@@ -78,7 +78,7 @@ impl Popover {
     ) -> Self {
         Self {
             id: id.into(),
-            is_visible: false,
+            is_open: false,
             trigger: trigger.into_any_element(),
             content: content.into_any_element(),
             placement: PopoverPlacement::default(),
@@ -89,8 +89,8 @@ impl Popover {
         }
     }
 
-    pub fn visible(mut self, visible: bool) -> Self {
-        self.is_visible = visible;
+    pub fn open(mut self, is_open: bool) -> Self {
+        self.is_open = is_open;
         self
     }
 
@@ -99,7 +99,7 @@ impl Popover {
         self
     }
 
-    pub fn with_focus_handle(mut self, handle: FocusHandle) -> Self {
+    pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
         self.focus_handle = Some(handle);
         self
     }
@@ -137,7 +137,7 @@ impl RenderOnce for Popover {
                     .child(self.trigger),
             );
 
-        if self.is_visible
+        if self.is_open
             && let Some(ref handle) = self.focus_handle
             && !handle.is_focused(window)
         {
@@ -150,7 +150,7 @@ impl RenderOnce for Popover {
 
         let theme = cx.theme();
 
-        if self.is_visible {
+        if self.is_open {
             // Wrapper uses padding instead of margin to keep the hover zone
             // contiguous between trigger and content (prevents flicker).
             let mut wrapper = div().absolute();
@@ -316,9 +316,9 @@ mod tests {
     use core::prelude::v1::test;
 
     #[test]
-    fn popover_default_is_not_visible() {
+    fn popover_default_is_not_open() {
         let popover = Popover::new("test", gpui::div(), gpui::div());
-        assert!(!popover.is_visible);
+        assert!(!popover.is_open);
     }
 
     #[test]
@@ -407,16 +407,16 @@ mod interaction_tests {
 
     struct PopoverHarness {
         focus_handle: FocusHandle,
-        visible: bool,
+        is_open: bool,
         dismiss_count: usize,
         placement: PopoverPlacement,
     }
 
     impl PopoverHarness {
-        fn new(cx: &mut Context<Self>, visible: bool, placement: PopoverPlacement) -> Self {
+        fn new(cx: &mut Context<Self>, is_open: bool, placement: PopoverPlacement) -> Self {
             Self {
                 focus_handle: cx.focus_handle(),
-                visible,
+                is_open,
                 dismiss_count: 0,
                 placement,
             }
@@ -435,13 +435,13 @@ mod interaction_tests {
                 div().w(px(80.0)).h(px(32.0)).child("Trigger"),
                 div().w(px(120.0)).h(px(60.0)).child("Content"),
             )
-            .visible(self.visible)
+            .open(self.is_open)
             .placement(self.placement)
-            .with_focus_handle(self.focus_handle.clone())
+            .focus_handle(self.focus_handle.clone())
             .on_dismiss(move |_, cx| {
                 entity.update(cx, |this, cx| {
                     this.dismiss_count += 1;
-                    this.visible = false;
+                    this.is_open = false;
                     cx.notify();
                 });
             })
@@ -456,7 +456,7 @@ mod interaction_tests {
 
         assert_element_absent(cx, POPOVER_CONTENT);
         host.update_in(cx, |host, _window, cx| {
-            host.visible = true;
+            host.is_open = true;
             cx.notify();
         });
 
@@ -492,7 +492,7 @@ mod interaction_tests {
 
         host.update_in(cx, |host, _window, _cx| {
             assert_eq!(host.dismiss_count, 1);
-            assert!(!host.visible);
+            assert!(!host.is_open);
         });
         assert_element_absent(cx, POPOVER_CONTENT);
     }

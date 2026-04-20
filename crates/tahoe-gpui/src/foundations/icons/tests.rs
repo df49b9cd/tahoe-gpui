@@ -34,6 +34,7 @@ const ALL_VARIANTS: &[IconName] = &[
     IconName::Pause,
     IconName::Mic,
     IconName::MicOff,
+    IconName::StopFill,
     IconName::Phone,
     IconName::Video,
     IconName::Settings,
@@ -51,6 +52,7 @@ const ALL_VARIANTS: &[IconName] = &[
     IconName::CircleFilled,
     IconName::CircleOutline,
     IconName::AlertTriangle,
+    IconName::Info,
     IconName::Image,
     IconName::Plus,
     IconName::Minus,
@@ -190,7 +192,7 @@ const ALL_VARIANTS: &[IconName] = &[
 fn all_variants_count_matches() {
     assert_eq!(
         ALL_VARIANTS.len(),
-        176,
+        178,
         "New IconName variants must be added to ALL_VARIANTS above",
     );
 }

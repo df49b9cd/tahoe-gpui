@@ -211,7 +211,7 @@ impl Render for SandboxView {
                 let mut btn = Button::new(run_id)
                     .icon(Icon::new(IconName::Square).size(theme.icon_size_inline))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSm);
+                    .size(ButtonSize::IconSmall);
                 if self.on_stop.is_some() {
                     btn = btn.on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
                         cx.stop_propagation();
@@ -227,7 +227,7 @@ impl Render for SandboxView {
                 let mut btn = Button::new(run_id)
                     .icon(Icon::new(IconName::Play).size(theme.icon_size_inline))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSm);
+                    .size(ButtonSize::IconSmall);
                 if self.on_run.is_some() {
                     btn = btn.on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
                         cx.stop_propagation();

@@ -17,7 +17,7 @@
 //! Closes #150 findings F24 (misleading success indicator) and F25
 //! (hardcoded theme).
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -36,7 +36,7 @@ struct MermaidCacheKey {
     dark: bool,
 }
 
-type MermaidCache = HashMap<MermaidCacheKey, MermaidRender>;
+type MermaidCache = FxHashMap<MermaidCacheKey, MermaidRender>;
 
 /// Upper bound on the number of cached Mermaid renders.
 ///
@@ -59,11 +59,11 @@ enum MermaidRender {
 
 fn cache() -> &'static Mutex<MermaidCache> {
     static CACHE: OnceLock<Mutex<MermaidCache>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(FxHashMap::default()))
 }
 
 fn hash_mermaid(code: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = rustc_hash::FxHasher::default();
     code.hash(&mut hasher);
     hasher.finish()
 }
@@ -132,7 +132,13 @@ fn rasterize_mermaid(
 /// beyond `MERMAID_CACHE_CAP`.
 fn cap_cache(cache: &mut MermaidCache) {
     if cache.len() >= MERMAID_CACHE_CAP {
-        cache.clear();
+        // Evict half the entries rather than clearing the whole cache to avoid
+        // the thundering-herd of re-rendering every diagram at once.
+        let evict: Vec<MermaidCacheKey> =
+            cache.keys().take(MERMAID_CACHE_CAP / 2).copied().collect();
+        for key in evict {
+            cache.remove(&key);
+        }
     }
 }
 
@@ -215,7 +221,7 @@ impl RenderOnce for MermaidBlock {
                                 .label("Copy Mermaid")
                                 .icon(Icon::new(IconName::Copy))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Sm)
+                                .size(ButtonSize::Small)
                                 .on_click(move |_, _window, cx| {
                                     cx.write_to_clipboard(ClipboardItem::new_string(
                                         code_for_copy.clone(),
@@ -284,7 +290,7 @@ fn fallback_source_view(
                         .label("Copy Mermaid")
                         .icon(Icon::new(IconName::Copy))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Sm)
+                        .size(ButtonSize::Small)
                         .on_click(move |_, _window, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(code_for_copy.clone()));
                         }),

@@ -91,7 +91,11 @@ impl SemanticColors {
             separator: hsla(0.0, 0.0, 0.33, 0.60),
             opaque_separator: hsla(0.0, 0.0, 0.23, 1.0),
             placeholder_text: hsla(0.0, 0.0, 1.0, 0.30),
-            link: hsla(0.58, 0.99, 0.60, 1.0),
+            // Route through `SystemColor::Blue.resolve` so the HighContrast
+            // variants of the palette automatically supply a ≥4.5:1 link
+            // colour against `system_background`. Hardcoded HSL literals
+            // (now removed) failed WCAG AA in DarkHighContrast.
+            link: SystemColor::Blue.resolve(Appearance::Dark),
             system_fill: hsla(0.0, 0.0, 0.47, 0.36),
             secondary_system_fill: hsla(0.0, 0.0, 0.47, 0.32),
             tertiary_system_fill: hsla(0.0, 0.0, 0.46, 0.24),
@@ -139,7 +143,9 @@ impl SemanticColors {
             separator: hsla(0.0, 0.0, 0.24, 0.29),
             opaque_separator: hsla(0.0, 0.0, 0.78, 1.0),
             placeholder_text: hsla(0.0, 0.0, 0.24, 0.30),
-            link: hsla(0.58, 0.99, 0.42, 1.0),
+            // See `dark()` for rationale: route through SystemColor so
+            // HighContrast variants stay WCAG-AA-compliant.
+            link: SystemColor::Blue.resolve(Appearance::Light),
             system_fill: hsla(0.0, 0.0, 0.47, 0.20),
             secondary_system_fill: hsla(0.0, 0.0, 0.47, 0.16),
             tertiary_system_fill: hsla(0.0, 0.0, 0.46, 0.12),

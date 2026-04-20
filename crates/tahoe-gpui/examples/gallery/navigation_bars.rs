@@ -62,7 +62,7 @@ pub fn render(
                     .icon(Icon::new(IconName::ChevronLeft).size(px(16.0)))
                     .label("Back")
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::Sm),
+                    .size(ButtonSize::Small),
             ),
         )
         .child(div().h(theme.spacing_sm))
@@ -78,7 +78,7 @@ pub fn render(
                 Button::new("compose-btn")
                     .icon(Icon::new(IconName::Pencil).size(px(16.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSm),
+                    .size(ButtonSize::IconSmall),
             ),
         )
         .into_any_element()

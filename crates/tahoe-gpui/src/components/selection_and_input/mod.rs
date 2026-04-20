@@ -20,15 +20,17 @@ pub mod toggle;
 pub mod virtual_keyboard;
 
 pub use checkbox::{Checkbox, CheckboxState};
-pub use color_well::ColorWell;
+pub use color_well::{ColorWell, ColorWellStyle};
 pub use combo_box::ComboBox;
-pub use date_picker::{DatePicker, SimpleDate};
+pub use date_picker::{DateDisplayFormat, DatePicker, DatePickerStyle, SimpleDate};
 pub use digit_entry::DigitEntry;
 pub use image_well::ImageWell;
-pub use picker::{Picker, PickerItem};
+pub use picker::{Picker, PickerItem, PickerSection, PickerStyle};
 pub use segmented_control::{SegmentItem, SegmentedControl};
-pub use slider::Slider;
+pub use slider::{Slider, SliderOrientation};
 pub use stepper::Stepper;
-pub use text_field::{TextField, TextFieldValidation};
-pub use time_picker::TimePicker;
-pub use toggle::Toggle;
+pub use text_field::{
+    SubmitLabel, TextContentType, TextField, TextFieldStyle, TextFieldValidation,
+};
+pub use time_picker::{TimePicker, TimePickerStyle};
+pub use toggle::{Toggle, ToggleSize};

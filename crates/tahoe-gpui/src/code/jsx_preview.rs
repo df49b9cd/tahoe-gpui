@@ -302,7 +302,7 @@ impl RenderOnce for JsxPreviewHeader {
                     .label("Open in Browser")
                     .icon(Icon::new(IconName::Globe))
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(move |event, window, cx| on_open(event, window, cx)),
             );
         }

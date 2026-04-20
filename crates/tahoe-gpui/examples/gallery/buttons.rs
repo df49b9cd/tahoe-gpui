@@ -90,7 +90,7 @@ pub fn render(
                         Button::new(format!("{id_root}-idle"))
                             .label("Label")
                             .variant(v)
-                            .size(ButtonSize::Md),
+                            .size(ButtonSize::Regular),
                     ),
                 )
                 // Pressed-state preview: `focused(true)` paints the focus
@@ -103,7 +103,7 @@ pub fn render(
                         Button::new(format!("{id_root}-pressed"))
                             .label("Label")
                             .variant(v)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .focused(true),
                     ),
                 )
@@ -112,7 +112,7 @@ pub fn render(
                         Button::new(format!("{id_root}-disabled"))
                             .label("Label")
                             .variant(v)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .disabled(true),
                     ),
                 )
@@ -121,7 +121,7 @@ pub fn render(
                         Button::new(format!("{id_root}-round"))
                             .label("Label")
                             .variant(v)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .round(true),
                     ),
                 )
@@ -130,7 +130,7 @@ pub fn render(
                         Button::new(format!("{id_root}-lg"))
                             .label("Label")
                             .variant(v)
-                            .size(ButtonSize::Lg),
+                            .size(ButtonSize::Large),
                     ),
                 )
                 .child(
@@ -146,7 +146,7 @@ pub fn render(
                         Button::new(format!("{id_root}-icon-sm"))
                             .icon(Icon::new(IconName::Sparkle).size(px(14.0)))
                             .variant(v)
-                            .size(ButtonSize::IconSm),
+                            .size(ButtonSize::IconSmall),
                     ),
                 ),
         );
@@ -168,13 +168,13 @@ pub fn render(
                     Button::new("pair-cancel")
                         .label("Cancel")
                         .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 )
                 .child(
                     Button::new("pair-save")
                         .label("Save")
                         .variant(ButtonVariant::Primary)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 ),
         )
         .child(
@@ -185,13 +185,13 @@ pub fn render(
                     Button::new("pair-cancel-2")
                         .label("Cancel")
                         .variant(ButtonVariant::Secondary)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 )
                 .child(
                     Button::new("pair-delete")
                         .label("Delete")
                         .variant(ButtonVariant::Destructive)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 ),
         );
 

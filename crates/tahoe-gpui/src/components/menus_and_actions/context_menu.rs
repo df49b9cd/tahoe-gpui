@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{
-    App, Bounds, ClickEvent, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, Point,
-    SharedString, Task, Window, div, px,
+    Action, App, Bounds, ClickEvent, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Pixels,
+    Point, SharedString, Task, Window, div, px,
 };
 
 use crate::callback_types::OnMutCallback;
@@ -79,6 +79,12 @@ pub struct ContextMenuItem {
     /// users can flip multiple switches without reopening the overlay.
     /// Enter still activates + closes via [`ContextMenuItem::on_click`].
     pub on_toggle: OnToggleRc,
+    /// Optional GPUI action dispatched when the row activates. When set,
+    /// `activate_item` calls `window.dispatch_action(action.boxed_clone(),
+    /// cx)` so the same action works from click, keyboard shortcut, and
+    /// command palette — Zed's unified action-dispatch pattern. Runs
+    /// *before* `on_click` if both are present.
+    pub action: Option<Box<dyn Action>>,
 }
 
 impl ContextMenuItem {
@@ -92,7 +98,19 @@ impl ContextMenuItem {
             checked: false,
             on_click: None,
             on_toggle: None,
+            action: None,
         }
+    }
+
+    /// Dispatch a GPUI action when the row activates. Same dispatch path
+    /// as the keyboard shortcut and the command palette, so menu click,
+    /// keybinding, and palette invocation all route through one handler.
+    ///
+    /// Runs before any `on_click` handler if both are supplied; the menu
+    /// closes afterwards regardless.
+    pub fn action(mut self, action: Box<dyn Action>) -> Self {
+        self.action = Some(action);
+        self
     }
 
     /// Set the leading icon.
@@ -455,9 +473,17 @@ impl ContextMenu {
         let items: &[ContextMenuEntry] = self.active_items();
         if let Some(ContextMenuEntry::Item(item)) = items.get(idx)
             && item.style != ContextMenuItemStyle::Disabled
-            && let Some(handler) = &item.on_click
         {
-            handler(window, cx);
+            // Dispatch the action first so keymap-registered handlers
+            // run exactly as they would for a keyboard shortcut. Then
+            // fall through to the explicit `on_click` callback for
+            // items that wire both or neither.
+            if let Some(action) = &item.action {
+                window.dispatch_action(action.boxed_clone(), cx);
+            }
+            if let Some(handler) = &item.on_click {
+                handler(window, cx);
+            }
         }
         self.close(cx);
     }

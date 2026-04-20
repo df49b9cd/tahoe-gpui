@@ -174,7 +174,7 @@ impl CitationPopover {
 }
 
 impl Render for CitationPopover {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
         // Badge label
@@ -314,14 +314,14 @@ impl Render for CitationPopover {
             popover_content = popover_content.child(Self::render_source(source, theme));
         }
 
-        let is_focused = self.focus_handle.is_focused(_window);
+        let is_focused = self.focus_handle.is_focused(window);
         let is_visible = (self.is_hovered || is_focused) && !self.sources.is_empty();
 
         // Compose with the Popover primitive
         let popover = Popover::new(self.element_id.clone(), badge, popover_content)
-            .visible(is_visible)
+            .open(is_visible)
             .placement(PopoverPlacement::BelowLeft)
-            .with_focus_handle(self.focus_handle.clone());
+            .focus_handle(self.focus_handle.clone());
 
         div()
             .id(ElementId::Name(

@@ -86,7 +86,7 @@ impl Render for AuthApp {
                     Button::new("sign-up")
                         .label("Sign up with email")
                         .variant(ButtonVariant::Filled)
-                        .size(ButtonSize::Md)
+                        .size(ButtonSize::Regular)
                         .full_width(true),
                 ),
             )
@@ -114,7 +114,7 @@ impl Render for AuthApp {
                         .label("Google")
                         .icon(Icon::new(IconName::Globe).size(px(16.0)))
                         .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Md)
+                        .size(ButtonSize::Regular)
                         .full_width(true),
                 ),
             )

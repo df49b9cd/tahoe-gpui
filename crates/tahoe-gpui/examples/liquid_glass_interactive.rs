@@ -170,7 +170,7 @@ impl GlassMessenger {
             .enumerate()
             .map(|(i, contact)| {
                 cx.new(|cx| {
-                    let mut hc = HoverCard::new(format!("hc-{i}"), cx);
+                    let mut hc = HoverCard::new(format!("hc-{i}"));
                     let (h, s, l) = contact.color;
                     hc.set_trigger(
                         move |_cx| {
@@ -531,7 +531,7 @@ impl GlassMessenger {
             );
 
         let attach_popover = Popover::new("attach-popover", attach_btn, popover_content)
-            .visible(show_popover)
+            .open(show_popover)
             .placement(PopoverPlacement::AboveLeft)
             .on_dismiss(move |_, cx| {
                 entity_dismiss.update(cx, |this, cx| {

@@ -601,6 +601,44 @@ impl MenuShortcut {
         Self::new(key).with_modifiers(&[ModifierKey::Command, ModifierKey::Option])
     }
 
+    /// Resolve the live keybinding currently registered for `action` in the
+    /// focused dispatch context. Returns `None` when no binding is registered
+    /// (or when the binding uses a multi-keystroke chord that this single-
+    /// shortcut type can't represent).
+    ///
+    /// Uses `Window::highest_precedence_binding_for_action` so the rendered
+    /// chip reflects the user's effective keymap (including overrides),
+    /// instead of duplicating a hardcoded string at each call site.
+    pub fn for_action(action: &dyn gpui::Action, window: &gpui::Window) -> Option<Self> {
+        let binding = window.highest_precedence_binding_for_action(action)?;
+        let keystrokes = binding.keystrokes();
+        // Multi-keystroke chords (e.g. `cmd-k cmd-s`) can't fit in this
+        // single-chord representation; fall back to no chip so callers can
+        // still dispatch via `Window::dispatch_action` without misleading UI.
+        if keystrokes.len() != 1 {
+            return None;
+        }
+        let ks = &keystrokes[0];
+        let mods = ks.modifiers();
+        let mut modifiers = Vec::with_capacity(4);
+        if mods.control {
+            modifiers.push(ModifierKey::Control);
+        }
+        if mods.alt {
+            modifiers.push(ModifierKey::Option);
+        }
+        if mods.shift {
+            modifiers.push(ModifierKey::Shift);
+        }
+        if mods.platform {
+            modifiers.push(ModifierKey::Command);
+        }
+        Some(Self {
+            modifiers,
+            key: ks.key().to_string(),
+        })
+    }
+
     /// Render the shortcut as an SF-Symbol modifier glyph sequence:
     /// `⌃⌥⇧⌘K`. Modifiers are sorted into HIG order before rendering.
     pub fn render(&self) -> String {

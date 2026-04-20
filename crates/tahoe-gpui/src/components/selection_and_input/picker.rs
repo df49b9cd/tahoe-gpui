@@ -8,7 +8,9 @@ use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::components::selection_and_input::segmented_control::{SegmentItem, SegmentedControl};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    apply_focus_ring, apply_standard_control_styling, glass_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -368,6 +370,7 @@ impl RenderOnce for Picker {
                 list = list.child(row);
             }
 
+            list = apply_focus_ring(list, theme, self.focused, &[]);
             return list.into_any_element();
         }
 
@@ -472,6 +475,7 @@ impl RenderOnce for Picker {
                 wheel = wheel.child(row);
             }
 
+            wheel = apply_focus_ring(wheel, theme, self.focused, &[]);
             return wheel.into_any_element();
         }
 
@@ -552,6 +556,7 @@ impl RenderOnce for Picker {
                 grid = grid.child(row);
             }
 
+            grid = apply_focus_ring(grid, theme, self.focused, &[]);
             return grid.into_any_element();
         }
 

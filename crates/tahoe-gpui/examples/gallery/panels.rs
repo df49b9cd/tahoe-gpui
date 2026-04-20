@@ -62,7 +62,7 @@ pub fn render(
             Button::new("panel-show")
                 .label("Open inspector")
                 .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.panel_open = true;
                     cx.notify();
@@ -97,7 +97,7 @@ pub fn render(
                     Button::new("panel-close")
                         .label("Close")
                         .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Md)
+                        .size(ButtonSize::Regular)
                         .on_click(move |_, window, cx| dismiss_for_close(window, cx)),
                 ),
             );

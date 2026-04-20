@@ -55,6 +55,12 @@ pub(crate) const DEFAULT_SEEK_OFFSET: f32 = 10.0;
 /// `set_on_*` callback methods.
 pub struct AudioPlayerView {
     element_id: ElementId,
+    /// Precomputed per-instance ElementIds derived from `element_id`.
+    id_play_group: ElementId,
+    id_seek_back: ElementId,
+    id_play: ElementId,
+    id_seek_fwd: ElementId,
+    id_mute: ElementId,
     is_playing: bool,
     progress: f32,
     duration_secs: f32,
@@ -160,8 +166,24 @@ impl AudioPlayerView {
             });
         });
 
+        let element_id = next_element_id("audio-player");
+        let base: SharedString = match &element_id {
+            ElementId::Name(s) => s.clone(),
+            ElementId::NamedInteger(s, n) => SharedString::from(format!("{s}-{n}")),
+            other => SharedString::from(format!("{other:?}")),
+        };
+        let id_play_group = ElementId::from(SharedString::from(format!("{base}-play-group")));
+        let id_seek_back = ElementId::from(SharedString::from(format!("{base}-seek-back")));
+        let id_play = ElementId::from(SharedString::from(format!("{base}-play")));
+        let id_seek_fwd = ElementId::from(SharedString::from(format!("{base}-seek-fwd")));
+        let id_mute = ElementId::from(SharedString::from(format!("{base}-mute")));
         Self {
-            element_id: next_element_id("audio-player"),
+            element_id,
+            id_play_group,
+            id_seek_back,
+            id_play,
+            id_seek_fwd,
+            id_mute,
             is_playing: false,
             progress: 0.0,
             duration_secs: 0.0,
@@ -461,10 +483,7 @@ impl Render for AudioPlayerView {
         let mut controls = div().flex().items_center().gap(theme.spacing_sm);
 
         // Play controls in a ButtonGroup
-        let mut play_group = ButtonGroup::new(ElementId::from(SharedString::from(format!(
-            "{}-play-group",
-            self.element_id
-        ))));
+        let mut play_group = ButtonGroup::new(self.id_play_group.clone());
 
         // Seek backward button (optional)
         if self.show_seek_buttons {
@@ -473,18 +492,15 @@ impl Render for AudioPlayerView {
                 self.seek_offset_secs as u32
             ));
             play_group = play_group.child(
-                Button::new(ElementId::from(SharedString::from(format!(
-                    "{}-seek-back",
-                    self.element_id
-                ))))
-                .icon(Icon::new(IconName::SkipBack).size(px(12.0)))
-                .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm)
-                .disabled(disabled)
-                .accessibility_label(seek_back_label)
-                .on_click(cx.listener(|this, _event, window, cx| {
-                    this.handle_seek_backward(window, cx);
-                })),
+                Button::new(self.id_seek_back.clone())
+                    .icon(Icon::new(IconName::SkipBack).size(px(12.0)))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconSmall)
+                    .disabled(disabled)
+                    .accessibility_label(seek_back_label)
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.handle_seek_backward(window, cx);
+                    })),
             );
         }
 
@@ -496,18 +512,15 @@ impl Render for AudioPlayerView {
             "Play".into()
         };
         play_group = play_group.child(
-            Button::new(ElementId::from(SharedString::from(format!(
-                "{}-play",
-                self.element_id
-            ))))
-            .icon(play_icon)
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm)
-            .disabled(disabled)
-            .accessibility_label(play_label)
-            .on_click(cx.listener(|this, _event, window, cx| {
-                this.handle_play_pause(window, cx);
-            })),
+            Button::new(self.id_play.clone())
+                .icon(play_icon)
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::IconSmall)
+                .disabled(disabled)
+                .accessibility_label(play_label)
+                .on_click(cx.listener(|this, _event, window, cx| {
+                    this.handle_play_pause(window, cx);
+                })),
         );
 
         // Seek forward button (optional)
@@ -517,18 +530,15 @@ impl Render for AudioPlayerView {
                 self.seek_offset_secs as u32
             ));
             play_group = play_group.child(
-                Button::new(ElementId::from(SharedString::from(format!(
-                    "{}-seek-fwd",
-                    self.element_id
-                ))))
-                .icon(Icon::new(IconName::SkipForward).size(px(12.0)))
-                .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm)
-                .disabled(disabled)
-                .accessibility_label(seek_fwd_label)
-                .on_click(cx.listener(|this, _event, window, cx| {
-                    this.handle_seek_forward(window, cx);
-                })),
+                Button::new(self.id_seek_fwd.clone())
+                    .icon(Icon::new(IconName::SkipForward).size(px(12.0)))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconSmall)
+                    .disabled(disabled)
+                    .accessibility_label(seek_fwd_label)
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.handle_seek_forward(window, cx);
+                    })),
             );
         }
 
@@ -582,18 +592,15 @@ impl Render for AudioPlayerView {
             };
 
             controls = controls.child(
-                Button::new(ElementId::from(SharedString::from(format!(
-                    "{}-mute",
-                    self.element_id
-                ))))
-                .icon(mute_icon)
-                .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm)
-                .disabled(disabled)
-                .accessibility_label(mute_label)
-                .on_click(cx.listener(|this, _event, window, cx| {
-                    this.handle_mute_toggle(window, cx);
-                })),
+                Button::new(self.id_mute.clone())
+                    .icon(mute_icon)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::IconSmall)
+                    .disabled(disabled)
+                    .accessibility_label(mute_label)
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.handle_mute_toggle(window, cx);
+                    })),
             );
 
             // Volume slider: same disabled-state substitution as the seek
