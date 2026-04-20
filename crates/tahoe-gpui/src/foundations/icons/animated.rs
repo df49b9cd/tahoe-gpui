@@ -216,6 +216,14 @@ fn magic_replace_inner_ids(parent: &ElementId) -> [ElementId; 3] {
     ]
 }
 
+/// Derive a distinct `ElementId` for the animation wrapper around a
+/// fallback div. Without this derivation the div's `.id()` and the
+/// `with_animation()` key resolve to the same value, so GPUI cannot
+/// isolate the div's element state from the animation's frame-state slot.
+fn fallback_anim_id(parent: &ElementId) -> ElementId {
+    ElementId::Name(format!("{parent}-anim").into())
+}
+
 impl RenderOnce for AnimatedIcon {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -244,8 +252,11 @@ impl RenderOnce for AnimatedIcon {
                 .into_any_element();
         }
 
-        // Unique animation ID for fallback branches (where self.id goes to the div).
-        let anim_id = self.id.clone();
+        // Distinct animation-wrapper ID for fallback branches. Must differ
+        // from `self.id` (which the div consumes) so GPUI's element-state
+        // lookup can isolate the div's state from the animation's
+        // frame-state slot.
+        let anim_id = fallback_anim_id(&self.id);
 
         // Try to get a monochrome SVG path for transform-based animations.
         // Note: Multi-color icons (Git, DevTools, AI Agents, DevOps — ~80+ icons)
@@ -645,11 +656,11 @@ impl RenderOnce for AnimatedIcon {
 
             // ── Opacity-based animations (use Icon wrapper) ──────────────
             IconAnimation::Pulse { duration } => div()
-                .id(anim_id.clone())
+                .id(self.id)
                 .size(size)
                 .child(Icon::new(self.name).size(size).color(color))
                 .with_animation(
-                    anim_id.clone(),
+                    anim_id,
                     Animation::new(duration).repeat(),
                     move |el, delta| {
                         let t = (delta * std::f32::consts::PI).sin();
@@ -828,11 +839,11 @@ impl RenderOnce for AnimatedIcon {
                 // Opacity ramp that wraps back to dim — approximation of
                 // SF Symbols' incremental-layer fill.
                 div()
-                    .id(anim_id.clone())
+                    .id(self.id)
                     .size(size)
                     .child(Icon::new(self.name).size(size).color(color))
                     .with_animation(
-                        anim_id.clone(),
+                        anim_id,
                         Animation::new(duration).repeat(),
                         move |el, delta| {
                             // 0 → 1 linear ramp with a 10 % hold at each
@@ -963,7 +974,7 @@ impl RenderOnce for AnimatedIcon {
 
 #[cfg(test)]
 mod tests {
-    use super::magic_replace_inner_ids;
+    use super::{fallback_anim_id, magic_replace_inner_ids};
     use crate::foundations::icons::IconName;
     use core::prelude::v1::test;
     use gpui::ElementId;
@@ -1035,5 +1046,31 @@ mod tests {
         assert_ne!(a_svg, b_svg);
         assert_ne!(a_svg, ElementId::Integer(1));
         assert_ne!(a_svg, ElementId::Integer(2));
+    }
+
+    // Regression for issue #64: `Pulse` and `VariableColor` passed
+    // `anim_id.clone()` as both the div's `.id()` and the
+    // `with_animation()` key, and `anim_id` was itself `self.id.clone()`.
+    // The fix routes fallback animation wrappers through `fallback_anim_id`
+    // so the animation key is a distinct derivative of the div id.
+    #[test]
+    fn fallback_anim_id_differs_from_parent() {
+        let parent = ElementId::Name("icon".into());
+        assert_ne!(fallback_anim_id(&parent), parent);
+    }
+
+    #[test]
+    fn fallback_anim_id_differs_across_parents() {
+        let a = fallback_anim_id(&ElementId::Name("icon-a".into()));
+        let b = fallback_anim_id(&ElementId::Name("icon-b".into()));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn fallback_anim_id_works_with_integer_parents() {
+        let a = fallback_anim_id(&ElementId::Integer(1));
+        let b = fallback_anim_id(&ElementId::Integer(2));
+        assert_ne!(a, b);
+        assert_ne!(a, ElementId::Integer(1));
     }
 }
