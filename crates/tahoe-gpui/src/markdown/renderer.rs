@@ -604,8 +604,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
         MarkdownBlock::Paragraph(inlines) => div()
             .text_style(TextStyle::Body, ctx.theme)
             .text_color(ctx.theme.text)
-            // Inter-block spacing is owned by the parent container's
-            // `flex.flex_col().gap()` — see `StreamingMarkdown::render`.
             .child(render_inlines(inlines, ctx))
             .into_any_element(),
         MarkdownBlock::Heading { level, content } => {
