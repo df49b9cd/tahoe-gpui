@@ -4,15 +4,13 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/modality>
 
-use std::time::Duration;
-
 use crate::foundations::layout::{MODAL_MAX_HEIGHT, MODAL_WIDTH};
-use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
+use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
-    Animation, AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter,
-    FocusHandle, KeyDownEvent, MouseDownEvent, Pixels, Window, div, px,
+    AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter, FocusHandle,
+    KeyDownEvent, MouseDownEvent, Pixels, Window, div, px,
 };
 
 /// Scope of the modal blocking behavior per HIG `#modality`.
@@ -364,18 +362,20 @@ impl RenderOnce for Modal {
         // centered modals (`foundations.md:1096`). We cross-fade only the
         // inner body rather than the tracked `content_div` so focus,
         // escape/tab handlers, and mouse-down-out guards remain attached
-        // to the element GPUI's focus chain expects. Reduce Motion keeps
-        // the cross-fade but shortens its duration.
-        let reduce_motion = theme.accessibility_mode.reduce_motion();
-        let anim_duration = if reduce_motion {
-            REDUCE_MOTION_CROSSFADE
-        } else {
-            Duration::from_millis(theme.glass.motion.lift_duration_ms)
-        };
+        // to the element GPUI's focus chain expects.
+        // `accessible_transition_animation` handles Reduce Motion (short
+        // linear cross-fade) and Prefer Cross-Fade (linear opacity at the
+        // natural spring duration) in one place.
         let anim_id = ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "present".into());
+        let natural_duration =
+            std::time::Duration::from_millis(theme.glass.motion.lift_duration_ms);
         let animated_body = div().child(self.content).with_animation(
             anim_id,
-            Animation::new(anim_duration),
+            accessible_transition_animation(
+                &theme.glass.motion,
+                natural_duration,
+                theme.accessibility_mode,
+            ),
             |el, delta| el.opacity(delta),
         );
 
