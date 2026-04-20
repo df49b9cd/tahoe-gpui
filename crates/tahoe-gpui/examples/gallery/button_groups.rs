@@ -54,19 +54,22 @@ pub fn render(
                     Button::new("bg-play")
                         .icon(Icon::new(IconName::Sparkle).size(px(16.0)))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Icon),
+                        .size(ButtonSize::Icon)
+                        .tooltip("Sparkle"),
                 )
                 .child(
                     Button::new("bg-pause")
                         .icon(Icon::new(IconName::Bookmark).size(px(16.0)))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Icon),
+                        .size(ButtonSize::Icon)
+                        .tooltip("Bookmark"),
                 )
                 .child(
                     Button::new("bg-stop")
                         .icon(Icon::new(IconName::X).size(px(16.0)))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Icon),
+                        .size(ButtonSize::Icon)
+                        .tooltip("Close"),
                 ),
         )
         .child(div().h(theme.spacing_sm))

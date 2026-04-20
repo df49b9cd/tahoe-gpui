@@ -148,7 +148,9 @@ impl RenderOnce for ShareButton {
                 })
                 .disabled(self.disabled)
                 .focused(self.focused);
-            if !self.icon_only {
+            if self.icon_only {
+                btn = btn.tooltip("Share");
+            } else {
                 btn = btn.label("Share");
             }
             if let Some(handler) = self.on_toggle {

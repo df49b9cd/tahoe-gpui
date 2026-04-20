@@ -481,7 +481,8 @@ impl RenderOnce for TerminalClearButton {
         let mut btn = Button::new(self.element_id)
             .icon(Icon::new(IconName::Trash).size(theme.icon_size_inline))
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSmall);
+            .size(ButtonSize::IconSmall)
+            .tooltip("Clear terminal");
 
         if let Some(handler) = self.on_click {
             btn = btn.on_click(handler);

@@ -182,23 +182,28 @@ impl WindowLayouts {
             Button::new("act-archive")
                 .icon(Icon::new(IconName::Folder))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall),
+                .size(ButtonSize::IconSmall)
+                .tooltip("Archive"),
             Button::new("act-trash")
                 .icon(Icon::new(IconName::Trash))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall),
+                .size(ButtonSize::IconSmall)
+                .tooltip("Move to trash"),
             Button::new("act-clipboard")
                 .icon(Icon::new(IconName::Copy))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall),
+                .size(ButtonSize::IconSmall)
+                .tooltip("Copy"),
             Button::new("act-tag")
                 .icon(Icon::new(IconName::Bookmark))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall),
+                .size(ButtonSize::IconSmall)
+                .tooltip("Tag"),
             Button::new("act-compose")
                 .icon(Icon::new(IconName::Pencil))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall),
+                .size(ButtonSize::IconSmall)
+                .tooltip("Compose"),
         ]
     }
 
@@ -231,7 +236,8 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSmall),
+                            .size(ButtonSize::IconSmall)
+                            .tooltip("Toggle sidebar"),
                     )
                     .leading(
                         div()
@@ -242,13 +248,15 @@ impl WindowLayouts {
                                 Button::new("nav-back")
                                     .icon(Icon::new(IconName::ChevronLeft))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSmall),
+                                    .size(ButtonSize::IconSmall)
+                                    .tooltip("Back"),
                             )
                             .child(
                                 Button::new("nav-forward")
                                     .icon(Icon::new(IconName::ChevronRight))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSmall),
+                                    .size(ButtonSize::IconSmall)
+                                    .tooltip("Forward"),
                             ),
                     )
                     .title(SharedString::from(folder_name));
@@ -260,7 +268,8 @@ impl WindowLayouts {
                     Button::new("act-search")
                         .icon(Icon::new(IconName::Search))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::IconSmall),
+                        .size(ButtonSize::IconSmall)
+                        .tooltip("Search"),
                 );
 
                 tb.into_any_element()
@@ -273,7 +282,8 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSmall),
+                            .size(ButtonSize::IconSmall)
+                            .tooltip("Toggle sidebar"),
                     )
                     .leading(
                         div()
@@ -289,7 +299,8 @@ impl WindowLayouts {
                                 Button::new("nav-forward")
                                     .icon(Icon::new(IconName::ChevronRight))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSmall),
+                                    .size(ButtonSize::IconSmall)
+                                    .tooltip("Forward"),
                             ),
                     )
                     .title(SharedString::from(folder_name));
@@ -326,7 +337,8 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSmall),
+                            .size(ButtonSize::IconSmall)
+                            .tooltip("Toggle sidebar"),
                     )
                     .title(SharedString::from(folder_name));
 
@@ -337,7 +349,8 @@ impl WindowLayouts {
                     Button::new("act-search")
                         .icon(Icon::new(IconName::Search))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::IconSmall),
+                        .size(ButtonSize::IconSmall)
+                        .tooltip("Search"),
                 );
 
                 tb.into_any_element()
@@ -368,31 +381,36 @@ impl WindowLayouts {
                             Button::new("u-palette")
                                 .icon(Icon::new(IconName::DevPalette))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Palette"),
                         )
                         .child(
                             Button::new("u-settings")
                                 .icon(Icon::new(IconName::Settings))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Settings"),
                         )
                         .child(
                             Button::new("u-grid")
                                 .icon(Icon::new(IconName::DevSplitView))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Split view"),
                         )
                         .child(
                             Button::new("u-image")
                                 .icon(Icon::new(IconName::Image))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Image"),
                         )
                         .child(
                             Button::new("u-edit")
                                 .icon(Icon::new(IconName::Pencil))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Edit"),
                         ),
                 )
                 .into_any_element(),

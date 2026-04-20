@@ -8,7 +8,7 @@
 //! ```ignore
 //! Artifact::new("My Component")
 //!     .description("A React component")
-//!     .action(ArtifactAction::new("copy", IconName::Copy).tooltip("Copy"))
+//!     .action(ArtifactAction::new("copy", IconName::Copy, "Copy"))
 //!     .on_close(|w, cx| { /* ... */ })
 //!     .content(my_code_block)
 //! ```
@@ -24,8 +24,7 @@
 //!             .child(ArtifactDescription::new("A React component"))
 //!             .child(
 //!                 ArtifactActions::new()
-//!                     .action(ArtifactAction::new("copy", IconName::Copy)
-//!                         .tooltip("Copy"))
+//!                     .action(ArtifactAction::new("copy", IconName::Copy, "Copy"))
 //!             )
 //!             .child(ArtifactClose::new("close").on_click(|w, cx| { /* ... */ }))
 //!     )
@@ -35,7 +34,6 @@
 use crate::callback_types::{OnMutCallback, OnToggle};
 use crate::components::layout_and_organization::FlexHeader;
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
-use crate::components::presentation::tooltip::Tooltip;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
@@ -95,27 +93,30 @@ impl RenderOnce for ArtifactDescription {
 // -- ArtifactAction -----------------------------------------------------------
 
 /// An individual action button with tooltip and icon for the artifact header.
+///
+/// The tooltip is required: it doubles as the VoiceOver accessibility name for
+/// the underlying icon-only button per HIG *Buttons > Tooltips*.
 #[derive(IntoElement)]
 pub struct ArtifactAction {
     id: ElementId,
     icon: IconName,
-    tooltip: Option<SharedString>,
+    tooltip: SharedString,
     on_click: OnMutCallback,
 }
 
 impl ArtifactAction {
-    pub fn new(id: impl Into<ElementId>, icon: IconName) -> Self {
+    pub fn new(id: impl Into<ElementId>, icon: IconName, tooltip: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
             icon,
-            tooltip: None,
+            tooltip: tooltip.into(),
             on_click: None,
         }
     }
 
-    /// Set tooltip text shown on hover.
+    /// Replace the tooltip text (and therefore the accessibility name).
     pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
-        self.tooltip = Some(text.into());
+        self.tooltip = text.into();
         self
     }
 
@@ -130,24 +131,21 @@ impl RenderOnce for ArtifactAction {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        let mut btn = Button::new(self.id.clone())
+        let mut btn = Button::new(self.id)
             .icon(
                 Icon::new(self.icon)
                     .size(theme.icon_size_inline)
                     .color(theme.text_muted),
             )
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSmall);
+            .size(ButtonSize::IconSmall)
+            .tooltip(self.tooltip);
 
         if let Some(handler) = self.on_click {
             btn = btn.on_click(move |_, window, cx| handler(window, cx));
         }
 
-        if let Some(tooltip_text) = self.tooltip {
-            Tooltip::new(self.id, tooltip_text, btn).into_any_element()
-        } else {
-            btn.into_any_element()
-        }
+        btn
     }
 }
 
@@ -221,8 +219,6 @@ impl RenderOnce for ArtifactClose {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        let tooltip_id = ElementId::from(SharedString::from(format!("{}-tooltip", &self.id)));
-
         let mut btn = Button::new(self.id)
             .icon(
                 Icon::new(IconName::X)
@@ -230,13 +226,14 @@ impl RenderOnce for ArtifactClose {
                     .color(theme.text_muted),
             )
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSmall);
+            .size(ButtonSize::IconSmall)
+            .tooltip("Close artifact");
 
         if let Some(handler) = self.on_click {
             btn = btn.on_click(move |_, window, cx| handler(window, cx));
         }
 
-        Tooltip::new(tooltip_id, "Close", btn)
+        btn
     }
 }
 
@@ -454,6 +451,7 @@ impl RenderOnce for Artifact {
                 let collapsed = self.collapsed;
                 let on_toggle = self.on_toggle;
                 let new_state = !collapsed;
+                let tooltip = if collapsed { "Expand" } else { "Collapse" };
                 let mut btn = Button::new("artifact-collapse")
                     .icon(
                         Icon::new(if collapsed {
@@ -465,7 +463,8 @@ impl RenderOnce for Artifact {
                         .color(theme.text_muted),
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall);
+                    .size(ButtonSize::IconSmall)
+                    .tooltip(tooltip);
                 if let Some(handler) = on_toggle {
                     btn = btn.on_click(move |_: &ClickEvent, window, cx| {
                         handler(new_state, window, cx);
@@ -556,34 +555,30 @@ mod tests {
 
     #[test]
     fn action_defaults() {
-        let action = ArtifactAction::new("copy", IconName::Copy);
+        let action = ArtifactAction::new("copy", IconName::Copy, "Copy");
         assert_eq!(action.icon, IconName::Copy);
-        assert!(action.tooltip.is_none());
+        assert_eq!(action.tooltip.as_ref(), "Copy");
         assert!(action.on_click.is_none());
     }
 
     #[test]
-    fn action_with_tooltip() {
-        let action = ArtifactAction::new("copy", IconName::Copy).tooltip("Copy code");
-        assert_eq!(
-            action.tooltip.as_ref().map(|s| s.as_ref()),
-            Some("Copy code")
-        );
+    fn action_tooltip_override() {
+        let action = ArtifactAction::new("copy", IconName::Copy, "Copy").tooltip("Copy code");
+        assert_eq!(action.tooltip.as_ref(), "Copy code");
     }
 
     #[test]
     fn action_with_on_click() {
-        let action = ArtifactAction::new("copy", IconName::Copy).on_click(|_w, _cx| {});
+        let action = ArtifactAction::new("copy", IconName::Copy, "Copy").on_click(|_w, _cx| {});
         assert!(action.on_click.is_some());
     }
 
     #[test]
     fn action_full_chain() {
-        let action = ArtifactAction::new("dl", IconName::Download)
-            .tooltip("Download")
-            .on_click(|_w, _cx| {});
+        let action =
+            ArtifactAction::new("dl", IconName::Download, "Download").on_click(|_w, _cx| {});
         assert_eq!(action.icon, IconName::Download);
-        assert!(action.tooltip.is_some());
+        assert_eq!(action.tooltip.as_ref(), "Download");
         assert!(action.on_click.is_some());
     }
 

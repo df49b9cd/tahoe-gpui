@@ -206,9 +206,17 @@ pub enum ButtonSize {
     ExtraLarge,
     /// Small icon-only button — matches the [`ButtonSize::Small`] height
     /// (24 pt on macOS) rendered as a square.
+    ///
+    /// Requires [`Button::tooltip`] or [`Button::accessibility_label`] —
+    /// icon-only buttons without an accessibility name panic in debug per
+    /// HIG *Buttons > Tooltips*.
     IconSmall,
     /// Regular icon-only button — matches the [`ButtonSize::Regular`]
     /// height (28 pt on macOS) rendered as a square.
+    ///
+    /// Requires [`Button::tooltip`] or [`Button::accessibility_label`] —
+    /// icon-only buttons without an accessibility name panic in debug per
+    /// HIG *Buttons > Tooltips*.
     Icon,
 }
 
@@ -252,11 +260,14 @@ pub struct Button {
     /// every interactive stateless control can opt into the focus graph
     /// via a caller-owned handle.
     focus_handle: Option<FocusHandle>,
-    /// Accessibility label for screen readers. Defaults to the button's text label.
+    /// Accessibility label for screen readers. The AX name resolves with
+    /// preference `accessibility_label` → `tooltip` → `label`, so this
+    /// overrides both of the others when set.
     accessibility_label: Option<SharedString>,
     /// Pointer-hover tooltip. Attached via GPUI's `.tooltip()` so the hover
-    /// delay matches HIG (~500 ms). Also used as a VoiceOver hint when
-    /// `accessibility_label` is absent on icon-only buttons.
+    /// delay matches HIG (~500 ms). Also used as the AX name fallback when
+    /// `accessibility_label` is absent — required for icon-only buttons per
+    /// HIG *Buttons > Tooltips*.
     tooltip: Option<SharedString>,
     /// Optional keyboard-shortcut glyph shown inside the tooltip
     /// (e.g. `"⌘C"`). Ignored when `tooltip` is `None`.
@@ -406,17 +417,17 @@ impl Button {
 
     /// Sets an accessibility label for screen readers.
     ///
-    /// Stored for a screen-reader name. The `debug_selector` on the rendered
-    /// element embeds this value so integration tests can assert on it
-    /// (`button-<id>`-based selectors remain; the label is surfaced via the
-    /// selector prefix when set so test locators can discover it).
+    /// The AX name resolves in the order `accessibility_label` → `tooltip`
+    /// → `label`; set this when none of the visible text sources read
+    /// correctly out of context (e.g. a toolbar icon whose tooltip is a
+    /// keyboard shortcut, or a button whose visible label abbreviates a
+    /// longer action).
     ///
     /// **GPUI accessibility gap:** GPUI's `Div` does not currently expose an
     /// `aria_label` / `accessibility_id` API, so this field is *not* wired
-    /// into a VoiceOver name today. The `loading` flag above is the one
-    /// state change that callers currently can observe. Once GPUI lands
-    /// accessibility support, the label will feed into the AX name
-    /// automatically. Tracked via the Zed cross-reference in issue #132.
+    /// into a VoiceOver name today. Once GPUI lands accessibility support,
+    /// the label will feed into the AX name automatically. Tracked via the
+    /// Zed cross-reference in issue #132.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
@@ -426,9 +437,10 @@ impl Button {
     ///
     /// Attached via GPUI's `.tooltip()` so the hover delay honours the HIG
     /// ~500 ms reveal (see `TOOLTIP_SHOW_DELAY_MS`). Icon-only buttons —
-    /// `ButtonSize::Icon` and `ButtonSize::IconSmall` — should always carry a
-    /// tooltip so pointer users and VoiceOver have a discoverable name per
-    /// HIG *Buttons > Tooltips*.
+    /// [`ButtonSize::Icon`] and [`ButtonSize::IconSmall`] — must carry
+    /// either this or [`Button::accessibility_label`]; omitting all three
+    /// name sources (tooltip, label, accessibility_label) panics in debug
+    /// builds per HIG *Buttons > Tooltips*.
     pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
         self.tooltip = Some(text.into());
         self
@@ -450,10 +462,44 @@ impl Button {
         self.on_click = Some(Box::new(handler));
         self
     }
+
+    /// Resolve the AX name with preference
+    /// `accessibility_label` → `tooltip` → `label`.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `self.size` is [`ButtonSize::Icon`] or
+    /// [`ButtonSize::IconSmall`] and none of `accessibility_label`,
+    /// `tooltip`, or `label` is set, enforcing HIG *Buttons > Tooltips*.
+    /// Release builds return `None` instead.
+    fn resolve_ax_name(&self) -> Option<SharedString> {
+        let ax_label = self
+            .accessibility_label
+            .clone()
+            .or_else(|| self.tooltip.clone())
+            .or_else(|| self.label.clone());
+
+        debug_assert!(
+            !(matches!(self.size, ButtonSize::Icon | ButtonSize::IconSmall) && ax_label.is_none()),
+            "Button `{:?}` is icon-only ({:?}) but has no label, tooltip, or \
+             accessibility_label. Per HIG Buttons > Tooltips, icon-only buttons \
+             require a tooltip to serve as the accessibility name. Add \
+             `.tooltip(\"…\")` or `.accessibility_label(\"…\")`.",
+            self.id,
+            self.size,
+        );
+
+        ax_label
+    }
 }
 
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Resolve the AX name up-front so `resolve_ax_name` sees the full
+        // builder state before any fields are moved out during render.
+        // Also runs the icon-only HIG debug_assert.
+        let ax_label = self.resolve_ax_name();
+
         let theme = cx.theme();
 
         // Match arms follow the same order as the doc-comment table on
@@ -823,16 +869,16 @@ impl RenderOnce for Button {
             ));
         }
 
-        // Attach VoiceOver metadata. Tooltip falls back to the accessible
-        // name for icon-only buttons when no explicit label is provided —
-        // HIG Buttons > Tooltips: "tooltips act as the accessibility name
-        // for icon-only buttons unless one is specified."
-        let ax_label = self.accessibility_label.clone().or(self.tooltip.clone());
-        if ax_label.is_some() {
-            let mut props = AccessibilityProps::new().role(AccessibilityRole::Button);
-            if let Some(label) = ax_label {
-                props = props.label(label);
-            }
+        // Only expose AX metadata when we have a name to announce: emitting
+        // `role: Button` on an unnamed control would cause screen readers
+        // to announce a bare "button" once GPUI's AX API (#138) lands.
+        // The debug_assert in `resolve_ax_name` guarantees icon-only
+        // variants always have a name; labelled variants may still be
+        // nameless (e.g. test-only `Button::new("x")`).
+        if let Some(label) = ax_label {
+            let props = AccessibilityProps::new()
+                .role(AccessibilityRole::Button)
+                .label(label);
             el = el.with_accessibility(&props);
         }
 
@@ -996,6 +1042,120 @@ mod tests {
 
         let btn = btn.child(div().id("c2"));
         assert_eq!(btn.extra_children.len(), 2);
+    }
+
+    // ── AX-name resolution + icon-only HIG guard ───────────────────────
+
+    #[test]
+    fn ax_name_prefers_accessibility_label() {
+        let btn = Button::new("ax")
+            .label("visible")
+            .tooltip("hover")
+            .accessibility_label("screen reader");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("screen reader".to_string()),
+            "accessibility_label must win the cascade",
+        );
+    }
+
+    #[test]
+    fn ax_name_falls_back_to_tooltip() {
+        let btn = Button::new("ax")
+            .label("visible")
+            .tooltip("Copy to clipboard");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("Copy to clipboard".to_string()),
+        );
+    }
+
+    #[test]
+    fn ax_name_falls_back_to_label() {
+        let btn = Button::new("ax").label("Save");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("Save".to_string()),
+        );
+    }
+
+    #[test]
+    fn ax_name_accessibility_label_wins_over_tooltip_alone() {
+        let btn = Button::new("ax")
+            .tooltip("hover")
+            .accessibility_label("screen reader");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("screen reader".to_string()),
+        );
+    }
+
+    #[test]
+    fn ax_name_accessibility_label_wins_over_label_alone() {
+        let btn = Button::new("ax")
+            .label("visible")
+            .accessibility_label("screen reader");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("screen reader".to_string()),
+        );
+    }
+
+    #[test]
+    fn ax_name_accessibility_label_alone_resolves() {
+        let btn = Button::new("ax").accessibility_label("screen reader");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("screen reader".to_string()),
+        );
+    }
+
+    #[test]
+    fn ax_name_none_when_all_sources_missing_on_regular() {
+        let btn = Button::new("ax").size(ButtonSize::Regular);
+        assert!(btn.resolve_ax_name().is_none());
+    }
+
+    #[test]
+    fn ax_name_labelled_non_icon_button_is_fine_without_tooltip() {
+        let btn = Button::new("ax").label("OK").size(ButtonSize::Regular);
+        assert!(btn.resolve_ax_name().is_some());
+    }
+
+    #[test]
+    fn icon_only_with_tooltip_resolves_name() {
+        let btn = Button::new("ax").size(ButtonSize::Icon).tooltip("Share");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("Share".to_string()),
+        );
+    }
+
+    #[test]
+    fn icon_only_with_accessibility_label_resolves_name() {
+        let btn = Button::new("ax")
+            .size(ButtonSize::IconSmall)
+            .accessibility_label("Close");
+        assert_eq!(
+            btn.resolve_ax_name().map(|s| s.to_string()),
+            Some("Close".to_string()),
+        );
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "HIG Buttons > Tooltips")]
+    fn icon_only_without_name_panics_in_debug() {
+        let btn = Button::new("offender").size(ButtonSize::Icon);
+        let _ = btn.resolve_ax_name();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "HIG Buttons > Tooltips")]
+    fn icon_small_without_name_panics_in_debug() {
+        let btn = Button::new("offender").size(ButtonSize::IconSmall);
+        let _ = btn.resolve_ax_name();
     }
 
     // ── Theme-aware contrast / color regression tests ──────────────────
@@ -1183,7 +1343,7 @@ mod interaction_tests {
 
     use gpui::{Context, IntoElement, Render, TestAppContext};
 
-    use super::Button;
+    use super::{Button, ButtonSize};
     use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
 
     const BUTTON_SMOKE: &str = "button-smoke";
@@ -1219,5 +1379,27 @@ mod interaction_tests {
         cx.click_on(BUTTON_SMOKE);
 
         assert_eq!(*clicks.borrow(), 1);
+    }
+
+    /// End-to-end guarantee for the icon-only HIG guard: rendering a bare
+    /// icon-only Button through the gpui pipeline must panic in debug,
+    /// not just when `resolve_ax_name` is called directly.
+    struct IconOnlyNoNameHarness;
+
+    impl Render for IconOnlyNoNameHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            Button::new("offender").size(ButtonSize::Icon)
+        }
+    }
+
+    #[gpui::test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "HIG Buttons > Tooltips")]
+    async fn rendering_icon_only_without_name_panics(cx: &mut TestAppContext) {
+        let (_host, _cx) = setup_test_window(cx, |_window, _cx| IconOnlyNoNameHarness);
     }
 }
