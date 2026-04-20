@@ -61,6 +61,29 @@ fn count_single_dollars_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usi
     count
 }
 
+/// Returns the byte offset of the first `$$` that is NOT inside a code block or
+/// inline code span, or `None` if no such `$$` exists.
+fn find_first_dollar_dollar_outside_code(text: &str, ranges: &CodeBlockRanges) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'\\' && i + 1 < len {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'$' && !ranges.is_inside_code(i) {
+            if i + 1 < len && bytes[i + 1] == b'$' {
+                return Some(i);
+            }
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
 #[cfg(test)]
 fn handle_block(text: &str) -> Cow<'_, str> {
@@ -84,7 +107,7 @@ pub(crate) fn handle_block_with_ranges<'a>(
 
     // If there's a newline after the opening $$ and text doesn't end with newline,
     // add newline before closing $$.
-    if let Some(first_dollar) = text.find("$$") {
+    if let Some(first_dollar) = find_first_dollar_dollar_outside_code(text, ranges) {
         let has_newline_after = text[first_dollar..].contains('\n');
         if has_newline_after && !text.ends_with('\n') {
             return cow_append(text, "\n$$");
@@ -201,5 +224,32 @@ mod tests {
             handle_block("~~~~\n~~~\n$$x + y"),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn finds_first_dollar_dollar_outside_fenced_code() {
+        // $$ inside ``` should be skipped; the real $$ outside should be used.
+        assert_eq!(
+            handle_block("```\n$$\n```\n$$unclosed").as_ref(),
+            "```\n$$\n```\n$$unclosed$$"
+        );
+    }
+
+    #[test]
+    fn finds_first_dollar_dollar_outside_inline_code() {
+        assert_eq!(handle_block("`$$`\n$$x").as_ref(), "`$$`\n$$x$$");
+    }
+
+    #[test]
+    fn no_dollar_dollar_outside_code_falls_through_to_default() {
+        assert!(matches!(
+            handle_block("```\n$$\n```\nplain text"),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn skips_escaped_dollar_dollar_in_search() {
+        assert_eq!(handle_block("\\$$x$$y").as_ref(), "\\$$x$$y$$");
     }
 }
