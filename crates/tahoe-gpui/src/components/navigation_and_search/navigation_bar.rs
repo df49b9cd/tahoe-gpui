@@ -14,7 +14,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, Pixels, SharedString, Window, div, px};
 
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{SurfaceContext, flex_row_directed, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// iOS-style navigation bar primitive.
@@ -116,11 +116,10 @@ impl RenderOnce for NavigationBarIOS {
             div().into_any_element()
         };
 
-        let controls_layer = div()
-            .w_full()
-            .h_full()
-            .flex()
-            .flex_row()
+        // `flex_row_directed` swaps the physical sides of `leading` and
+        // `trailing` under RTL so the caller's semantic "leading" element
+        // always sits on the reading-leading edge (HIG Right-to-Left).
+        let controls_layer = flex_row_directed(div().w_full().h_full().flex(), theme)
             .items_center()
             .justify_between()
             .child(leading_el)

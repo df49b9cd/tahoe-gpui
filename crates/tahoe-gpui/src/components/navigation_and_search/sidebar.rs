@@ -26,7 +26,7 @@ use gpui::{
 use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
-use crate::foundations::materials::{SurfaceContext, apply_focus_ring};
+use crate::foundations::materials::{SurfaceContext, apply_focus_ring, flex_row_directed};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 type OnResize = Option<Box<dyn Fn(Pixels, &mut Window, &mut App) + 'static>>;
@@ -385,10 +385,10 @@ impl RenderOnce for SidebarSection {
         let theme = cx.theme();
         let show_children = !self.collapsible || self.expanded;
 
-        let mut header = div()
-            .id(self.id.clone())
-            .flex()
-            .flex_row()
+        // `flex_row_directed` keeps the disclosure chevron on the reading-
+        // leading edge in both LTR and RTL layouts. Chevron glyph flips via
+        // `Icon::follow_layout_direction`.
+        let mut header = flex_row_directed(div().id(self.id.clone()).flex(), theme)
             .items_center()
             .gap(theme.spacing_xs)
             .px(theme.spacing_md)
@@ -557,10 +557,10 @@ impl RenderOnce for SidebarItem {
         };
 
         let has_handler = self.on_click.is_some();
-        let mut row = div()
-            .id(self.id)
-            .focusable()
-            .flex()
+        // `flex_row_directed` places the leading icon on the reading-leading
+        // edge under both LTR and RTL themes. The row's symmetric horizontal
+        // padding needs no direction-aware swap.
+        let mut row = flex_row_directed(div().id(self.id).focusable().flex(), theme)
             .items_center()
             .gap(theme.spacing_sm)
             .px(theme.spacing_md)

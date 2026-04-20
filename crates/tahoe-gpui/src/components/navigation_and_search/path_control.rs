@@ -26,7 +26,7 @@ use gpui::{App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::components::menus_and_actions::pulldown_button::{PulldownButton, PulldownItem};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, flex_row_directed};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`PathControl`]. Matches the two styles defined by
@@ -203,11 +203,11 @@ impl RenderOnce for PathControl {
         let highlighted = self.highlighted_index;
         let style = self.style;
 
-        let mut row = div()
-            .id(self.id.clone())
-            .focusable()
-            .flex()
-            .flex_row()
+        // `flex_row_directed` makes the trail read right-to-left under RTL
+        // themes (root segment appears on the right, leaf on the left).
+        // Chevron separators auto-flip via `Icon::follow_layout_direction`
+        // so they continue pointing toward the leaf.
+        let mut row = flex_row_directed(div().id(self.id.clone()).focusable().flex(), theme)
             .items_center()
             .gap(px(SPACING_4));
 

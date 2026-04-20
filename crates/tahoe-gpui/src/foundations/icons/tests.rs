@@ -578,3 +578,78 @@ fn resolved_stroke_width_tracks_surface_scope() {
         "inside a glass scope the stroke width should be 1.5pt"
     );
 }
+
+// ─── RTL flip predicate ────────────────────────────────────────────────────
+
+fn rtl_theme() -> TahoeTheme {
+    use crate::foundations::layout::LayoutDirection;
+    let mut theme = TahoeTheme::dark();
+    theme.layout_direction = LayoutDirection::RightToLeft;
+    theme
+}
+
+#[test]
+fn directional_icons_flip_under_rtl_theme() {
+    let theme = rtl_theme();
+    // All explicitly directional symbols must mirror in RTL.
+    for &name in &[
+        IconName::ArrowRight,
+        IconName::ArrowTriangleRight,
+        IconName::ChevronLeft,
+        IconName::ChevronRight,
+        IconName::Send,
+    ] {
+        assert!(
+            Icon::new(name).would_flip_horizontally(&theme),
+            "{name:?} should flip in RTL"
+        );
+    }
+}
+
+#[test]
+fn neutral_icons_never_flip() {
+    let rtl = rtl_theme();
+    let ltr = TahoeTheme::dark();
+    for &name in &[
+        IconName::ArrowDown,
+        IconName::ChevronDown,
+        IconName::ChevronUp,
+        IconName::Clock,
+        IconName::Search,
+    ] {
+        assert!(
+            !Icon::new(name).would_flip_horizontally(&rtl),
+            "{name:?} is neutral and must not flip even in RTL"
+        );
+        assert!(
+            !Icon::new(name).would_flip_horizontally(&ltr),
+            "{name:?} must never flip in LTR"
+        );
+    }
+}
+
+#[test]
+fn ltr_theme_never_flips_any_icon() {
+    let theme = TahoeTheme::dark();
+    for &name in &[
+        IconName::ArrowRight,
+        IconName::ChevronRight,
+        IconName::ChevronLeft,
+        IconName::Send,
+    ] {
+        assert!(
+            !Icon::new(name).would_flip_horizontally(&theme),
+            "{name:?} must not flip under LTR even though it's classified Directional"
+        );
+    }
+}
+
+#[test]
+fn follow_layout_direction_false_opts_out_of_flip() {
+    let theme = rtl_theme();
+    let icon = Icon::new(IconName::ChevronRight).follow_layout_direction(false);
+    assert!(
+        !icon.would_flip_horizontally(&theme),
+        "opt-out via follow_layout_direction(false) must suppress the flip"
+    );
+}

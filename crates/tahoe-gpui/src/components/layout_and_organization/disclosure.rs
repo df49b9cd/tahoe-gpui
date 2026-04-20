@@ -62,6 +62,21 @@ impl Disclosure {
     }
 }
 
+/// Returns whether a keyboard arrow should toggle disclosure state.
+///
+/// In LTR: Right expands a collapsed triangle; Left collapses an expanded
+/// one (matches `NSOutlineView` and HIG Accessibility > Keyboard).
+/// Mirrored in RTL so the "expand" direction follows reading order and the
+/// arrow still points toward the disclosed content.
+fn arrow_toggles_disclosure(key: &str, is_expanded: bool, is_rtl: bool) -> bool {
+    let (expand_key, collapse_key) = if is_rtl {
+        ("left", "right")
+    } else {
+        ("right", "left")
+    };
+    (key == expand_key && !is_expanded) || (key == collapse_key && is_expanded)
+}
+
 impl RenderOnce for Disclosure {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -96,6 +111,7 @@ impl RenderOnce for Disclosure {
         if let Some(handler) = self.on_toggle {
             let handler = std::rc::Rc::new(handler);
             let click_handler = handler.clone();
+            let is_rtl = theme.is_rtl();
             el = el
                 .cursor_pointer()
                 .on_click(move |_event, window, cx| {
@@ -103,14 +119,8 @@ impl RenderOnce for Disclosure {
                 })
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
                     let key = event.keystroke.key.as_str();
-                    // Space / Return toggle. Right arrow expands a
-                    // collapsed triangle; Left arrow collapses an
-                    // expanded one (HIG Accessibility > Keyboard).
-                    let should_fire = if crate::foundations::keyboard::is_activation_key(event) {
-                        true
-                    } else {
-                        matches!((key, is_expanded), ("right", false) | ("left", true))
-                    };
+                    let should_fire = crate::foundations::keyboard::is_activation_key(event)
+                        || arrow_toggles_disclosure(key, is_expanded, is_rtl);
                     if should_fire {
                         cx.stop_propagation();
                         handler(new_state, window, cx);
@@ -124,7 +134,7 @@ impl RenderOnce for Disclosure {
 
 #[cfg(test)]
 mod tests {
-    use super::Disclosure;
+    use super::{Disclosure, arrow_toggles_disclosure};
     use core::prelude::v1::test;
 
     #[test]
@@ -159,5 +169,29 @@ mod tests {
             .on_toggle(|_, _, _| {});
         assert!(d.is_expanded);
         assert!(d.on_toggle.is_some());
+    }
+
+    #[test]
+    fn arrow_keys_ltr_expand_right_collapse_left() {
+        // LTR: right expands a collapsed triangle, left collapses an expanded one.
+        assert!(arrow_toggles_disclosure("right", false, false));
+        assert!(arrow_toggles_disclosure("left", true, false));
+        // No-ops when direction doesn't match the current state.
+        assert!(!arrow_toggles_disclosure("right", true, false));
+        assert!(!arrow_toggles_disclosure("left", false, false));
+        // Unrelated keys ignored.
+        assert!(!arrow_toggles_disclosure("up", false, false));
+        assert!(!arrow_toggles_disclosure("down", true, false));
+    }
+
+    #[test]
+    fn arrow_keys_rtl_mirror_expand_and_collapse() {
+        // RTL: left expands, right collapses — mirrors LTR around the
+        // reading axis so the expanding arrow still points toward
+        // the disclosed content.
+        assert!(arrow_toggles_disclosure("left", false, true));
+        assert!(arrow_toggles_disclosure("right", true, true));
+        assert!(!arrow_toggles_disclosure("left", true, true));
+        assert!(!arrow_toggles_disclosure("right", false, true));
     }
 }
