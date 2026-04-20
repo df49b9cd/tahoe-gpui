@@ -16,6 +16,7 @@ use gpui::{AnyElement, App, Window, div, px};
 
 /// Position of a panel overlay on the canvas.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub enum WorkflowPanelPosition {
     #[default]
     TopLeft,
@@ -108,7 +109,7 @@ impl RenderOnce for WorkflowPanel {
             wrapper = match self.position {
                 WorkflowPanelPosition::TopCenter => wrapper.top(spacing),
                 WorkflowPanelPosition::BottomCenter => wrapper.bottom(spacing),
-                _ => unreachable!(),
+                _ => wrapper.top(spacing),
             };
 
             wrapper.child(pill).into_any_element()
@@ -120,7 +121,7 @@ impl RenderOnce for WorkflowPanel {
                 WorkflowPanelPosition::TopRight => positioned.top(spacing).right(spacing),
                 WorkflowPanelPosition::BottomLeft => positioned.bottom(spacing).left(spacing),
                 WorkflowPanelPosition::BottomRight => positioned.bottom(spacing).right(spacing),
-                _ => unreachable!(),
+                _ => positioned.top(spacing).left(spacing),
             };
 
             positioned.child(pill).into_any_element()
