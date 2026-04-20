@@ -1393,13 +1393,15 @@ impl TahoeTheme {
     }
 
     /// Like [`Self::for_appearance`] but promotes to a HighContrast appearance
-    /// when `mode.increase_contrast()` is set.
+    /// when `mode.increase_contrast()` is set, and writes the full `mode` into
+    /// `theme.accessibility_mode` so downstream components pick up non-contrast
+    /// flags (`REDUCE_MOTION`, `BOLD_TEXT`, `REDUCE_TRANSPARENCY`, …).
     pub fn for_appearance_with_a11y(
         appearance: WindowAppearance,
         mode: crate::foundations::accessibility::AccessibilityMode,
     ) -> Self {
         let base = Self::for_appearance(appearance);
-        if mode.increase_contrast() {
+        let mut theme = if mode.increase_contrast() {
             let hc_appearance = if base.appearance.is_dark() {
                 Appearance::DarkHighContrast
             } else {
@@ -1408,7 +1410,9 @@ impl TahoeTheme {
             Self::with_accent(hc_appearance, base.accent_color)
         } else {
             base
-        }
+        };
+        theme.accessibility_mode = mode;
+        theme
     }
 
     /// Create a glass theme matching the system appearance.
@@ -1417,6 +1421,41 @@ impl TahoeTheme {
             WindowAppearance::Light | WindowAppearance::VibrantLight => Self::liquid_glass_light(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::liquid_glass(),
         }
+    }
+
+    /// Like [`Self::for_appearance_glass`] but promotes to a HighContrast
+    /// appearance when `mode.increase_contrast()` is set, and writes the full
+    /// `mode` into `theme.accessibility_mode` so downstream components pick up
+    /// non-contrast flags (`REDUCE_MOTION`, `BOLD_TEXT`, `REDUCE_TRANSPARENCY`, …).
+    ///
+    /// Mirrors [`Self::for_appearance_with_a11y`] for the Liquid Glass path so
+    /// hosts installing a glass theme can honour
+    /// [`AccessibilityMode::INCREASE_CONTRAST`](crate::foundations::accessibility::AccessibilityMode::INCREASE_CONTRAST)
+    /// without additional plumbing.
+    ///
+    /// Note: when HC is requested this helper currently only swaps
+    /// `theme.appearance` and `theme.palette` to the HC variant. The glass
+    /// surface / accent / semantic tokens produced by [`Self::liquid_glass`]
+    /// and [`Self::liquid_glass_light`] do not yet have HC-adjusted
+    /// counterparts in the library, so `is_high_contrast()` will return true
+    /// but most glass surfaces remain visually unchanged. Adding HC-adjusted
+    /// glass design tokens is tracked as a follow-up.
+    pub fn for_appearance_glass_with_a11y(
+        appearance: WindowAppearance,
+        mode: crate::foundations::accessibility::AccessibilityMode,
+    ) -> Self {
+        let mut theme = Self::for_appearance_glass(appearance);
+        if mode.increase_contrast() {
+            let hc_appearance = if theme.appearance.is_dark() {
+                Appearance::DarkHighContrast
+            } else {
+                Appearance::LightHighContrast
+            };
+            theme.appearance = hc_appearance;
+            theme.palette = SystemPalette::new(hc_appearance);
+        }
+        theme.accessibility_mode = mode;
+        theme
     }
 
     /// Install a non-glass theme that tracks the window's system appearance.
