@@ -71,12 +71,14 @@ Support captions and subtitles where you display audio or video content. Include
 
 #### Mobility
 
-Make interactive elements large enough to activate easily. The recommended minimum tap target size is 44×44 pt.
+Make interactive elements large enough to activate easily. On touch and spatial platforms Apple publishes explicit minimum target sizes; on macOS the guideline is to use the standard control metrics and expand the hit region where a dense layout would otherwise make a control hard to hit.
 
 | Control type | Recommended minimum size |
 |-------------|--------------------------|
-| Touch target | 44×44 pt |
-| Pointer target (macOS) | 44×44 pt |
+| Touch target (iOS, iPadOS, watchOS) | 44×44 pt |
+| Spatial target (visionOS) | 60×60 pt |
+
+macOS does not publish a separate pointer-accessibility minimum. Use the AppKit / SwiftUI control metrics — 20 pt mini, 28 pt regular, 32 pt large — as the visual size floor, and extend a control's **hit region** past its visual size when neighboring targets are tight (e.g., title-bar close/minimize/zoom buttons use ~14 pt visual dots with a ~28 pt hit region).
 
 Support keyboard navigation and switch access. Don't require simultaneous multi-touch gestures that may be difficult for some people.
 

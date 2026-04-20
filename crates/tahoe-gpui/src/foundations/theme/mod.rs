@@ -1210,13 +1210,26 @@ impl TahoeTheme {
     }
 
     /// Returns the default interactive target size for the current platform.
+    ///
+    /// Equivalent to `theme.control_height(ControlSize::Regular)`.
     pub fn target_size(&self) -> f32 {
         self.platform.default_target_size()
     }
 
     /// Returns the minimum interactive target size for the current platform.
+    ///
+    /// Equivalent to `theme.control_height(ControlSize::Mini)`.
     pub fn min_target_size(&self) -> f32 {
         self.platform.min_target_size()
+    }
+
+    /// Visual height in points for a
+    /// [`crate::foundations::layout::ControlSize`] tier on the active
+    /// platform. Prefer this over `target_size` / `min_target_size` when
+    /// authoring a new component so the control picks up any future
+    /// platform-scaling tweaks without code churn.
+    pub fn control_height(&self, size: crate::foundations::layout::ControlSize) -> f32 {
+        size.height(self.platform)
     }
 
     /// Returns the standard row height for menus and lists on the current platform.
