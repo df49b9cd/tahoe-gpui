@@ -110,58 +110,66 @@ pub fn preprocess_literal_tag_content<'a>(markdown: &'a str, tag_names: &[&str])
         return Cow::Borrowed(markdown);
     }
 
-    let mut result: Option<String> = None;
+    let mut current: Cow<'a, str> = Cow::Borrowed(markdown);
+    let mut changed_any = false;
+    for &tag_name in tag_names {
+        if let Some(next) = rewrite_literal_tag_pass(&current, tag_name) {
+            current = Cow::Owned(next);
+            changed_any = true;
+        }
+    }
+    if changed_any {
+        current
+    } else {
+        Cow::Borrowed(markdown)
+    }
+}
+
+/// Run one tag's markdown-escape pass, returning `Some(String)` if the source
+/// was rewritten or `None` if no literal content needed escaping.
+fn rewrite_literal_tag_pass(source: &str, tag_name: &str) -> Option<String> {
+    find_tag_open(source, tag_name)?;
+
+    let close_pattern = format!("</{tag_name}");
+    let mut out = String::with_capacity(source.len());
+    let mut cursor = 0;
     let mut changed = false;
 
-    for &tag_name in tag_names {
-        // Quick check: skip this tag entirely if it doesn't appear (avoids allocation).
-        let haystack = result.as_deref().unwrap_or(markdown);
-        if find_tag_open(haystack, tag_name).is_none() {
-            continue;
+    while let Some(open_rel) = find_tag_open(&source[cursor..], tag_name) {
+        let open_tag_start = cursor + open_rel;
+        let Some(open_close_rel) = source[open_tag_start..].find('>') else {
+            break;
+        };
+        let open_tag_end = open_tag_start + open_close_rel + 1;
+
+        let Some(close_rel) = find_case_insensitive(&source[open_tag_end..], &close_pattern) else {
+            break;
+        };
+        let close_tag_start = open_tag_end + close_rel;
+        let Some(close_close_rel) = source[close_tag_start..].find('>') else {
+            break;
+        };
+        let close_tag_end = close_tag_start + close_close_rel + 1;
+
+        let content = &source[open_tag_end..close_tag_start];
+        let escaped = escape_markdown(content);
+
+        if escaped != content {
+            changed = true;
+            out.push_str(&source[cursor..open_tag_end]);
+            out.push_str(&escaped);
+            out.push_str(&source[close_tag_start..close_tag_end]);
+        } else {
+            out.push_str(&source[cursor..close_tag_end]);
         }
-
-        // Lazily allocate the owned string on first real match.
-        let result_str = result.get_or_insert_with(|| markdown.to_owned());
-
-        let mut search_from = 0;
-        while let Some(pos) = find_tag_open(&result_str[search_from..], tag_name) {
-            let open_tag_start = search_from + pos;
-
-            let open_tag_end = match result_str[open_tag_start..].find('>') {
-                Some(pos) => open_tag_start + pos + 1,
-                None => break,
-            };
-
-            let close_pattern = format!("</{}", tag_name);
-            let close_tag_start =
-                match find_case_insensitive(&result_str[open_tag_end..], &close_pattern) {
-                    Some(pos) => open_tag_end + pos,
-                    None => break,
-                };
-
-            let content = &result_str[open_tag_end..close_tag_start];
-            let escaped = escape_markdown(content);
-
-            if escaped != content {
-                let new_result = format!(
-                    "{}{}{}",
-                    &result_str[..open_tag_end],
-                    escaped,
-                    &result_str[close_tag_start..]
-                );
-                search_from = open_tag_end + escaped.len();
-                *result_str = new_result;
-                changed = true;
-            } else {
-                search_from = close_tag_start + close_pattern.len();
-            }
-        }
+        cursor = close_tag_end;
     }
 
-    match result {
-        Some(owned) if changed => Cow::Owned(owned),
-        _ => Cow::Borrowed(markdown),
+    if !changed {
+        return None;
     }
+    out.push_str(&source[cursor..]);
+    Some(out)
 }
 
 /// Escapes markdown metacharacters: `\`, `` ` ``, `*`, `_`, `~`, `[`, `]`, `|`.
@@ -372,6 +380,29 @@ mod tests {
             escape_markdown("héllo 世界 **bold**"),
             "héllo 世界 \\*\\*bold\\*\\*"
         );
+    }
+
+    #[test]
+    fn literal_tags_sibling_tags() {
+        let input = "<literal>**a**</literal> text <literal>`b`</literal>";
+        let result = preprocess_literal_tag_content(input, &["literal"]);
+        assert!(result.contains("\\*\\*a\\*\\*"));
+        assert!(result.contains("\\`b\\`"));
+    }
+
+    #[test]
+    fn literal_tags_multiple_different_tags() {
+        let input = "<literal>**x**</literal>\n<code-block>_y_</code-block>";
+        let result = preprocess_literal_tag_content(input, &["literal", "code-block"]);
+        assert!(result.contains("\\*\\*x\\*\\*"));
+        assert!(result.contains("\\_y\\_"));
+    }
+
+    #[test]
+    fn literal_tags_content_with_angle_brackets() {
+        let input = "<literal>a <b> c</literal>";
+        let result = preprocess_literal_tag_content(input, &["literal"]);
+        assert!(result.contains("a <b> c"));
     }
 
     // --- normalize_html_indentation tests ---
