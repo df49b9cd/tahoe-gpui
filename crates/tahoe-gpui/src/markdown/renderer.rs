@@ -73,8 +73,8 @@ use crate::foundations::layout::{SPACING_4, SPACING_8};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontStyle, FontWeight, HighlightStyle, Hsla, ObjectFit,
-    Pixels, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
+    AnyElement, App, ElementId, Entity, FontFallbacks, FontStyle, FontWeight, HighlightStyle, Hsla,
+    ObjectFit, Pixels, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
     TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
 };
 use std::cell::{Cell, RefCell};
@@ -904,10 +904,13 @@ fn has_complex_inlines(inlines: &[InlineContent]) -> bool {
 /// full [`GpuiTextStyle`] used via [`GpuiTextStyle::to_run`] to produce
 /// the `TextRun` for the matching inline kind. The styles are built from
 /// the active [`TahoeTheme`] so all runs share the ambient color scheme
-/// and font family (with `code` overriding to `theme.font_mono`).
+/// and font family (with `code` overriding to `theme.font_mono` +
+/// `theme.font_mono_fallbacks` so code spans stay monospaced on hosts
+/// without SF Mono).
 struct InlineTextStyles {
     base: GpuiTextStyle,
     code_family: SharedString,
+    code_fallbacks: FontFallbacks,
     code_bg: gpui::Hsla,
     link_color: gpui::Hsla,
     link_underline: UnderlineStyle,
@@ -931,6 +934,7 @@ impl InlineTextStyles {
         Self {
             base,
             code_family: theme.font_mono.clone(),
+            code_fallbacks: theme.font_mono_fallbacks.clone(),
             code_bg: theme.code_bg,
             link_color: theme.accent,
             link_underline: UnderlineStyle {
@@ -1049,9 +1053,12 @@ fn flatten_inlines_to_runs(
                 // system monospaced font. Refining the current style
                 // with `font_family = font_mono` + `background_color
                 // = code_bg` preserves bold/italic context that an
-                // enclosing emphasis already set.
+                // enclosing emphasis already set. `font_fallbacks`
+                // keeps text monospaced on hosts without SF Mono
+                // (finding #29).
                 let mut code_style = current.clone();
                 code_style.font_family = styles.code_family.clone();
+                code_style.font_fallbacks = Some(styles.code_fallbacks.clone());
                 code_style.background_color = Some(styles.code_bg);
                 out.push(code, &code_style);
             }
@@ -1116,6 +1123,7 @@ fn flatten_inlines_to_runs(
                 // monospaced tint, not a separate typographic tone.
                 let mut math_style = current.clone();
                 math_style.font_family = styles.code_family.clone();
+                math_style.font_fallbacks = Some(styles.code_fallbacks.clone());
                 math_style.background_color = Some(styles.code_bg);
                 out.push(math, &math_style);
             }
@@ -1360,7 +1368,8 @@ mod tests {
     };
     use core::prelude::v1::test;
     use gpui::{
-        FontWeight, Hsla, StrikethroughStyle, TextStyle as GpuiTextStyle, UnderlineStyle, px,
+        FontFallbacks, FontWeight, Hsla, StrikethroughStyle, TextStyle as GpuiTextStyle,
+        UnderlineStyle, px,
     };
 
     const ZERO_HSLA: Hsla = Hsla {
@@ -1382,6 +1391,11 @@ mod tests {
         InlineTextStyles {
             base,
             code_family: "mono".into(),
+            // Non-empty so propagation assertions can distinguish
+            // "fallbacks were written" from "fallbacks were never touched"
+            // (see `code_span_propagates_fallbacks_to_run`). Production
+            // supplies a 4-entry list via `theme.font_mono_fallbacks`.
+            code_fallbacks: FontFallbacks::from_fonts(vec!["Menlo".into(), "Monaco".into()]),
             code_bg: ZERO_HSLA,
             link_color: ZERO_HSLA,
             link_underline: UnderlineStyle {
@@ -1914,5 +1928,53 @@ mod tests {
         // sentence reads naturally.
         assert!(out.text.contains("click me"));
         assert!(out.text.contains("safe"));
+    }
+
+    #[test]
+    fn code_span_propagates_fallbacks_to_run() {
+        // Finding #29: inline code spans must carry the mono fallback list
+        // into the emitted `TextRun` so code stays monospaced on hosts
+        // without SF Mono. Pins the `code_style.font_fallbacks = Some(...)`
+        // assignment in `flatten_inlines_to_runs`.
+        let security = MarkdownSecurity::default();
+        let styles = test_styles();
+        let mut out = InlineRuns::new();
+        let inlines = vec![InlineContent::Code("let x = 1;".into())];
+        let base_style = styles.base.clone();
+        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+
+        assert_eq!(out.runs.len(), 1);
+        let fallbacks = out.runs[0]
+            .font
+            .fallbacks
+            .as_ref()
+            .expect("code-span run must carry font fallbacks");
+        assert_eq!(
+            fallbacks.fallback_list(),
+            ["Menlo", "Monaco"],
+            "code span must forward styles.code_fallbacks into the TextRun"
+        );
+    }
+
+    #[test]
+    fn inline_math_propagates_fallbacks_to_run() {
+        // Finding #29: inline math shares the code span's plumbing — the
+        // same assignment must carry fallbacks through. Guards against
+        // regressions where one branch keeps the assignment but the other
+        // drops it.
+        let security = MarkdownSecurity::default();
+        let styles = test_styles();
+        let mut out = InlineRuns::new();
+        let inlines = vec![InlineContent::InlineMath("x^2".into())];
+        let base_style = styles.base.clone();
+        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+
+        assert_eq!(out.runs.len(), 1);
+        let fallbacks = out.runs[0]
+            .font
+            .fallbacks
+            .as_ref()
+            .expect("inline-math run must carry font fallbacks");
+        assert_eq!(fallbacks.fallback_list(), ["Menlo", "Monaco"]);
     }
 }

@@ -92,7 +92,7 @@ impl CodeBlockContent {
 impl RenderOnce for CodeBlockContent {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let font_mono = theme.font_mono.clone();
+        let font_mono = theme.font_mono();
         let lang = self.language.as_deref().unwrap_or("");
         let (styled_code, highlights) =
             syntax::build_styled_highlights(&self.code, lang, &theme.syntax);
@@ -105,7 +105,7 @@ impl RenderOnce for CodeBlockContent {
             div()
                 .overflow_hidden()
                 .p(theme.spacing_md)
-                .font_family(font_mono.clone())
+                .font(font_mono.clone())
                 .text_style(TextStyle::Callout, theme)
                 .text_color(theme.text)
                 .flex()
@@ -145,7 +145,7 @@ impl RenderOnce for CodeBlockContent {
             div()
                 .id("code-block-content-no-gutter")
                 .p(theme.spacing_md)
-                .font_family(font_mono.clone())
+                .font(font_mono.clone())
                 .text_style(TextStyle::Callout, theme)
                 .text_color(theme.text)
                 .overflow_x_scroll()
@@ -604,7 +604,7 @@ impl RenderOnce for CodeBlockView {
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted);
                 if self.filename.is_some() {
-                    title_el = title_el.font_family(theme.font_mono.clone());
+                    title_el = title_el.font(theme.font_mono());
                 }
                 title_el = title_el.child(title_text);
                 title_el.into_any_element()

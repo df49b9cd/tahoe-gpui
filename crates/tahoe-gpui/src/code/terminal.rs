@@ -237,8 +237,11 @@ impl RenderOnce for TerminalContent {
         let terminal_bg = theme.terminal_bg;
         let link_color = theme.accent;
         let selection_bg = theme.selected_bg;
-        let font_mono_outer = theme.font_mono.clone();
-        let font_mono = theme.font_mono.clone();
+        // Prototype `Font` carrying the theme's mono family + fallback list
+        // so every ANSI span inherits fallbacks (finding #29).
+        // Cloning `FontFallbacks` only bumps an `Arc`, so per-span clones are cheap.
+        let font_mono = theme.font_mono();
+        let font_mono_outer = font_mono.clone();
         let attrs = self.text_style.attrs();
         let font_size = attrs.size;
         let line_height = attrs.leading;
@@ -323,7 +326,7 @@ impl RenderOnce for TerminalContent {
         .px(spacing_md)
         .py(px(SPACING_4))
         .max_h(self.max_height)
-        .font_family(font_mono_outer)
+        .font(font_mono_outer)
         .text_size(font_size)
     }
 }
@@ -335,7 +338,7 @@ impl RenderOnce for TerminalContent {
 #[allow(clippy::too_many_arguments)]
 fn build_line_runs(
     line: &[ansi_parser::AnsiSpan],
-    font_mono: &SharedString,
+    font_mono: &Font,
     base_weight: FontWeight,
     bold_weight: FontWeight,
     text_color: Hsla,
@@ -405,13 +408,9 @@ fn build_line_runs(
         } else {
             FontStyle::Normal
         };
-        let font = Font {
-            family: font_mono.clone(),
-            features: Default::default(),
-            fallbacks: None,
-            weight,
-            style,
-        };
+        let mut font = font_mono.clone();
+        font.weight = weight;
+        font.style = style;
 
         let background_color = if resolved_bg.a > 0.0 {
             Some(resolved_bg)
@@ -887,12 +886,22 @@ mod tests {
         assert!(content.selection.is_some());
     }
 
+    fn test_font_mono() -> gpui::Font {
+        gpui::Font {
+            family: gpui::SharedString::from("SF Mono"),
+            features: gpui::FontFeatures::default(),
+            fallbacks: Some(gpui::FontFallbacks::from_fonts(vec!["Menlo".into()])),
+            weight: gpui::FontWeight::default(),
+            style: gpui::FontStyle::default(),
+        }
+    }
+
     #[test]
     fn build_line_runs_emits_one_run_per_span() {
         use super::ansi_parser::{AnsiSpan, AnsiStyle};
         use super::build_line_runs;
         use crate::foundations::theme::AnsiColors;
-        use gpui::{FontWeight, SharedString, hsla};
+        use gpui::{FontWeight, hsla};
 
         let spans = vec![
             AnsiSpan {
@@ -908,10 +917,10 @@ mod tests {
             },
         ];
         let colors = AnsiColors::new(true);
-        let family = SharedString::from("SF Mono");
+        let mono = test_font_mono();
         let (text, runs, _, _) = build_line_runs(
             &spans,
-            &family,
+            &mono,
             FontWeight::NORMAL,
             FontWeight::BOLD,
             hsla(0.0, 0.0, 0.9, 1.0),
@@ -925,6 +934,17 @@ mod tests {
         assert_eq!(runs[0].len, 3);
         assert_eq!(runs[1].len, 3);
         assert_eq!(runs[1].font.weight, FontWeight::BOLD);
+        // Finding #29: fallbacks from the prototype must flow into each TextRun
+        // so terminal output stays monospaced on hosts without SF Mono.
+        assert_eq!(
+            runs[0]
+                .font
+                .fallbacks
+                .as_ref()
+                .expect("prototype fallbacks must propagate")
+                .fallback_list(),
+            ["Menlo"]
+        );
     }
 
     #[test]
@@ -948,10 +968,10 @@ mod tests {
             },
         ];
         let colors = AnsiColors::new(true);
-        let family = SharedString::from("SF Mono");
+        let mono = test_font_mono();
         let (text, _runs, link_ranges, link_urls) = build_line_runs(
             &spans,
-            &family,
+            &mono,
             FontWeight::NORMAL,
             FontWeight::BOLD,
             hsla(0.0, 0.0, 0.9, 1.0),
@@ -971,7 +991,7 @@ mod tests {
         use super::ansi_parser::{AnsiSpan, AnsiStyle};
         use super::build_line_runs;
         use crate::foundations::theme::AnsiColors;
-        use gpui::{FontWeight, SharedString, hsla};
+        use gpui::{FontWeight, hsla};
 
         let colors = AnsiColors::new(true);
         let red = colors.red;
@@ -985,14 +1005,14 @@ mod tests {
                 ..AnsiStyle::default()
             },
         }];
-        let family = SharedString::from("SF Mono");
+        let mono = test_font_mono();
         let default_text = hsla(0.0, 0.0, 0.9, 1.0);
         let default_bg = hsla(0.0, 0.0, 0.05, 1.0);
         let link_c = hsla(0.6, 0.7, 0.6, 1.0);
 
         let (_, runs_on, _, _) = build_line_runs(
             &spans,
-            &family,
+            &mono,
             FontWeight::NORMAL,
             FontWeight::BOLD,
             default_text,
@@ -1005,7 +1025,7 @@ mod tests {
 
         let (_, runs_off, _, _) = build_line_runs(
             &spans,
-            &family,
+            &mono,
             FontWeight::NORMAL,
             FontWeight::BOLD,
             default_text,

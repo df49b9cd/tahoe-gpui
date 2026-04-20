@@ -5,7 +5,7 @@ use super::{
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
-use gpui::{FontWeight, SharedString, Styled, div, hsla};
+use gpui::{FontFallbacks, FontWeight, SharedString, Styled, div, hsla};
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -1722,6 +1722,9 @@ fn lens_effect_liquid_glass_defaults() {
 #[test]
 fn font_mono_defaults_to_sf_mono() {
     // Per HIG: SF Mono is the system monospaced typeface on macOS 10.15+.
+    // Fallbacks cover Linux, Windows, and macOS hosts without Xcode so code
+    // text stays monospaced on every host (finding #29).
+    let expected_fallbacks = ["Menlo", "Monaco", "Courier New", "monospace"];
     for theme in [
         TahoeTheme::dark(),
         TahoeTheme::light(),
@@ -1734,7 +1737,49 @@ fn font_mono_defaults_to_sf_mono() {
             "font_mono should be SF Mono, got {}",
             theme.font_mono
         );
+        assert_eq!(
+            theme.font_mono_fallbacks.fallback_list(),
+            expected_fallbacks,
+            "font_mono_fallbacks default list mismatch"
+        );
     }
+}
+
+#[test]
+fn with_font_mono_fallbacks_replaces_list() {
+    let custom = FontFallbacks::from_fonts(vec!["JetBrains Mono".into(), "Menlo".into()]);
+    let theme = TahoeTheme::dark().with_font_mono_fallbacks(custom);
+    assert_eq!(
+        theme.font_mono_fallbacks.fallback_list(),
+        ["JetBrains Mono", "Menlo"],
+        "builder must replace the default fallback list"
+    );
+    // Pin the builder → helper integration so `font_mono()` cannot drift
+    // away from reading `font_mono_fallbacks`.
+    assert_eq!(
+        theme
+            .font_mono()
+            .fallbacks
+            .as_ref()
+            .expect("font_mono must forward the overridden list")
+            .fallback_list(),
+        ["JetBrains Mono", "Menlo"]
+    );
+}
+
+#[test]
+fn font_mono_wires_family_and_fallbacks() {
+    let theme = TahoeTheme::dark();
+    let font = theme.font_mono();
+    assert_eq!(font.family.as_ref(), "SF Mono");
+    let fallbacks = font
+        .fallbacks
+        .as_ref()
+        .expect("font_mono must populate fallbacks so TextStyle::to_run forwards them");
+    assert_eq!(
+        fallbacks.fallback_list(),
+        ["Menlo", "Monaco", "Courier New", "monospace"]
+    );
 }
 
 #[test]

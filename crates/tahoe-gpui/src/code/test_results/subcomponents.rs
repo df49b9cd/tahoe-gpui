@@ -42,9 +42,9 @@ impl RenderOnce for TestError {
 
         col = col.child(
             div()
+                .font(theme.font_mono())
                 .text_style(TextStyle::Caption1, theme)
                 .text_color(theme.error)
-                .font_family(theme.font_mono.clone())
                 .child(self.message),
         );
 
@@ -52,9 +52,9 @@ impl RenderOnce for TestError {
             col = col.child(
                 div()
                     .pt(px(2.0))
+                    .font(theme.font_mono())
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
-                    .font_family(theme.font_mono.clone())
                     .overflow_x_hidden()
                     .child(stack),
             );
@@ -138,9 +138,9 @@ impl RenderOnce for Test {
             row = row.child(
                 div()
                     .flex_none()
+                    .font(theme.font_mono())
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
-                    .font_family(theme.font_mono.clone())
                     .child(format_duration(ms)),
             );
         }

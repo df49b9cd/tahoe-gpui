@@ -189,6 +189,10 @@ impl SchemaDisplayView {
         cx: &Context<Self>,
     ) -> AnyElement {
         let indent = px(depth as f32 * 16.0);
+        // Hoist once — this function recurses and has five call sites.
+        // `Font` clones only bump `Arc` refcounts, so per-site clones
+        // stay allocation-free.
+        let mono = theme.font_mono();
 
         match node {
             SchemaNode::Object {
@@ -247,9 +251,7 @@ impl SchemaDisplayView {
                     // the `Badge` in a monospace container lets the type
                     // label inherit `font_mono` without changing Badge's
                     // own visual tokens.
-                    div()
-                        .font_family(theme.font_mono.clone())
-                        .child(Badge::new("object")),
+                    div().font(mono.clone()).child(Badge::new("object")),
                 );
                 if required {
                     row = row.child(
@@ -333,16 +335,12 @@ impl SchemaDisplayView {
                     );
                 }
                 row = row
-                    .child(
-                        div()
-                            .font_family(theme.font_mono.clone())
-                            .child(Badge::new("array")),
-                    )
+                    .child(div().font(mono.clone()).child(Badge::new("array")))
                     .child(
                         div()
                             .text_style(TextStyle::Caption1, theme)
                             .text_color(theme.text_muted)
-                            .font_family(theme.font_mono.clone())
+                            .font(mono.clone())
                             .child(format!("of {}", items.type_label())),
                     );
                 if required {
@@ -401,9 +399,7 @@ impl SchemaDisplayView {
                 row = row.child(
                     // Monospace wrapper so the primitive type/format label
                     // inherits `font_mono` (finding #20).
-                    div()
-                        .font_family(theme.font_mono.clone())
-                        .child(Badge::new(type_label)),
+                    div().font(mono.clone()).child(Badge::new(type_label)),
                 );
 
                 if required {
@@ -429,7 +425,7 @@ impl SchemaDisplayView {
                         div()
                             .text_style(TextStyle::Caption1, theme)
                             .text_color(theme.text_muted)
-                            .font_family(theme.font_mono.clone())
+                            .font(mono.clone())
                             .child(format!("enum: [{}]", values.join(", "))),
                     );
                 }
