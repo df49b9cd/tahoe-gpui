@@ -1527,13 +1527,17 @@ impl TahoeTheme {
 
     /// Replace the theme's accent colour and propagate it through the
     /// derived tokens (`accent`, `ring`, `focus_ring_color`,
-    /// `glass.accent_tint`, and `text_on_accent`).
+    /// `glass.accent_tint`, `text_on_accent`, and `selected_bg`).
     ///
     /// Useful when the host detects a runtime accent change after the
     /// theme has been built — call this before `apply` (or on a clone),
     /// then re-apply.
+    ///
+    /// Note: `tool_approved_bg` and `tool_rejected_bg` are palette-keyed
+    /// (green / red), not accent-keyed, so they intentionally stay put.
     pub fn with_accent_color(mut self, accent: AccentColor) -> Self {
         let resolved = accent.resolve(&self.palette);
+        let is_dark = self.appearance.is_dark();
         self.accent_color = accent;
         self.accent = resolved;
         self.ring = resolved;
@@ -1542,6 +1546,10 @@ impl TahoeTheme {
         self.glass.accent_tint = GlassTint {
             bg: resolved,
             bg_hover: crate::foundations::color::lighten(resolved, 0.08),
+        };
+        self.selected_bg = Hsla {
+            a: if is_dark { 0.28 } else { 0.18 },
+            ..resolved
         };
         self
     }
