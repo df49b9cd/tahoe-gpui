@@ -547,7 +547,10 @@ mod tests {
         let tokens = default_tokens();
         let anim = accessible_spring_animation(&tokens, false);
         // Duration is capped at MotionRamp::Long (450ms) per HIG.
-        assert_eq!(anim.duration.as_millis() as u64, MotionRamp::Long.duration_ms());
+        assert_eq!(
+            anim.duration.as_millis() as u64,
+            MotionRamp::Long.duration_ms()
+        );
     }
 
     #[test]
