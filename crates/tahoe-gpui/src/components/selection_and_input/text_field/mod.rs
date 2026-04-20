@@ -470,6 +470,7 @@ impl TextField {
 
     /// Clear the input text and reset cursor.
     fn clear_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.push_undo_snapshot();
         self.content = SharedString::default();
         self.selected_range = 0..0;
         self.selection_reversed = false;
@@ -1704,6 +1705,33 @@ mod interaction_tests {
             assert_eq!(field.text(), "");
         });
         assert_eq!(&*changes.borrow(), &["search".to_string(), String::new()]);
+    }
+
+    // Regression for #35: the clear-X button must push an undo snapshot so
+    // the wipe is recoverable. Without this, clicking clear drops user work
+    // on the floor — every other mutation surface on `TextField` is undoable.
+    #[gpui::test]
+    async fn clear_button_is_undoable(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+
+        field.update_in(cx, |field, window, cx| {
+            field.set_show_clear_button(true);
+            field.set_text("search", window, cx);
+        });
+
+        focus_text_field(&field, cx);
+        assert_element_exists(cx, TEXT_FIELD_CLEAR);
+        cx.click_on(TEXT_FIELD_CLEAR);
+
+        field.update_in(cx, |field, window, cx| {
+            assert_eq!(field.text(), "");
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(
+                field.text(),
+                "search",
+                "clear button must be undoable — issue #35",
+            );
+        });
     }
 
     // Regression for #18: programmatic `set_text` must mirror typed edits —
