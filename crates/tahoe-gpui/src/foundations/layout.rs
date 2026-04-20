@@ -7,7 +7,7 @@
 //! Line references like `foundations.md:Lxxx` point at
 //! `docs/hig/foundations.md` in this repo.
 
-use gpui::{Div, Pixels, Styled, div, px};
+use gpui::{Div, ParentElement, Pixels, Styled, div, px};
 
 pub use super::materials::flex_row_directed;
 
@@ -66,6 +66,43 @@ pub trait FlexExt: Styled + Sized {
 impl<E: Styled + Sized> FlexExt for E {}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Hit-region expansion (pointer target ≥ visual size)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Wrap `child` in a transparent, centered container at least `min` in
+/// each dimension so pointer clicks land on the wrapper and reach the
+/// same target even when the visual child is smaller.
+///
+/// Use this when a compact control has a visual footprint smaller than
+/// comfortable pointer acquisition would expect — e.g. 14 pt traffic-light
+/// dots in a title bar, `ControlSize::Mini` glyphs in a dense toolbar, or
+/// split-view divider strokes. Attach the `on_click` / `on_action` handler
+/// on the returned `Div` (the wrapper), not the child.
+///
+/// A reasonable floor for macOS is the [`ControlSize`] tier one step above
+/// the visual size — e.g. a [`ControlSize::Mini`] (20 pt) glyph gets a
+/// [`ControlSize::Regular`] (28 pt) hit region. Apple's public HIG does
+/// not publish a macOS pointer minimum, so avoid hardcoding a fixed 44 pt
+/// floor; scale relative to the tiers instead.
+///
+/// ```ignore
+/// use tahoe_gpui::foundations::layout::{hit_region, ControlSize};
+/// use gpui::px;
+///
+/// let tier = ControlSize::Regular.height(theme.platform);
+/// hit_region(px(tier), my_tiny_icon).on_click(|_, _, _| {})
+/// ```
+pub fn hit_region(min: Pixels, child: impl gpui::IntoElement) -> Div {
+    div()
+        .min_w(min)
+        .min_h(min)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(child)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Platform
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -91,13 +128,13 @@ pub enum Platform {
 impl Platform {
     /// Default interactive target size per HIG.
     ///
-    /// These are the **AppKit / SwiftUI control metrics** used by the
-    /// platform's default controls. They are _not_ the
-    /// accessibility-recommended minimum pointer-target from
-    /// `foundations.md:L78–L79` — that floor is 44×44 pt on macOS and is
-    /// exposed as [`MACOS_POINTER_TARGET_ACCESSIBILITY`]. Controls at the
-    /// default size should expand their hit region to satisfy that floor
-    /// whenever multiple pointer-activated elements share a region.
+    /// These are the **AppKit / SwiftUI control metrics** used by each
+    /// platform's default controls. On touch and spatial platforms they
+    /// double as the Apple-published accessibility minimum for mobility;
+    /// macOS does not publish a separate pointer-accessibility floor
+    /// (see `foundations.md:L72–L81`), so the default control metric is
+    /// the recommended visual size and interactive elements should extend
+    /// their **hit region** past their visual size in dense layouts.
     ///
     /// | Platform | Default | Minimum |
     /// |---|---|---|
@@ -107,29 +144,19 @@ impl Platform {
     /// | visionOS | 60×60 pt | 28×28 pt |
     /// | watchOS | 44×44 pt | 28×28 pt |
     pub fn default_target_size(self) -> f32 {
-        match self {
-            Self::IOS => 44.0,
-            Self::MacOS => MACOS_DEFAULT_TOUCH_TARGET,
-            Self::TvOS => 66.0,
-            Self::VisionOS => 60.0,
-            Self::WatchOS => 44.0,
-        }
+        ControlSize::Regular.height(self)
     }
 
     /// Minimum interactive target size per HIG.
     ///
     /// Absolute floor for compressed ("mini" / "small") control variants.
-    /// See [`Self::default_target_size`] for the discrepancy between these
-    /// control-design metrics and the accessibility-recommended pointer
-    /// target ([`MACOS_POINTER_TARGET_ACCESSIBILITY`]).
+    /// On touch and spatial platforms these match the Apple-published
+    /// accessibility minimum. On macOS this is the AppKit / SwiftUI
+    /// mini-control metric; Apple does not document a separate pointer
+    /// accessibility floor, so extend the **hit region** past the visual
+    /// size when neighbouring targets are tight.
     pub fn min_target_size(self) -> f32 {
-        match self {
-            Self::IOS => 28.0,
-            Self::MacOS => MACOS_MIN_TOUCH_TARGET,
-            Self::TvOS => 56.0,
-            Self::VisionOS => 28.0,
-            Self::WatchOS => 28.0,
-        }
+        ControlSize::Mini.height(self)
     }
 
     /// Default body text size per HIG Typography.
@@ -213,34 +240,132 @@ impl Platform {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Accessibility — touch / pointer target sizing (foundations.md:L74–L79)
+// ControlSize — canonical height tiers (SwiftUI `ControlSize`)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// macOS Accessibility-recommended minimum pointer-target size (44×44 pt).
+/// Canonical interactive-control height tier.
 ///
-/// HIG (`foundations.md:L78–L79`) lists _Pointer target (macOS) 44×44
-/// pt_ as the recommended accessibility minimum for mobility. This is the
-/// floor any pointer-activated element should satisfy via its **hit area**,
-/// even when its visual size is smaller.
-pub const MACOS_POINTER_TARGET_ACCESSIBILITY: f32 = 44.0;
+/// Mirrors Apple's [`SwiftUI.ControlSize`][1] so new components can pick a
+/// size without inventing a per-component enum. On **macOS** the tiers map
+/// to the AppKit / SwiftUI control heights:
+///
+/// | Tier | macOS | iOS / iPadOS | tvOS | visionOS | watchOS |
+/// |------|-------|--------------|------|----------|---------|
+/// | `Mini` | 20 pt | 28 pt | 56 pt | 28 pt | 28 pt |
+/// | `Small` | 24 pt | 36 pt | 60 pt | 44 pt | 36 pt |
+/// | `Regular` (default) | 28 pt | 44 pt | 66 pt | 60 pt | 44 pt |
+/// | `Large` | 32 pt | 50 pt | 72 pt | 66 pt | 48 pt |
+/// | `ExtraLarge` | 36 pt | 56 pt | 80 pt | 72 pt | 52 pt |
+///
+/// `Mini` on touch platforms intentionally sits below Apple's 44 pt touch
+/// minimum — it matches [`Platform::min_target_size`] for dense forms and
+/// should be combined with [`hit_region`] expansion when used there.
+///
+/// Apple does **not** publish a separate pointer-accessibility floor for
+/// macOS; compact controls in dense layouts should expand their **hit
+/// region** past the visual size using [`hit_region`] rather than inflate
+/// the control itself. `Regular` is the size a caller should reach for
+/// unless there is a concrete reason to use another tier — it matches
+/// [`Platform::default_target_size`].
+///
+/// [1]: https://developer.apple.com/documentation/swiftui/controlsize
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ControlSize {
+    /// SwiftUI `.mini`. Use in dense inspectors, color wells, palette rows.
+    Mini,
+    /// SwiftUI `.small`. Use in inspectors, sidebar toolbars, compact forms.
+    Small,
+    /// SwiftUI `.regular`. Default. Use for ordinary buttons and text fields.
+    #[default]
+    Regular,
+    /// SwiftUI `.large`. Use for prominent CTAs (onboarding, primary actions).
+    Large,
+    /// SwiftUI `.extraLarge` (macOS 14+). Use for hero buttons and
+    /// accessibility-oriented large-text modes.
+    ExtraLarge,
+}
+
+impl ControlSize {
+    /// Visual height in points for this tier on the given platform.
+    pub fn height(self, platform: Platform) -> f32 {
+        match (platform, self) {
+            (Platform::MacOS, Self::Mini) => 20.0,
+            (Platform::MacOS, Self::Small) => 24.0,
+            (Platform::MacOS, Self::Regular) => 28.0,
+            (Platform::MacOS, Self::Large) => 32.0,
+            (Platform::MacOS, Self::ExtraLarge) => 36.0,
+
+            (Platform::IOS, Self::Mini) => 28.0,
+            (Platform::IOS, Self::Small) => 36.0,
+            (Platform::IOS, Self::Regular) => 44.0,
+            (Platform::IOS, Self::Large) => 50.0,
+            (Platform::IOS, Self::ExtraLarge) => 56.0,
+
+            (Platform::TvOS, Self::Mini) => 56.0,
+            (Platform::TvOS, Self::Small) => 60.0,
+            (Platform::TvOS, Self::Regular) => 66.0,
+            (Platform::TvOS, Self::Large) => 72.0,
+            (Platform::TvOS, Self::ExtraLarge) => 80.0,
+
+            (Platform::VisionOS, Self::Mini) => 28.0,
+            (Platform::VisionOS, Self::Small) => 44.0,
+            (Platform::VisionOS, Self::Regular) => 60.0,
+            (Platform::VisionOS, Self::Large) => 66.0,
+            (Platform::VisionOS, Self::ExtraLarge) => 72.0,
+
+            (Platform::WatchOS, Self::Mini) => 28.0,
+            (Platform::WatchOS, Self::Small) => 36.0,
+            (Platform::WatchOS, Self::Regular) => 44.0,
+            (Platform::WatchOS, Self::Large) => 48.0,
+            (Platform::WatchOS, Self::ExtraLarge) => 52.0,
+        }
+    }
+
+    /// The tier one step smaller, or `self` if already at [`Self::Mini`].
+    ///
+    /// Useful for [`hit_region`] callers that want to derive a hit expansion
+    /// floor from "one tier up" relative to the visual size.
+    pub fn smaller(self) -> Self {
+        match self {
+            Self::Mini | Self::Small => Self::Mini,
+            Self::Regular => Self::Small,
+            Self::Large => Self::Regular,
+            Self::ExtraLarge => Self::Large,
+        }
+    }
+
+    /// The tier one step larger, or `self` if already at [`Self::ExtraLarge`].
+    pub fn larger(self) -> Self {
+        match self {
+            Self::Mini => Self::Small,
+            Self::Small => Self::Regular,
+            Self::Regular => Self::Large,
+            Self::Large | Self::ExtraLarge => Self::ExtraLarge,
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Control metrics (macOS — AppKit / SwiftUI ControlSize)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// macOS default interactive control size (28×28 pt).
 ///
-/// AppKit / SwiftUI control metric for regular-size buttons, text fields,
-/// menu rows, and toolbar items. Matches the value returned by
-/// `Platform::MacOS::default_target_size()`.
+/// AppKit / SwiftUI `.regular` control metric for buttons, text fields,
+/// menu rows, and toolbar items. Matches [`ControlSize::Regular`] on
+/// [`Platform::MacOS`] and the value returned by
+/// [`Platform::default_target_size`].
 ///
-/// This is the _visual_ control size. Components whose activation region
-/// falls short of [`MACOS_POINTER_TARGET_ACCESSIBILITY`] (44 pt) should
-/// expand their hit area independently of this visual dimension.
+/// This is the _visual_ control size. Apple's public HIG does not publish
+/// a separate macOS pointer-accessibility floor, so controls placed in
+/// dense layouts should extend their **hit region** past this dimension
+/// via [`hit_region`] rather than inflate the visual size.
 pub const MACOS_DEFAULT_TOUCH_TARGET: f32 = 28.0;
 
 /// macOS minimum interactive control size (20×20 pt).
 ///
-/// Absolute floor for compressed ("mini" / "small") control sizes. Matches
-/// `Platform::MacOS::min_target_size()`. See
-/// [`MACOS_POINTER_TARGET_ACCESSIBILITY`] for the accessibility vs. control
-/// metric distinction.
+/// AppKit / SwiftUI `.mini` control metric. Matches [`ControlSize::Mini`]
+/// on [`Platform::MacOS`] and [`Platform::min_target_size`].
 pub const MACOS_MIN_TOUCH_TARGET: f32 = 20.0;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -668,8 +793,8 @@ pub enum ShapeType {
 #[cfg(test)]
 mod tests {
     use super::{
-        ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, HOVER_CARD_MAX_WIDTH, MACOS_DEFAULT_TOUCH_TARGET,
-        MACOS_MIN_TOUCH_TARGET, MACOS_PANEL_TITLE_BAR_HEIGHT, MACOS_POINTER_TARGET_ACCESSIBILITY,
+        ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, ControlSize, HOVER_CARD_MAX_WIDTH,
+        MACOS_DEFAULT_TOUCH_TARGET, MACOS_MIN_TOUCH_TARGET, MACOS_PANEL_TITLE_BAR_HEIGHT,
         MACOS_TITLE_BAR_HEIGHT, MACOS_TOOLBAR_UNIFIED_HEIGHT, POPOVER_MAX_WIDTH, Platform,
         SIDEBAR_MIN_WIDTH, SizeClass, SurfaceRole, TvOsGridColumns, WatchOsSize,
     };
@@ -685,8 +810,43 @@ mod tests {
     }
 
     #[test]
-    fn accessibility_pointer_target_is_44() {
-        assert!((MACOS_POINTER_TARGET_ACCESSIBILITY - 44.0).abs() < f32::EPSILON);
+    fn control_size_macos_heights_match_swiftui() {
+        let p = Platform::MacOS;
+        assert_eq!(ControlSize::Mini.height(p), 20.0);
+        assert_eq!(ControlSize::Small.height(p), 24.0);
+        assert_eq!(ControlSize::Regular.height(p), 28.0);
+        assert_eq!(ControlSize::Large.height(p), 32.0);
+        assert_eq!(ControlSize::ExtraLarge.height(p), 36.0);
+    }
+
+    #[test]
+    fn control_size_regular_matches_default_target_size() {
+        for p in [
+            Platform::MacOS,
+            Platform::IOS,
+            Platform::TvOS,
+            Platform::VisionOS,
+            Platform::WatchOS,
+        ] {
+            assert_eq!(
+                ControlSize::Regular.height(p),
+                p.default_target_size(),
+                "Regular tier should match Platform::{p:?}::default_target_size"
+            );
+            assert_eq!(
+                ControlSize::Mini.height(p),
+                p.min_target_size(),
+                "Mini tier should match Platform::{p:?}::min_target_size"
+            );
+        }
+    }
+
+    #[test]
+    fn control_size_neighbour_helpers_are_bounded() {
+        assert_eq!(ControlSize::Mini.smaller(), ControlSize::Mini);
+        assert_eq!(ControlSize::ExtraLarge.larger(), ControlSize::ExtraLarge);
+        assert_eq!(ControlSize::Regular.larger(), ControlSize::Large);
+        assert_eq!(ControlSize::Regular.smaller(), ControlSize::Small);
     }
 
     #[test]

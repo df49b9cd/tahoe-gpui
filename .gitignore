@@ -56,3 +56,4 @@ coverage/
 
 # ─── Worktree-local scratch (build wrappers, generated apps, etc.) ──────────
 /tmp/
+.claude/

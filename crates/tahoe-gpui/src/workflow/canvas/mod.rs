@@ -462,8 +462,9 @@ impl WorkflowCanvas {
         let zoom = self.zoom;
         // Edge tolerance is expressed in screen-space pixels, so zoom doesn't
         // distort the pointer target. With the bezier projection below
-        // already in screen coordinates, a constant 11 px ≈ 44 pt diameter
-        // target, matching the HIG pointer-target minimum.
+        // already in screen coordinates, a constant 11 px ≈ 22 pt radius hit
+        // region around the edge, comfortable for mouse pointing on top of
+        // macOS's 28 pt regular control metric.
         let tolerance = EDGE_HIT_TOLERANCE_SCREEN_PX;
         let mut best: Option<(usize, f32)> = None;
 

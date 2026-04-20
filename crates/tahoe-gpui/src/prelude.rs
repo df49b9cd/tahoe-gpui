@@ -20,7 +20,8 @@ pub use crate::foundations::icons::{
     IconRenderMode, IconScale, IconStyle,
 };
 pub use crate::foundations::layout::{
-    DROPDOWN_SNAP_MARGIN, FlexExt, h_flex, snap_to_window_margin, v_flex,
+    ControlSize, DROPDOWN_SNAP_MARGIN, FlexExt, Platform, h_flex, hit_region,
+    snap_to_window_margin, v_flex,
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
 pub use crate::foundations::theme::{

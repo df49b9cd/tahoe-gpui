@@ -178,24 +178,52 @@ pub enum ButtonShape {
 ///
 /// The `Icon*` variants apply icon-only chrome (square aspect, equal insets);
 /// text variants include label padding.
+///
+/// Maps 1-to-1 onto [`ControlSize`] for the ordinary label tiers (Mini /
+/// Small / Regular / Large / ExtraLarge). [`ButtonSize::IconSmall`] and
+/// [`ButtonSize::Icon`] are button-specific icon-only shapes that reuse
+/// the `Small` and `Regular` heights respectively. Heights are resolved
+/// through [`TahoeTheme::control_height`] so the values track platform
+/// scaling.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ButtonSize {
-    /// Mini / HIG `mini` — ~16pt min-height. Use inside dense inspectors,
-    /// color-well labels, and toolbar palette items where the full `Small`
-    /// control tier is still too tall.
+    /// SwiftUI `.mini` — 20 pt on macOS. Use inside dense inspectors,
+    /// color-well labels, and toolbar palette items where `Small` is
+    /// still too tall.
     Mini,
-    /// Small / HIG `small` — ~22pt min-height.
+    /// SwiftUI `.small` — 24 pt on macOS. Use in inspectors, sidebar
+    /// toolbars, and compact forms.
     Small,
-    /// Regular / HIG `regular` — ~28pt min-height. Default.
+    /// SwiftUI `.regular` — 28 pt on macOS. Default.
     #[default]
     Regular,
-    /// Large / HIG `large` — ~32pt min-height. Use for prominent CTAs that
+    /// SwiftUI `.large` — 32 pt on macOS. Use for prominent CTAs that
     /// need to read at a glance (onboarding, primary page actions).
     Large,
-    /// Small icon-only button — ~22pt square.
+    /// SwiftUI `.extraLarge` — 36 pt on macOS. Use for hero buttons and
+    /// accessibility-oriented large-text modes.
+    ExtraLarge,
+    /// Small icon-only button — matches the [`ButtonSize::Small`] height
+    /// (24 pt on macOS) rendered as a square.
     IconSmall,
-    /// Regular icon-only button — ~28pt square.
+    /// Regular icon-only button — matches the [`ButtonSize::Regular`]
+    /// height (28 pt on macOS) rendered as a square.
     Icon,
+}
+
+impl ButtonSize {
+    /// Return the [`ControlSize`] tier this size maps to. The two
+    /// icon-only variants collapse onto their equivalent label tier.
+    pub fn control_size(self) -> crate::foundations::layout::ControlSize {
+        use crate::foundations::layout::ControlSize;
+        match self {
+            Self::Mini => ControlSize::Mini,
+            Self::Small | Self::IconSmall => ControlSize::Small,
+            Self::Regular | Self::Icon => ControlSize::Regular,
+            Self::Large => ControlSize::Large,
+            Self::ExtraLarge => ControlSize::ExtraLarge,
+        }
+    }
 }
 
 /// A button component with variant styling.
@@ -593,46 +621,18 @@ impl RenderOnce for Button {
         };
 
         // Size → (horizontal padding, vertical padding, text style, min height).
-        // `Mini`/`Sm`/`IconSm` drop a tier from the default target; `Lg` adds one
-        // for the HIG `large` control tier (~32pt min-height).
-        let (px_val, py_val, ts, min_h) = match self.size {
-            ButtonSize::Mini => (
-                theme.spacing_xs,
-                px(1.0),
-                TextStyle::Caption1,
-                theme.min_target_size() - 4.0,
-            ),
-            ButtonSize::Small => (
-                theme.spacing_sm,
-                theme.spacing_xs,
-                TextStyle::Subheadline,
-                theme.min_target_size() + 2.0,
-            ),
-            ButtonSize::IconSmall => (
-                theme.spacing_xs,
-                theme.spacing_xs,
-                TextStyle::Subheadline,
-                theme.min_target_size() + 2.0,
-            ),
-            ButtonSize::Regular => (
-                theme.spacing_md,
-                theme.spacing_sm,
-                TextStyle::Body,
-                theme.target_size(),
-            ),
-            ButtonSize::Icon => (
-                theme.spacing_sm,
-                theme.spacing_sm,
-                TextStyle::Body,
-                theme.target_size(),
-            ),
-            // HIG large control tier — 32pt on macOS (target + 4).
-            ButtonSize::Large => (
-                theme.spacing_md,
-                theme.spacing_sm,
-                TextStyle::Body,
-                theme.target_size() + 4.0,
-            ),
+        // Heights flow through `theme.control_height(…)` so the button tracks
+        // the canonical SwiftUI ControlSize tiers (Mini 20 / Small 24 /
+        // Regular 28 / Large 32 / ExtraLarge 36 on macOS).
+        let min_h = theme.control_height(self.size.control_size());
+        let (px_val, py_val, ts) = match self.size {
+            ButtonSize::Mini => (theme.spacing_xs, px(1.0), TextStyle::Caption1),
+            ButtonSize::Small => (theme.spacing_sm, theme.spacing_xs, TextStyle::Subheadline),
+            ButtonSize::IconSmall => (theme.spacing_xs, theme.spacing_xs, TextStyle::Subheadline),
+            ButtonSize::Regular => (theme.spacing_md, theme.spacing_sm, TextStyle::Body),
+            ButtonSize::Icon => (theme.spacing_sm, theme.spacing_sm, TextStyle::Body),
+            ButtonSize::Large => (theme.spacing_md, theme.spacing_sm, TextStyle::Body),
+            ButtonSize::ExtraLarge => (theme.spacing_lg, theme.spacing_md, TextStyle::Headline),
         };
         // HIG §Help buttons: always render as a 20pt circle, regardless of
         // the size tier the caller selected. The affordance itself — not
@@ -791,6 +791,7 @@ impl RenderOnce for Button {
                 ButtonSize::Small | ButtonSize::IconSmall => px(14.0),
                 ButtonSize::Regular | ButtonSize::Icon => px(16.0),
                 ButtonSize::Large => px(18.0),
+                ButtonSize::ExtraLarge => px(20.0),
             };
             el = el.child(
                 ActivityIndicator::new(ElementId::from((id.clone(), "loading")))
@@ -936,6 +937,7 @@ mod tests {
             ButtonSize::Small => "small",
             ButtonSize::Regular => "regular",
             ButtonSize::Large => "large",
+            ButtonSize::ExtraLarge => "extra_large",
             ButtonSize::Icon => "icon",
             ButtonSize::IconSmall => "icon_small",
         }
