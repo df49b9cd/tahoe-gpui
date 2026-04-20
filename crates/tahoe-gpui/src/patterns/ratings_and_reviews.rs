@@ -9,8 +9,8 @@
 //!
 //! # See also
 //!
-//! - [`crate::components::status::rating_indicator::RatingIndicator`] —
-//!   5-star display/input widget; pairs with
+//! - `crate::components::status::rating_indicator::RatingIndicator`
+//!   (macOS only) — 5-star display/input widget; pairs with
 //!   [`crate::foundations::icons::IconName::Star`] /
 //!   [`crate::foundations::icons::IconName::StarFill`] /
 //!   [`crate::foundations::icons::IconName::StarLeadingHalfFilled`].
