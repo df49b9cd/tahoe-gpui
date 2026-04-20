@@ -1082,6 +1082,7 @@ impl TahoeTheme {
             tertiary_system_grouped_background: hsla(0.0, 0.0, 0.17, 1.0),
             elevated_system_background: hsla(0.0, 0.0, 0.11, 1.0), // #1C1C1E
             elevated_secondary_system_background: hsla(0.0, 0.0, 0.17, 1.0), // #2C2C2E
+            activity_ring_backdrop: hsla(0.0, 0.0, 0.07, 1.0),
             info: SystemColor::Cyan.resolve(Appearance::Dark),
             ai: SystemColor::Purple.resolve(Appearance::Dark),
         };
@@ -1387,6 +1388,7 @@ impl TahoeTheme {
             tertiary_system_grouped_background: hsla(0.0, 0.0, 0.95, 1.0),
             elevated_system_background: hsla(0.0, 0.0, 0.95, 1.0), // same as system_background
             elevated_secondary_system_background: hsla(0.0, 0.0, 0.93, 1.0), // same as secondary
+            activity_ring_backdrop: hsla(0.0, 0.0, 0.07, 1.0),
             info: SystemColor::Cyan.resolve(Appearance::Light),
             ai: SystemColor::Purple.resolve(Appearance::Light),
         };

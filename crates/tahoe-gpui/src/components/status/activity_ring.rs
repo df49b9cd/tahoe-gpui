@@ -321,12 +321,13 @@ impl RenderOnce for ActivityRingSet {
                 "{overall_percent} percent average"
             )));
 
-        // HIG: "Always display Activity rings on a black background." An
-        // opaque black panel with an outer margin equal to the stroke
-        // enforces the rule at the component level.
+        // HIG: "Always display Activity rings on a black background." On
+        // macOS we use `theme.semantic.activity_ring_backdrop` (pinned to
+        // the system dark gray in every appearance) rather than pure
+        // `#000000`, per `foundations/dark_mode.rs:20`.
         gpui::div()
             .relative()
-            .bg(gpui::black())
+            .bg(theme.semantic.activity_ring_backdrop)
             .rounded(px(f32::from(outer) / 2.0 + stroke))
             .p(px(stroke + gap))
             .with_accessibility(&a11y_props)
@@ -454,5 +455,38 @@ mod tests {
     fn activity_ring_set_size_builder() {
         let set = ActivityRingSet::fitness(0.5, 0.5, 0.5).size(px(120.0));
         assert_eq!(set.size, px(120.0));
+    }
+}
+
+#[cfg(test)]
+mod gpui_tests {
+    use gpui::{Context, IntoElement, Render, TestAppContext};
+
+    use super::ActivityRingSet;
+    use crate::test_helpers::helpers::{setup_test_window, setup_test_window_light};
+
+    struct RingSetHarness;
+
+    impl Render for RingSetHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            ActivityRingSet::fitness(0.5, 0.5, 0.5)
+        }
+    }
+
+    // Regression for https://github.com/df49b9cd/tahoe-gpui/issues/55:
+    // the backdrop must render through `theme.semantic.activity_ring_backdrop`
+    // without panicking under either appearance.
+    #[gpui::test]
+    async fn renders_under_dark_theme(cx: &mut TestAppContext) {
+        let (_host, _cx) = setup_test_window(cx, |_window, _cx| RingSetHarness);
+    }
+
+    #[gpui::test]
+    async fn renders_under_light_theme(cx: &mut TestAppContext) {
+        let (_host, _cx) = setup_test_window_light(cx, |_window, _cx| RingSetHarness);
     }
 }
