@@ -246,10 +246,15 @@ fn for_appearance_glass_with_a11y_promotes_to_hc_when_requested() {
     let dark = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Dark, mode);
     assert!(dark.appearance.is_high_contrast());
     assert!(dark.appearance.is_dark());
+    // Palette is actually swapped, not just the appearance flag.
+    let dark_base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Dark);
+    assert_ne!(dark.palette.red, dark_base.palette.red);
 
     let light = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Light, mode);
     assert!(light.appearance.is_high_contrast());
     assert!(!light.appearance.is_dark());
+    let light_base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Light);
+    assert_ne!(light.palette.red, light_base.palette.red);
 }
 
 #[test]
@@ -261,6 +266,32 @@ fn for_appearance_glass_with_a11y_no_hc_matches_base() {
     );
     assert_eq!(base.appearance, same.appearance);
     assert!(!same.appearance.is_high_contrast());
+}
+
+#[test]
+fn for_appearance_glass_with_a11y_propagates_full_mode() {
+    // Flags other than INCREASE_CONTRAST must be written through to
+    // `theme.accessibility_mode` so downstream motion/bold-text branches
+    // see the caller's intent.
+    let mode = AccessibilityMode::REDUCE_MOTION | AccessibilityMode::BOLD_TEXT;
+    let theme = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert_eq!(theme.accessibility_mode, mode);
+    assert!(!theme.appearance.is_high_contrast());
+
+    let hc = mode | AccessibilityMode::INCREASE_CONTRAST;
+    let theme = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Light, hc);
+    assert_eq!(theme.accessibility_mode, hc);
+    assert!(theme.appearance.is_high_contrast());
+}
+
+#[test]
+fn for_appearance_with_a11y_propagates_full_mode() {
+    // Same guarantee as the glass sibling: the full AccessibilityMode flows
+    // into `theme.accessibility_mode`, not just the INCREASE_CONTRAST bit.
+    let mode = AccessibilityMode::REDUCE_MOTION | AccessibilityMode::BOLD_TEXT;
+    let theme = TahoeTheme::for_appearance_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert_eq!(theme.accessibility_mode, mode);
+    assert!(!theme.appearance.is_high_contrast());
 }
 
 #[test]
