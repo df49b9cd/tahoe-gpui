@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use gpui::SharedString;
 
@@ -45,11 +45,51 @@ pub(crate) enum RenderStrategy {
 /// ```ignore
 /// application().with_assets(EmbeddedIconAssets).run(|cx| { ... });
 /// ```
+///
+/// ## Stroke-width–qualified paths
+///
+/// Paths with a `__sw{value}` suffix (e.g. `icons/symbols/checkmark.svg__sw1.4`)
+/// are resolved by loading the base SVG and replacing every `stroke-width="…"`
+/// attribute with the requested value. The mutated bytes are cached so each
+/// (path, stroke-width) pair is computed at most once.
 pub struct EmbeddedIconAssets;
 
 impl gpui::AssetSource for EmbeddedIconAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        Ok(lookup_svg(path).map(Cow::Borrowed))
+        // Fast path: no __sw suffix → static lookup, zero allocation.
+        if let Some(bytes) = lookup_svg(path) {
+            return Ok(Some(Cow::Borrowed(bytes)));
+        }
+
+        // Slow path: stroke-width–qualified variant.
+        if let Some((base_path, sw)) = parse_stroke_width_path(path) {
+            // Check the variant cache first.
+            if let Some(cached) = SW_VARIANTS
+                .read()
+                .expect("SW_VARIANTS lock poisoned")
+                .get(path)
+            {
+                return Ok(Some(Cow::Owned(cached.clone())));
+            }
+
+            // Load original, mutate stroke-width, cache the result.
+            if let Some(original) = lookup_svg(base_path) {
+                let modified = replace_stroke_width(original, sw);
+                SW_VARIANTS
+                    .write()
+                    .expect("SW_VARIANTS lock poisoned")
+                    .insert(path.to_string(), modified);
+                let cached = SW_VARIANTS
+                    .read()
+                    .expect("SW_VARIANTS lock poisoned")
+                    .get(path)
+                    .expect("just-inserted entry must exist")
+                    .clone();
+                return Ok(Some(Cow::Owned(cached)));
+            }
+        }
+
+        Ok(None)
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
@@ -61,6 +101,55 @@ impl gpui::AssetSource for EmbeddedIconAssets {
     }
 }
 
+/// Stroke-width suffix separator embedded in qualified asset paths.
+const SW_SUFFIX: &str = "__sw";
+
+/// Parse a stroke-width–qualified path like `icons/checkmark.svg__sw1.4`.
+///
+/// Returns `Some((base_path, stroke_width))` on match, `None` otherwise.
+pub(crate) fn parse_stroke_width_path(path: &str) -> Option<(&str, f32)> {
+    let pos = path.rfind(SW_SUFFIX)?;
+    let (base, sw_str) = (&path[..pos], &path[pos + SW_SUFFIX.len()..]);
+    // Guard against false positives — the base must end with ".svg".
+    if !base.ends_with(".svg") {
+        return None;
+    }
+    let sw = sw_str.parse::<f32>().ok()?;
+    Some((base, sw))
+}
+
+/// Replace every `stroke-width="…"` attribute in the SVG bytes with `sw`.
+///
+/// SVG assets use the consistent format `stroke-width="X.XX"`, so a simple
+/// scan-and-replace suffices. Fill-based icons (no `stroke-width` attribute)
+/// are returned unchanged — correct because weight has no visual effect on them.
+pub(crate) fn replace_stroke_width(svg_bytes: &[u8], sw: f32) -> Vec<u8> {
+    let svg = std::str::from_utf8(svg_bytes).expect("SVG assets are valid UTF-8");
+    let new_attr = format!("stroke-width=\"{sw}\"");
+
+    let needle = "stroke-width=\"";
+    let mut result = String::with_capacity(svg.len());
+    let mut pos = 0;
+
+    while pos < svg.len() {
+        if let Some(offset) = svg[pos..].find(needle) {
+            let abs = pos + offset;
+            let value_start = abs + needle.len();
+            // Find the closing quote of the attribute value.
+            if let Some(end_quote) = svg[value_start..].find('"') {
+                result.push_str(&svg[pos..abs]);
+                result.push_str(&new_attr);
+                pos = value_start + end_quote + 1;
+                continue;
+            }
+        }
+        result.push_str(&svg[pos..]);
+        break;
+    }
+
+    result.into_bytes()
+}
+
 /// O(1) lookup from icon path to embedded SVG bytes, built lazily on first use.
 ///
 /// GPUI caches decoded SVGs after first load, so this map is only consulted
@@ -68,6 +157,12 @@ impl gpui::AssetSource for EmbeddedIconAssets {
 /// icon set grows.
 static ICON_INDEX: LazyLock<HashMap<&'static str, &'static [u8]>> =
     LazyLock::new(|| ICON_ENTRIES.iter().copied().collect());
+
+/// Cache for stroke-width–modified SVG variants, keyed by the full qualified
+/// path (e.g. `icons/symbols/checkmark.svg__sw1.4`). Each (path, stroke-width)
+/// pair is computed once and reused for the process lifetime.
+static SW_VARIANTS: LazyLock<RwLock<HashMap<String, Vec<u8>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 fn lookup_svg(path: &str) -> Option<&'static [u8]> {
     ICON_INDEX.get(path).copied()

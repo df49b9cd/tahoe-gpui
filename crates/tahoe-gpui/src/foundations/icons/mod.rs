@@ -59,11 +59,8 @@ use gpui::FontWeight;
 /// axis. Default stroke widths without override: Standard = 1.2,
 /// LiquidGlass = 1.5.
 ///
-/// This function is now part of the public rendering contract. When GPUI
-/// gains per-SVG stroke-width support, `Icon::render` can forward this
-/// value to `svg()`; until then the weight field still has semantic
-/// meaning (stored on `Icon`, inspectable by tests and custom renderers)
-/// so the API is future-proof.
+/// The returned value is applied at render time by mutating the SVG asset's
+/// `stroke-width` attribute when `Icon::weight()` is explicitly set.
 pub fn weight_to_stroke_width(weight: FontWeight) -> f32 {
     if weight == FontWeight::THIN {
         0.8
