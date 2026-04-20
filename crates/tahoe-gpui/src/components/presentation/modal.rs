@@ -367,9 +367,15 @@ impl RenderOnce for Modal {
         // linear cross-fade) and Prefer Cross-Fade (linear opacity at the
         // natural spring duration) in one place.
         let anim_id = ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "present".into());
+        let natural_duration =
+            std::time::Duration::from_millis(theme.glass.motion.lift_duration_ms);
         let animated_body = div().child(self.content).with_animation(
             anim_id,
-            accessible_transition_animation(&theme.glass.motion, theme.accessibility_mode),
+            accessible_transition_animation(
+                &theme.glass.motion,
+                natural_duration,
+                theme.accessibility_mode,
+            ),
             |el, delta| el.opacity(delta),
         );
 

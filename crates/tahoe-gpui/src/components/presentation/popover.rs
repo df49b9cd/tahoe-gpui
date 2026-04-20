@@ -243,10 +243,16 @@ impl RenderOnce for Popover {
                 };
             let is_above = self.placement.is_above();
             let anim_id = ElementId::Name("popover-present".into());
+            let natural_duration =
+                std::time::Duration::from_millis(theme.glass.motion.lift_duration_ms);
             let populated_wrapper = wrapper.child(content_col);
             let animated_wrapper = populated_wrapper.with_animation(
                 anim_id,
-                accessible_transition_animation(&theme.glass.motion, accessibility),
+                accessible_transition_animation(
+                    &theme.glass.motion,
+                    natural_duration,
+                    accessibility,
+                ),
                 move |el, delta| {
                     let offset = translate_px * (1.0 - delta);
                     let signed = if is_above { offset } else { -offset };

@@ -304,6 +304,8 @@ fn render_bottom_drawer(
         };
     let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
     let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
+    let natural_duration =
+        std::time::Duration::from_millis(theme.glass.motion.shape_shift_duration_ms);
     let scroll_body = div()
         .id(scroll_id)
         .flex_1()
@@ -313,7 +315,7 @@ fn render_bottom_drawer(
         .child(content)
         .with_animation(
             anim_id,
-            accessible_transition_animation(&theme.glass.motion, accessibility),
+            accessible_transition_animation(&theme.glass.motion, natural_duration, accessibility),
             move |el, delta| {
                 let offset = slide_offset_pt * (1.0 - delta);
                 el.opacity(delta).mt(px(offset))
@@ -373,6 +375,7 @@ fn render_cardlike(
 
     let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
     let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
+    let natural_duration = std::time::Duration::from_millis(theme.glass.motion.lift_duration_ms);
 
     let animated_body = div()
         .id(scroll_id)
@@ -381,7 +384,11 @@ fn render_cardlike(
         .child(content)
         .with_animation(
             anim_id,
-            accessible_transition_animation(&theme.glass.motion, theme.accessibility_mode),
+            accessible_transition_animation(
+                &theme.glass.motion,
+                natural_duration,
+                theme.accessibility_mode,
+            ),
             |el, delta| el.opacity(delta),
         );
 
