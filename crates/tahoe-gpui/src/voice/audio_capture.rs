@@ -408,8 +408,9 @@ fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use core::prelude::v1::test;
-    use std::sync::Mutex;
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     use super::{
         AudioCaptureError, CapturedAudio, PermissionHint, SharedState, encode_wav, process_samples,
@@ -540,9 +541,6 @@ mod tests {
 
     #[test]
     fn process_samples_survives_poisoned_mutex() {
-        use std::sync::Arc;
-        use std::thread;
-
         let shared = Arc::new(SharedState {
             samples: Mutex::new(Vec::new()),
             current_level: Mutex::new(0.0),
