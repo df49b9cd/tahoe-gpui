@@ -634,7 +634,13 @@ pub fn platform_text_size(platform: &str) -> (f32, f32) {
 /// Uses range-based dispatch so that custom `FontWeight` values (e.g., `FontWeight(150.0)`)
 /// map to the correct next step instead of falling through to BLACK.
 pub fn bold_step(w: FontWeight) -> FontWeight {
-    match w.0 as u32 {
+    // Pass NaN/±∞ through unchanged — saturating `as u32` would otherwise
+    // collapse them to 0 or u32::MAX and silently bucket them as EXTRA_LIGHT
+    // or BLACK.
+    if !w.0.is_finite() {
+        return w;
+    }
+    match w.0.clamp(0.0, 999.0) as u32 {
         // THIN (100) -> EXTRA_LIGHT
         0..150 => FontWeight::EXTRA_LIGHT,
         // EXTRA_LIGHT (200) -> LIGHT

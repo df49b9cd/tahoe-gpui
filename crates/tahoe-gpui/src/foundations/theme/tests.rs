@@ -822,6 +822,34 @@ fn bold_step_black_stays_black() {
     assert_eq!(bold_step(FontWeight::BLACK), FontWeight::BLACK);
 }
 
+#[test]
+fn bold_step_nan_returns_nan() {
+    let result = bold_step(FontWeight(f32::NAN));
+    assert!(result.0.is_nan(), "NaN input should pass through unchanged");
+}
+
+#[test]
+fn bold_step_positive_infinity_returns_infinity() {
+    let result = bold_step(FontWeight(f32::INFINITY));
+    assert_eq!(result.0, f32::INFINITY);
+}
+
+#[test]
+fn bold_step_negative_infinity_returns_negative_infinity() {
+    let result = bold_step(FontWeight(f32::NEG_INFINITY));
+    assert_eq!(result.0, f32::NEG_INFINITY);
+}
+
+#[test]
+fn bold_step_negative_finite_clamps_to_extra_light() {
+    assert_eq!(bold_step(FontWeight(-100.0)), FontWeight::EXTRA_LIGHT);
+}
+
+#[test]
+fn bold_step_huge_positive_saturates_to_black() {
+    assert_eq!(bold_step(FontWeight(10_000.0)), FontWeight::BLACK);
+}
+
 // ─── HIG Alignment: Contrast Ratio Tests ────────────────────────────────
 
 #[test]
