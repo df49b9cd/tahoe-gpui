@@ -1223,7 +1223,8 @@ impl TahoeTheme {
         self.platform.min_target_size()
     }
 
-    /// Visual height in points for a [`ControlSize`] tier on the active
+    /// Visual height in points for a
+    /// [`crate::foundations::layout::ControlSize`] tier on the active
     /// platform. Prefer this over `target_size` / `min_target_size` when
     /// authoring a new component so the control picks up any future
     /// platform-scaling tweaks without code churn.

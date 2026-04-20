@@ -179,12 +179,13 @@ pub enum ButtonShape {
 /// The `Icon*` variants apply icon-only chrome (square aspect, equal insets);
 /// text variants include label padding.
 ///
-/// Maps 1-to-1 onto [`ControlSize`] for the ordinary label tiers (Mini /
-/// Small / Regular / Large / ExtraLarge). [`ButtonSize::IconSmall`] and
-/// [`ButtonSize::Icon`] are button-specific icon-only shapes that reuse
-/// the `Small` and `Regular` heights respectively. Heights are resolved
-/// through [`TahoeTheme::control_height`] so the values track platform
-/// scaling.
+/// Maps 1-to-1 onto [`crate::foundations::layout::ControlSize`] for the
+/// ordinary label tiers (Mini / Small / Regular / Large / ExtraLarge).
+/// [`ButtonSize::IconSmall`] and [`ButtonSize::Icon`] are button-specific
+/// icon-only shapes that reuse the `Small` and `Regular` heights
+/// respectively. Heights are resolved through
+/// [`crate::foundations::theme::TahoeTheme::control_height`] so the
+/// values track platform scaling.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ButtonSize {
     /// SwiftUI `.mini` — 20 pt on macOS. Use inside dense inspectors,
@@ -212,8 +213,9 @@ pub enum ButtonSize {
 }
 
 impl ButtonSize {
-    /// Return the [`ControlSize`] tier this size maps to. The two
-    /// icon-only variants collapse onto their equivalent label tier.
+    /// Return the [`crate::foundations::layout::ControlSize`] tier this
+    /// size maps to. The two icon-only variants collapse onto their
+    /// equivalent label tier.
     pub fn control_size(self) -> crate::foundations::layout::ControlSize {
         use crate::foundations::layout::ControlSize;
         match self {
