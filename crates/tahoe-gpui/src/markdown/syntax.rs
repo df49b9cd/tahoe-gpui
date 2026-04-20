@@ -6,6 +6,7 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
+use tree_sitter::QueryError;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 thread_local! {
@@ -256,21 +257,32 @@ pub fn build_styled_highlights(
 
 macro_rules! define_language {
     ($fn_name:ident, $lang_fn:expr, $name:expr, $highlights:expr) => {
-        fn $fn_name() -> &'static HighlightConfiguration {
-            static CONFIG: OnceLock<HighlightConfiguration> = OnceLock::new();
+        fn $fn_name() -> Option<&'static HighlightConfiguration> {
+            static CONFIG: OnceLock<Result<HighlightConfiguration, QueryError>> = OnceLock::new();
             CONFIG.get_or_init(|| {
                 let language = $lang_fn;
-                let mut config = HighlightConfiguration::new(
+                match HighlightConfiguration::new(
                     language.into(),
                     $name,
                     $highlights,
                     "", // injection query
                     "", // locals query
-                )
-                .expect(concat!("Failed to create highlight config for ", $name));
-                config.configure(HIGHLIGHT_NAMES);
-                config
-            })
+                ) {
+                    Ok(mut config) => {
+                        config.configure(HIGHLIGHT_NAMES);
+                        Ok(config)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            language = $name,
+                            error = %e,
+                            "Failed to create tree-sitter highlight config; \
+                             falling back to plain text for this language"
+                        );
+                        Err(e)
+                    }
+                }
+            }).as_ref().ok()
         }
     };
 }
@@ -317,21 +329,35 @@ define_language!(
     tree_sitter_json::HIGHLIGHTS_QUERY
 );
 
-fn toml_config() -> &'static HighlightConfiguration {
-    static CONFIG: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        let language = tree_sitter_toml_ng::LANGUAGE;
-        let mut config = HighlightConfiguration::new(
-            language.into(),
-            "toml",
-            tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
-            "",
-            "",
-        )
-        .expect("Failed to create highlight config for toml");
-        config.configure(HIGHLIGHT_NAMES);
-        config
-    })
+fn toml_config() -> Option<&'static HighlightConfiguration> {
+    static CONFIG: OnceLock<Result<HighlightConfiguration, QueryError>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let language = tree_sitter_toml_ng::LANGUAGE;
+            match HighlightConfiguration::new(
+                language.into(),
+                "toml",
+                tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
+                "",
+                "",
+            ) {
+                Ok(mut config) => {
+                    config.configure(HIGHLIGHT_NAMES);
+                    Ok(config)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        language = "toml",
+                        error = %e,
+                        "Failed to create tree-sitter highlight config; \
+                         falling back to plain text for this language"
+                    );
+                    Err(e)
+                }
+            }
+        })
+        .as_ref()
+        .ok()
 }
 
 define_language!(
@@ -450,25 +476,25 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
 /// Look up a language highlight configuration by name.
 fn get_language_config(name: &str) -> Option<&'static HighlightConfiguration> {
     match name.to_lowercase().as_str() {
-        "rust" | "rs" => Some(rust_config()),
-        "python" | "py" => Some(python_config()),
-        "javascript" | "js" | "jsx" => Some(javascript_config()),
-        "typescript" | "ts" => Some(typescript_config()),
-        "tsx" => Some(tsx_config()),
-        "json" | "jsonc" => Some(json_config()),
-        "toml" => Some(toml_config()),
-        "bash" | "sh" | "shell" | "zsh" => Some(bash_config()),
-        "go" | "golang" => Some(go_config()),
-        "c" => Some(c_config()),
-        "cpp" | "c++" | "cxx" | "cc" => Some(cpp_config()),
-        "css" => Some(css_config()),
-        "html" | "htm" => Some(html_config()),
-        "yaml" | "yml" => Some(yaml_config()),
-        "markdown" | "md" => Some(markdown_config()),
-        "java" => Some(java_config()),
-        "ruby" | "rb" => Some(ruby_config()),
-        "php" => Some(php_config()),
-        "sql" => Some(sql_config()),
+        "rust" | "rs" => rust_config(),
+        "python" | "py" => python_config(),
+        "javascript" | "js" | "jsx" => javascript_config(),
+        "typescript" | "ts" => typescript_config(),
+        "tsx" => tsx_config(),
+        "json" | "jsonc" => json_config(),
+        "toml" => toml_config(),
+        "bash" | "sh" | "shell" | "zsh" => bash_config(),
+        "go" | "golang" => go_config(),
+        "c" => c_config(),
+        "cpp" | "c++" | "cxx" | "cc" => cpp_config(),
+        "css" => css_config(),
+        "html" | "htm" => html_config(),
+        "yaml" | "yml" => yaml_config(),
+        "markdown" | "md" => markdown_config(),
+        "java" => java_config(),
+        "ruby" | "rb" => ruby_config(),
+        "php" => php_config(),
+        "sql" => sql_config(),
         _ => None,
     }
 }
