@@ -1310,3 +1310,275 @@ fn custom_handler_priority_before_builtin() {
     let result = remend("hello", &opts);
     assert_eq!(result.as_ref(), "PREFIX: hello");
 }
+
+// ===========================================================================
+// Property-based tests (fuzz invariants)
+// ===========================================================================
+
+use std::sync::{Arc, Mutex};
+
+use proptest::prelude::*;
+
+use super::RemendHandler;
+
+/// Biases toward characters remend actually inspects — markdown punctuation,
+/// KaTeX/HTML delimiters, whitespace, and plain alphanumerics. Capped at 120
+/// chars so shrunk counterexamples stay readable.
+fn markdown_soup() -> impl Strategy<Value = String> {
+    prop::string::string_regex(r"[ \n\t*_`~\[\]()<>!#$\\a-zA-Z0-9-]{0,120}").unwrap()
+}
+
+#[derive(Debug, Clone)]
+struct OptionFlags {
+    bold: bool,
+    italic: bool,
+    bold_italic: bool,
+    inline_code: bool,
+    strikethrough: bool,
+    links: bool,
+    images: bool,
+    katex: bool,
+    inline_katex: bool,
+    setext_headings: bool,
+    html_tags: bool,
+    single_tilde: bool,
+    comparison_operators: bool,
+    link_mode: LinkMode,
+}
+
+impl OptionFlags {
+    fn to_options(&self) -> RemendOptions {
+        RemendOptions::default()
+            .bold(self.bold)
+            .italic(self.italic)
+            .bold_italic(self.bold_italic)
+            .inline_code(self.inline_code)
+            .strikethrough(self.strikethrough)
+            .links(self.links)
+            .images(self.images)
+            .katex(self.katex)
+            .inline_katex(self.inline_katex)
+            .setext_headings(self.setext_headings)
+            .html_tags(self.html_tags)
+            .single_tilde(self.single_tilde)
+            .comparison_operators(self.comparison_operators)
+            .link_mode(self.link_mode)
+    }
+}
+
+fn arbitrary_options() -> impl Strategy<Value = OptionFlags> {
+    // Nested tuples: proptest's Strategy impl caps at 10-tuples.
+    (
+        (
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+        (
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            prop_oneof![Just(LinkMode::Protocol), Just(LinkMode::TextOnly)],
+        ),
+    )
+        .prop_map(
+            |(
+                (bold, italic, bold_italic, inline_code, strikethrough, links, images),
+                (
+                    katex,
+                    inline_katex,
+                    setext_headings,
+                    html_tags,
+                    single_tilde,
+                    comparison_operators,
+                    link_mode,
+                ),
+            )| OptionFlags {
+                bold,
+                italic,
+                bold_italic,
+                inline_code,
+                strikethrough,
+                links,
+                images,
+                katex,
+                inline_katex,
+                setext_headings,
+                html_tags,
+                single_tilde,
+                comparison_operators,
+                link_mode,
+            },
+        )
+}
+
+/// Records handler executions so the ordering property can assert the
+/// pipeline respects priority.
+#[derive(Clone)]
+struct Recorder {
+    tag: char,
+    pri: i32,
+    log: Arc<Mutex<String>>,
+}
+
+impl RemendHandler for Recorder {
+    fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.log.lock().unwrap().push(self.tag);
+        Cow::Borrowed(text)
+    }
+    fn name(&self) -> &str {
+        "recorder"
+    }
+    fn priority(&self) -> i32 {
+        self.pri
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    #[test]
+    fn prop_never_panics_on_arbitrary_utf8(chars in prop::collection::vec(any::<char>(), 0..256)) {
+        let s: String = chars.iter().collect();
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn prop_never_panics_on_prefixes(
+        chars in prop::collection::vec(any::<char>(), 0..128),
+        idx in any::<usize>(),
+    ) {
+        let s: String = chars.iter().collect();
+        let boundaries: Vec<usize> = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(s.len()))
+            .collect();
+        let cut = boundaries[idx % boundaries.len()];
+        let _ = remend(&s[..cut], &RemendOptions::default());
+    }
+
+    // The four idempotency properties below currently fail on the shrunk seed
+    // `"*0\t"` (see proptest-regressions/tests.txt) — italic-asterisk handler
+    // re-opens on the second pass. Tracked as follow-up issue #144; re-enable
+    // once fixed.
+    #[test]
+    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
+    fn prop_idempotent_default_options(s in markdown_soup()) {
+        let opts = RemendOptions::default();
+        let once = remend(&s, &opts).into_owned();
+        let twice = remend(&once, &opts).into_owned();
+        prop_assert_eq!(twice, once);
+    }
+
+    #[test]
+    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
+    fn prop_idempotent_textonly_linkmode(s in markdown_soup()) {
+        let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+        let once = remend(&s, &opts).into_owned();
+        let twice = remend(&once, &opts).into_owned();
+        prop_assert_eq!(twice, once);
+    }
+
+    #[test]
+    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
+    fn prop_idempotent_inline_katex_enabled(s in markdown_soup()) {
+        let opts = RemendOptions::default().inline_katex(true);
+        let once = remend(&s, &opts).into_owned();
+        let twice = remend(&once, &opts).into_owned();
+        prop_assert_eq!(twice, once);
+    }
+
+    #[test]
+    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
+    fn prop_idempotent_all_option_combinations(
+        s in markdown_soup(),
+        flags in arbitrary_options(),
+    ) {
+        let once = remend(&s, &flags.to_options()).into_owned();
+        let twice = remend(&once, &flags.to_options()).into_owned();
+        prop_assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn prop_incomplete_autolinks_never_panic(
+        prefix in markdown_soup(),
+        url in r"<https?://[a-zA-Z0-9./\-_]{0,40}",
+        suffix in markdown_soup(),
+    ) {
+        let s = format!("{prefix}{url}{suffix}");
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn prop_reference_style_links_never_panic(
+        s in r"\[[a-zA-Z0-9 ]{0,20}\](\[[a-zA-Z0-9]{0,10}\])?(\n\[[a-zA-Z0-9]{0,10}\]: https?://[a-zA-Z0-9./\-]{0,30})?",
+    ) {
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn prop_handler_order_matches_priority_sort(
+        specs in prop::collection::vec((0u8..26, -10i32..=200), 1..=5),
+    ) {
+        let log = Arc::new(Mutex::new(String::new()));
+
+        // Disable every built-in so only the custom recorders run.
+        let mut opts = RemendOptions::default()
+            .bold(false)
+            .italic(false)
+            .bold_italic(false)
+            .inline_code(false)
+            .strikethrough(false)
+            .links(false)
+            .images(false)
+            .katex(false)
+            .inline_katex(false)
+            .setext_headings(false)
+            .html_tags(false)
+            .single_tilde(false)
+            .comparison_operators(false);
+
+        for (idx, pri) in &specs {
+            opts.handlers.push(Box::new(Recorder {
+                tag: (b'a' + idx) as char,
+                pri: *pri,
+                log: log.clone(),
+            }));
+        }
+
+        let _ = remend("x", &opts);
+
+        let actual = log.lock().unwrap().clone();
+
+        // Stable sort: equal priorities preserve insertion order — mirrors
+        // `sort_by_key` in the pipeline at lib.rs.
+        let mut expected_indices: Vec<usize> = (0..specs.len()).collect();
+        expected_indices.sort_by_key(|&i| specs[i].1);
+        let expected: String = expected_indices
+            .into_iter()
+            .map(|i| (b'a' + specs[i].0) as char)
+            .collect();
+
+        prop_assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn prop_trailing_single_space_stripped(s in markdown_soup()) {
+        // Force exactly one trailing space (not two, which would be a line break).
+        let trimmed = s.trim_end_matches(' ');
+        let input = format!("{trimmed} ");
+        let result = remend(&input, &RemendOptions::default()).into_owned();
+        prop_assert!(
+            !result.ends_with(' ') || result.ends_with("  "),
+            "single trailing space should be stripped; got {result:?}",
+        );
+    }
+}
