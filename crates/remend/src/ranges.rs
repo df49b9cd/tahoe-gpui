@@ -1,4 +1,4 @@
-use super::utils::{fence_run_length, parse_fence_at_line_start};
+use super::utils::{FenceHit, fence_run_length, parse_fence_at_line_start};
 
 /// Pre-computed ranges of text that are inside code blocks, inline code spans, or math blocks.
 /// Used to skip these regions in emphasis/katex handlers without redundant O(n) scans.
@@ -96,18 +96,10 @@ impl CodeBlockRanges {
         let mut code_block_start: usize = 0;
         let mut in_inline_code = false;
         let mut inline_code_start: usize = 0;
-        let mut line_start: usize = 0;
-        let mut fence_on_line: Option<crate::utils::FenceHit> = None;
-        let mut fence_line_start_seen = usize::MAX;
+        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
         let mut i = 0;
 
         while i < len {
-            // Refresh the per-line fence cache when we cross a line start.
-            if line_start != fence_line_start_seen {
-                fence_on_line = parse_fence_at_line_start(bytes, line_start);
-                fence_line_start_seen = line_start;
-            }
-
             // Toggle fence state when we reach the first fence char on a fence line.
             if !in_inline_code
                 && let Some(hit) = fence_on_line.as_ref()
@@ -143,13 +135,14 @@ impl CodeBlockRanges {
                 continue;
             }
 
-            // Mid-line 3+ backtick/tilde runs are not fences; skip inert.
-            if !in_inline_code
-                && (bytes[i] == b'`' || bytes[i] == b'~')
-                && fence_run_length(bytes, i, bytes[i]) >= 3
-            {
-                i += fence_run_length(bytes, i, bytes[i]);
-                continue;
+            // Mid-line 3+ backtick/tilde runs are inert literals — not a fence
+            // and not a valid single-backtick closer (issue #50 follow-up).
+            if bytes[i] == b'`' || bytes[i] == b'~' {
+                let run = fence_run_length(bytes, i, bytes[i]);
+                if run >= 3 {
+                    i += run;
+                    continue;
+                }
             }
 
             // Only check for inline code if not in multiline code.
@@ -164,16 +157,25 @@ impl CodeBlockRanges {
                 }
             }
             if bytes[i] == b'\n' {
-                line_start = i + 1;
+                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
+                // Close any open inline span at the newline to match
+                // `is_inside_code_block`'s reset (issue #50 follow-up).
+                if in_inline_code {
+                    ranges.push(inline_code_start..i + 1);
+                    in_inline_code = false;
+                }
             }
             i += 1;
         }
 
-        // If still in a code block or inline code at end of text, the rest is "inside code".
+        // If still in a code block or inline code at end of text, every position
+        // from the opener through `len` is inside code. Using `len + 1` as the
+        // exclusive end keeps `is_inside_code(len)` in agreement with
+        // `is_inside_code_block(text, len)` for unterminated fences.
         if in_code_block && code_block_start <= len {
-            ranges.push(code_block_start..len);
+            ranges.push(code_block_start..len + 1);
         } else if in_inline_code && inline_code_start <= len {
-            ranges.push(inline_code_start..len);
+            ranges.push(inline_code_start..len + 1);
         }
 
         ranges
@@ -192,17 +194,10 @@ impl CodeBlockRanges {
         let mut opening_fence_char: u8 = 0;
         let mut opening_fence_len: usize = 0;
         let mut inline_code_start: usize = 0;
-        let mut line_start: usize = 0;
-        let mut fence_on_line: Option<crate::utils::FenceHit> = None;
-        let mut fence_line_start_seen = usize::MAX;
+        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
         let mut i = 0;
 
         while i < len {
-            if line_start != fence_line_start_seen {
-                fence_on_line = parse_fence_at_line_start(bytes, line_start);
-                fence_line_start_seen = line_start;
-            }
-
             if !in_inline_code
                 && let Some(hit) = fence_on_line.as_ref()
                 && i == hit.run_start
@@ -225,13 +220,13 @@ impl CodeBlockRanges {
                 continue;
             }
 
-            // Mid-line 3+ backtick/tilde runs are not fences; skip inert.
-            if !in_inline_code
-                && (bytes[i] == b'`' || bytes[i] == b'~')
-                && fence_run_length(bytes, i, bytes[i]) >= 3
-            {
-                i += fence_run_length(bytes, i, bytes[i]);
-                continue;
+            // Mid-line 3+ backtick/tilde runs are inert literals (issue #50 follow-up).
+            if bytes[i] == b'`' || bytes[i] == b'~' {
+                let run = fence_run_length(bytes, i, bytes[i]);
+                if run >= 3 {
+                    i += run;
+                    continue;
+                }
             }
 
             if !in_multiline_code && bytes[i] == b'`' {
@@ -244,7 +239,11 @@ impl CodeBlockRanges {
                 }
             }
             if bytes[i] == b'\n' {
-                line_start = i + 1;
+                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
+                // Inline spans don't survive newlines in this streaming
+                // approximation; discard the unclosed span without pushing a
+                // range since we only track *complete* spans.
+                in_inline_code = false;
             }
             i += 1;
         }
@@ -464,10 +463,18 @@ mod tests {
             "a ```inline fence``` b",
             "   ```\ncode",
             "    ```\nnot a fence",
+            // Issue #50 follow-up: char mismatch, unterminated, and tilde-symmetric.
+            "```\ncode\n~~~\nmore",
+            "~~~\ncode\n```\nmore",
+            "```\nunclosed",
+            "~~~\nunclosed",
+            "````\n```\nshort closer no good\n````",
+            "text ~~~ more\n**bold",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            // Cover position == len too — C10 (trailing-range push) depends on it.
+            for pos in 0..=text.len() {
                 let expected = utils::is_inside_code_block(text, pos);
                 let actual = ranges.is_inside_code(pos);
                 assert_eq!(
@@ -490,10 +497,13 @@ mod tests {
             // Issue #50: mid-line 3+ backtick runs are inert, not inline code.
             "hello ```\ncode",
             "a ```run``` b",
+            // Issue #50 follow-up: newline closes any in-progress inline span.
+            "`unclosed\nnext",
+            "`one`\n`two`",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            for pos in 0..=text.len() {
                 let expected = utils::is_within_complete_inline_code(text, pos);
                 let actual = ranges.is_within_complete_inline_code(pos);
                 assert_eq!(

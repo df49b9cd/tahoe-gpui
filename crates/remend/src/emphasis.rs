@@ -818,10 +818,78 @@ pub(crate) fn handle_bold_italic_with_ranges<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_bold, handle_bold_italic, handle_double_underscore, handle_italic_asterisk,
-        handle_italic_underscore,
+        count_double_asterisks, count_double_underscores, count_single_asterisks,
+        count_single_underscores, count_triple_asterisks, find_first_single_asterisk_index,
+        find_first_single_underscore_index, handle_bold, handle_bold_italic,
+        handle_double_underscore, handle_italic_asterisk, handle_italic_underscore,
     };
     use std::borrow::Cow;
+
+    // Direct counter coverage (issue #50 follow-up): verify the six fence-aware
+    // emphasis helpers all treat mid-line 3+ runs as prose and honor line-start
+    // fences identically.
+
+    #[test]
+    fn single_asterisks_counted_outside_mid_line_run() {
+        // `*italic` sits after a mid-line ``` which must NOT open a fence.
+        assert_eq!(count_single_asterisks("hello ```\n*italic"), 1);
+    }
+
+    #[test]
+    fn single_asterisks_ignored_inside_fenced_block() {
+        assert_eq!(count_single_asterisks("```\n*italic\n```"), 0);
+    }
+
+    #[test]
+    fn single_underscores_counted_outside_mid_line_run() {
+        assert_eq!(count_single_underscores("hello ```\n_italic"), 1);
+    }
+
+    #[test]
+    fn single_underscores_ignored_inside_fenced_block() {
+        assert_eq!(count_single_underscores("```\n_italic\n```"), 0);
+    }
+
+    #[test]
+    fn triple_asterisks_counted_across_mid_line_run() {
+        // Mid-line ``` splits a `***` streak; run is inert, streak continues.
+        assert_eq!(count_triple_asterisks("**```*"), 1);
+    }
+
+    #[test]
+    fn triple_asterisks_ignored_inside_fenced_block() {
+        assert_eq!(count_triple_asterisks("```\n***\n```"), 0);
+    }
+
+    #[test]
+    fn double_markers_counted_outside_mid_line_run() {
+        // Mid-line ``` must not open a fence, so **bold is countable.
+        assert_eq!(count_double_asterisks("x ```\n**bold"), 1);
+        assert_eq!(count_double_underscores("x ```\n__bold"), 1);
+    }
+
+    #[test]
+    fn double_markers_ignored_inside_fenced_block() {
+        assert_eq!(count_double_asterisks("```\n**bold\n```"), 0);
+        assert_eq!(count_double_underscores("```\n__bold\n```"), 0);
+    }
+
+    #[test]
+    fn first_single_asterisk_index_skips_fenced_block() {
+        // Asterisk inside the fence is ignored; the one on the "after" line wins.
+        assert_eq!(
+            find_first_single_asterisk_index("```\n*inside\n```\n*after"),
+            Some(16),
+        );
+    }
+
+    #[test]
+    fn first_single_underscore_index_skips_fenced_block() {
+        assert_eq!(
+            find_first_single_underscore_index("```\n_inside\n```\n_after"),
+            Some(16),
+        );
+    }
 
     // Bold tests
     #[test]

@@ -1381,13 +1381,33 @@ fn markdown_soup() -> impl Strategy<Value = String> {
 /// Fence-rich generator: mixes prose, newlines, leading-space indents, and
 /// backtick/tilde runs of assorted lengths so line-start vs mid-line fence
 /// decisions get exercised. Used by the cross-scanner agreement proptest.
+///
+/// Tildes are given equal weight to backticks so the proptest regularly
+/// exercises tilde fences, not just the more common backtick case.
 fn fence_soup() -> impl Strategy<Value = String> {
+    prop::collection::vec(
+        prop_oneof![
+            2 => prop::string::string_regex(r"[a-z ]{0,6}").unwrap(),
+            2 => Just("\n".into()),
+            1 => Just("```".into()),
+            1 => Just("````".into()),
+            1 => Just("~~~".into()),
+            1 => Just("~~~~".into()),
+            1 => Just("   ".into()),
+            1 => Just("    ".into()),
+        ],
+        0..20,
+    )
+    .prop_map(|parts: Vec<String>| parts.concat())
+}
+
+/// Tilde-only fence generator — the mid-line `~~~` case must hold just as
+/// strictly as the backtick case, so give it a dedicated proptest.
+fn tilde_fence_soup() -> impl Strategy<Value = String> {
     prop::collection::vec(
         prop_oneof![
             prop::string::string_regex(r"[a-z ]{0,6}").unwrap(),
             Just("\n".into()),
-            Just("```".into()),
-            Just("````".into()),
             Just("~~~".into()),
             Just("~~~~".into()),
             Just("   ".into()),
@@ -1690,15 +1710,32 @@ proptest! {
     // Issue #50 regression guard: `has_incomplete_code_fence` and
     // `is_inside_code_block` both drive fence detection and must agree on
     // fence openness, or streaming emphasis gets silently swallowed.
-    // Restrict to backtick-free inputs so the `in_inline_code` branch of
-    // `is_inside_code_block` never fires — any divergence is then purely
-    // fence-state divergence.
+    // Reject any input containing a non-fence backtick run (length 1 or 2) so
+    // the inline-code branch of `is_inside_code_block` stays out of the
+    // invariant; any divergence is then purely fence-state divergence.
     #[test]
     fn fuzz_fence_scanners_agree_without_single_backticks(
         s in fence_soup().prop_filter(
-            "no single backticks — keeps in_inline_code out of the invariant",
-            |s| !s.chars().any(|c| c == '`')
-                || s.as_bytes().windows(3).any(|w| w == b"```"),
+            "all backtick runs must have length >= 3",
+            |s| {
+                let bytes = s.as_bytes();
+                let mut i = 0;
+                while i < bytes.len() {
+                    if bytes[i] == b'`' {
+                        let mut run = 0;
+                        while i + run < bytes.len() && bytes[i + run] == b'`' {
+                            run += 1;
+                        }
+                        if run < 3 {
+                            return false;
+                        }
+                        i += run;
+                    } else {
+                        i += 1;
+                    }
+                }
+                true
+            },
         ),
     ) {
         // Any backtick that remains is part of a 3+ run (fence-only).
@@ -1708,6 +1745,20 @@ proptest! {
             has_open,
             ends_inside,
             "fence-open divergence on {:?}",
+            s,
+        );
+    }
+
+    // Same property but over tilde-only inputs — tildes never participate in
+    // inline code, so no filter is needed.
+    #[test]
+    fn fuzz_tilde_fence_scanners_agree(s in tilde_fence_soup()) {
+        let has_open = has_incomplete_code_fence(&s);
+        let ends_inside = is_inside_code_block(&s, s.len());
+        prop_assert_eq!(
+            has_open,
+            ends_inside,
+            "tilde fence-open divergence on {:?}",
             s,
         );
     }

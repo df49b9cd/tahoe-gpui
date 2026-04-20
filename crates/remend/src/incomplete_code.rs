@@ -162,6 +162,23 @@ mod tests {
     }
 
     #[test]
+    fn no_fence_for_mid_line_backticks() {
+        // Issue #50: mid-line ``` is not a fence, so no block opens.
+        assert!(!has_incomplete_code_fence("hello ```\ncode"));
+    }
+
+    #[test]
+    fn no_fence_for_mid_line_tildes() {
+        assert!(!has_incomplete_code_fence("hello ~~~\ncode"));
+    }
+
+    #[test]
+    fn mid_line_fence_on_only_line_is_not_a_fence() {
+        // Single-line with mid-line run also must not toggle fence state.
+        assert!(!has_incomplete_code_fence("a ```inline fence``` b"));
+    }
+
+    #[test]
     fn detects_simple_table() {
         assert!(has_table("| a | b |\n| --- | --- |\n| 1 | 2 |"));
     }
