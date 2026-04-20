@@ -802,7 +802,7 @@ impl RenderOnce for Button {
             // variants (Ghost, Outline). Using Button's own text_disabled
             // token instead of ButtonLike's default opacity(0.5).
             el = el.text_color(theme.text_disabled()).cursor_default();
-        } else if !self.loading {
+        } else if !interactive_blocked {
             // Press should feel deeper than hover. For light-fill variants
             // (Primary, Outline, Secondary, Ghost) we darken further. For
             // dark-fill variants (Filled in light mode) we lighten further
