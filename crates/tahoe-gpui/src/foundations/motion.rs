@@ -406,8 +406,9 @@ pub fn reduce_motion_substitute(
 /// interruption (open question #1 on the internal tracker).
 pub fn spring_easing(damping: f32, response: f32, bounce: f32) -> impl Fn(f32) -> f32 {
     // Total animation spans ~`4 * response` seconds (see `spring_duration_ms`),
-    // so `t ∈ [0, 1]` already covers four response periods. Scale oscillation
-    // frequency so shorter response yields tighter wobble, matching SwiftUI.
+    // so `t ∈ [0, 1]` already covers four response periods. Decay rate and
+    // bounce oscillation frequency both scale with `periods` (= 4/response)
+    // so shorter response yields faster settle and tighter wobble.
     let response = response.max(1e-3);
     let periods = (4.0 / response).clamp(1.0, 12.0);
     move |t: f32| {
@@ -417,16 +418,16 @@ pub fn spring_easing(damping: f32, response: f32, bounce: f32) -> impl Fn(f32) -
         if t <= 0.0 {
             return 0.0;
         }
-        // Approximate spring with exponential decay + optional overshoot.
-        // Decay rate scales with `periods` so shorter response settles within
-        // the same normalized window.
+        // Exponential decay envelope — shorter response yields faster settle.
         let decay = (-damping * t * (periods + 2.0)).exp();
-        let oscillation = if bounce > 0.0 {
-            (t * std::f32::consts::PI * (periods + bounce * 2.0)).sin()
+        if bounce > 0.0 {
+            // Underdamped spring: cos oscillation lets the curve overshoot
+            // past 1.0 (cos goes negative) before settling back.
+            let phase = t * std::f32::consts::PI * 2.0 * (periods / 8.0 + bounce);
+            1.0 - decay * phase.cos()
         } else {
-            0.0
-        };
-        (1.0 - decay * (1.0 - oscillation * bounce * 0.3)).clamp(0.0, 1.0)
+            1.0 - decay
+        }
     }
 }
 
@@ -491,6 +492,30 @@ mod tests {
     fn spring_preset_bouncy_has_bounce() {
         let (_, _, bounce) = SpringPreset::Bouncy.params();
         assert!(bounce > 0.0);
+    }
+
+    #[test]
+    fn spring_easing_bouncy_produces_overshoot() {
+        let (damping, response, bounce) = SpringPreset::Bouncy.params();
+        let easing = super::spring_easing(damping, response, bounce);
+        let mut max = 0.0_f32;
+        let mut max_t = 0.0_f32;
+        for i in 0..=1000 {
+            let t = i as f32 / 1000.0;
+            let v = easing(t);
+            if v > max {
+                max = v;
+                max_t = t;
+            }
+        }
+        assert!(
+            max > 1.0,
+            "Bouncy spring must overshoot past 1.0, but max was {max}"
+        );
+        assert!(
+            max_t > 0.0 && max_t < 1.0,
+            "Overshoot must occur at an intermediate t, but max_t was {max_t}"
+        );
     }
 
     #[test]
