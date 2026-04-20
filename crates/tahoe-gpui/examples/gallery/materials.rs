@@ -60,7 +60,8 @@ pub fn render(
             .child(label(name))
     };
 
-    let thickness_card = |thickness: MaterialThickness, name: &'static str, pct: &'static str| {
+    let thickness_card = |thickness: MaterialThickness, name: &'static str, theme: &TahoeTheme| {
+        let pct = format!("{:.0}%", theme.glass.material_bg(thickness).a * 100.0);
         div()
             .flex()
             .flex_col()
@@ -158,9 +159,9 @@ pub fn render(
                 .text_color(theme.text_muted)
                 .child(
                     "Per HIG: thicker materials are more opaque. Ultra Thin \
-                     (15%) shows most of the wallpaper through, while Ultra Thick \
-                     (70%) is nearly solid. The effect is best seen with a colorful \
-                     desktop wallpaper behind the window.",
+                     (10–36% dark–light) shows most of the wallpaper through, \
+                     while Ultra Thick (50–84%) is nearly solid. The effect is \
+                     best seen with a colorful desktop wallpaper behind the window.",
                 ),
         )
         .child(
@@ -170,15 +171,15 @@ pub fn render(
                 .child(thickness_card(
                     MaterialThickness::UltraThin,
                     "Ultra Thin",
-                    "15%",
+                    theme,
                 ))
-                .child(thickness_card(MaterialThickness::Thin, "Thin", "25%"))
-                .child(thickness_card(MaterialThickness::Regular, "Regular", "40%"))
-                .child(thickness_card(MaterialThickness::Thick, "Thick", "55%"))
+                .child(thickness_card(MaterialThickness::Thin, "Thin", theme))
+                .child(thickness_card(MaterialThickness::Regular, "Regular", theme))
+                .child(thickness_card(MaterialThickness::Thick, "Thick", theme))
                 .child(thickness_card(
                     MaterialThickness::UltraThick,
                     "Ultra Thick",
-                    "70%",
+                    theme,
                 )),
         )
         // ── How it works ─────────────────────────────────────────
