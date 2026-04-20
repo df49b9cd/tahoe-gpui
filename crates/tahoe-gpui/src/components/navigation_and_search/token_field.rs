@@ -183,14 +183,17 @@ impl TokenField {
     /// Subscribes to the field's on_change so that typing commit-key
     /// characters commits the current content as a token.
     pub fn set_text_field(&mut self, field: gpui::Entity<TextField>, cx: &mut Context<Self>) {
-        let entity = cx.entity().clone();
+        // Weak handle: a strong clone would form a cycle because the
+        // TextField stores this closure in on_change and self.text_field
+        // holds the TextField.
+        let weak = cx.weak_entity();
         field.update(cx, |tf, _cx| {
             tf.set_on_change(move |text, window, cx| {
                 let current = text.to_string();
                 // Detect trailing commit-key character (e.g. comma).
                 // Enter is handled separately via the TextField's submit
                 // binding when wired by the host.
-                entity.update(cx, |this, cx| {
+                weak.update(cx, |this, cx| {
                     if let Some(commit_char) = this.commit_keys.iter().find_map(|k| {
                         let len = k.chars().count();
                         if len == 1 && current.ends_with(k.as_str()) {
@@ -214,7 +217,8 @@ impl TokenField {
                         }
                         cx.notify();
                     }
-                });
+                })
+                .ok();
             });
         });
         self.text_field = Some(field);
@@ -1171,5 +1175,45 @@ mod interaction_tests {
         field.update_in(cx, |field, _window, _cx| {
             assert!(!field.all_tokens_selected());
         });
+    }
+
+    // ── Reference-cycle regression ─────────────────────────────────────
+
+    #[gpui::test]
+    async fn set_text_field_does_not_leak_via_on_change_cycle(cx: &mut TestAppContext) {
+        use gpui::{Context, IntoElement, Render, Window, div};
+
+        // Neutral root view: Host does not retain the TokenField or
+        // TextField, so the only strong refs are the ones we manage here.
+        struct Host;
+        impl Render for Host {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                div()
+            }
+        }
+
+        let (host, cx) = setup_test_window(cx, |_window, _cx| Host);
+
+        let (weak_field, weak_tf) = host.update_in(cx, |_host, _window, cx| {
+            let field = cx.new(TokenField::new);
+            let tf = cx.new(TextField::new);
+            field.update(cx, |tok, cx| tok.set_text_field(tf.clone(), cx));
+            (field.downgrade(), tf.downgrade())
+        });
+
+        cx.run_until_parked();
+
+        assert!(
+            weak_field.upgrade().is_none(),
+            "TokenField leaked — strong-ref cycle with TextField regressed"
+        );
+        assert!(
+            weak_tf.upgrade().is_none(),
+            "TextField leaked — strong-ref cycle with TokenField regressed"
+        );
     }
 }
