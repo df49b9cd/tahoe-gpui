@@ -56,6 +56,24 @@
 //! - `backdrop_blur_overlay()` — Full-viewport backdrop with explicit
 //!   [`BlurEffect`]; today emits the tint and records the intent.
 //!
+//! # Current rendering limitation
+//!
+//! GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so every
+//! surface function in this module is a translucent tinted fill plus
+//! shadows — no per-element compositing of the content behind the element.
+//! On macOS, when the window uses `WindowBackgroundAppearance::Blurred`
+//! (NSVisualEffectView) — set via `theme.glass.window_background` in
+//! `WindowOptions` or by calling [`TahoeTheme::apply_in_window`] — glass is
+//! translucent to the **desktop wallpaper behind the window** but NOT to
+//! sibling GPUI elements in the same window. On a window created with
+//! `WindowBackgroundAppearance::Opaque` (the default non-glass case), even
+//! the wallpaper is hidden and glass reads as a flat tinted fill. Place
+//! glass directly on the window root for meaningful translucency; over
+//! dense content it reads as a tinted rectangle. See [`glass_surface`] for
+//! the full caveat and guidance.
+//!
+//! [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
+//!
 //! # Accessibility
 //!
 //! - **ReduceTransparency**: Glass replaced with opaque fills
@@ -883,6 +901,31 @@ fn default_glass_bg(glass: &GlassStyle, mode: AccessibilityMode, size: GlassSize
 /// Respects accessibility mode: ReduceTransparency uses frosted fills,
 /// IncreaseContrast adds a visible border.
 ///
+/// # ⚠️ Current limitation: no per-element compositing
+///
+/// GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so this
+/// function cannot composite a blurred sample of the content behind the
+/// element into its fill. The rendering is a translucent tinted fill plus
+/// per-size shadows — nothing more. On macOS, when the window uses
+/// `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) — which the
+/// glass themes provide via `theme.glass.window_background` and the app
+/// wires into `WindowOptions`, or [`TahoeTheme::apply_in_window`] installs
+/// directly — glass surfaces are translucent to the **desktop wallpaper
+/// behind the window** but NOT to sibling GPUI elements inside the same
+/// window. A glass card placed directly over a list renders as a tinted
+/// rectangle, not true Liquid Glass. On a window created with
+/// `WindowBackgroundAppearance::Opaque`, even the wallpaper is hidden and
+/// glass reads as a flat tinted fill.
+///
+/// For meaningful translucency, place glass surfaces directly on the window
+/// root background (see `examples/liquid_glass_gallery.rs` for the pattern).
+/// [`glass_blur_surface`] and [`glass_lens_surface`] fall back to this
+/// function for the same reason; [`backdrop_blur_overlay`] documents the
+/// same gap for full-viewport scrims. The upstream tracking task is a GPUI
+/// PR that lands a rect-level blur entry point.
+///
+/// [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
+///
 /// **Note per HIG:** Don't use Liquid Glass in the content layer.
 /// Use glass surfaces only for controls, navigation elements, and overlays.
 /// For content backgrounds, use `theme.background` or `theme.surface` instead.
@@ -901,6 +944,8 @@ pub fn glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
 /// (e.g., background panels vs floating overlays).
 ///
 /// Glass is always present per HIG macOS Tahoe.
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn glass_surface_thick(
     el: Div,
     theme: &TahoeTheme,
@@ -922,6 +967,8 @@ pub fn glass_surface_thick(
 /// Uses the provided `GlassTint` background color instead of the neutral glass fill.
 /// Respects accessibility mode: ReduceTransparency increases tint opacity
 /// (alpha × 3, capped at 0.5), IncreaseContrast adds a visible border.
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn tinted_glass_surface(el: Div, theme: &TahoeTheme, tint: &GlassTint, size: GlassSize) -> Div {
     let bg = if theme.accessibility_mode.reduce_transparency() {
         let mut higher = tint.bg;
@@ -939,6 +986,8 @@ pub fn tinted_glass_surface(el: Div, theme: &TahoeTheme, tint: &GlassTint, size:
 ///
 /// Respects accessibility mode: ReduceTransparency uses an opaque fallback,
 /// IncreaseContrast adds a visible border (via `apply_glass_chrome`).
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn glass_clear_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     let glass = &theme.glass;
     let bg = if theme.accessibility_mode.reduce_transparency() {
@@ -970,7 +1019,8 @@ pub const HUD_TINT_ALPHA: f32 = 0.6;
 ///
 /// Respects accessibility the same way [`glass_surface`] does:
 /// ReduceTransparency routes through the opaque fallback fill and
-/// IncreaseContrast adds a visible border.
+/// IncreaseContrast adds a visible border. Inherits the current GPUI
+/// backdrop-blur limitation from [`glass_surface`].
 pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     glass_surface(el, theme, size)
         .bg(hsla(0.0, 0.0, 0.0, HUD_TINT_ALPHA))
@@ -1132,6 +1182,8 @@ fn warn_blur_fallback_once(_fn_name: &'static str) {}
 /// Apply accent-tinted glass surface styling.
 /// Uses the theme's accent color as the glass tint, suitable for
 /// primary action areas like toolbars and navigation bars.
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn accent_tinted_glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     tinted_glass_surface(el, theme, &theme.glass.accent_tint, size)
 }
@@ -1140,6 +1192,8 @@ pub fn accent_tinted_glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize)
 ///
 /// Combines concentricity-based radius calculation with glass surface styling.
 /// Use this when a component needs a specific HIG shape (Fixed, Capsule, Concentric).
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn glass_shaped_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1192,6 +1246,8 @@ pub fn accessible_tint_bg(tint: &GlassTint, mode: AccessibilityMode) -> gpui::Hs
 ///
 /// This is the most common styling pattern in the crate -- use it for any container
 /// that needs glass surface treatment.
+///
+/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
 pub fn glass_or_surface<E: gpui::Styled>(mut el: E, theme: &TahoeTheme, size: GlassSize) -> E {
     let glass = &theme.glass;
     el = el
