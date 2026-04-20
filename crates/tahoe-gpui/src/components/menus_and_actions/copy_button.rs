@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{AnimationExt, AnyElement, App, ClipboardItem, ElementId, Entity, Window, div};
+use gpui::{AnimationExt, AnyElement, App, ClipboardItem, ElementId, Entity, Task, Window, div};
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::menus_and_actions::button_like::ButtonLike;
@@ -30,6 +30,10 @@ pub struct CopyButton {
     on_error: Option<Arc<dyn Fn(String) + Send + Sync + 'static>>,
     custom_child: Option<Box<dyn Fn(bool) -> AnyElement + Send + Sync + 'static>>,
     disabled: bool,
+    /// Pending reset-to-idle timer. Dropping the `Task` cancels the future,
+    /// so assigning a new one on each click supersedes any prior pending
+    /// reset and keeps click rate from stacking background work.
+    reset_task: Option<Task<()>>,
 }
 
 impl CopyButton {
@@ -43,6 +47,7 @@ impl CopyButton {
             on_error: None,
             custom_child: None,
             disabled: false,
+            reset_task: None,
         })
     }
 
@@ -110,9 +115,12 @@ impl CopyButton {
         cx.notify();
 
         // Schedule a reset after the timeout so the check mark clears even
-        // if nothing else triggers a re-render.
+        // if nothing else triggers a re-render. Storing the handle (rather
+        // than detaching) means a subsequent click drops the prior `Task`
+        // and cancels the queued future — preventing unbounded stacking
+        // under rapid clicks.
         let timeout = self.timeout;
-        cx.spawn(async move |this, cx| {
+        self.reset_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(timeout).await;
             this.update(cx, |this, cx| {
                 if this.copied_at.is_some_and(|t| t.elapsed() >= this.timeout) {
@@ -120,10 +128,10 @@ impl CopyButton {
                     this.copied_at = None;
                     cx.notify();
                 }
+                this.reset_task = None;
             })
             .ok();
-        })
-        .detach();
+        }));
     }
 }
 
@@ -235,6 +243,7 @@ mod tests {
             on_error: None,
             custom_child: None,
             disabled: false,
+            reset_task: None,
         }
     }
 
