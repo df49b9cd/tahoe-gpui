@@ -366,6 +366,15 @@ fn incremental_parser_finish_clears_streaming() {
 }
 
 #[test]
+fn incremental_parser_finish_preserves_source() {
+    let mut p = IncrementalMarkdownParser::new();
+    p.push_delta("hello ");
+    p.push_delta("world");
+    p.finish();
+    assert_eq!(p.source(), "hello world");
+}
+
+#[test]
 fn incremental_parser_caching() {
     let mut p = IncrementalMarkdownParser::new();
     p.push_delta("hello");
