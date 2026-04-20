@@ -231,10 +231,15 @@ impl RenderOnce for Picker {
                 .map(|i| SegmentItem::new(i.label))
                 .collect();
             let on_change = rc_wrap(self.on_change);
+            // Picker's `focused: bool` drives the focus ring on the
+            // list/wheel/grid/trigger variants (below). The segmented
+            // variant dropped `focused: bool` in favour of `focus_handle`
+            // (#65 fix); a caller wanting a focus ring here should
+            // construct a `SegmentedControl` directly and wire in a
+            // FocusHandle.
             let mut control = SegmentedControl::new(self.id.clone())
                 .items(segments)
-                .selected(selected_idx)
-                .focused(self.focused);
+                .selected(selected_idx);
             if let Some(handler) = on_change {
                 control = control.on_change(move |idx, window, cx| {
                     if let Some(value) = values.get(idx) {

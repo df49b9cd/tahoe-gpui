@@ -7,7 +7,7 @@ use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 
 /// Inner padding of the segmented-control track that creates the visual
 /// inset between the track edge and the selected-segment indicator.
@@ -50,8 +50,9 @@ pub struct SegmentedControl {
     items: Vec<SegmentItem>,
     selected: usize,
     on_change: OnUsizeChange,
-    focused: bool,
     momentary: bool,
+    disabled: bool,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl SegmentedControl {
@@ -61,8 +62,9 @@ impl SegmentedControl {
             items: Vec::new(),
             selected: 0,
             on_change: None,
-            focused: false,
             momentary: false,
+            disabled: false,
+            focus_handle: None,
         }
     }
 
@@ -101,12 +103,6 @@ impl SegmentedControl {
         self
     }
 
-    /// Marks this control as keyboard-focused, showing a visible focus ring.
-    pub fn focused(mut self, focused: bool) -> Self {
-        self.focused = focused;
-        self
-    }
-
     /// Toggle momentary mode. When enabled, clicks fire [`Self::on_change`]
     /// but no segment persists a selected visual state — matches AppKit's
     /// `NSSegmentStyleTexturedRounded` momentary trackingMode. Keyboard
@@ -115,13 +111,33 @@ impl SegmentedControl {
         self.momentary = momentary;
         self
     }
+
+    /// Disable all interaction. Segments stop receiving clicks, keyboard
+    /// navigation is dropped, and the cursor becomes the default arrow.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Supply a host-owned focus handle so the segmented control
+    /// participates in the parent's focus graph. The handle drives the
+    /// focus-ring state — when no handle is supplied, the control never
+    /// renders a focus ring.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
 }
 
 impl RenderOnce for SegmentedControl {
-    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.clamp_selected();
         let theme = cx.theme();
         let on_change = rc_wrap(self.on_change);
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .is_some_and(|h| h.is_focused(window));
 
         let glass = &theme.glass;
         let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
@@ -149,7 +165,9 @@ impl RenderOnce for SegmentedControl {
             .p(px(SEGMENTED_INSET))
             .min_h(px(theme.target_size()));
 
-        if let Some(handler) = arrow_handler {
+        if !self.disabled
+            && let Some(handler) = arrow_handler
+        {
             track = track.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 if item_count_for_keys == 0 {
@@ -172,14 +190,22 @@ impl RenderOnce for SegmentedControl {
             });
         }
 
-        // Apply glass shadows (with focus ring when focused)
+        if let Some(handle) = self.focus_handle.as_ref() {
+            track = track.track_focus(handle);
+        }
+
+        // Apply glass shadows (with focus ring when focused and enabled).
+        // Disabled controls never render a focus ring — matches
+        // `text_field.rs` `show_focus_ring = is_focused && !self.disabled`.
         let base_shadows = glass.shadows(GlassSize::Small);
-        track = apply_focus_ring(track, theme, self.focused, base_shadows);
+        let show_focus_ring = focused && !self.disabled;
+        track = apply_focus_ring(track, theme, show_focus_ring, base_shadows);
         track = apply_high_contrast_border(track, theme);
 
         let item_count = self.items.len();
         let last_idx = item_count.saturating_sub(1);
         let momentary = self.momentary;
+        let disabled = self.disabled;
         for (i, item) in self.items.into_iter().enumerate() {
             // Momentary controls never persist a selected chip — every
             // segment renders in its idle state regardless of
@@ -187,7 +213,13 @@ impl RenderOnce for SegmentedControl {
             // handler can still compute relative nav targets.
             let is_selected = !momentary && i == self.selected;
             let handler = on_change.clone();
-            let text_color = if is_selected {
+            // HIG: disabled tint is a fixed muted color, not a proportional
+            // opacity — `opacity(0.5)` fails WCAG 4.5:1 on low-contrast
+            // variants. Same pattern as `button.rs`/`toggle.rs` disabled
+            // branches.
+            let text_color = if disabled {
+                theme.text_disabled()
+            } else if is_selected {
                 theme.text
             } else {
                 theme.text_muted
@@ -203,8 +235,17 @@ impl RenderOnce for SegmentedControl {
                 .min_h(px(theme.target_size() - SEGMENTED_INSET * 2.0)) // Inner height = track height minus the 2pt inset top-and-bottom
                 .px(theme.spacing_sm)
                 .text_color(text_color)
-                .text_style(TextStyle::Subheadline, theme)
-                .cursor_pointer();
+                .text_style(TextStyle::Subheadline, theme);
+
+            // Misleading-cursor fix (#65): only offer the pointer cursor
+            // when the segment is actually actionable. A disabled control
+            // or one without an `on_change` handler reads as decorative
+            // and must keep the default arrow.
+            if disabled || handler.is_none() {
+                segment = segment.cursor_default();
+            } else {
+                segment = segment.cursor_pointer();
+            }
 
             if is_selected {
                 // HIG: only the leading/trailing outermost selected segments
@@ -230,11 +271,11 @@ impl RenderOnce for SegmentedControl {
                     }
                 }
                 // Glass is always present; no opaque shadow fallback needed.
-            } else {
+            } else if !disabled {
                 segment = segment.hover(|style| style.bg(theme.hover));
             }
 
-            if let Some(handler) = handler {
+            if !disabled && let Some(handler) = handler {
                 segment = segment.on_click(move |_event, window, cx| {
                     handler(i, window, cx);
                 });
@@ -300,15 +341,21 @@ mod tests {
     }
 
     #[test]
-    fn focused_defaults_to_false() {
+    fn disabled_defaults_to_false() {
         let sc = SegmentedControl::new("test");
-        assert!(!sc.focused);
+        assert!(!sc.disabled);
     }
 
     #[test]
-    fn focused_builder() {
-        let sc = SegmentedControl::new("test").focused(true);
-        assert!(sc.focused);
+    fn disabled_builder() {
+        let sc = SegmentedControl::new("test").disabled(true);
+        assert!(sc.disabled);
+    }
+
+    #[test]
+    fn focus_handle_defaults_to_none() {
+        let sc = SegmentedControl::new("test");
+        assert!(sc.focus_handle.is_none());
     }
 
     #[test]

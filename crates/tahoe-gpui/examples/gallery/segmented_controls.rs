@@ -101,5 +101,31 @@ pub fn render(
                     ),
                 ),
         )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing_md)
+                .child(
+                    div()
+                        .text_style(TextStyle::Body, theme)
+                        .text_color(theme.text)
+                        .child("Disabled:"),
+                )
+                .child(
+                    div().w(px(420.0)).child(
+                        SegmentedControl::new("sc-disabled")
+                            .items(
+                                SEGMENT_LABELS
+                                    .iter()
+                                    .map(|s| SegmentItem::new(*s))
+                                    .collect(),
+                            )
+                            .selected(1)
+                            .disabled(true)
+                            .on_change(|_, _, _| {}),
+                    ),
+                ),
+        )
         .into_any_element()
 }
