@@ -364,10 +364,15 @@ fn no_orphaned_icon_entries() {
 
     let assets = EmbeddedIconAssets;
     let all_paths = assets.list("").unwrap();
-    let orphans: Vec<String> = all_paths
+    assert!(
+        !all_paths.is_empty(),
+        "ICON_ENTRIES is empty — the orphan check would pass vacuously",
+    );
+
+    let orphans: Vec<&str> = all_paths
         .iter()
-        .map(|s| s.to_string())
-        .filter(|p| !referenced.contains(p.as_str()))
+        .map(|s| s.as_ref())
+        .filter(|p| !referenced.contains(*p))
         .collect();
 
     assert!(
