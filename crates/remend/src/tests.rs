@@ -1174,6 +1174,16 @@ fn streaming_table_with_bold() {
     );
 }
 
+#[test]
+fn streaming_crlf_between_bracket_and_url() {
+    // Stream-chunk boundary splitting `](` from the URL with CRLF in between
+    // must not mis-complete a URL whose `)` is on the following line.
+    assert!(matches!(
+        r("[text](\r\nhttp://example.com)"),
+        Cow::Borrowed(_)
+    ));
+}
+
 // ===========================================================================
 // Bug fix: KaTeX inside fenced code blocks
 // ===========================================================================

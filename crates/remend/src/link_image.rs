@@ -15,8 +15,17 @@ fn handle_incomplete_url(
     // `bracket_paren_index` points to `]` in `](`.
     // Only consider `)` on the same line — a `)` later in the document
     // (e.g., from an emoticon or another link) should not prevent completion.
-    let after_paren = &text[bracket_paren_index + 2..];
-    if after_paren.lines().next().unwrap_or("").contains(')') {
+    //
+    // Skip any leading CR/LF so a URL placed on a subsequent line (e.g. a
+    // stream-chunk boundary that splits `](` from the URL) is still recognized.
+    // Then byte-scan to the next CR/LF — treating both as terminators keeps
+    // behavior consistent for lone `\r` input too.
+    let after_paren = text[bracket_paren_index + 2..].trim_start_matches(['\r', '\n']);
+    let line_end = after_paren
+        .bytes()
+        .position(|b| matches!(b, b'\n' | b'\r'))
+        .unwrap_or(after_paren.len());
+    if after_paren[..line_end].contains(')') {
         return None; // URL is complete.
     }
 
@@ -339,5 +348,50 @@ mod tests {
             h("- [x] prefix [link").as_ref(),
             "- [x] prefix [link](streamdown:incomplete-link)"
         );
+    }
+
+    #[test]
+    fn leaves_complete_link_with_crlf_before_url() {
+        assert!(matches!(
+            h("[text](\r\nhttp://example.com)"),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn leaves_complete_link_with_lf_before_url() {
+        assert!(matches!(
+            h("[text](\nhttp://example.com)"),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn leaves_complete_link_with_crlf_trailing() {
+        assert!(matches!(
+            h("[text](http://example.com)\r\nNext"),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn completes_incomplete_url_with_crlf_trailing() {
+        assert_eq!(
+            h("[text](http://exam\r\n").as_ref(),
+            "[text](streamdown:incomplete-link)"
+        );
+    }
+
+    #[test]
+    fn completes_incomplete_url_with_lone_cr() {
+        assert_eq!(
+            h("[text](http://exam\r").as_ref(),
+            "[text](streamdown:incomplete-link)"
+        );
+    }
+
+    #[test]
+    fn removes_incomplete_image_with_crlf() {
+        assert_eq!(h("text ![alt](\r\nhttp://exam").as_ref(), "text");
     }
 }
