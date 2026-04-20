@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/df49b9cd/tahoe-gpui/actions/workflows/ci.yml"><img src="https://github.com/df49b9cd/tahoe-gpui/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0" /></a>
-  <img src="https://img.shields.io/badge/rust-1.94.1%2B-orange" alt="rust 1.94.1+" />
+  <img src="https://img.shields.io/badge/rust-1.95.0%2B-orange" alt="rust 1.95.0+" />
   <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="macOS" />
 </p>
 
