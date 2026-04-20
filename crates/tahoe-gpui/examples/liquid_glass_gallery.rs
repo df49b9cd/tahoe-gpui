@@ -208,6 +208,26 @@ fn tinted_cards(theme: &TahoeTheme) -> Vec<Div> {
             Some(glass.tints.get(GlassTintColor::Amber)),
             glass.tints.get(GlassTintColor::Amber).bg,
         ),
+        (
+            "Red",
+            Some(glass.tints.get(GlassTintColor::Red)),
+            glass.tints.get(GlassTintColor::Red).bg,
+        ),
+        (
+            "Cyan",
+            Some(glass.tints.get(GlassTintColor::Cyan)),
+            glass.tints.get(GlassTintColor::Cyan).bg,
+        ),
+        (
+            "Teal",
+            Some(glass.tints.get(GlassTintColor::Teal)),
+            glass.tints.get(GlassTintColor::Teal).bg,
+        ),
+        (
+            "Indigo",
+            Some(glass.tints.get(GlassTintColor::Indigo)),
+            glass.tints.get(GlassTintColor::Indigo).bg,
+        ),
     ];
 
     tints
