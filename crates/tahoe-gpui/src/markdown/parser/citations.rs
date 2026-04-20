@@ -7,12 +7,12 @@ use super::InlineContent;
 /// The splitter treats **any** bracketed ASCII-digit sequence as an inline
 /// citation, which is the convention for AI-generated content. The tradeoff
 /// is that legitimate prose like `"item [5] of 10"` is claimed as a citation
-/// marker too, and downstream renderers will treat the number as a footnote
-/// reference.
+/// marker too: the literal `[5]` is replaced by a clickable citation popover
+/// (see [`InlineContent::Citation`]) rather than being rendered as plain text.
 ///
-/// Callers that render non-AI Markdown should disable splitting via
-/// [`IncrementalMarkdownParser::with_citations(false)`][with_citations] (or
-/// [`StreamingMarkdown::with_citations(false)`][sm_with_citations]) so the
+/// Callers that render non-AI Markdown should pass `false` to
+/// [`IncrementalMarkdownParser::with_citations`][with_citations] (or
+/// [`StreamingMarkdown::with_citations`][sm_with_citations]) so the
 /// bracketed number is preserved verbatim.
 ///
 /// [with_citations]: super::IncrementalMarkdownParser::with_citations

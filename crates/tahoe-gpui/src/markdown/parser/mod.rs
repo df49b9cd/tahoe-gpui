@@ -19,17 +19,17 @@ use std::rc::Rc;
 /// Inline citation splitting (`[N]` → [`InlineContent::Citation`]) is enabled
 /// by default because AI-generated content commonly uses bracketed numerals
 /// as citation markers. Callers rendering arbitrary human-written Markdown
-/// should disable splitting via [`Self::with_citations(false)`][Self::with_citations]
-/// so literal brackets like `"item [5] of 10"` round-trip unchanged.
+/// should pass `false` to [`Self::with_citations`] so literal brackets
+/// like `"item [5] of 10"` round-trip unchanged.
 pub struct IncrementalMarkdownParser {
     /// Accumulated raw markdown text.
     source: String,
     /// Remend options for preprocessing (None = disabled).
     remend_options: Option<remend::RemendOptions>,
-    /// When true, bracketed digit sequences in inline text are split into
-    /// [`InlineContent::Citation`] variants. See the type-level doc comment
-    /// for the tradeoff.
-    split_citations: bool,
+    /// When `true`, bracketed digit sequences in inline text are split into
+    /// [`InlineContent::Citation`] variants. Mirrored by the accessor
+    /// [`Self::citations_enabled`].
+    citations_enabled: bool,
     /// Whether the current text has an unclosed code fence.
     has_incomplete_code_fence: bool,
     /// Whether the current text contains a table.
@@ -52,7 +52,7 @@ impl IncrementalMarkdownParser {
         Self {
             source: String::new(),
             remend_options: None,
-            split_citations: true,
+            citations_enabled: true,
             has_incomplete_code_fence: false,
             has_table: false,
             text_direction: remend::TextDirection::default(),
@@ -78,16 +78,16 @@ impl IncrementalMarkdownParser {
     /// when rendering non-AI Markdown where bracketed numbers are literal.
     ///
     /// Toggling post-construction invalidates the block cache so the next
-    /// [`parse`][Self::parse] call reflects the new flag.
+    /// [`Self::parse`] call reflects the new flag.
     pub fn with_citations(mut self, enabled: bool) -> Self {
-        self.split_citations = enabled;
+        self.citations_enabled = enabled;
         self.blocks_dirty = true;
         self
     }
 
     /// Returns whether inline citation splitting is enabled.
     pub fn citations_enabled(&self) -> bool {
-        self.split_citations
+        self.citations_enabled
     }
 
     /// Append a text delta.
@@ -445,12 +445,12 @@ impl IncrementalMarkdownParser {
         // Flush accumulated text. When citation splitting is enabled, run
         // the splitter; otherwise move the buffer through as a single Text
         // inline so bracketed digits stay literal.
-        let split = self.split_citations;
+        let citations_enabled = self.citations_enabled;
         let flush_text = |buf: &mut String, out: &mut Vec<InlineContent>| {
             if buf.is_empty() {
                 return;
             }
-            if split {
+            if citations_enabled {
                 split_citations(buf, out);
                 buf.clear();
             } else {
