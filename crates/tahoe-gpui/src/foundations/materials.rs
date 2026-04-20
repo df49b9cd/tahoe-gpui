@@ -1010,21 +1010,30 @@ pub const HUD_TINT_ALPHA: f32 = 0.6;
 
 /// Apply Liquid Glass HUD surface styling to a div.
 ///
-/// Composes the standard [`glass_surface`] chrome (bg + radius +
-/// shadows + high-contrast border) with the dark translucent HUD tint
-/// ([`HUD_TINT_ALPHA`]) and [`TahoeTheme::background`] as the text
-/// color, so the surface reads as a dark HUD regardless of the
+/// Pre-composes the dark translucent HUD tint ([`HUD_TINT_ALPHA`])
+/// into the base glass fill, then hands the result to the standard
+/// [`glass_surface`] chrome (Layer 2 tint + radius + shadows +
+/// high-contrast border), plus [`TahoeTheme::background`] as the
+/// text color so the surface reads as a dark HUD regardless of the
 /// current appearance. Matches `NSPanel.StyleMask.HUDWindow` per HIG
 /// `#panels`.
 ///
+/// The tint is pre-composed rather than layered via a second `.bg()`
+/// call because GPUI's `bg()` is last-write-wins — chaining a second
+/// `.bg()` would discard the glass chrome and collapse the surface to
+/// a flat black rectangle.
+///
 /// Respects accessibility the same way [`glass_surface`] does:
-/// ReduceTransparency routes through the opaque fallback fill and
-/// IncreaseContrast adds a visible border. Inherits the current GPUI
-/// backdrop-blur limitation from [`glass_surface`].
+/// ReduceTransparency routes through the opaque fallback fill (the
+/// HUD tint then darkens that opaque color), and IncreaseContrast
+/// adds a visible border. Inherits the current GPUI backdrop-blur
+/// limitation from [`glass_surface`].
 pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
-    glass_surface(el, theme, size)
-        .bg(hsla(0.0, 0.0, 0.0, HUD_TINT_ALPHA))
-        .text_color(theme.background)
+    let glass = &theme.glass;
+    let base = default_glass_bg(glass, theme.accessibility_mode, size);
+    let bg = crate::foundations::color::compose_black_tint_linear(base, HUD_TINT_ALPHA);
+    let radius = glass.radius(size);
+    apply_glass_chrome(el, theme, bg, radius, size).text_color(theme.background)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2205,6 +2214,69 @@ mod tests {
         // silently brighten every HUD across the crate.
         use super::HUD_TINT_ALPHA;
         assert!((HUD_TINT_ALPHA - 0.6).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn hud_fill_is_darker_than_base_for_each_size() {
+        // Regression for #61: chaining `.bg(hsla(0,0,0,0.6))` after
+        // `glass_surface` overwrote the composited glass fill, leaving HUD
+        // surfaces as flat 60% black rectangles. The fix pre-composes the
+        // HUD tint into the base fill — which must, by construction,
+        // darken the base across every theme × size combination.
+        use super::HUD_TINT_ALPHA;
+        use crate::foundations::color::{compose_black_tint_linear, relative_luminance};
+
+        for theme in [TahoeTheme::liquid_glass(), TahoeTheme::dark()] {
+            for size in [GlassSize::Small, GlassSize::Medium, GlassSize::Large] {
+                let base = theme.glass.bg(size);
+                let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
+                assert!(
+                    relative_luminance(hud) < relative_luminance(base),
+                    "HUD fill must be darker than base for size {:?}",
+                    size,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hud_fill_preserves_base_alpha() {
+        // Guards against the naive `.bg(hsla(0,0,0,HUD_TINT_ALPHA))`
+        // regression, which forced the surface alpha to 0.6 instead of
+        // inheriting the glass-layer translucency.
+        use super::HUD_TINT_ALPHA;
+        use crate::foundations::color::compose_black_tint_linear;
+
+        let theme = TahoeTheme::liquid_glass();
+        for size in [GlassSize::Small, GlassSize::Medium, GlassSize::Large] {
+            let base = theme.glass.bg(size);
+            let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
+            assert!(
+                (hud.a - base.a).abs() < f32::EPSILON,
+                "HUD fill must preserve base alpha for size {:?}",
+                size,
+            );
+        }
+    }
+
+    #[test]
+    fn hud_fill_over_reduced_transparency_inherits_fallback_alpha() {
+        // ReduceTransparency routes through the elevated-alpha fallback
+        // (`reduced_transparency_bg`, ~0.85-0.90). The HUD fill must
+        // inherit that alpha — the naive `.bg(hsla(0,0,0,0.6))`
+        // regression would collapse the surface to 60% alpha and let the
+        // window bleed through on accessibility setups.
+        use super::HUD_TINT_ALPHA;
+        use crate::foundations::color::compose_black_tint_linear;
+
+        for theme in [TahoeTheme::liquid_glass(), TahoeTheme::light()] {
+            let base = theme.glass.accessibility.reduced_transparency_bg;
+            let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
+            assert!(
+                (hud.a - base.a).abs() < f32::EPSILON,
+                "reduced-transparency HUD fill must inherit fallback alpha",
+            );
+        }
     }
 
     // ── GlassStyle::labels() contract ─────────────────────────────────────
