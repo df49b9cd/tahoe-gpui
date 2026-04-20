@@ -236,7 +236,15 @@ impl RenderOnce for Picker {
             // variant dropped `focused: bool` in favour of `focus_handle`
             // (#65 fix); a caller wanting a focus ring here should
             // construct a `SegmentedControl` directly and wire in a
-            // FocusHandle.
+            // FocusHandle. Fail loudly in debug so the silent drop is
+            // caught at authoring time rather than quietly diverging from
+            // the other variants.
+            debug_assert!(
+                !self.focused,
+                "Picker::focused is ignored on PickerVariant::Segmented — \
+                 construct a SegmentedControl directly with \
+                 `.focus_handle(...)` to render a focus ring",
+            );
             let mut control = SegmentedControl::new(self.id.clone())
                 .items(segments)
                 .selected(selected_idx);

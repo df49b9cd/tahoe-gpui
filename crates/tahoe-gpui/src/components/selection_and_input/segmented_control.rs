@@ -4,6 +4,7 @@
 //! All segments have equal width with a sliding selection indicator.
 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
@@ -133,6 +134,32 @@ impl RenderOnce for SegmentedControl {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.clamp_selected();
         let theme = cx.theme();
+
+        // Footgun: a focus_handle implies keyboard interaction, but the key
+        // handler only dispatches when `on_change` is also set. Without the
+        // handler the control would Tab-focus, render a ring, and swallow
+        // every arrow key silently. Surface loudly in debug.
+        debug_assert!(
+            !(self.focus_handle.is_some() && self.on_change.is_none()),
+            "SegmentedControl: focus_handle is set but on_change is not — \
+             arrow keys will be dropped silently",
+        );
+
+        // Empty items: short-circuit with an empty track so downstream logic
+        // (selected-label lookup, separator placement) never has to reason
+        // about the "no valid selection" state.
+        if self.items.is_empty() {
+            let glass = &theme.glass;
+            let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+            let radius = glass.radius(GlassSize::Small);
+            return div()
+                .id(self.id)
+                .bg(track_bg)
+                .rounded(radius)
+                .min_h(px(theme.target_size()))
+                .into_any_element();
+        }
+
         let on_change = rc_wrap(self.on_change);
         let focused = self
             .focus_handle
@@ -149,14 +176,18 @@ impl RenderOnce for SegmentedControl {
         let selected_bg = theme.surface;
         let radius = glass.radius(GlassSize::Small);
 
-        // Arrow key navigation: Left/Right move selection
+        // Arrow key navigation: Left/Right move selection (mirrored in RTL).
         let arrow_handler = on_change.clone();
         let selected = self.selected;
         let item_count_for_keys = self.items.len();
+        let is_rtl = theme.is_rtl();
+
+        // Selected segment label for VoiceOver's value announcement — sampled
+        // before the items vector is consumed by the render loop below.
+        let selected_label = self.items[self.selected].label.clone();
 
         let mut track = div()
             .id(self.id)
-            .focusable()
             .flex()
             .items_center()
             .bg(track_bg)
@@ -165,33 +196,46 @@ impl RenderOnce for SegmentedControl {
             .p(px(SEGMENTED_INSET))
             .min_h(px(theme.target_size()));
 
-        if !self.disabled
-            && let Some(handler) = arrow_handler
-        {
-            track = track.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                let key = event.keystroke.key.as_str();
-                if item_count_for_keys == 0 {
-                    return;
-                }
-                let new_index = match key {
-                    "left" => Some(if selected == 0 {
-                        item_count_for_keys - 1
+        // Disabled controls drop out of the Tab order entirely — WCAG 2.4.3
+        // and HIG both prefer skipping non-interactive controls rather than
+        // landing Tab on a dead stop. `.focusable()` + `.track_focus()` +
+        // arrow handler are therefore gated together.
+        if !self.disabled {
+            track = track.focusable();
+            if let Some(handle) = self.focus_handle.as_ref() {
+                track = track.track_focus(handle);
+            }
+            if let Some(handler) = arrow_handler {
+                track = track.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if item_count_for_keys == 0 {
+                        return;
+                    }
+                    // Visual-leading motion: in RTL the leading segment is
+                    // on the right, so `Right` must decrement and `Left`
+                    // must increment. Home/End stay absolute.
+                    let decrement = if is_rtl { "right" } else { "left" };
+                    let increment = if is_rtl { "left" } else { "right" };
+                    let new_index = if key == decrement {
+                        Some(if selected == 0 {
+                            item_count_for_keys - 1
+                        } else {
+                            selected - 1
+                        })
+                    } else if key == increment {
+                        Some((selected + 1) % item_count_for_keys)
+                    } else if key == "home" {
+                        Some(0)
+                    } else if key == "end" {
+                        Some(item_count_for_keys - 1)
                     } else {
-                        selected - 1
-                    }),
-                    "right" => Some((selected + 1) % item_count_for_keys),
-                    "home" => Some(0),
-                    "end" => Some(item_count_for_keys - 1),
-                    _ => None,
-                };
-                if let Some(idx) = new_index {
-                    handler(idx, window, cx);
-                }
-            });
-        }
-
-        if let Some(handle) = self.focus_handle.as_ref() {
-            track = track.track_focus(handle);
+                        None
+                    };
+                    if let Some(idx) = new_index {
+                        handler(idx, window, cx);
+                    }
+                });
+            }
         }
 
         // Apply glass shadows (with focus ring when focused and enabled).
@@ -247,7 +291,7 @@ impl RenderOnce for SegmentedControl {
                 segment = segment.cursor_pointer();
             }
 
-            if is_selected {
+            if is_selected && !disabled {
                 // HIG: only the leading/trailing outermost selected segments
                 // round their outer corners; interior selected segments are
                 // square along the edges shared with neighbours. The inner
@@ -271,9 +315,12 @@ impl RenderOnce for SegmentedControl {
                     }
                 }
                 // Glass is always present; no opaque shadow fallback needed.
-            } else if !disabled {
+            } else if !is_selected && !disabled {
                 segment = segment.hover(|style| style.bg(theme.hover));
             }
+            // Disabled selected segment: no elevated fill, no hover — the
+            // chip shares the track background so the control never reads
+            // as interactive. Text remains `text_disabled()` from above.
 
             if !disabled && let Some(handler) = handler {
                 segment = segment.on_click(move |_event, window, cx| {
@@ -290,9 +337,11 @@ impl RenderOnce for SegmentedControl {
 
             // Separator between non-selected adjacent segments. In
             // momentary mode no segment is selected, so a separator is
-            // drawn between every pair.
-            let next_is_selected = !momentary && i + 1 == self.selected;
-            if i + 1 < item_count && !is_selected && !next_is_selected {
+            // drawn between every pair. Disabled selected segments render
+            // with no chip, so the chip can't absorb the separator either.
+            let chip_visible = is_selected && !disabled;
+            let next_chip_visible = !momentary && i + 1 == self.selected && !disabled;
+            if i + 1 < item_count && !chip_visible && !next_chip_visible {
                 track = track.child(
                     div()
                         .w(theme.separator_thickness)
@@ -303,7 +352,17 @@ impl RenderOnce for SegmentedControl {
             }
         }
 
-        track
+        // VoiceOver scaffolding — GPUI v0.231.1-pre drops these props, but
+        // wiring them here means the whole control lights up the AX tree
+        // as soon as upstream lands `accessibility_role`/`value`. `Group`
+        // is the closest role the crate exposes to an `NSAccessibilityRole`
+        // tablist/segmented-control — each segment is a `Tab` conceptually,
+        // but the crate renders segments as `div` children rather than
+        // individually-labelled elements.
+        let ax_props = AccessibilityProps::new()
+            .role(AccessibilityRole::Group)
+            .value(selected_label);
+        track.with_accessibility(&ax_props).into_any_element()
     }
 }
 
