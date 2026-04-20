@@ -189,11 +189,9 @@ fn is_task_list_marker_start(text: &str, bracket_pos: usize) -> bool {
     matches!(bytes.get(bracket_pos + 1), Some(b' ' | b'x' | b'X'))
 }
 
-/// Handles incomplete links and images by auto-completing or removing them.
-///
-/// When `links_enabled` is false, incomplete links are left untouched.
-/// When `images_enabled` is false, incomplete images are left untouched.
-pub fn handle(
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle(
     text: &str,
     link_mode: LinkMode,
     links_enabled: bool,
@@ -209,7 +207,7 @@ pub fn handle(
 }
 
 /// Handles incomplete links and images, using pre-computed code block ranges.
-pub fn handle_with_ranges<'a>(
+pub(crate) fn handle_with_ranges<'a>(
     text: &'a str,
     link_mode: LinkMode,
     links_enabled: bool,

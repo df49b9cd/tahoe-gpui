@@ -44,13 +44,14 @@ fn find_half_complete_tilde(text: &str) -> Option<usize> {
     None
 }
 
-/// Completes incomplete strikethrough formatting (`~~`).
-pub fn handle(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle(text: &str) -> Cow<'_, str> {
     handle_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete strikethrough formatting, using pre-computed code block ranges.
-pub fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+pub(crate) fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
     if let Some((marker_index, content)) = find_trailing_strikethrough(text) {
         if content.is_empty() || is_empty_or_markers(content) {
             return Cow::Borrowed(text);

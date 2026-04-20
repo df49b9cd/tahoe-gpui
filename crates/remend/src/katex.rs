@@ -61,13 +61,17 @@ fn count_single_dollars_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usi
     count
 }
 
-/// Completes incomplete block KaTeX formatting (`$$`).
-pub fn handle_block(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_block(text: &str) -> Cow<'_, str> {
     handle_block_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete block KaTeX formatting, using pre-computed code block ranges.
-pub fn handle_block_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+pub(crate) fn handle_block_with_ranges<'a>(
+    text: &'a str,
+    ranges: &CodeBlockRanges,
+) -> Cow<'a, str> {
     let pairs = count_dollar_pairs_with_ranges(text, ranges);
     if pairs.is_multiple_of(2) {
         return Cow::Borrowed(text);
@@ -90,13 +94,17 @@ pub fn handle_block_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> 
     cow_append(text, "$$")
 }
 
-/// Completes incomplete inline KaTeX formatting (`$`).
-pub fn handle_inline(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_inline(text: &str) -> Cow<'_, str> {
     handle_inline_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete inline KaTeX formatting, using pre-computed code block ranges.
-pub fn handle_inline_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+pub(crate) fn handle_inline_with_ranges<'a>(
+    text: &'a str,
+    ranges: &CodeBlockRanges,
+) -> Cow<'a, str> {
     let count = count_single_dollars_with_ranges(text, ranges);
     if count % 2 == 1 {
         return cow_append(text, "$");

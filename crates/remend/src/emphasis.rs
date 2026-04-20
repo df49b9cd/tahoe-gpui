@@ -490,12 +490,14 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
 // ---------------------------------------------------------------------------
 
 /// Completes incomplete bold formatting (`**`).
-pub fn handle_bold(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_bold(text: &str) -> Cow<'_, str> {
     handle_bold_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete bold formatting, using pre-computed code block ranges.
-pub fn handle_bold_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+pub(crate) fn handle_bold_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
     let Some((marker_index, content)) = find_trailing_bold(text) else {
         return Cow::Borrowed(text);
     };
@@ -521,12 +523,14 @@ pub fn handle_bold_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> C
 }
 
 /// Completes incomplete double-underscore italic (`__`).
-pub fn handle_double_underscore(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_double_underscore(text: &str) -> Cow<'_, str> {
     handle_double_underscore_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete double-underscore italic, using pre-computed code block ranges.
-pub fn handle_double_underscore_with_ranges<'a>(
+pub(crate) fn handle_double_underscore_with_ranges<'a>(
     text: &'a str,
     ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
@@ -584,12 +588,14 @@ fn find_half_complete_underscore(text: &str) -> Option<usize> {
 }
 
 /// Completes incomplete italic with single asterisk (`*`).
-pub fn handle_italic_asterisk(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_italic_asterisk(text: &str) -> Cow<'_, str> {
     handle_italic_asterisk_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete italic with single asterisk, using pre-computed code block ranges.
-pub fn handle_italic_asterisk_with_ranges<'a>(
+pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
     text: &'a str,
     ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
@@ -622,12 +628,14 @@ pub fn handle_italic_asterisk_with_ranges<'a>(
 }
 
 /// Completes incomplete italic with single underscore (`_`).
-pub fn handle_italic_underscore(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_italic_underscore(text: &str) -> Cow<'_, str> {
     handle_italic_underscore_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete italic with single underscore, using pre-computed code block ranges.
-pub fn handle_italic_underscore_with_ranges<'a>(
+pub(crate) fn handle_italic_underscore_with_ranges<'a>(
     text: &'a str,
     ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
@@ -706,12 +714,17 @@ fn insert_closing_underscore(text: &str) -> Cow<'_, str> {
 }
 
 /// Completes incomplete bold-italic formatting (`***`).
-pub fn handle_bold_italic(text: &str) -> Cow<'_, str> {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn handle_bold_italic(text: &str) -> Cow<'_, str> {
     handle_bold_italic_with_ranges(text, &CodeBlockRanges::new(text))
 }
 
 /// Completes incomplete bold-italic formatting, using pre-computed code block ranges.
-pub fn handle_bold_italic_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+pub(crate) fn handle_bold_italic_with_ranges<'a>(
+    text: &'a str,
+    ranges: &CodeBlockRanges,
+) -> Cow<'a, str> {
     // Don't process if text is only 4+ asterisks.
     if text.len() >= 4 && text.bytes().all(|b| b == b'*') {
         return Cow::Borrowed(text);
