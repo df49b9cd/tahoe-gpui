@@ -109,15 +109,21 @@ impl IncrementalMarkdownParser {
             self.has_table = remend::has_table(&self.source);
         }
 
-        // Detect text direction once from first ~32 chars (or immediately on RTL), then cache.
+        // Detect text direction once the first alphabetic character arrives
+        // (or immediately on RTL), then cache. This avoids re-running
+        // detect_text_direction on every push_delta for purely numeric or
+        // punctuation-only prefixes.
         if !self.direction_detected {
             let dir_end = self
                 .source
                 .char_indices()
                 .nth(200)
                 .map_or(self.source.len(), |(idx, _)| idx);
-            self.text_direction = remend::detect_text_direction(&self.source[..dir_end]);
-            if self.source.len() >= 32 || self.text_direction == remend::TextDirection::Rtl {
+            let dir = remend::detect_text_direction(&self.source[..dir_end]);
+            self.text_direction = dir;
+            if dir == remend::TextDirection::Rtl
+                || self.source[..dir_end].chars().any(|c| c.is_alphabetic())
+            {
                 self.direction_detected = true;
             }
         }
