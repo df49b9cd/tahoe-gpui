@@ -450,6 +450,12 @@ impl IncrementalMarkdownParser {
                 ))),
                 start + 1,
             ),
+            Event::Html(html) => (
+                Some(MarkdownBlock::Paragraph(vec![InlineContent::Text(
+                    html.to_string(),
+                )])),
+                start + 1,
+            ),
             _ => (None, start + 1),
         }
     }
@@ -561,6 +567,10 @@ impl IncrementalMarkdownParser {
                         .join("");
                     inlines.push(InlineContent::Image { url, alt });
                     idx = end;
+                }
+                Event::InlineHtml(html) => {
+                    text_buf.push_str(html);
+                    idx += 1;
                 }
                 _ => {
                     flush_text(&mut text_buf, &mut inlines);
