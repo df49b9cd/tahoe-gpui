@@ -124,4 +124,12 @@ mod tests {
     fn whitespace_only_prev_line_returns_borrowed() {
         assert!(matches!(handle("a\n \n-"), Cow::Borrowed(_)));
     }
+
+    #[test]
+    fn mixed_indent_skipped() {
+        // 3 spaces + tab expands to col 4 (indented code block).
+        assert!(matches!(handle("Head\n   \t-"), Cow::Borrowed(_)));
+        // 1 space + tab also expands to col 4.
+        assert!(matches!(handle("Head\n \t-"), Cow::Borrowed(_)));
+    }
 }
