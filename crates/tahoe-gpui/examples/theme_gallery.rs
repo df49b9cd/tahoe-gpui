@@ -75,13 +75,15 @@ impl Render for ThemeGallery {
                             Button::new("b6")
                                 .icon(Icon::new(IconName::Copy))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon),
+                                .size(ButtonSize::Icon)
+                                .tooltip("Copy"),
                         )
                         .child(
                             Button::new("b7")
                                 .icon(Icon::new(IconName::Send))
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Icon),
+                                .size(ButtonSize::Icon)
+                                .tooltip("Send"),
                         )
                         .child(
                             Button::new("b8")

@@ -93,15 +93,40 @@ pub struct CitationContext {
     pub sources: HashMap<usize, Vec<CitationSource>>,
 }
 
+/// URL schemes that are always rejected by [`MarkdownSecurity`] regardless of
+/// allowlist configuration, because navigating to them via `cx.open_url` is
+/// XSS-, privilege-escalation-, or local-file-disclosure-equivalent.
+/// Comparison is ASCII case-insensitive.
+///
+/// For the image path, `data:image/*` is a carve-out (see
+/// [`MarkdownSecurity::is_image_allowed`]); all other entries apply to both
+/// links and images.
+const DANGEROUS_LINK_SCHEMES: &[&str] = &[
+    "javascript",
+    "vbscript",
+    "livescript",
+    "file",
+    "data",
+    "blob",
+    "about",
+    "view-source",
+];
+
 /// Security configuration for markdown rendering.
 ///
 /// Controls which URLs are allowed for links and images.
 /// An empty list blocks all; a list containing `"*"` allows all.
+///
+/// A hardcoded blocklist of dangerous schemes (`javascript:`, `vbscript:`,
+/// `livescript:`, `file:`, `data:`, `blob:`, `about:`, `view-source:`) is
+/// applied before the allowlist and cannot be overridden; wildcards never
+/// permit these schemes. Images additionally permit `data:image/*` URLs so
+/// inline base64 pictures continue to render.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarkdownSecurity {
-    /// Allowed URL prefixes for links. Default: `["*"]` (allow all).
+    /// Allowed URL prefixes for links. Default: `["*"]` (allow all safe schemes).
     pub allowed_link_prefixes: Vec<String>,
-    /// Allowed URL prefixes for images. Default: `["*"]` (allow all).
+    /// Allowed URL prefixes for images. Default: `["*"]` (allow all safe schemes).
     pub allowed_image_prefixes: Vec<String>,
     /// Default origin to prepend to relative URLs in links and images.
     /// When set, relative URLs (not starting with `http://`, `https://`, or `//`)
@@ -133,13 +158,86 @@ impl MarkdownSecurity {
             .any(|prefix| url.starts_with(prefix.as_str()))
     }
 
-    /// Check if a link URL is allowed.
+    /// Extract a valid RFC 3986 scheme from the start of `url`, along with the
+    /// substring following the colon.
+    ///
+    /// Leading C0 controls (0x00–0x1F), space, and DEL (0x7F) are stripped —
+    /// matching the WHATWG URL parser's leading-trim step. The scheme itself
+    /// must match `ALPHA *(ALPHA / DIGIT / "+" / "-" / ".")`; schemes that
+    /// contain any other byte (NUL, tab, non-ASCII, punctuation) are rejected
+    /// as malformed and treated as relative paths. Returns `None` for relative
+    /// URLs or malformed schemes.
+    fn extract_scheme(url: &str) -> Option<(&str, &str)> {
+        let trimmed = url.trim_start_matches(|c: char| (c as u32) <= 0x20 || c == '\u{7F}');
+        let colon_pos = trimmed.find(':')?;
+        let scheme = &trimmed[..colon_pos];
+        let rest = &trimmed[colon_pos + 1..];
+        let bytes = scheme.as_bytes();
+        if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
+            return None;
+        }
+        if !bytes
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+        {
+            return None;
+        }
+        Some((scheme, rest))
+    }
+
+    /// Detect a scheme that must never be opened from a link click.
+    fn is_dangerous_link_scheme(url: &str) -> bool {
+        let Some((scheme, _)) = Self::extract_scheme(url) else {
+            return false;
+        };
+        DANGEROUS_LINK_SCHEMES
+            .iter()
+            .any(|&s| scheme.eq_ignore_ascii_case(s))
+    }
+
+    /// Detect a scheme that must never be used as an image source.
+    ///
+    /// Mirrors [`Self::is_dangerous_link_scheme`] but carves out
+    /// `data:image/*` URLs: GPUI loads their bytes via `img(SharedUri::…)`
+    /// as a pure image source (no script context), so inline base64 pictures
+    /// — a common LLM output pattern — remain supported. All other `data:`
+    /// media types (`text/html`, `application/*`, etc.) stay blocked.
+    fn is_dangerous_image_scheme(url: &str) -> bool {
+        let Some((scheme, rest)) = Self::extract_scheme(url) else {
+            return false;
+        };
+        if !DANGEROUS_LINK_SCHEMES
+            .iter()
+            .any(|&s| scheme.eq_ignore_ascii_case(s))
+        {
+            return false;
+        }
+        if scheme.eq_ignore_ascii_case("data")
+            && rest
+                .get(..6)
+                .is_some_and(|p| p.eq_ignore_ascii_case("image/"))
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Check if a link URL is allowed. Dangerous schemes are always rejected,
+    /// even when `allowed_link_prefixes` contains `"*"`.
     pub fn is_link_allowed(&self, url: &str) -> bool {
+        if Self::is_dangerous_link_scheme(url) {
+            return false;
+        }
         Self::is_url_allowed(url, &self.allowed_link_prefixes)
     }
 
-    /// Check if an image URL is allowed.
+    /// Check if an image URL is allowed. Dangerous schemes are always rejected,
+    /// even when `allowed_image_prefixes` contains `"*"`. `data:image/*` URLs
+    /// are permitted so inline base64 pictures continue to render.
     pub fn is_image_allowed(&self, url: &str) -> bool {
+        if Self::is_dangerous_image_scheme(url) {
+            return false;
+        }
         Self::is_url_allowed(url, &self.allowed_image_prefixes)
     }
 
@@ -965,9 +1063,8 @@ fn flatten_inlines_to_runs(
             }
             InlineContent::Link { content, url } => {
                 let start = out.text.len();
-                let resolved = security.resolve_url(url).into_owned();
-                let allowed = security.is_link_allowed(&resolved);
-                if allowed {
+                let resolved = security.resolve_url(url);
+                if security.is_link_allowed(&resolved) {
                     let mut link_style = current.clone();
                     link_style.color = styles.link_color;
                     link_style.underline = Some(styles.link_underline);
@@ -975,7 +1072,7 @@ fn flatten_inlines_to_runs(
                     let end = out.text.len();
                     if end > start {
                         out.link_ranges.push(start..end);
-                        out.link_urls.push(resolved);
+                        out.link_urls.push(resolved.into_owned());
                     }
                 } else {
                     // Allowlist denied: render the label as plain text
@@ -1130,8 +1227,57 @@ fn render_inlines_mixed(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElemen
 #[cfg(test)]
 mod tests {
     use super::has_complex_inlines;
-    use super::{InlineContent, MarkdownSecurity};
+    use super::{
+        InlineContent, InlineRuns, InlineTextStyles, MarkdownSecurity, flatten_inlines_to_runs,
+    };
     use core::prelude::v1::test;
+    use gpui::{
+        FontWeight, Hsla, StrikethroughStyle, TextStyle as GpuiTextStyle, UnderlineStyle, px,
+    };
+
+    const ZERO_HSLA: Hsla = Hsla {
+        h: 0.0,
+        s: 0.0,
+        l: 0.0,
+        a: 1.0,
+    };
+
+    /// Build a minimal [`InlineTextStyles`] for unit tests that don't need a
+    /// real [`crate::foundations::theme::TahoeTheme`]. Colors are solid black
+    /// and the mono family is a placeholder — runs aren't visually inspected.
+    fn test_styles() -> InlineTextStyles {
+        let base = GpuiTextStyle {
+            color: ZERO_HSLA,
+            font_weight: FontWeight::NORMAL,
+            ..Default::default()
+        };
+        InlineTextStyles {
+            base,
+            code_family: "mono".into(),
+            code_bg: ZERO_HSLA,
+            link_color: ZERO_HSLA,
+            link_underline: UnderlineStyle {
+                thickness: px(1.0),
+                color: None,
+                wavy: false,
+            },
+            strikethrough: StrikethroughStyle {
+                thickness: px(1.0),
+                color: None,
+            },
+            strikethrough_color: ZERO_HSLA,
+            muted_color: ZERO_HSLA,
+            accent_color: ZERO_HSLA,
+        }
+    }
+
+    /// Assert that `pred` rejects every URL in `urls`.
+    #[track_caller]
+    fn assert_all_blocked<F: Fn(&str) -> bool>(pred: F, urls: &[&str]) {
+        for url in urls {
+            assert!(!pred(url), "expected rejection for {url:?}");
+        }
+    }
 
     #[test]
     fn plain_text_is_not_complex() {
@@ -1291,6 +1437,9 @@ mod tests {
         );
     }
 
+    // `resolve_url` is a pure resolution layer; authorization (including the
+    // dangerous-scheme blocklist) happens in `is_link_allowed` /
+    // `is_image_allowed`. See `is_link_allowed_blocks_*` tests below.
     #[test]
     fn resolve_url_dangerous_schemes_unchanged() {
         let sec = MarkdownSecurity {
@@ -1311,5 +1460,281 @@ mod tests {
             "mailto:user@example.com"
         );
         assert_eq!(&*sec.resolve_url("tel:+1234567890"), "tel:+1234567890");
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_javascript_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("javascript:alert(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_vbscript_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("vbscript:msgbox(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_data_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("data:text/html,<script>alert(1)</script>"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_file_scheme_with_wildcard() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("file:///etc/passwd"));
+    }
+
+    #[test]
+    fn is_link_allowed_is_case_insensitive() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed("JaVaScRiPt:alert(1)"));
+        assert!(!sec.is_link_allowed("DATA:text/html,x"));
+        assert!(!sec.is_link_allowed("File:///tmp/x"));
+    }
+
+    #[test]
+    fn is_link_allowed_strips_leading_whitespace() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_link_allowed(" javascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\tjavascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\njavascript:alert(1)"));
+        assert!(!sec.is_link_allowed("\r\n javascript:alert(1)"));
+    }
+
+    #[test]
+    fn is_link_allowed_allows_safe_schemes() {
+        let sec = MarkdownSecurity::default();
+        assert!(sec.is_link_allowed("https://example.com"));
+        assert!(sec.is_link_allowed("http://example.com"));
+        assert!(sec.is_link_allowed("mailto:user@example.com"));
+        assert!(sec.is_link_allowed("tel:+1234567890"));
+        assert!(sec.is_link_allowed("#anchor"));
+        assert!(sec.is_link_allowed("/relative/path"));
+        assert!(sec.is_link_allowed("relative/path.html"));
+    }
+
+    #[test]
+    fn is_image_allowed_blocks_dangerous_schemes() {
+        let sec = MarkdownSecurity::default();
+        assert!(!sec.is_image_allowed("javascript:alert(1)"));
+        assert!(!sec.is_image_allowed("data:text/html,<script>alert(1)</script>"));
+        assert!(!sec.is_image_allowed("file:///etc/passwd"));
+        assert!(!sec.is_image_allowed("vbscript:msgbox(1)"));
+        assert!(!sec.is_image_allowed("blob:https://evil.example/abc"));
+        assert!(sec.is_image_allowed("https://example.com/img.png"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocklist_overrides_explicit_allowlist() {
+        // Blocklist is absolute: even a caller that explicitly allows
+        // `javascript:` in their prefix list cannot bypass it.
+        let sec = MarkdownSecurity {
+            allowed_link_prefixes: vec!["javascript:".into(), "https://".into()],
+            ..Default::default()
+        };
+        assert!(!sec.is_link_allowed("javascript:alert(1)"));
+        assert!(sec.is_link_allowed("https://example.com"));
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_additional_dangerous_schemes() {
+        let sec = MarkdownSecurity::default();
+        assert_all_blocked(
+            |u| sec.is_link_allowed(u),
+            &[
+                "blob:https://evil.example/abc",
+                "about:blank",
+                "view-source:https://example.com",
+                "livescript:alert(1)",
+            ],
+        );
+    }
+
+    #[test]
+    fn is_link_allowed_blocks_leading_c0_controls_and_del() {
+        // WHATWG URL parsing strips all C0 controls (0x00–0x1F), space,
+        // and DEL (0x7F) before scheme detection. Anything less lets a
+        // lenient downstream parser (future GPUI, NSURL-via-CFURL, etc.)
+        // re-interpret the URL and defeat the blocklist.
+        let sec = MarkdownSecurity::default();
+        assert_all_blocked(
+            |u| sec.is_link_allowed(u),
+            &[
+                "\u{0001}javascript:alert(1)",
+                "\u{000B}javascript:alert(1)", // VT, not in is_ascii_whitespace
+                "\u{0000}javascript:alert(1)",
+                "\u{007F}javascript:alert(1)", // DEL
+                "   \u{0001}\t javascript:alert(1)",
+            ],
+        );
+    }
+
+    #[test]
+    fn is_link_allowed_rejects_scheme_with_non_rfc3986_bytes() {
+        // RFC 3986 defines scheme = ALPHA *(ALPHA / DIGIT / "+" / "-" / ".").
+        // Anything else means it's not a scheme — treat as a relative path,
+        // not a dangerous scheme. Critically: a NUL or tab embedded in the
+        // scheme portion does not let "java\0script:" or "java\tscript:"
+        // through as a dangerous-scheme match.
+        let sec = MarkdownSecurity::default();
+        // These don't parse as a scheme (bytes outside charset), so they
+        // fall through to the allowlist — the wildcard default accepts
+        // them as relative paths. That's safe: they're not navigable as
+        // `javascript:` through any URL parser that conforms to RFC 3986.
+        assert!(sec.is_link_allowed("java\0script:alert(1)"));
+        assert!(sec.is_link_allowed("java\tscript:alert(1)"));
+        assert!(sec.is_link_allowed("java script:alert(1)"));
+        // But: leading whitespace is still trimmed, so a well-formed
+        // scheme after leading padding is correctly detected and blocked.
+        assert!(!sec.is_link_allowed("  javascript:alert(1)"));
+    }
+
+    #[test]
+    fn wildcard_allowlist_never_permits_dangerous_schemes() {
+        // Locks in the documented guarantee that `allowed_*_prefixes = ["*"]`
+        // does not bypass the blocklist. A future edit that reorders the
+        // checks or drops `is_dangerous_*_scheme` from one predicate would
+        // trip this test.
+        let sec = MarkdownSecurity::default();
+        let dangerous = [
+            "javascript:alert(1)",
+            "vbscript:msgbox(1)",
+            "livescript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///etc/passwd",
+            "blob:https://evil.example/abc",
+            "about:blank",
+            "view-source:https://example.com",
+        ];
+        for url in dangerous {
+            assert!(!sec.is_link_allowed(url), "link wildcard leaked {url:?}");
+            assert!(!sec.is_image_allowed(url), "image wildcard leaked {url:?}");
+        }
+    }
+
+    #[test]
+    fn is_image_allowed_permits_data_image_uri() {
+        // `data:image/*` is a common, legitimate pattern for inline
+        // base64 pictures in AI-generated markdown. GPUI's `img()` loads
+        // the bytes as an image, not as a script context — so this
+        // carve-out is safe while still blocking `data:text/html` and
+        // other MIME types.
+        let sec = MarkdownSecurity::default();
+        assert!(sec.is_image_allowed("data:image/png;base64,iVBORw0KGgo="));
+        assert!(sec.is_image_allowed("data:image/jpeg;base64,/9j/4AAQ"));
+        assert!(sec.is_image_allowed("data:image/svg+xml,<svg/>"));
+        // Case-insensitive on the media-type prefix.
+        assert!(sec.is_image_allowed("DATA:IMAGE/PNG;base64,iVBOR"));
+    }
+
+    #[test]
+    fn is_image_allowed_blocks_non_image_data_uris() {
+        // Other `data:` media types stay blocked even for images.
+        let sec = MarkdownSecurity::default();
+        assert_all_blocked(
+            |u| sec.is_image_allowed(u),
+            &[
+                "data:text/html,<script>alert(1)</script>",
+                "data:text/javascript,alert(1)",
+                "data:application/octet-stream,AAAA",
+                "data:,plaintext",
+            ],
+        );
+    }
+
+    #[test]
+    fn is_image_allowed_is_case_insensitive() {
+        let sec = MarkdownSecurity::default();
+        assert_all_blocked(
+            |u| sec.is_image_allowed(u),
+            &[
+                "JaVaScRiPt:alert(1)",
+                "FILE:///tmp/x",
+                "Blob:https://evil.example/abc",
+            ],
+        );
+    }
+
+    #[test]
+    fn is_image_allowed_strips_leading_whitespace() {
+        let sec = MarkdownSecurity::default();
+        assert_all_blocked(
+            |u| sec.is_image_allowed(u),
+            &[
+                " javascript:alert(1)",
+                "\tfile:///etc/passwd",
+                "\n\r  data:text/html,x",
+            ],
+        );
+    }
+
+    #[test]
+    fn is_image_allowed_blocklist_overrides_explicit_allowlist() {
+        // Even when a caller explicitly allows `data:` as a prefix (e.g. for
+        // inline text blobs) the dangerous-scheme blocklist still rejects
+        // `data:text/html` for images. The `data:image/*` carve-out remains.
+        let sec = MarkdownSecurity {
+            allowed_image_prefixes: vec!["data:".into(), "https://".into()],
+            ..Default::default()
+        };
+        assert!(!sec.is_image_allowed("data:text/html,<script>alert(1)</script>"));
+        assert!(sec.is_image_allowed("data:image/png;base64,iVBOR"));
+        assert!(sec.is_image_allowed("https://example.com/img.png"));
+    }
+
+    #[test]
+    fn is_dangerous_scheme_boundary_cases() {
+        let sec = MarkdownSecurity::default();
+        // Colon after a path separator / query / fragment: not a scheme,
+        // so these are relative URLs and the wildcard allowlist accepts.
+        assert!(sec.is_link_allowed("foo/bar:baz"));
+        assert!(sec.is_link_allowed("foo?q=a:b"));
+        assert!(sec.is_link_allowed("foo#frag:x"));
+        // Empty / degenerate inputs must not panic or mis-classify.
+        assert!(sec.is_link_allowed(":foo"));
+        assert!(sec.is_link_allowed(""));
+        assert!(sec.is_link_allowed(":"));
+        // Combined mixed-case + whitespace still blocked.
+        assert!(!sec.is_link_allowed(" \t JaVaScRiPt:alert(1)"));
+        assert!(!sec.is_link_allowed("\n\r  VBSCRIPT:foo"));
+    }
+
+    #[test]
+    fn flat_path_drops_javascript_link_from_link_urls() {
+        // The real XSS defense is the gate at the call site in
+        // `flatten_inlines_to_runs`: the predicate is sufficient only if
+        // the call site consults it in the right order. This test pins
+        // the end-to-end behavior so a future refactor of the branch
+        // structure cannot silently let a dangerous URL reach
+        // `link_urls` (and therefore `cx.open_url` on click).
+        let security = MarkdownSecurity::default();
+        let styles = test_styles();
+        let mut out = InlineRuns::new();
+        let inlines = vec![
+            InlineContent::Link {
+                url: "javascript:alert(1)".into(),
+                content: vec![InlineContent::Text("click me".into())],
+            },
+            InlineContent::Text(" and ".into()),
+            InlineContent::Link {
+                url: "https://example.com".into(),
+                content: vec![InlineContent::Text("safe".into())],
+            },
+        ];
+        let base_style = styles.base.clone();
+        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+
+        assert_eq!(
+            out.link_urls,
+            vec!["https://example.com".to_string()],
+            "dangerous URL leaked into link_urls"
+        );
+        assert_eq!(out.link_ranges.len(), 1);
+        // The blocked label still renders as plain text so the surrounding
+        // sentence reads naturally.
+        assert!(out.text.contains("click me"));
+        assert!(out.text.contains("safe"));
     }
 }

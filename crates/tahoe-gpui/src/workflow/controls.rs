@@ -304,6 +304,7 @@ impl RenderOnce for WorkflowControls {
                 .icon(Icon::new(IconName::RotateCcw))
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::IconSmall)
+                .tooltip("Undo")
                 .disabled(!can_undo);
             if let Some(handler) = self.on_undo.take() {
                 undo_btn = undo_btn.on_click(move |event, window, cx| handler(event, window, cx));
@@ -314,6 +315,7 @@ impl RenderOnce for WorkflowControls {
                 .icon(Icon::new(IconName::RotateCw))
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::IconSmall)
+                .tooltip("Redo")
                 .disabled(!can_redo);
             if let Some(handler) = self.on_redo.take() {
                 redo_btn = redo_btn.on_click(move |event, window, cx| handler(event, window, cx));
@@ -331,7 +333,8 @@ impl RenderOnce for WorkflowControls {
             let mut zoom_in = Button::new("wf-ctrl-zoom-in")
                 .icon(Icon::new(IconName::Plus))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall);
+                .size(ButtonSize::IconSmall)
+                .tooltip("Zoom in");
             if let Some(handler) = self.on_zoom_in.take() {
                 zoom_in = zoom_in.on_click(move |event, window, cx| handler(event, window, cx));
             }
@@ -340,7 +343,8 @@ impl RenderOnce for WorkflowControls {
             let mut zoom_out = Button::new("wf-ctrl-zoom-out")
                 .icon(Icon::new(IconName::Minus))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall);
+                .size(ButtonSize::IconSmall)
+                .tooltip("Zoom out");
             if let Some(handler) = self.on_zoom_out.take() {
                 zoom_out = zoom_out.on_click(move |event, window, cx| handler(event, window, cx));
             }
@@ -358,7 +362,8 @@ impl RenderOnce for WorkflowControls {
             let mut fit_btn = Button::new("wf-ctrl-fit-view")
                 .icon(Icon::new(IconName::Maximize))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall);
+                .size(ButtonSize::IconSmall)
+                .tooltip("Fit to view");
             if let Some(handler) = self.on_fit_view.take() {
                 let opts = self.fit_view_options.clone();
                 fit_btn =
@@ -375,17 +380,18 @@ impl RenderOnce for WorkflowControls {
                 bar = bar.child(self.divider(theme));
             }
 
-            let icon = if self.interactive {
-                IconName::Unlock
+            let (icon, tooltip) = if self.interactive {
+                (IconName::Unlock, "Lock interaction")
             } else {
-                IconName::Lock
+                (IconName::Lock, "Unlock interaction")
             };
             let new_state = !self.interactive;
 
             let mut lock_btn = Button::new("wf-ctrl-interactive")
                 .icon(Icon::new(icon))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSmall);
+                .size(ButtonSize::IconSmall)
+                .tooltip(tooltip);
             if let Some(handler) = self.on_interactive_change.take() {
                 lock_btn = lock_btn.on_click(move |event, window, cx| {
                     handler(new_state, event, window, cx);

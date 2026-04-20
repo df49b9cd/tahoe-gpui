@@ -144,7 +144,6 @@ impl RenderOnce for WebPreviewConsole {
 pub struct WebPreviewNavigationButton {
     id: ElementId,
     icon: IconName,
-    #[allow(dead_code)] // Retained for future tooltip support; verified in tests.
     tooltip: SharedString,
     disabled: bool,
 }
@@ -183,6 +182,7 @@ impl RenderOnce for WebPreviewNavigationButton {
             .icon(Icon::new(self.icon).size(theme.icon_size_inline))
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::IconSmall)
+            .tooltip(self.tooltip)
             .disabled(self.disabled)
     }
 }

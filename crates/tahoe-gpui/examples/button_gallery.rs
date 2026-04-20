@@ -152,7 +152,8 @@ impl Render for ButtonGallery {
                             Button::new(format!("{id_root}-icon"))
                                 .icon(Icon::new(IconName::Sparkle).size(px(16.0)))
                                 .variant(v)
-                                .size(ButtonSize::Icon),
+                                .size(ButtonSize::Icon)
+                                .tooltip("Sparkle"),
                         ),
                     )
                     // Icon-only (sm)
@@ -161,7 +162,8 @@ impl Render for ButtonGallery {
                             Button::new(format!("{id_root}-icon-sm"))
                                 .icon(Icon::new(IconName::Sparkle).size(px(14.0)))
                                 .variant(v)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Sparkle"),
                         ),
                     ),
             );

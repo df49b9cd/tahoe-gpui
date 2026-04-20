@@ -158,7 +158,8 @@ impl Render for ToolbarApp {
                 Button::new("toggle-sidebar")
                     .icon(Icon::new(IconName::DevSidebar).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Toggle sidebar"),
             )
             .leading(
                 div()
@@ -169,13 +170,15 @@ impl Render for ToolbarApp {
                         Button::new("nav-back")
                             .icon(Icon::new(IconName::ChevronLeft).size(px(14.0)))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSmall),
+                            .size(ButtonSize::IconSmall)
+                            .tooltip("Back"),
                     )
                     .child(
                         Button::new("nav-forward")
                             .icon(Icon::new(IconName::ChevronRight).size(px(14.0)))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSmall),
+                            .size(ButtonSize::IconSmall)
+                            .tooltip("Forward"),
                     ),
             )
             .title(SharedString::from(folder_name))
@@ -184,31 +187,36 @@ impl Render for ToolbarApp {
                 Button::new("act-new-folder")
                     .icon(Icon::new(IconName::FolderOpen).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("New folder"),
             )
             .trailing(
                 Button::new("act-trash")
                     .icon(Icon::new(IconName::Trash).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Move to trash"),
             )
             .trailing(
                 Button::new("act-archive")
                     .icon(Icon::new(IconName::Package).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Archive"),
             )
             .trailing(
                 Button::new("act-tag")
                     .icon(Icon::new(IconName::Bookmark).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Tag"),
             )
             .trailing(
                 Button::new("act-edit")
                     .icon(Icon::new(IconName::Pencil).size(px(14.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Edit"),
             )
             // Search field placeholder (capsule with icon + "Search")
             .trailing(

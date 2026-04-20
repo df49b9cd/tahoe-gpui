@@ -64,7 +64,8 @@ pub fn render(
                             Button::new("copy-idle")
                                 .icon(Icon::new(IconName::Copy).size(px(16.0)))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Copy"),
                         )
                         .child(
                             div()
@@ -87,7 +88,8 @@ pub fn render(
                                         .color(theme.success),
                                 )
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSmall),
+                                .size(ButtonSize::IconSmall)
+                                .tooltip("Copied"),
                         )
                         .child(
                             div()

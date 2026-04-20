@@ -17,7 +17,6 @@ use tahoe_gpui::components::navigation_and_search::tab_bar::{TabBar, TabItem};
 use tahoe_gpui::components::presentation::hover_card::HoverCard;
 use tahoe_gpui::components::presentation::modal::Modal;
 use tahoe_gpui::components::presentation::popover::{Popover, PopoverPlacement};
-use tahoe_gpui::components::presentation::tooltip::Tooltip;
 use tahoe_gpui::components::selection_and_input::toggle::Toggle;
 use tahoe_gpui::components::status::progress_indicator::ProgressIndicator;
 use tahoe_gpui::foundations::GlassSurfaceScope;
@@ -430,30 +429,27 @@ impl GlassMessenger {
                         .flex()
                         .gap(px(4.0))
                         .pt(px(4.0))
-                        .child(Tooltip::new(
-                            format!("copy-{i}"),
-                            "Copy to clipboard",
+                        .child(
                             Button::new(SharedString::from(format!("copy-btn-{i}")))
                                 .icon(Icon::new(IconName::Copy))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon),
-                        ))
-                        .child(Tooltip::new(
-                            format!("up-{i}"),
-                            "Helpful",
+                                .size(ButtonSize::Icon)
+                                .tooltip("Copy to clipboard"),
+                        )
+                        .child(
                             Button::new(SharedString::from(format!("up-btn-{i}")))
                                 .icon(Icon::new(IconName::ThumbsUp))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon),
-                        ))
-                        .child(Tooltip::new(
-                            format!("down-{i}"),
-                            "Not helpful",
+                                .size(ButtonSize::Icon)
+                                .tooltip("Helpful"),
+                        )
+                        .child(
                             Button::new(SharedString::from(format!("down-btn-{i}")))
                                 .icon(Icon::new(IconName::ThumbsDown))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon),
-                        )),
+                                .size(ButtonSize::Icon)
+                                .tooltip("Not helpful"),
+                        ),
                 );
             }
 
@@ -490,6 +486,7 @@ impl GlassMessenger {
             .icon(Icon::new(IconName::Paperclip))
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Icon)
+            .tooltip("Attach")
             .on_click({
                 let entity = entity.clone();
                 move |_, _, cx| {
@@ -550,14 +547,11 @@ impl GlassMessenger {
             .text_color(theme.text_muted)
             .child("Type a message...");
 
-        let send_btn = Tooltip::new(
-            "send-tooltip",
-            "Send message",
-            Button::new("send-btn")
-                .icon(Icon::new(IconName::Send))
-                .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Icon),
-        );
+        let send_btn = Button::new("send-btn")
+            .icon(Icon::new(IconName::Send))
+            .variant(ButtonVariant::Primary)
+            .size(ButtonSize::Icon)
+            .tooltip("Send message");
 
         let mut bar = div()
             .flex()

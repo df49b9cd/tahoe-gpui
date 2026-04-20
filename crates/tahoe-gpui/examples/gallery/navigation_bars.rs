@@ -78,7 +78,8 @@ pub fn render(
                 Button::new("compose-btn")
                     .icon(Icon::new(IconName::Pencil).size(px(16.0)))
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSmall),
+                    .size(ButtonSize::IconSmall)
+                    .tooltip("Compose"),
             ),
         )
         .into_any_element()

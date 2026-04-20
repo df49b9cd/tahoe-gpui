@@ -104,8 +104,6 @@ impl IncrementalMarkdownParser {
         // the raw final source.
         self.blocks_dirty = true;
         let _ = self.parse();
-        // Release raw source string — cached_blocks is now the authority.
-        self.source = String::new();
     }
 
     /// Get the full source text.
