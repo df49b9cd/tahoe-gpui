@@ -270,7 +270,10 @@ impl RenderOnce for SegmentedControl {
             };
 
             let mut segment = div()
-                .id(ElementId::from(SharedString::from(format!("seg-{i}"))))
+                .id(ElementId::from(SharedString::from(format!(
+                    "seg-{}",
+                    item.label
+                ))))
                 .flex_1()
                 .flex()
                 .items_center()
