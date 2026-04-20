@@ -38,7 +38,6 @@
 use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use gpui::prelude::*;
 use gpui::{
@@ -208,6 +207,8 @@ impl Element for SelectableText {
             global_id.is_some(),
             "SelectableText::paint: global_id is None despite id() returning Some"
         );
+        // TODO(test): the global_id = None fallback is untested —
+        // requires a GPUI window harness to call paint() directly.
         let Some(global_id) = global_id else {
             self.text
                 .paint(None, inspector_id, bounds, &mut (), &mut (), window, cx);
@@ -514,7 +515,12 @@ fn paint_selection_quads(
 /// One-shot warning when `global_id` is `None` at paint time — indicates a
 /// GPUI framework contract violation (should never happen since `id()` always
 /// returns `Some`). `OnceLock` prevents log spam across frames.
+/// Release builds compile this to a no-op (matches `warn_blur_fallback_once`
+/// in `materials.rs`).
+#[cfg(debug_assertions)]
 fn warn_global_id_missing_once() {
+    use std::sync::OnceLock;
+
     static WARNED: OnceLock<()> = OnceLock::new();
     WARNED.get_or_init(|| {
         tracing::warn!(
@@ -523,6 +529,9 @@ fn warn_global_id_missing_once() {
         );
     });
 }
+
+#[cfg(not(debug_assertions))]
+fn warn_global_id_missing_once() {}
 
 #[cfg(test)]
 mod tests {
