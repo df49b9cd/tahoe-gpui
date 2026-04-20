@@ -61,12 +61,18 @@
 //! GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so every
 //! surface function in this module is a translucent tinted fill plus
 //! shadows — no per-element compositing of the content behind the element.
-//! On macOS the library installs `WindowBackgroundAppearance::Blurred`
-//! (NSVisualEffectView), so glass is translucent to the **desktop wallpaper
-//! behind the window** but NOT to sibling GPUI elements in the same window.
-//! Place glass directly on the window root for meaningful translucency; over
+//! On macOS, when the window uses `WindowBackgroundAppearance::Blurred`
+//! (NSVisualEffectView) — set via `theme.glass.window_background` in
+//! `WindowOptions` or by calling [`TahoeTheme::apply_in_window`] — glass is
+//! translucent to the **desktop wallpaper behind the window** but NOT to
+//! sibling GPUI elements in the same window. On a window created with
+//! `WindowBackgroundAppearance::Opaque` (the default non-glass case), even
+//! the wallpaper is hidden and glass reads as a flat tinted fill. Place
+//! glass directly on the window root for meaningful translucency; over
 //! dense content it reads as a tinted rectangle. See [`glass_surface`] for
 //! the full caveat and guidance.
+//!
+//! [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
 //!
 //! # Accessibility
 //!
@@ -900,12 +906,16 @@ fn default_glass_bg(glass: &GlassStyle, mode: AccessibilityMode, size: GlassSize
 /// GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so this
 /// function cannot composite a blurred sample of the content behind the
 /// element into its fill. The rendering is a translucent tinted fill plus
-/// per-size shadows — nothing more. On macOS, the library installs
-/// `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) at the window
-/// level, so glass surfaces are translucent to the **desktop wallpaper
+/// per-size shadows — nothing more. On macOS, when the window uses
+/// `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) — which the
+/// glass themes provide via `theme.glass.window_background` and the app
+/// wires into `WindowOptions`, or [`TahoeTheme::apply_in_window`] installs
+/// directly — glass surfaces are translucent to the **desktop wallpaper
 /// behind the window** but NOT to sibling GPUI elements inside the same
 /// window. A glass card placed directly over a list renders as a tinted
-/// rectangle, not true Liquid Glass.
+/// rectangle, not true Liquid Glass. On a window created with
+/// `WindowBackgroundAppearance::Opaque`, even the wallpaper is hidden and
+/// glass reads as a flat tinted fill.
 ///
 /// For meaningful translucency, place glass surfaces directly on the window
 /// root background (see `examples/liquid_glass_gallery.rs` for the pattern).
@@ -913,6 +923,8 @@ fn default_glass_bg(glass: &GlassStyle, mode: AccessibilityMode, size: GlassSize
 /// function for the same reason; [`backdrop_blur_overlay`] documents the
 /// same gap for full-viewport scrims. The upstream tracking task is a GPUI
 /// PR that lands a rect-level blur entry point.
+///
+/// [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
 ///
 /// **Note per HIG:** Don't use Liquid Glass in the content layer.
 /// Use glass surfaces only for controls, navigation elements, and overlays.
