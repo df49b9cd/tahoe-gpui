@@ -272,6 +272,9 @@ fn hsla_to_hex(color: Hsla) -> String {
 /// around the leading `#` is tolerated; the leading `#` itself is optional.
 fn parse_hex(input: &str) -> Option<Hsla> {
     let trimmed = input.trim().trim_start_matches('#');
+    if !trimmed.is_ascii() {
+        return None;
+    }
     let (r, g, b, a) = match trimmed.len() {
         3 => {
             let r = u8::from_str_radix(&trimmed[0..1].repeat(2), 16).ok()?;
@@ -1033,6 +1036,35 @@ mod tests {
         let (_h, s, b) = hsla_to_hsb(white);
         assert_eq!(s, 0);
         assert_eq!(b, 100);
+    }
+
+    // ── parse_hex UTF-8 safety (issue #60) ────────────────────────────────
+    // Multi-byte UTF-8 input with a byte length that matches one of the
+    // hex arms must return None instead of panicking mid-codepoint.
+
+    #[test]
+    fn parse_hex_rejects_multibyte_len_3() {
+        assert!(parse_hex("#0é").is_none());
+    }
+
+    #[test]
+    fn parse_hex_rejects_multibyte_len_4() {
+        assert!(parse_hex("#0é0").is_none());
+    }
+
+    #[test]
+    fn parse_hex_rejects_multibyte_len_6() {
+        assert!(parse_hex("#0é000").is_none());
+    }
+
+    #[test]
+    fn parse_hex_rejects_emoji_len_8() {
+        assert!(parse_hex("#🎨0000").is_none());
+    }
+
+    #[test]
+    fn parse_hex_accepts_lowercase_ascii_unchanged() {
+        assert!(parse_hex("#ff00aa").is_some());
     }
 
     #[test]
