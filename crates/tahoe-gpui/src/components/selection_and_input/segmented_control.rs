@@ -200,7 +200,7 @@ impl RenderOnce for SegmentedControl {
                 .items_center()
                 .justify_center()
                 .gap(theme.spacing_xs)
-                .min_h(px(theme.target_size() - 4.0)) // Account for track padding
+                .min_h(px(theme.target_size() - SEGMENTED_INSET * 2.0)) // Inner height = track height minus the 2pt inset top-and-bottom
                 .px(theme.spacing_sm)
                 .text_color(text_color)
                 .text_style(TextStyle::Subheadline, theme)

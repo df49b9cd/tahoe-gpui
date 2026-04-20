@@ -1011,6 +1011,48 @@ mod tests {
         }
     }
 
+    /// Regression test for issue #51: `ButtonSize::Mini` must resolve to the
+    /// macOS `MACOS_MIN_TOUCH_TARGET = 20 pt` floor, not 16 pt. Also pins
+    /// the `ButtonSize` <-> `ControlSize` mapping so future refactors of
+    /// `ButtonSize::control_size` cannot silently drop the Mini tier below
+    /// 20 pt or skew the other heights away from the SwiftUI ControlSize
+    /// metrics (20 / 24 / 28 / 32 / 36 pt on macOS).
+    #[test]
+    fn button_size_heights_track_swiftui_control_size_macos() {
+        use crate::foundations::layout::{ControlSize, Platform};
+        use crate::foundations::theme::TahoeTheme;
+
+        let theme = TahoeTheme::dark();
+        assert_eq!(theme.platform, Platform::MacOS);
+
+        assert_eq!(ButtonSize::Mini.control_size(), ControlSize::Mini);
+        assert_eq!(theme.control_height(ButtonSize::Mini.control_size()), 20.0);
+
+        assert_eq!(ButtonSize::Small.control_size(), ControlSize::Small);
+        assert_eq!(theme.control_height(ButtonSize::Small.control_size()), 24.0);
+
+        assert_eq!(ButtonSize::Regular.control_size(), ControlSize::Regular);
+        assert_eq!(
+            theme.control_height(ButtonSize::Regular.control_size()),
+            28.0
+        );
+
+        assert_eq!(ButtonSize::Large.control_size(), ControlSize::Large);
+        assert_eq!(theme.control_height(ButtonSize::Large.control_size()), 32.0);
+
+        assert_eq!(
+            ButtonSize::ExtraLarge.control_size(),
+            ControlSize::ExtraLarge
+        );
+        assert_eq!(
+            theme.control_height(ButtonSize::ExtraLarge.control_size()),
+            36.0
+        );
+
+        assert_eq!(ButtonSize::IconSmall.control_size(), ControlSize::Small);
+        assert_eq!(ButtonSize::Icon.control_size(), ControlSize::Regular);
+    }
+
     #[test]
     fn button_loading_default_false() {
         let btn = Button::new("test");
