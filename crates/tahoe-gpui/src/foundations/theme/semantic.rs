@@ -56,6 +56,12 @@ pub struct SemanticColors {
     /// Elevated secondary system background.
     pub elevated_secondary_system_background: Hsla,
 
+    /// Backdrop for Apple Fitness-style Activity rings. HIG requires rings
+    /// to sit on a black substrate, but `dark_mode.rs:20` forbids `#000000`
+    /// — we pin to the system dark gray (L=0.07) in every appearance so the
+    /// watch-face aesthetic survives light mode as well.
+    pub activity_ring_backdrop: Hsla,
+
     /// Informational color (citations, chain-of-thought, neutral status).
     /// Resolved from `SystemColor::Cyan` for the current appearance — the HC
     /// variants raise lightness so the color stays ≥3:1 on system fills.
@@ -110,6 +116,7 @@ impl SemanticColors {
             tertiary_system_grouped_background: hsla(0.0, 0.0, 0.17, 1.0),
             elevated_system_background: hsla(0.0, 0.0, 0.11, 1.0),
             elevated_secondary_system_background: hsla(0.0, 0.0, 0.17, 1.0),
+            activity_ring_backdrop: hsla(0.0, 0.0, 0.07, 1.0),
             info: SystemColor::Cyan.resolve(Appearance::Dark),
             ai: SystemColor::Purple.resolve(Appearance::Dark),
         }
@@ -156,6 +163,7 @@ impl SemanticColors {
             tertiary_system_grouped_background: hsla(0.0, 0.0, 0.95, 1.0),
             elevated_system_background: hsla(0.0, 0.0, 1.0, 1.0),
             elevated_secondary_system_background: hsla(0.0, 0.0, 0.97, 1.0),
+            activity_ring_backdrop: hsla(0.0, 0.0, 0.07, 1.0),
             info: SystemColor::Cyan.resolve(Appearance::Light),
             ai: SystemColor::Purple.resolve(Appearance::Light),
         }
@@ -175,5 +183,40 @@ impl SemanticColors {
         s.info = SystemColor::Cyan.resolve(Appearance::LightHighContrast);
         s.ai = SystemColor::Purple.resolve(Appearance::LightHighContrast);
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::foundations::color::Appearance;
+    use crate::foundations::theme::semantic::SemanticColors;
+    use core::prelude::v1::test;
+
+    // Regression for https://github.com/df49b9cd/tahoe-gpui/issues/55.
+    // Activity ring backdrop must never be pure black (HIG dark-mode rule)
+    // and must keep the watch-face aesthetic in light mode too.
+    #[test]
+    fn activity_ring_backdrop_is_not_pure_black_in_any_mode() {
+        for appearance in [
+            Appearance::Dark,
+            Appearance::Light,
+            Appearance::DarkHighContrast,
+            Appearance::LightHighContrast,
+        ] {
+            let s = SemanticColors::new(appearance);
+            assert!(
+                s.activity_ring_backdrop.l > 0.02,
+                "activity_ring_backdrop is pure black in {appearance:?}"
+            );
+            assert!(
+                (s.activity_ring_backdrop.l - 0.07).abs() < 1e-4,
+                "activity_ring_backdrop lightness should be 0.07 in {appearance:?}, got {}",
+                s.activity_ring_backdrop.l
+            );
+            assert!(
+                (s.activity_ring_backdrop.a - 1.0).abs() < f32::EPSILON,
+                "activity_ring_backdrop must be opaque"
+            );
+        }
     }
 }
