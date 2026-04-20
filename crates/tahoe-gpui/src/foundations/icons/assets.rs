@@ -557,10 +557,6 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../../assets/icons/git/code-review_muted.svg"),
     ),
     (
-        "icons/git/commit_muted.svg",
-        include_bytes!("../../../assets/icons/git/commit_muted.svg"),
-    ),
-    (
         "icons/git/compare_error.svg",
         include_bytes!("../../../assets/icons/git/compare_error.svg"),
     ),
@@ -721,20 +717,12 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../../assets/icons/dev-tools/extension_ai.svg"),
     ),
     (
-        "icons/dev-tools/file_muted.svg",
-        include_bytes!("../../../assets/icons/dev-tools/file_muted.svg"),
-    ),
-    (
         "icons/dev-tools/find-replace_info.svg",
         include_bytes!("../../../assets/icons/dev-tools/find-replace_info.svg"),
     ),
     (
         "icons/dev-tools/fine-tune_warning.svg",
         include_bytes!("../../../assets/icons/dev-tools/fine-tune_warning.svg"),
-    ),
-    (
-        "icons/dev-tools/folder_muted.svg",
-        include_bytes!("../../../assets/icons/dev-tools/folder_muted.svg"),
     ),
     (
         "icons/dev-tools/function-call_muted.svg",
@@ -853,10 +841,6 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../../assets/icons/dev-tools/secret_warning.svg"),
     ),
     (
-        "icons/dev-tools/settings_muted.svg",
-        include_bytes!("../../../assets/icons/dev-tools/settings_muted.svg"),
-    ),
-    (
         "icons/dev-tools/sidebar_muted.svg",
         include_bytes!("../../../assets/icons/dev-tools/sidebar_muted.svg"),
     ),
@@ -879,14 +863,6 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
     (
         "icons/dev-tools/tab_muted.svg",
         include_bytes!("../../../assets/icons/dev-tools/tab_muted.svg"),
-    ),
-    (
-        "icons/dev-tools/terminal_muted.svg",
-        include_bytes!("../../../assets/icons/dev-tools/terminal_muted.svg"),
-    ),
-    (
-        "icons/dev-tools/terminal_success.svg",
-        include_bytes!("../../../assets/icons/dev-tools/terminal_success.svg"),
     ),
     (
         "icons/dev-tools/token_warning.svg",
