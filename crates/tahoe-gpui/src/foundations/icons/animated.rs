@@ -202,6 +202,20 @@ impl AnimatedIcon {
     }
 }
 
+/// Derive three unique inner `ElementId`s for the `MagicReplace` arm from
+/// the caller-supplied parent id. Slots: incoming-SVG animation, incoming
+/// fallback div, incoming fallback div animation. Each instance of
+/// `MagicReplace` in the same window must have a distinct parent id
+/// (required by `AnimatedIcon::new`), so the derived ids are globally
+/// unique.
+fn magic_replace_inner_ids(parent: &ElementId) -> [ElementId; 3] {
+    [
+        ElementId::Name(format!("{parent}-magic-incoming-svg").into()),
+        ElementId::Name(format!("{parent}-magic-incoming-div").into()),
+        ElementId::Name(format!("{parent}-magic-incoming-div-anim").into()),
+    ]
+}
+
 impl RenderOnce for AnimatedIcon {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -881,13 +895,18 @@ impl RenderOnce for AnimatedIcon {
                         RenderStrategy::Monochrome(p) => Some(p),
                         _ => None,
                     });
+                // Derive inner ids from `self.id` so multiple MagicReplace
+                // animations in the same window cannot collide on GPUI's
+                // element-id uniqueness check.
+                let [incoming_svg_anim, incoming_div_id, incoming_div_anim] =
+                    magic_replace_inner_ids(&self.id);
                 let incoming = if let Some(path) = to_svg_path {
                     svg()
                         .path(path)
                         .size(size)
                         .text_color(color_to)
                         .with_animation(
-                            ElementId::Integer(1),
+                            incoming_svg_anim,
                             Animation::new(duration),
                             move |el, delta| {
                                 let s = 0.92 + 0.08 * delta;
@@ -898,11 +917,11 @@ impl RenderOnce for AnimatedIcon {
                         .into_any_element()
                 } else {
                     div()
-                        .id(ElementId::Integer(1))
+                        .id(incoming_div_id)
                         .size(size)
                         .child(Icon::new(to).size(size).color(color_to))
                         .with_animation(
-                            ElementId::Integer(2),
+                            incoming_div_anim,
                             Animation::new(duration),
                             move |el, delta| el.opacity(delta),
                         )
@@ -944,8 +963,10 @@ impl RenderOnce for AnimatedIcon {
 
 #[cfg(test)]
 mod tests {
+    use super::magic_replace_inner_ids;
     use crate::foundations::icons::IconName;
     use core::prelude::v1::test;
+    use gpui::ElementId;
 
     #[test]
     fn all_providers_have_animation() {
@@ -980,5 +1001,39 @@ mod tests {
     fn non_providers_have_no_animation() {
         assert!(IconName::Check.provider_animation().is_none());
         assert!(IconName::ArrowDown.provider_animation().is_none());
+    }
+
+    // Regression for issue #14: `MagicReplace` used to hardcode
+    // `ElementId::Integer(1)` / `ElementId::Integer(2)` on its inner
+    // elements, which panics when two animations render in the same
+    // window. The derivation must produce (a) three slots that differ
+    // from each other within a single parent and (b) distinct ids
+    // across different parents.
+    #[test]
+    fn magic_replace_inner_ids_are_unique_within_a_parent() {
+        let [a, b, c] = magic_replace_inner_ids(&ElementId::Name("icon".into()));
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn magic_replace_inner_ids_differ_across_parents() {
+        let [a_svg, a_div, a_anim] = magic_replace_inner_ids(&ElementId::Name("icon-a".into()));
+        let [b_svg, b_div, b_anim] = magic_replace_inner_ids(&ElementId::Name("icon-b".into()));
+        assert_ne!(a_svg, b_svg);
+        assert_ne!(a_div, b_div);
+        assert_ne!(a_anim, b_anim);
+    }
+
+    #[test]
+    fn magic_replace_inner_ids_work_with_integer_parents() {
+        // Parent ids aren't always Name — confirm Integer parents also
+        // produce unique, non-hardcoded inner ids.
+        let [a_svg, _, _] = magic_replace_inner_ids(&ElementId::Integer(1));
+        let [b_svg, _, _] = magic_replace_inner_ids(&ElementId::Integer(2));
+        assert_ne!(a_svg, b_svg);
+        assert_ne!(a_svg, ElementId::Integer(1));
+        assert_ne!(a_svg, ElementId::Integer(2));
     }
 }
