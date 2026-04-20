@@ -329,6 +329,14 @@ fn liquid_glass_accent_color_enum_matches_accent() {
     let theme = TahoeTheme::liquid_glass();
     let replayed = theme.clone().with_accent_color(theme.accent_color);
     assert_eq!(replayed.accent_color, theme.accent_color);
+
+    // The constructor's hardcoded accent flows through to ring,
+    // focus_ring_color, and the glass accent tint — pinning the
+    // "no pixel change" contract against a future refactor that
+    // accidentally routes these through palette.blue.
+    assert_eq!(theme.ring, theme.accent);
+    assert_eq!(theme.focus_ring_color, theme.accent);
+    assert_eq!(theme.glass.accent_tint.bg, theme.accent);
 }
 
 #[test]

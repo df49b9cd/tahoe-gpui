@@ -957,6 +957,7 @@ impl TahoeTheme {
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.63,
             ..theme.palette.red
@@ -1264,6 +1265,7 @@ impl TahoeTheme {
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.50,
             ..theme.palette.red
