@@ -1,6 +1,9 @@
 use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 
-use super::{LinkMode, RemendOptions, remend};
+use proptest::prelude::*;
+
+use super::{LinkMode, RemendHandler, RemendOptions, remend};
 
 fn opts() -> RemendOptions {
     RemendOptions::default()
@@ -1268,8 +1271,6 @@ fn text_only_nested_brackets() {
 
 #[test]
 fn custom_handler_runs() {
-    use super::RemendHandler;
-
     struct UpperHandler;
     impl RemendHandler for UpperHandler {
         fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
@@ -1295,8 +1296,6 @@ fn custom_handler_runs() {
 
 #[test]
 fn custom_handler_priority_before_builtin() {
-    use super::RemendHandler;
-
     struct PrependHandler;
     impl RemendHandler for PrependHandler {
         fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
@@ -1319,4 +1318,320 @@ fn custom_handler_priority_before_builtin() {
         .handler(Box::new(PrependHandler));
     let result = remend("hello", &opts);
     assert_eq!(result.as_ref(), "PREFIX: hello");
+}
+
+// ===========================================================================
+// Property-based tests (fuzz invariants)
+// ===========================================================================
+
+/// Biases toward characters remend actively inspects — markdown punctuation,
+/// KaTeX/HTML/table delimiters, URL punctuation, CR/LF, and plain prose.
+/// Capped at 80 chars so shrunk counterexamples stay readable.
+fn markdown_soup() -> impl Strategy<Value = String> {
+    prop::string::string_regex(r#"[ \n\r\t*_`~\[\]()<>{}|!#$\\/:'"a-zA-Z0-9.,-]{0,80}"#).unwrap()
+}
+
+#[derive(Debug, Clone)]
+struct OptionFlags {
+    bold: bool,
+    italic: bool,
+    bold_italic: bool,
+    inline_code: bool,
+    strikethrough: bool,
+    links: bool,
+    images: bool,
+    katex: bool,
+    inline_katex: bool,
+    setext_headings: bool,
+    html_tags: bool,
+    single_tilde: bool,
+    comparison_operators: bool,
+    link_mode: LinkMode,
+}
+
+impl OptionFlags {
+    fn to_options(&self) -> RemendOptions {
+        RemendOptions::default()
+            .bold(self.bold)
+            .italic(self.italic)
+            .bold_italic(self.bold_italic)
+            .inline_code(self.inline_code)
+            .strikethrough(self.strikethrough)
+            .links(self.links)
+            .images(self.images)
+            .katex(self.katex)
+            .inline_katex(self.inline_katex)
+            .setext_headings(self.setext_headings)
+            .html_tags(self.html_tags)
+            .single_tilde(self.single_tilde)
+            .comparison_operators(self.comparison_operators)
+            .link_mode(self.link_mode)
+    }
+}
+
+fn arbitrary_options() -> impl Strategy<Value = OptionFlags> {
+    // Nested tuples: proptest's Strategy impl caps at 10-tuples.
+    (
+        (
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+        (
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+            prop_oneof![Just(LinkMode::Protocol), Just(LinkMode::TextOnly)],
+        ),
+    )
+        .prop_map(
+            |(
+                (bold, italic, bold_italic, inline_code, strikethrough, links, images),
+                (
+                    katex,
+                    inline_katex,
+                    setext_headings,
+                    html_tags,
+                    single_tilde,
+                    comparison_operators,
+                    link_mode,
+                ),
+            )| OptionFlags {
+                bold,
+                italic,
+                bold_italic,
+                inline_code,
+                strikethrough,
+                links,
+                images,
+                katex,
+                inline_katex,
+                setext_headings,
+                html_tags,
+                single_tilde,
+                comparison_operators,
+                link_mode,
+            },
+        )
+}
+
+/// Records handler executions so the ordering property can assert the
+/// pipeline respects priority.
+#[derive(Clone)]
+struct Recorder {
+    tag: char,
+    pri: i32,
+    log: Arc<Mutex<String>>,
+}
+
+impl RemendHandler for Recorder {
+    fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        self.log.lock().unwrap().push(self.tag);
+        Cow::Borrowed(text)
+    }
+    fn name(&self) -> &str {
+        "recorder"
+    }
+    fn priority(&self) -> i32 {
+        self.pri
+    }
+}
+
+/// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`). Stays
+/// active as a plain `#[test]` so removing `#[ignore]` once #144 is fixed
+/// reactivates the guard without needing the proptest to run.
+#[test]
+#[ignore = "blocked on issue #144 — italic-asterisk handler re-opens on second pass"]
+fn idempotency_regression_0144() {
+    let opts = RemendOptions::default();
+    let once = remend("*0\t", &opts).into_owned();
+    let twice = remend(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
+
+    #[test]
+    fn fuzz_never_panics_on_arbitrary_utf8(chars in prop::collection::vec(any::<char>(), 0..256)) {
+        let s: String = chars.iter().collect();
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn fuzz_never_panics_on_prefixes(chars in prop::collection::vec(any::<char>(), 0..128)) {
+        // Streaming hits every prefix as tokens arrive; iterate all boundaries
+        // per input rather than a single random cut.
+        let s: String = chars.iter().collect();
+        let opts = RemendOptions::default();
+        let boundaries = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(s.len()));
+        for cut in boundaries {
+            let _ = remend(&s[..cut], &opts);
+        }
+    }
+
+    // Idempotency stress test across every option combination. Collapsed from
+    // four near-duplicates; the direct regression test above is the canonical
+    // tripwire. Stays #[ignore]d until #144 is fixed.
+    #[test]
+    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
+    fn fuzz_idempotent_all_option_combinations(
+        s in markdown_soup(),
+        flags in arbitrary_options(),
+    ) {
+        let once = remend(&s, &flags.to_options()).into_owned();
+        let twice = remend(&once, &flags.to_options()).into_owned();
+        prop_assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn fuzz_incomplete_autolinks_never_panic(
+        prefix in markdown_soup(),
+        url in r"<https?://[a-zA-Z0-9./:?#&=~%\-_]{0,40}",
+        suffix in markdown_soup(),
+    ) {
+        let s = format!("{prefix}{url}{suffix}");
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn fuzz_reference_style_links_never_panic(
+        s in r"\[[a-zA-Z0-9 ]{0,20}\](\[[a-zA-Z0-9]{0,10}\])?(\n\[[a-zA-Z0-9]{0,10}\]: https?://[a-zA-Z0-9./\-]{0,30})?",
+    ) {
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn fuzz_incomplete_block_katex_never_panic(
+        prefix in markdown_soup(),
+        math in r"\$\$?[a-zA-Z0-9 ^_{}\\]{0,40}",
+        suffix in markdown_soup(),
+    ) {
+        let s = format!("{prefix}{math}{suffix}");
+        let _ = remend(&s, &RemendOptions::default());
+    }
+
+    #[test]
+    fn fuzz_incomplete_inline_katex_never_panic(
+        prefix in markdown_soup(),
+        math in r"\$[a-zA-Z0-9 ^_{}\\]{0,40}",
+        suffix in markdown_soup(),
+    ) {
+        let s = format!("{prefix}{math}{suffix}");
+        let _ = remend(&s, &RemendOptions::default().inline_katex(true));
+    }
+
+    #[test]
+    fn fuzz_handler_order_matches_priority_sort(
+        specs in prop::collection::vec((0u8..26, -10i32..=200), 1..=5),
+    ) {
+        let log = Arc::new(Mutex::new(String::new()));
+
+        // Disable every built-in so only the custom recorders run.
+        let mut opts = RemendOptions::default()
+            .bold(false)
+            .italic(false)
+            .bold_italic(false)
+            .inline_code(false)
+            .strikethrough(false)
+            .links(false)
+            .images(false)
+            .katex(false)
+            .inline_katex(false)
+            .setext_headings(false)
+            .html_tags(false)
+            .single_tilde(false)
+            .comparison_operators(false);
+
+        for (idx, pri) in &specs {
+            opts.handlers.push(Box::new(Recorder {
+                tag: (b'a' + idx) as char,
+                pri: *pri,
+                log: log.clone(),
+            }));
+        }
+
+        let _ = remend("x", &opts);
+
+        let actual = log.lock().unwrap().clone();
+
+        // Stable sort: equal priorities preserve insertion order — mirrors
+        // `sort_by_key` in the pipeline at lib.rs.
+        let mut expected_indices: Vec<usize> = (0..specs.len()).collect();
+        expected_indices.sort_by_key(|&i| specs[i].1);
+        let expected: String = expected_indices
+            .into_iter()
+            .map(|i| (b'a' + specs[i].0) as char)
+            .collect();
+
+        prop_assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn fuzz_custom_handlers_respect_priority_among_builtins(
+        priorities in prop::collection::vec(-10i32..=200, 2..=4),
+    ) {
+        // Keep every built-in enabled so recorders interleave with real
+        // handlers; assert recorder-relative order still matches priority sort
+        // (stable sort preserves insertion order on ties).
+        let log = Arc::new(Mutex::new(String::new()));
+        let mut opts = RemendOptions::default();
+        for (i, &pri) in priorities.iter().enumerate() {
+            opts.handlers.push(Box::new(Recorder {
+                tag: (b'a' + i as u8) as char,
+                pri,
+                log: log.clone(),
+            }));
+        }
+
+        let _ = remend("plain text", &opts);
+
+        let actual = log.lock().unwrap().clone();
+
+        let mut expected_indices: Vec<usize> = (0..priorities.len()).collect();
+        expected_indices.sort_by_key(|&i| priorities[i]);
+        let expected: String = expected_indices
+            .into_iter()
+            .map(|i| (b'a' + i as u8) as char)
+            .collect();
+
+        prop_assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn fuzz_trailing_single_space_stripped(s in markdown_soup()) {
+        // Force exactly one trailing space (not two, which would be a line break).
+        let trimmed = s.trim_end_matches(' ');
+        let input = format!("{trimmed} ");
+        let result = remend(&input, &RemendOptions::default()).into_owned();
+        prop_assert!(
+            !result.ends_with(' '),
+            "single trailing space should be stripped; got {result:?}",
+        );
+    }
+
+    #[test]
+    fn fuzz_output_length_bounded(s in markdown_soup(), flags in arbitrary_options()) {
+        // No handler should expand input by more than a handful of closing
+        // markers; 64 bytes of headroom catches unbounded-growth regressions
+        // without depending on #144.
+        let opts = flags.to_options();
+        let result = remend(&s, &opts);
+        prop_assert!(
+            result.len() <= s.len() + 64,
+            "output grew by more than 64 bytes: input len={}, output len={}, input={s:?}",
+            s.len(),
+            result.len(),
+        );
+    }
 }

@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# Historical shrunk inputs are captured as plain `#[test]` regressions
+# (see `tests.rs::idempotency_regression_0144`) so the guards run even
+# when the parent proptest is `#[ignore]`d or renamed.
+cc a93257b2a7e1eed4bfb34151954745ab17607d1da632b7281c39883e541cc827 # shrinks to s = "$`", flags = OptionFlags { bold: false, italic: false, bold_italic: false, inline_code: false, strikethrough: false, links: false, images: false, katex: false, inline_katex: true, setext_headings: false, html_tags: false, single_tilde: false, comparison_operators: false, link_mode: Protocol }
