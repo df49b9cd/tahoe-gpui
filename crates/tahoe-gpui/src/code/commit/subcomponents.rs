@@ -477,7 +477,7 @@ impl RenderOnce for CommitFiles {
             .flex()
             .flex_col()
             .gap(px(2.0))
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Caption1, theme)
             .children(self.children)
     }
@@ -897,7 +897,7 @@ impl RenderOnce for CommitDiff {
         let mut container = div()
             .flex()
             .flex_col()
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Caption1, theme)
             .rounded(theme.radius_md)
             .border_1()

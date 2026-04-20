@@ -192,7 +192,7 @@ impl SchemaDisplayView {
         // Hoist once — this function recurses and has five call sites.
         // `Font` clones only bump `Arc` refcounts, so per-site clones
         // stay allocation-free.
-        let mono = theme.mono_font();
+        let mono = theme.font_mono();
 
         match node {
             SchemaNode::Object {

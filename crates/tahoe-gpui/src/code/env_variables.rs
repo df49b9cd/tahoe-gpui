@@ -285,7 +285,7 @@ impl Render for EnvironmentVariablesView {
             .flex()
             .flex_col()
             .gap(px(2.0))
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Subheadline, &theme)
             .px(theme.spacing_md)
             .py(theme.spacing_sm);

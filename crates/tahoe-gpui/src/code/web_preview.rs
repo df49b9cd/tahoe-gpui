@@ -105,7 +105,7 @@ impl RenderOnce for WebPreviewConsole {
             .px(theme.spacing_md)
             .py(theme.spacing_sm)
             .gap(px(2.0))
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Caption1, theme)
             .max_h(px(150.0))
             .overflow_y_scroll();
@@ -222,7 +222,7 @@ impl RenderOnce for WebPreviewUrl {
             .child(
                 div()
                     .flex_1()
-                    .font(theme.mono_font())
+                    .font(theme.font_mono())
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.accent)
                     .overflow_x_hidden()

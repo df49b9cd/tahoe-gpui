@@ -79,7 +79,7 @@ impl PackageInfoDependency {
 impl RenderOnce for PackageInfoDependency {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let mono_font = theme.mono_font();
+        let font_mono = theme.font_mono();
 
         let mut row = div()
             .flex()
@@ -89,7 +89,7 @@ impl RenderOnce for PackageInfoDependency {
 
         row = row.child(
             div()
-                .font(mono_font.clone())
+                .font(font_mono.clone())
                 .text_color(theme.text_muted)
                 .child(self.name),
         );
@@ -97,7 +97,7 @@ impl RenderOnce for PackageInfoDependency {
         if let Some(version) = self.version {
             row = row.child(
                 div()
-                    .font(mono_font.clone())
+                    .font(font_mono.clone())
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text)
                     .child(version),
@@ -295,7 +295,7 @@ impl RenderOnce for PackageInfoVersion {
             .flex()
             .items_center()
             .gap(theme.spacing_sm)
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Subheadline, theme)
             .text_color(theme.text_muted);
 
@@ -445,7 +445,7 @@ impl RenderOnce for PackageInfoName {
                     // `.font(...)` must come first: it overwrites
                     // `font_weight`, so the MEDIUM weight below has to apply
                     // after the mono font assignment.
-                    .font(theme.mono_font())
+                    .font(theme.font_mono())
                     .font_weight(theme.effective_weight(FontWeight::MEDIUM))
                     .text_color(theme.text)
                     .child(self.name),

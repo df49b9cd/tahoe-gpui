@@ -556,7 +556,7 @@ impl Render for FileTreeView {
             .rounded(theme.radius_lg)
             .border_1()
             .border_color(theme.border)
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Subheadline, theme)
             .py(spacing_sm)
             .on_key_down(move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {

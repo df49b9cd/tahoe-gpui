@@ -291,7 +291,7 @@ impl RenderOnce for StackTraceFrames {
         // than relying on inheritance from `StackTraceView`) keeps columnar
         // alignment when `StackTraceFrames` is composed outside of the
         // stateful view.
-        let mut container = div().flex().flex_col().gap(px(2.0)).font(theme.mono_font());
+        let mut container = div().flex().flex_col().gap(px(2.0)).font(theme.font_mono());
 
         for frame in self.frames.iter() {
             if !self.show_internal_frames && frame.is_internal {
@@ -497,7 +497,7 @@ impl Render for StackTraceView {
             .rounded(theme.radius_lg)
             .border_1()
             .border_color(theme.border)
-            .font(theme.mono_font())
+            .font(theme.font_mono())
             .text_style(TextStyle::Subheadline, theme)
             .overflow_hidden();
 

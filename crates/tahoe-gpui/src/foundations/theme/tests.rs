@@ -1570,28 +1570,28 @@ fn with_font_mono_fallbacks_replaces_list() {
         ["JetBrains Mono", "Menlo"],
         "builder must replace the default fallback list"
     );
-    // Pin the builder → helper integration so `mono_font()` cannot drift
+    // Pin the builder → helper integration so `font_mono()` cannot drift
     // away from reading `font_mono_fallbacks`.
     assert_eq!(
         theme
-            .mono_font()
+            .font_mono()
             .fallbacks
             .as_ref()
-            .expect("mono_font must forward the overridden list")
+            .expect("font_mono must forward the overridden list")
             .fallback_list(),
         ["JetBrains Mono", "Menlo"]
     );
 }
 
 #[test]
-fn mono_font_wires_family_and_fallbacks() {
+fn font_mono_wires_family_and_fallbacks() {
     let theme = TahoeTheme::dark();
-    let font = theme.mono_font();
+    let font = theme.font_mono();
     assert_eq!(font.family.as_ref(), "SF Mono");
     let fallbacks = font
         .fallbacks
         .as_ref()
-        .expect("mono_font must populate fallbacks so TextStyle::to_run forwards them");
+        .expect("font_mono must populate fallbacks so TextStyle::to_run forwards them");
     assert_eq!(
         fallbacks.fallback_list(),
         ["Menlo", "Monaco", "Courier New", "monospace"]

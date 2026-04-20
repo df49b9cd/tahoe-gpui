@@ -14,10 +14,10 @@ use gpui::{
 
 use crate::foundations::color::{Appearance, SystemColor, SystemPalette, text_on_background};
 
-/// One shared, empty [`FontFeatures`] cloned into every [`TahoeTheme::mono_font`]
+/// One shared, empty [`FontFeatures`] cloned into every [`TahoeTheme::font_mono`]
 /// result. `FontFeatures::default()` is `Arc::new(Vec::new())` — it heap-allocates
 /// on every call. Recursive renderers like `SchemaDisplayView::render_node`
-/// invoke `mono_font()` several times per node, so amortizing the allocation
+/// invoke `font_mono()` several times per node, so amortizing the allocation
 /// keeps the hot path allocation-free.
 fn empty_font_features() -> FontFeatures {
     static EMPTY: OnceLock<FontFeatures> = OnceLock::new();
@@ -195,8 +195,8 @@ pub struct TahoeTheme {
     /// absent on Linux, Windows, and macOS hosts without Xcode installed (for
     /// example, CI runners). To keep code/terminal/markdown text monospaced
     /// on every host, `TahoeTheme` also carries [`font_mono_fallbacks`] and
-    /// exposes [`TahoeTheme::mono_font`] — call sites should prefer
-    /// `.font(theme.mono_font())` over `.font_family(theme.font_mono.clone())`
+    /// exposes [`TahoeTheme::font_mono`] — call sites should prefer
+    /// `.font(theme.font_mono())` over `.font_family(theme.font_mono.clone())`
     /// because GPUI's `.font_family()` setter does not propagate the
     /// fallback list to the renderer (see `TextStyle.font_fallbacks`).
     ///
@@ -635,7 +635,7 @@ impl TahoeTheme {
             // Windows, and macOS hosts without Xcode (e.g. CI runners).
             // `font_mono_fallbacks` supplies Menlo / Monaco / Courier New /
             // generic monospace so the shaper picks a fixed-width face on
-            // those hosts. Callers must use `TahoeTheme::mono_font()` (via
+            // those hosts. Callers must use `TahoeTheme::font_mono()` (via
             // `.font(...)`) rather than `.font_family(theme.font_mono.clone())`
             // because GPUI's `.font_family` setter drops the fallback list.
             font_mono: SharedString::from("SF Mono"),
@@ -1540,7 +1540,7 @@ impl TahoeTheme {
     /// Returns a [`gpui::Font`] for monospaced text with the theme's
     /// fallback list applied.
     ///
-    /// Prefer `.font(theme.mono_font())` over
+    /// Prefer `.font(theme.font_mono())` over
     /// `.font_family(theme.font_mono.clone())` so code/terminal/markdown
     /// text stays monospaced on machines without SF Mono (Linux, CI without
     /// Xcode): GPUI's `.font_family` setter does not propagate the fallback
@@ -1552,7 +1552,7 @@ impl TahoeTheme {
     ///
     /// `.font(...)` replaces the entire `TextStyle.font` — including
     /// `font_weight`, `font_style`, and `font_features` — so chain
-    /// `.font(theme.mono_font())` **before** any `.font_weight(...)`,
+    /// `.font(theme.font_mono())` **before** any `.font_weight(...)`,
     /// `.italic()`, or `.font_features(...)` call. The reverse order
     /// silently drops those attributes back to their defaults.
     /// `TextStyledExt::text_style` only touches size / weight / leading —
@@ -1564,8 +1564,8 @@ impl TahoeTheme {
     /// When writing directly into a [`gpui::TextStyle`] (rather than via a
     /// builder's `.font(...)`), set `font_family = theme.font_mono.clone()`
     /// and `font_fallbacks = Some(theme.font_mono_fallbacks.clone())`
-    /// separately — `mono_font()` is only useful at `.font(...)` call sites.
-    pub fn mono_font(&self) -> Font {
+    /// separately — `font_mono()` is only useful at `.font(...)` call sites.
+    pub fn font_mono(&self) -> Font {
         Font {
             family: self.font_mono.clone(),
             features: empty_font_features(),

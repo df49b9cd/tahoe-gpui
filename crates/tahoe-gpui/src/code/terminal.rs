@@ -240,8 +240,8 @@ impl RenderOnce for TerminalContent {
         // Prototype `Font` carrying the theme's mono family + fallback list
         // so every ANSI span inherits fallbacks (finding #29).
         // Cloning `FontFallbacks` only bumps an `Arc`, so per-span clones are cheap.
-        let mono_font = theme.mono_font();
-        let mono_font_outer = mono_font.clone();
+        let font_mono = theme.font_mono();
+        let font_mono_outer = font_mono.clone();
         let attrs = self.text_style.attrs();
         let font_size = attrs.size;
         let line_height = attrs.leading;
@@ -272,7 +272,7 @@ impl RenderOnce for TerminalContent {
                     }
                     let (flat_text, runs, link_ranges, link_urls) = build_line_runs(
                         &lines_snapshot[ix],
-                        &mono_font,
+                        &font_mono,
                         base_weight,
                         bold_weight,
                         text_color,
@@ -326,7 +326,7 @@ impl RenderOnce for TerminalContent {
         .px(spacing_md)
         .py(px(SPACING_4))
         .max_h(self.max_height)
-        .font(mono_font_outer)
+        .font(font_mono_outer)
         .text_size(font_size)
     }
 }
@@ -338,7 +338,7 @@ impl RenderOnce for TerminalContent {
 #[allow(clippy::too_many_arguments)]
 fn build_line_runs(
     line: &[ansi_parser::AnsiSpan],
-    mono_font: &Font,
+    font_mono: &Font,
     base_weight: FontWeight,
     bold_weight: FontWeight,
     text_color: Hsla,
@@ -408,7 +408,7 @@ fn build_line_runs(
         } else {
             FontStyle::Normal
         };
-        let mut font = mono_font.clone();
+        let mut font = font_mono.clone();
         font.weight = weight;
         font.style = style;
 
@@ -886,7 +886,7 @@ mod tests {
         assert!(content.selection.is_some());
     }
 
-    fn test_mono_font() -> gpui::Font {
+    fn test_font_mono() -> gpui::Font {
         gpui::Font {
             family: gpui::SharedString::from("SF Mono"),
             features: gpui::FontFeatures::default(),
@@ -917,7 +917,7 @@ mod tests {
             },
         ];
         let colors = AnsiColors::new(true);
-        let mono = test_mono_font();
+        let mono = test_font_mono();
         let (text, runs, _, _) = build_line_runs(
             &spans,
             &mono,
@@ -968,7 +968,7 @@ mod tests {
             },
         ];
         let colors = AnsiColors::new(true);
-        let mono = test_mono_font();
+        let mono = test_font_mono();
         let (text, _runs, link_ranges, link_urls) = build_line_runs(
             &spans,
             &mono,
@@ -1005,7 +1005,7 @@ mod tests {
                 ..AnsiStyle::default()
             },
         }];
-        let mono = test_mono_font();
+        let mono = test_font_mono();
         let default_text = hsla(0.0, 0.0, 0.9, 1.0);
         let default_bg = hsla(0.0, 0.0, 0.05, 1.0);
         let link_c = hsla(0.6, 0.7, 0.6, 1.0);

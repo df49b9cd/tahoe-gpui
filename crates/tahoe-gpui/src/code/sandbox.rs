@@ -325,7 +325,7 @@ impl Render for SandboxView {
                     div()
                         .px(theme.spacing_md)
                         .py(theme.spacing_sm)
-                        .font(theme.mono_font())
+                        .font(theme.font_mono())
                         .text_style(TextStyle::Subheadline, theme)
                         .text_color(theme.text)
                         .child(logs.clone())
