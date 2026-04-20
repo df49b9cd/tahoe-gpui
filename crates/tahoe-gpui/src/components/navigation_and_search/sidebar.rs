@@ -434,8 +434,9 @@ impl RenderOnce for SidebarSection {
 /// A focusable, keyboard-activatable row used inside sidebars and lists.
 ///
 /// Replaces the ad-hoc pattern of building clickable rows from raw `div()`s,
-/// which lacked keyboard navigation, focus rings, and the 44pt minimum touch
-/// target required by HIG. `SidebarItem` provides all of these by
+/// which lacked keyboard navigation, focus rings, and a platform-appropriate
+/// minimum row height from `theme.target_size()` (28 pt macOS,
+/// 44 pt iOS/iPadOS/watchOS). `SidebarItem` provides all of these by
 /// default:
 ///
 /// - Click via `on_click`

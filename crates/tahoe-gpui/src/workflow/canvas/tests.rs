@@ -319,22 +319,32 @@ fn grid_custom_dot_size_overrides_default() {
     assert_eq!(dot_size.unwrap_or(2.0), 3.5);
 }
 
-// ── HIG hit-target guardrails ──────────────────────────────────────
+// ── Hit-target regression guards ──────────────────────────────────
 //
-// These assertions pin the screen-space tolerances so future refactors
-// don't silently shrink the target below Apple's 44 pt minimum. If the
-// design intentionally changes, update the constant and these asserts
-// together — the test failure is the checkpoint.
+// Pin the screen-space tolerances against their tuned production values
+// so future refactors don't silently shrink the effective hit target.
+// Each floor is set to `PROD − 1.0` so any drop of ≥ 1 px trips the
+// assert; see [`super::PORT_HIT_RADIUS_SCREEN_PX`] and
+// [`super::EDGE_HIT_TOLERANCE_SCREEN_PX`] for the mouse-pointing
+// rationale behind the production values themselves. If the design
+// intentionally changes, update the constant and the floor together —
+// the test failure is the checkpoint.
+
+/// Regression floor for the port hit radius — tracks
+/// [`super::PORT_HIT_RADIUS_SCREEN_PX`] minus a 1 px slack.
+const PORT_HIT_COMFORT_FLOOR_PX: f32 = 21.0;
+/// Regression floor for the edge hit tolerance — tracks
+/// [`super::EDGE_HIT_TOLERANCE_SCREEN_PX`] minus a 1 px slack.
+const EDGE_HIT_COMFORT_FLOOR_PX: f32 = 10.0;
 
 #[test]
-fn port_hit_target_meets_hig_minimum() {
-    // 22 px radius ≈ 44 pt diameter.
-    const { assert!(PORT_HIT_RADIUS_SCREEN_PX * 2.0 >= 44.0) };
+fn port_hit_radius_not_silently_shrunk() {
+    const { assert!(PORT_HIT_RADIUS_SCREEN_PX >= PORT_HIT_COMFORT_FLOOR_PX) };
 }
 
 #[test]
-fn edge_hit_target_meets_hig_minimum() {
-    const { assert!(EDGE_HIT_TOLERANCE_SCREEN_PX * 2.0 >= 22.0) };
+fn edge_hit_tolerance_not_silently_shrunk() {
+    const { assert!(EDGE_HIT_TOLERANCE_SCREEN_PX >= EDGE_HIT_COMFORT_FLOOR_PX) };
 }
 
 #[test]

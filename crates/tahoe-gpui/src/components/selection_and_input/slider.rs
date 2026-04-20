@@ -512,7 +512,8 @@ impl Render for Slider {
         let radius = natural_radius.min(theme.glass.radius(GlassSize::Small));
         let thumb_radius = px(f32::from(self.thumb_size) / 2.0);
 
-        // HIG: 44pt minimum hit area for touch targets
+        // Expand the hit area to at least the platform's default control
+        // height so low-profile thumbs stay comfortable to hit.
         let hit_area_height = self.thumb_size.max(px(theme.target_size()));
 
         let rtl = theme.is_rtl();

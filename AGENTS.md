@@ -23,7 +23,7 @@ crates/
 │   │   ├── typography.rs# TextStyle, FontDesign, Dynamic Type
 │   │   ├── icons/       # SF Symbols: Icon, IconName, AnimatedIcon
 │   │   ├── materials.rs # Liquid Glass: glass_surface(), GlassStyle
-│   │   ├── layout.rs    # MIN_TOUCH_TARGET, margins, LayoutDirection
+│   │   ├── layout.rs    # Platform target_size(), ControlSize, margins, LayoutDirection
 │   │   ├── motion.rs    # SpringAnimation, MotionTokens
 │   │   └── accessibility.rs
 │   ├── components/      # HIG-organized UI controls (8 subcategories)
@@ -104,7 +104,7 @@ cargo run -p tahoe-gpui --example voice_demo --features voice
 1. Identify which HIG subcategory it belongs to (`content/`, `menus_and_actions/`, etc.) and add a file there.
 2. Stateless builder (`#[derive(IntoElement)]` + `RenderOnce`) unless the component owns mutable state.
 3. Read design tokens from `cx.global::<TahoeTheme>()` rather than hardcoding colors/metrics.
-4. Respect `MIN_TOUCH_TARGET` for interactive elements.
+4. Use `theme.target_size()` (or `Platform::default_target_size` / `min_target_size`) for interactive control heights so each platform gets its own AppKit / SwiftUI control metric (28 pt macOS, 44 pt iOS/iPadOS/watchOS, 60 pt visionOS, 66 pt tvOS).
 5. Add SF Symbol support via `foundations::icons::Icon`.
 6. Add a `gallery` entry in the nearest `*_gallery.rs` example.
 7. Add unit tests (and visual-regression goldens when appropriate via `test-support`).
@@ -141,7 +141,7 @@ All `unsafe` blocks must use `// SAFETY:` comment convention with a multi-line j
 - **Don't use glob imports in tests** — always explicit `use` statements.
 - **Don't hardcode colors/metrics** — read them from `TahoeTheme` tokens so light/dark/liquid-glass variants stay consistent.
 - **Don't use `unwrap()` in production code** — use `.expect("reason")` or propagate errors.
-- **Don't skip `MIN_TOUCH_TARGET`** for interactive controls — HIG compliance requires 44 pt minimum.
+- **Don't hardcode control heights** — use `theme.target_size()` so each platform picks up the correct AppKit / SwiftUI control metric (28 pt macOS, 44 pt iOS/iPadOS/watchOS). On macOS, extend the hit region past the visual size when neighbouring targets are tight (see `foundations::layout::hit_region`); Apple does not publish a pointer-accessibility minimum, so scale relative to the control tiers rather than pinning an ad-hoc floor.
 - **Don't use `// Safety:` comment style** — use `// SAFETY:` (uppercase, colon suffix).
 
 # Code Style

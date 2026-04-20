@@ -803,7 +803,7 @@ impl Render for ComponentGallery {
         // ── Scrollable demo list ────────────────────────────────────────
         //
         // Uses the SidebarItem primitive so every row gets Enter/Space
-        // activation and a 44pt minimum touch target.
+        // activation and the platform-appropriate minimum row height.
         let mut demo_list = div()
             .id("demo-list-scroll")
             .flex()
