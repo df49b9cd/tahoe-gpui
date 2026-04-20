@@ -1448,16 +1448,34 @@ impl TahoeTheme {
     /// returns a subscription that swaps the global theme when the OS toggles
     /// between light and dark. Keep the returned `Subscription` alive.
     ///
-    /// **Accent colour:** see the note on
-    /// [`Self::install_with_system_appearance`] — accent defaults to Blue
-    /// because GPUI doesn't yet surface `NSColor.controlAccentColor`.
+    /// **Accent colour:** GPUI does not expose the macOS system accent
+    /// (`NSColor.controlAccentColor`) yet, so this helper falls back to
+    /// [`AccentColor::Multicolor`] (Blue). Hosts that have AppKit access
+    /// should call [`Self::install_glass_with_system_appearance_and_accent`]
+    /// with the value they read out themselves.
     pub fn install_glass_with_system_appearance(
         window: &mut Window,
         cx: &mut App,
     ) -> gpui::Subscription {
-        Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
-        window.observe_window_appearance(|window, cx| {
-            Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
+        Self::install_glass_with_system_appearance_and_accent(window, cx, AccentColor::default())
+    }
+
+    /// Like [`Self::install_glass_with_system_appearance`] but accepts an
+    /// explicit accent colour. Use this when the host can read the user's
+    /// macOS accent preference (e.g. via AppKit FFI) — the accent persists
+    /// across light/dark switches and propagates through the glass theme's
+    /// accent-derived tokens (`accent`, `ring`, `focus_ring_color`,
+    /// `glass.accent_tint`, `text_on_accent`).
+    pub fn install_glass_with_system_appearance_and_accent(
+        window: &mut Window,
+        cx: &mut App,
+        accent: AccentColor,
+    ) -> gpui::Subscription {
+        let theme_for =
+            move |w: &Window| Self::for_appearance_glass(w.appearance()).with_accent_color(accent);
+        theme_for(window).apply_in_window(window, cx);
+        window.observe_window_appearance(move |window, cx| {
+            theme_for(window).apply_in_window(window, cx);
         })
     }
 
