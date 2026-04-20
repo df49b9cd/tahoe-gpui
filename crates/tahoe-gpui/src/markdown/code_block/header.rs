@@ -115,7 +115,7 @@ impl RenderOnce for CodeBlockFilename {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         div()
-            .font_family(theme.font_mono.clone())
+            .font(theme.mono_font())
             .text_style(TextStyle::Caption1, theme)
             .text_color(theme.text_muted)
             .child(self.name)

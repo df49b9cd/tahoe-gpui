@@ -71,9 +71,9 @@ use crate::foundations::layout::SPACING_8;
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontStyle, FontWeight, HighlightStyle, ObjectFit,
-    SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun, TextStyle as GpuiTextStyle,
-    UnderlineStyle, Window, div, img, px,
+    AnyElement, App, ElementId, Entity, FontFallbacks, FontStyle, FontWeight, HighlightStyle,
+    ObjectFit, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
+    TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -898,6 +898,7 @@ fn has_complex_inlines(inlines: &[InlineContent]) -> bool {
 struct InlineTextStyles {
     base: GpuiTextStyle,
     code_family: SharedString,
+    code_fallbacks: FontFallbacks,
     code_bg: gpui::Hsla,
     link_color: gpui::Hsla,
     link_underline: UnderlineStyle,
@@ -921,6 +922,7 @@ impl InlineTextStyles {
         Self {
             base,
             code_family: theme.font_mono.clone(),
+            code_fallbacks: theme.font_mono_fallbacks.clone(),
             code_bg: theme.code_bg,
             link_color: theme.accent,
             link_underline: UnderlineStyle {
@@ -1039,9 +1041,12 @@ fn flatten_inlines_to_runs(
                 // system monospaced font. Refining the current style
                 // with `font_family = font_mono` + `background_color
                 // = code_bg` preserves bold/italic context that an
-                // enclosing emphasis already set.
+                // enclosing emphasis already set. `font_fallbacks`
+                // keeps text monospaced on hosts without SF Mono
+                // (finding #29).
                 let mut code_style = current.clone();
                 code_style.font_family = styles.code_family.clone();
+                code_style.font_fallbacks = Some(styles.code_fallbacks.clone());
                 code_style.background_color = Some(styles.code_bg);
                 out.push(code, &code_style);
             }
@@ -1106,6 +1111,7 @@ fn flatten_inlines_to_runs(
                 // monospaced tint, not a separate typographic tone.
                 let mut math_style = current.clone();
                 math_style.font_family = styles.code_family.clone();
+                math_style.font_fallbacks = Some(styles.code_fallbacks.clone());
                 math_style.background_color = Some(styles.code_bg);
                 out.push(math, &math_style);
             }
@@ -1232,7 +1238,8 @@ mod tests {
     };
     use core::prelude::v1::test;
     use gpui::{
-        FontWeight, Hsla, StrikethroughStyle, TextStyle as GpuiTextStyle, UnderlineStyle, px,
+        FontFallbacks, FontWeight, Hsla, StrikethroughStyle, TextStyle as GpuiTextStyle,
+        UnderlineStyle, px,
     };
 
     const ZERO_HSLA: Hsla = Hsla {
@@ -1254,6 +1261,7 @@ mod tests {
         InlineTextStyles {
             base,
             code_family: "mono".into(),
+            code_fallbacks: FontFallbacks::default(),
             code_bg: ZERO_HSLA,
             link_color: ZERO_HSLA,
             link_underline: UnderlineStyle {

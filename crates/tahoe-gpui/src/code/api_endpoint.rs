@@ -299,7 +299,7 @@ impl ApiEndpointView {
         let mut row = div()
             .flex()
             .items_center()
-            .font_family(theme.font_mono.clone())
+            .font(theme.mono_font())
             .text_style(TextStyle::Subheadline, theme);
 
         for seg in segments {

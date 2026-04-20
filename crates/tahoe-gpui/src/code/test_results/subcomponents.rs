@@ -44,7 +44,7 @@ impl RenderOnce for TestError {
             div()
                 .text_style(TextStyle::Caption1, theme)
                 .text_color(theme.error)
-                .font_family(theme.font_mono.clone())
+                .font(theme.mono_font())
                 .child(self.message),
         );
 
@@ -54,7 +54,7 @@ impl RenderOnce for TestError {
                     .pt(px(2.0))
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
-                    .font_family(theme.font_mono.clone())
+                    .font(theme.mono_font())
                     .overflow_x_hidden()
                     .child(stack),
             );
@@ -140,7 +140,7 @@ impl RenderOnce for Test {
                     .flex_none()
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
-                    .font_family(theme.font_mono.clone())
+                    .font(theme.mono_font())
                     .child(format_duration(ms)),
             );
         }

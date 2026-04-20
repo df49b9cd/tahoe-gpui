@@ -247,9 +247,7 @@ impl SchemaDisplayView {
                     // the `Badge` in a monospace container lets the type
                     // label inherit `font_mono` without changing Badge's
                     // own visual tokens.
-                    div()
-                        .font_family(theme.font_mono.clone())
-                        .child(Badge::new("object")),
+                    div().font(theme.mono_font()).child(Badge::new("object")),
                 );
                 if required {
                     row = row.child(
@@ -333,16 +331,12 @@ impl SchemaDisplayView {
                     );
                 }
                 row = row
-                    .child(
-                        div()
-                            .font_family(theme.font_mono.clone())
-                            .child(Badge::new("array")),
-                    )
+                    .child(div().font(theme.mono_font()).child(Badge::new("array")))
                     .child(
                         div()
                             .text_style(TextStyle::Caption1, theme)
                             .text_color(theme.text_muted)
-                            .font_family(theme.font_mono.clone())
+                            .font(theme.mono_font())
                             .child(format!("of {}", items.type_label())),
                     );
                 if required {
@@ -401,9 +395,7 @@ impl SchemaDisplayView {
                 row = row.child(
                     // Monospace wrapper so the primitive type/format label
                     // inherits `font_mono` (finding #20).
-                    div()
-                        .font_family(theme.font_mono.clone())
-                        .child(Badge::new(type_label)),
+                    div().font(theme.mono_font()).child(Badge::new(type_label)),
                 );
 
                 if required {
@@ -429,7 +421,7 @@ impl SchemaDisplayView {
                         div()
                             .text_style(TextStyle::Caption1, theme)
                             .text_color(theme.text_muted)
-                            .font_family(theme.font_mono.clone())
+                            .font(theme.mono_font())
                             .child(format!("enum: [{}]", values.join(", "))),
                     );
                 }

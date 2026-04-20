@@ -6,8 +6,8 @@
 //! form the trait delegates to.
 
 use gpui::{
-    App, BoxShadow, FontWeight, Hsla, Pixels, SharedString, Window, WindowAppearance,
-    WindowBackgroundAppearance, hsla, point, px,
+    App, BoxShadow, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, Pixels,
+    SharedString, Window, WindowAppearance, WindowBackgroundAppearance, hsla, point, px,
 };
 
 use crate::foundations::color::{Appearance, SystemColor, SystemPalette, text_on_background};
@@ -177,7 +177,28 @@ pub struct TahoeTheme {
 
     // --- Typography ---
     pub font_sans: SharedString,
+    /// Primary monospaced family — SF Mono by default.
+    ///
+    /// SF Mono ships with macOS 10.15+ and is present on macOS Tahoe, but is
+    /// absent on Linux, Windows, and macOS hosts without Xcode installed (for
+    /// example, CI runners). To keep code/terminal/markdown text monospaced
+    /// on every host, `TahoeTheme` also carries [`font_mono_fallbacks`] and
+    /// exposes [`TahoeTheme::mono_font`] — call sites should prefer
+    /// `.font(theme.mono_font())` over `.font_family(theme.font_mono.clone())`
+    /// because GPUI's `.font_family()` setter does not propagate the
+    /// fallback list to the renderer (see `TextStyle.font_fallbacks`).
+    ///
+    /// [`font_mono_fallbacks`]: TahoeTheme::font_mono_fallbacks
     pub font_mono: SharedString,
+    /// Fallback font families resolved after [`font_mono`] by the text
+    /// shaper. Defaults to `["Menlo", "Monaco", "Courier New", "monospace"]`
+    /// — `Menlo` and `Monaco` cover macOS hosts where SF Mono is missing,
+    /// `Courier New` covers Windows and msttcorefonts-equipped Linux, and
+    /// `"monospace"` resolves to a platform default via fontconfig on Linux.
+    /// Override via [`TahoeTheme::with_font_mono_fallbacks`].
+    ///
+    /// [`font_mono`]: TahoeTheme::font_mono
+    pub font_mono_fallbacks: FontFallbacks,
     /// User-controlled font scale (macOS System Settings → Accessibility →
     /// Display → Text Size). `1.0` is the HIG default; values >1 scale all
     /// system text styles proportionally. `TextStyledExt::text_style` and
@@ -359,6 +380,7 @@ struct SpacingTokens {
 struct TypographyTokens {
     font_sans: SharedString,
     font_mono: SharedString,
+    font_mono_fallbacks: FontFallbacks,
 }
 
 struct ComponentSizes {
@@ -466,6 +488,7 @@ impl TahoeTheme {
 
             font_sans: typography.font_sans,
             font_mono: typography.font_mono,
+            font_mono_fallbacks: typography.font_mono_fallbacks,
             font_scale_factor: 1.0,
             dynamic_type_size: DynamicTypeSize::default(),
 
@@ -595,12 +618,21 @@ impl TahoeTheme {
     fn build_typography_tokens() -> TypographyTokens {
         TypographyTokens {
             font_sans: SharedString::from(".AppleSystemUIFont"),
-            // Per HIG: SF Mono is the system monospaced typeface on
-            // macOS 10.15 (Catalina) and later. It ships with the system
-            // since Tahoe. On earlier macOS releases SF Mono was only
-            // bundled with Xcode, so callers targeting <10.15 should
-            // override `font_mono` to "Menlo" as a fallback.
+            // Per HIG: SF Mono is the system monospaced typeface on macOS
+            // 10.15+ and ships with macOS Tahoe. It is absent on Linux,
+            // Windows, and macOS hosts without Xcode (e.g. CI runners).
+            // `font_mono_fallbacks` supplies Menlo / Monaco / Courier New /
+            // generic monospace so the shaper picks a fixed-width face on
+            // those hosts. Callers must use `TahoeTheme::mono_font()` (via
+            // `.font(...)`) rather than `.font_family(theme.font_mono.clone())`
+            // because GPUI's `.font_family` setter drops the fallback list.
             font_mono: SharedString::from("SF Mono"),
+            font_mono_fallbacks: FontFallbacks::from_fonts(vec![
+                "Menlo".into(),
+                "Monaco".into(),
+                "Courier New".into(),
+                "monospace".into(),
+            ]),
         }
     }
 
@@ -1478,6 +1510,36 @@ impl TahoeTheme {
             1.0
         };
         self
+    }
+
+    /// Replace the fallback families resolved after [`TahoeTheme::font_mono`]
+    /// by the text shaper. Hosts that bundle their own monospaced faces (for
+    /// example, a vendored "JetBrains Mono") can prepend the bundled family
+    /// here so it takes precedence over the defaults while still leaving the
+    /// system faces as the last line of defence.
+    pub fn with_font_mono_fallbacks(mut self, fallbacks: FontFallbacks) -> Self {
+        self.font_mono_fallbacks = fallbacks;
+        self
+    }
+
+    /// Returns a [`gpui::Font`] for monospaced text with the theme's
+    /// fallback list applied.
+    ///
+    /// Prefer `.font(theme.mono_font())` over
+    /// `.font_family(theme.font_mono.clone())` so code/terminal/markdown
+    /// text stays monospaced on machines without SF Mono (Linux, CI without
+    /// Xcode): GPUI's `.font_family` setter does not propagate the fallback
+    /// list to the renderer, but `.font(...)` does — it writes both
+    /// `TextStyle.font_family` and `TextStyle.font_fallbacks`, which
+    /// `TextStyle::to_run` forwards into each `TextRun`.
+    pub fn mono_font(&self) -> Font {
+        Font {
+            family: self.font_mono.clone(),
+            features: FontFeatures::default(),
+            fallbacks: Some(self.font_mono_fallbacks.clone()),
+            weight: FontWeight::default(),
+            style: FontStyle::default(),
+        }
     }
 
     /// Set the Dynamic Type size the theme reports via
