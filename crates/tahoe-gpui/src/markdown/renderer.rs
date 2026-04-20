@@ -894,7 +894,9 @@ fn has_complex_inlines(inlines: &[InlineContent]) -> bool {
 /// full [`GpuiTextStyle`] used via [`GpuiTextStyle::to_run`] to produce
 /// the `TextRun` for the matching inline kind. The styles are built from
 /// the active [`TahoeTheme`] so all runs share the ambient color scheme
-/// and font family (with `code` overriding to `theme.font_mono`).
+/// and font family (with `code` overriding to `theme.font_mono` +
+/// `theme.font_mono_fallbacks` so code spans stay monospaced on hosts
+/// without SF Mono).
 struct InlineTextStyles {
     base: GpuiTextStyle,
     code_family: SharedString,
@@ -1261,7 +1263,11 @@ mod tests {
         InlineTextStyles {
             base,
             code_family: "mono".into(),
-            code_fallbacks: FontFallbacks::default(),
+            // Non-empty so propagation assertions can distinguish
+            // "fallbacks were written" from "fallbacks were never touched"
+            // (see `code_span_propagates_fallbacks_to_run`). Production
+            // supplies a 4-entry list via `theme.font_mono_fallbacks`.
+            code_fallbacks: FontFallbacks::from_fonts(vec!["Menlo".into(), "Monaco".into()]),
             code_bg: ZERO_HSLA,
             link_color: ZERO_HSLA,
             link_underline: UnderlineStyle {
@@ -1744,5 +1750,53 @@ mod tests {
         // sentence reads naturally.
         assert!(out.text.contains("click me"));
         assert!(out.text.contains("safe"));
+    }
+
+    #[test]
+    fn code_span_propagates_fallbacks_to_run() {
+        // Finding #29: inline code spans must carry the mono fallback list
+        // into the emitted `TextRun` so code stays monospaced on hosts
+        // without SF Mono. Pins the `code_style.font_fallbacks = Some(...)`
+        // assignment in `flatten_inlines_to_runs`.
+        let security = MarkdownSecurity::default();
+        let styles = test_styles();
+        let mut out = InlineRuns::new();
+        let inlines = vec![InlineContent::Code("let x = 1;".into())];
+        let base_style = styles.base.clone();
+        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+
+        assert_eq!(out.runs.len(), 1);
+        let fallbacks = out.runs[0]
+            .font
+            .fallbacks
+            .as_ref()
+            .expect("code-span run must carry font fallbacks");
+        assert_eq!(
+            fallbacks.fallback_list(),
+            ["Menlo", "Monaco"],
+            "code span must forward styles.code_fallbacks into the TextRun"
+        );
+    }
+
+    #[test]
+    fn inline_math_propagates_fallbacks_to_run() {
+        // Finding #29: inline math shares the code span's plumbing — the
+        // same assignment must carry fallbacks through. Guards against
+        // regressions where one branch keeps the assignment but the other
+        // drops it.
+        let security = MarkdownSecurity::default();
+        let styles = test_styles();
+        let mut out = InlineRuns::new();
+        let inlines = vec![InlineContent::InlineMath("x^2".into())];
+        let base_style = styles.base.clone();
+        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+
+        assert_eq!(out.runs.len(), 1);
+        let fallbacks = out.runs[0]
+            .font
+            .fallbacks
+            .as_ref()
+            .expect("inline-math run must carry font fallbacks");
+        assert_eq!(fallbacks.fallback_list(), ["Menlo", "Monaco"]);
     }
 }

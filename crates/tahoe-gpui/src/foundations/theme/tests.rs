@@ -1570,6 +1570,17 @@ fn with_font_mono_fallbacks_replaces_list() {
         ["JetBrains Mono", "Menlo"],
         "builder must replace the default fallback list"
     );
+    // Pin the builder → helper integration so `mono_font()` cannot drift
+    // away from reading `font_mono_fallbacks`.
+    assert_eq!(
+        theme
+            .mono_font()
+            .fallbacks
+            .as_ref()
+            .expect("mono_font must forward the overridden list")
+            .fallback_list(),
+        ["JetBrains Mono", "Menlo"]
+    );
 }
 
 #[test]

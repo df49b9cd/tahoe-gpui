@@ -225,9 +225,9 @@ impl RenderOnce for Snippet {
         if let Some(language) = self.language {
             result = result.child(
                 div()
+                    .font(mono_font.clone())
                     .text_style(TextStyle::Caption1, &theme)
                     .text_color(theme.text_muted)
-                    .font(mono_font.clone())
                     .child(language),
             );
         }

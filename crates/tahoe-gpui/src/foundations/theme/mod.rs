@@ -5,12 +5,24 @@
 //! [`ActiveTheme`] trait). `cx.global::<TahoeTheme>()` is the lower-level
 //! form the trait delegates to.
 
+use std::sync::OnceLock;
+
 use gpui::{
     App, BoxShadow, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, Pixels,
     SharedString, Window, WindowAppearance, WindowBackgroundAppearance, hsla, point, px,
 };
 
 use crate::foundations::color::{Appearance, SystemColor, SystemPalette, text_on_background};
+
+/// One shared, empty [`FontFeatures`] cloned into every [`TahoeTheme::mono_font`]
+/// result. `FontFeatures::default()` is `Arc::new(Vec::new())` — it heap-allocates
+/// on every call. Recursive renderers like `SchemaDisplayView::render_node`
+/// invoke `mono_font()` several times per node, so amortizing the allocation
+/// keeps the hot path allocation-free.
+fn empty_font_features() -> FontFeatures {
+    static EMPTY: OnceLock<FontFeatures> = OnceLock::new();
+    EMPTY.get_or_init(FontFeatures::default).clone()
+}
 
 pub mod ansi;
 pub use ansi::AnsiColors;
@@ -1513,10 +1525,13 @@ impl TahoeTheme {
     }
 
     /// Replace the fallback families resolved after [`TahoeTheme::font_mono`]
-    /// by the text shaper. Hosts that bundle their own monospaced faces (for
-    /// example, a vendored "JetBrains Mono") can prepend the bundled family
-    /// here so it takes precedence over the defaults while still leaving the
-    /// system faces as the last line of defence.
+    /// by the text shaper.
+    ///
+    /// Replaces (does not merge with) the default list. Hosts that bundle
+    /// their own monospaced face (for example, a vendored "JetBrains Mono")
+    /// and still want the system faces as a safety net should include them
+    /// at the tail of their own list, e.g.
+    /// `["JetBrains Mono", "Menlo", "Monaco", "Courier New", "monospace"]`.
     pub fn with_font_mono_fallbacks(mut self, fallbacks: FontFallbacks) -> Self {
         self.font_mono_fallbacks = fallbacks;
         self
@@ -1532,10 +1547,28 @@ impl TahoeTheme {
     /// list to the renderer, but `.font(...)` does — it writes both
     /// `TextStyle.font_family` and `TextStyle.font_fallbacks`, which
     /// `TextStyle::to_run` forwards into each `TextRun`.
+    ///
+    /// # Ordering
+    ///
+    /// `.font(...)` replaces the entire `TextStyle.font` — including
+    /// `font_weight`, `font_style`, and `font_features` — so chain
+    /// `.font(theme.mono_font())` **before** any `.font_weight(...)`,
+    /// `.italic()`, or `.font_features(...)` call. The reverse order
+    /// silently drops those attributes back to their defaults.
+    /// `TextStyledExt::text_style` only touches size / weight / leading —
+    /// it does not overwrite `font_family` or `font_fallbacks` — so
+    /// `.font(...)` plays safely with it in either order for today's
+    /// NORMAL-weight `TextStyle` entries, but placing `.font(...)` first
+    /// is the future-proof convention.
+    ///
+    /// When writing directly into a [`gpui::TextStyle`] (rather than via a
+    /// builder's `.font(...)`), set `font_family = theme.font_mono.clone()`
+    /// and `font_fallbacks = Some(theme.font_mono_fallbacks.clone())`
+    /// separately — `mono_font()` is only useful at `.font(...)` call sites.
     pub fn mono_font(&self) -> Font {
         Font {
             family: self.font_mono.clone(),
-            features: FontFeatures::default(),
+            features: empty_font_features(),
             fallbacks: Some(self.font_mono_fallbacks.clone()),
             weight: FontWeight::default(),
             style: FontStyle::default(),
