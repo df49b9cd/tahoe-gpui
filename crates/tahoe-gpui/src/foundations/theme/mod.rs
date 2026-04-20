@@ -1449,15 +1449,20 @@ impl TahoeTheme {
     /// between light and dark. Keep the returned `Subscription` alive.
     ///
     /// **Accent colour:** GPUI does not expose the macOS system accent
-    /// (`NSColor.controlAccentColor`) yet, so this helper falls back to
-    /// [`AccentColor::Multicolor`] (Blue). Hosts that have AppKit access
-    /// should call [`Self::install_glass_with_system_appearance_and_accent`]
-    /// with the value they read out themselves.
+    /// (`NSColor.controlAccentColor`) yet, so this helper leaves the accent
+    /// baked into the Liquid Glass presets
+    /// ([`Self::liquid_glass`] / [`Self::liquid_glass_light`]) untouched.
+    /// Hosts that have AppKit access and want to override with the user's
+    /// system accent should call
+    /// [`Self::install_glass_with_system_appearance_and_accent`].
     pub fn install_glass_with_system_appearance(
         window: &mut Window,
         cx: &mut App,
     ) -> gpui::Subscription {
-        Self::install_glass_with_system_appearance_and_accent(window, cx, AccentColor::default())
+        Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
+        window.observe_window_appearance(|window, cx| {
+            Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
+        })
     }
 
     /// Like [`Self::install_glass_with_system_appearance`] but accepts an
