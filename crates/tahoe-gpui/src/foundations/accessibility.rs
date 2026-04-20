@@ -573,14 +573,21 @@ mod tests {
     #[test]
     fn with_accessibility_is_passthrough() {
         // Contract: `with_accessibility` must return its receiver unchanged
-        // until GPUI lands an AX API. If this test starts failing, it is the
-        // cue to thread props into the real AX path.
+        // until GPUI lands an AX API. Starting from a mutated refinement
+        // (visibility = Hidden via `invisible()`) catches both in-place
+        // mutation and "returns a fresh default" failure modes. If this
+        // test starts failing, it is the cue to thread props into the
+        // real AX path.
+        use gpui::Styled;
+
         let props = AccessibilityProps::new()
             .role(AccessibilityRole::Button)
             .label("Send message");
 
-        let base = gpui::StyleRefinement::default();
-        let after = gpui::StyleRefinement::default().with_accessibility(&props);
-        assert_eq!(after, base);
+        let before = gpui::StyleRefinement::default().invisible();
+        let after = gpui::StyleRefinement::default()
+            .invisible()
+            .with_accessibility(&props);
+        assert_eq!(after, before);
     }
 }
