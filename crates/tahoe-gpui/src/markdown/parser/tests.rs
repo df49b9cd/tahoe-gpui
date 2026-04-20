@@ -910,3 +910,81 @@ fn parse_inline_math() {
         other => panic!("expected paragraph, got {:?}", other),
     }
 }
+
+// --- HTML event handling tests (issue #74) ---
+
+#[test]
+fn parse_block_html_survives_as_text() {
+    let blocks = parse("<details><summary>Click</summary>content</details>");
+    let text: String = blocks
+        .iter()
+        .filter_map(|b| match b {
+            MarkdownBlock::Paragraph(inlines) => Some(
+                inlines
+                    .iter()
+                    .filter_map(|i| match i {
+                        InlineContent::Text(t) => Some(t.as_str()),
+                        _ => None,
+                    })
+                    .collect::<String>(),
+            ),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        text.contains("<details>"),
+        "block-level HTML should survive as text, got: {text:?}"
+    );
+}
+
+#[test]
+fn parse_inline_html_in_paragraph() {
+    let blocks = parse("Press <kbd>Ctrl</kbd> to save");
+    assert_eq!(blocks.len(), 1, "blocks: {:?}", blocks);
+    let text = first_paragraph_text(&blocks);
+    assert!(
+        text.contains("<kbd>"),
+        "inline HTML should survive in paragraph text, got: {text:?}"
+    );
+    assert!(
+        text.contains("Ctrl"),
+        "content inside inline HTML tag should survive, got: {text:?}"
+    );
+}
+
+#[test]
+fn parse_br_tag_survives() {
+    let blocks = parse("line one<br/>line two");
+    assert_eq!(blocks.len(), 1);
+    let text = first_paragraph_text(&blocks);
+    assert!(
+        text.contains("<br/>"),
+        "<br/> should survive as text, got: {text:?}"
+    );
+}
+
+#[test]
+fn parse_mixed_html_and_markdown() {
+    let blocks = parse("Hello **bold** and <sub>sub</sub> text");
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        MarkdownBlock::Paragraph(inlines) => {
+            assert!(
+                inlines.iter().any(|i| matches!(i, InlineContent::Bold(_))),
+                "should still parse bold"
+            );
+            let text: String = inlines
+                .iter()
+                .filter_map(|i| match i {
+                    InlineContent::Text(t) => Some(t.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                text.contains("<sub>"),
+                "inline HTML should survive alongside markdown, got: {text:?}"
+            );
+        }
+        other => panic!("expected paragraph, got {:?}", other),
+    }
+}
