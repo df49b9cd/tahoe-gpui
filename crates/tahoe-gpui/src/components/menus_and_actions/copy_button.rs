@@ -126,9 +126,9 @@ impl CopyButton {
                 if this.copied_at.is_some_and(|t| t.elapsed() >= this.timeout) {
                     this.copied = false;
                     this.copied_at = None;
+                    this.reset_task = None;
                     cx.notify();
                 }
-                this.reset_task = None;
             })
             .ok();
         }));
