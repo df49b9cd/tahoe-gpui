@@ -3,7 +3,7 @@
 //! Provides text styles, font design variants, tracking utilities,
 //! and the `TextStyledExt` trait for applying HIG type scale to GPUI elements.
 
-use gpui::{FontWeight, Pixels, Styled, px};
+use gpui::{DefiniteLength, FontWeight, Pixels, Styled, px};
 
 use super::theme::TahoeTheme;
 
@@ -516,7 +516,7 @@ fn apply_text_style_attrs<E: Styled>(el: E, attrs: TextStyleAttrs, theme: &Tahoe
     let scale = theme.font_scale_factor.max(0.0);
     el.text_size(px(f32::from(attrs.size) * scale))
         .font_weight(theme.effective_weight(attrs.weight))
-        .line_height(px(f32::from(attrs.leading) * scale))
+        .line_height(DefiniteLength::from(px(f32::from(attrs.leading) * scale)))
 }
 
 impl<E: Styled> TextStyledExt for E {}
