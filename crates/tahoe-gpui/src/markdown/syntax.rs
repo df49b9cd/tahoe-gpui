@@ -376,6 +376,77 @@ define_language!(
     tree_sitter_html::HIGHLIGHTS_QUERY
 );
 
+define_language!(
+    yaml_config,
+    tree_sitter_yaml::LANGUAGE,
+    "yaml",
+    tree_sitter_yaml::HIGHLIGHTS_QUERY
+);
+
+define_language!(
+    markdown_config,
+    tree_sitter_md::LANGUAGE,
+    "markdown",
+    tree_sitter_md::HIGHLIGHT_QUERY_BLOCK
+);
+
+define_language!(
+    java_config,
+    tree_sitter_java::LANGUAGE,
+    "java",
+    tree_sitter_java::HIGHLIGHTS_QUERY
+);
+
+define_language!(
+    ruby_config,
+    tree_sitter_ruby::LANGUAGE,
+    "ruby",
+    tree_sitter_ruby::HIGHLIGHTS_QUERY
+);
+
+define_language!(
+    php_config,
+    tree_sitter_php::LANGUAGE_PHP,
+    "php",
+    tree_sitter_php::HIGHLIGHTS_QUERY
+);
+
+define_language!(
+    sql_config,
+    tree_sitter_sequel::LANGUAGE,
+    "sql",
+    tree_sitter_sequel::HIGHLIGHTS_QUERY
+);
+
+/// Labels that AI assistants commonly emit as code-block fences but that we
+/// don't (yet) ship a grammar for. Kept as a grep-able list so a future
+/// maintainer adding e.g. `swift` support is nudged to remove the entry —
+/// and so the `known_unsupported_aliases_fall_back_gracefully` test can
+/// iterate it. If a grammar is added here without removing the label, that
+/// test fails: the label now returns highlighted spans, not the single
+/// unhighlighted span the test asserts.
+///
+/// `plain` / `text` are listed because models occasionally emit them as
+/// explicit "no syntax" labels; we want to recognise them as intentional
+/// rather than typos.
+#[cfg(test)]
+const KNOWN_UNSUPPORTED: &[&str] = &[
+    "xml",
+    "swift",
+    "kotlin",
+    "kt",
+    "dockerfile",
+    "diff",
+    "elixir",
+    "ex",
+    "scala",
+    "lua",
+    "r",
+    "zig",
+    "plain",
+    "text",
+];
+
 /// Look up a language highlight configuration by name.
 fn get_language_config(name: &str) -> Option<&'static HighlightConfiguration> {
     match name.to_lowercase().as_str() {
@@ -392,13 +463,19 @@ fn get_language_config(name: &str) -> Option<&'static HighlightConfiguration> {
         "cpp" | "c++" | "cxx" | "cc" => Some(cpp_config()),
         "css" => Some(css_config()),
         "html" | "htm" => Some(html_config()),
+        "yaml" | "yml" => Some(yaml_config()),
+        "markdown" | "md" => Some(markdown_config()),
+        "java" => Some(java_config()),
+        "ruby" | "rb" => Some(ruby_config()),
+        "php" => Some(php_config()),
+        "sql" => Some(sql_config()),
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_styled_highlights, highlight_code, highlight_color};
+    use super::{KNOWN_UNSUPPORTED, build_styled_highlights, highlight_code, highlight_color};
     use crate::foundations::theme::TahoeTheme;
     use core::prelude::v1::test;
 
@@ -483,16 +560,103 @@ mod tests {
     }
 
     #[test]
-    fn language_aliases() {
-        for alias in &[
-            "rs", "py", "js", "ts", "sh", "zsh", "jsx", "tsx", "shell", "jsonc", "golang", "c++",
-            "cxx", "cc", "htm",
-        ] {
-            let spans = highlight_code("x", alias);
-            // Should not fall back to unknown (single unhighlighted span may still happen for "x")
-            // but the config should exist
-            assert!(!spans.is_empty(), "no spans for alias {}", alias);
+    fn highlight_aliases_produce_highlighted_spans() {
+        // Pairs of (alias, code) where tree-sitter should produce at least one
+        // span carrying a highlight_index. Proves the grammar actually ran —
+        // unlike an `!spans.is_empty()` check, which is trivially true for any
+        // non-empty input even when `get_language_config` returned `None`.
+        let cases: &[(&str, &str)] = &[
+            ("rs", "fn main() {}"),
+            ("py", "def f(): pass"),
+            ("js", "const x = 1;"),
+            ("jsx", "const x = 1;"),
+            ("ts", "const x: number = 1;"),
+            ("sh", "echo hi"),
+            ("zsh", "echo hi"),
+            ("shell", "echo hi"),
+            ("jsonc", r#"{"a":1}"#),
+            ("golang", "package main"),
+            ("c++", "class Foo { int x; };"),
+            ("cxx", "class Foo { int x; };"),
+            ("cc", "class Foo { int x; };"),
+            ("htm", "<p>hi</p>"),
+            ("yaml", "key: value"),
+            ("yml", "key: value"),
+            ("markdown", "# Title"),
+            ("md", "# Title"),
+            ("ruby", "def f; end"),
+            ("rb", "def f; end"),
+            ("java", "class C {}"),
+            ("php", "<?php echo 1; ?>"),
+            ("sql", "SELECT 1;"),
+            // Mixed case — get_language_config lowercases before matching.
+            ("Rust", "fn main() {}"),
+            ("YAML", "key: value"),
+            ("SQL", "SELECT 1;"),
+        ];
+        for (alias, code) in cases {
+            let spans = highlight_code(code, alias);
+            assert!(
+                spans.iter().any(|s| s.highlight_index.is_some()),
+                "alias {alias:?} produced no highlighted spans; grammar likely didn't run"
+            );
         }
+    }
+
+    #[test]
+    fn known_unsupported_aliases_fall_back_gracefully() {
+        // Every label listed in KNOWN_UNSUPPORTED plus a genuinely unknown
+        // label must emit the source verbatim as a single unhighlighted span
+        // without panicking. This test is the enforcement mechanism for the
+        // KNOWN_UNSUPPORTED list: adding a grammar for any of these labels
+        // without removing it from the list causes this test to fail.
+        for alias in KNOWN_UNSUPPORTED
+            .iter()
+            .copied()
+            .chain(std::iter::once("not-a-real-language-xyz"))
+        {
+            let code = "arbitrary source";
+            let spans = highlight_code(code, alias);
+            assert_eq!(spans.len(), 1, "alias {alias:?}");
+            assert_eq!(spans[0].text, code);
+            assert!(spans[0].highlight_index.is_none(), "alias {alias:?}");
+        }
+    }
+
+    #[test]
+    fn highlight_yaml_kv() {
+        let spans = highlight_code("key: value\nlist:\n  - a", "yaml");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
+    }
+
+    #[test]
+    fn highlight_markdown_heading() {
+        let spans = highlight_code("# Title\n\ntext", "markdown");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
+    }
+
+    #[test]
+    fn highlight_java_class() {
+        let spans = highlight_code("class C { int x; }", "java");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
+    }
+
+    #[test]
+    fn highlight_ruby_def() {
+        let spans = highlight_code("def greet(name)\n  puts name\nend", "ruby");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
+    }
+
+    #[test]
+    fn highlight_php_echo() {
+        let spans = highlight_code("<?php echo 'hi'; ?>", "php");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
+    }
+
+    #[test]
+    fn highlight_sql_select() {
+        let spans = highlight_code("SELECT id FROM t WHERE x = 1;", "sql");
+        assert!(spans.iter().any(|s| s.highlight_index.is_some()));
     }
 
     #[test]

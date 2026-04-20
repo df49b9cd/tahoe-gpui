@@ -59,6 +59,12 @@ tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-html = "0.23"
+tree-sitter-yaml = "0.7"
+tree-sitter-md = "0.5"
+tree-sitter-java = "0.23"
+tree-sitter-ruby = "0.23"
+tree-sitter-php = "0.24"
+tree-sitter-sequel = "0.3"
 
 # Workspace dependencies
 serde = { workspace = true }
