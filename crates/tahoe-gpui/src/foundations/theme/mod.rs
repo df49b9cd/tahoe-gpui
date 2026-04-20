@@ -1267,10 +1267,8 @@ impl TahoeTheme {
             l: 0.55,
             ..theme.palette.orange
         };
-        // `info` must remain distinguishable from `accent` (Blue) — use Cyan
-        // per Apple's systemCyan family so informational state reads as
-        // separate from interactive accents.
-        theme.info = theme.palette.cyan;
+        // `theme.info` is synced from `semantic.info` below — semantic owns it
+        // so HC overrides flow through automatically.
 
         // Override accent tint on glass
         theme.glass.accent_tint = GlassTint {
