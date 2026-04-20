@@ -281,6 +281,24 @@ impl Icon {
         self
     }
 
+    /// Whether this icon will be horizontally mirrored under the given
+    /// theme. True iff the caller has not opted out via
+    /// [`Icon::follow_layout_direction`], the theme reports an RTL layout,
+    /// and the symbol's [`IconName::layout_behavior`] is `Directional`.
+    ///
+    /// The render path uses this method as its single source of truth for
+    /// the flip decision, so callers that need to mirror surrounding
+    /// geometry (e.g. custom drop-shadow offsets) can consult this instead
+    /// of re-deriving the logic.
+    pub fn would_flip_horizontally(&self, theme: &crate::foundations::theme::TahoeTheme) -> bool {
+        self.follow_layout_direction
+            && theme.is_rtl()
+            && matches!(
+                self.name.layout_behavior(),
+                super::IconLayoutBehavior::Directional
+            )
+    }
+
     /// Resolved stroke width in points for this icon.
     ///
     /// - Explicit weight via `Icon::weight()` takes priority.
@@ -414,18 +432,12 @@ impl RenderOnce for Icon {
             theme.text_muted
         });
 
-        // RTL mirror for directional glyphs. Keeps the behaviour off
-        // unless the caller opted in (default true) *and* the theme
-        // reports an RTL layout *and* the symbol itself declares
-        // `IconLayoutBehavior::Directional`. Localised variants are
-        // out of scope for the bare `Icon`; callers who need those
-        // can inspect `IconName::layout_behavior()` themselves.
-        let should_flip_directional = self.follow_layout_direction
-            && theme.is_rtl()
-            && matches!(
-                self.name.layout_behavior(),
-                super::IconLayoutBehavior::Directional
-            );
+        // RTL mirror for directional glyphs. Stays off unless the caller
+        // opted in (default true) *and* the theme reports an RTL layout
+        // *and* the symbol itself declares `IconLayoutBehavior::Directional`.
+        // Localised variants are out of scope for the bare `Icon`; callers
+        // who need those can inspect `IconName::layout_behavior()` themselves.
+        let should_flip_directional = self.would_flip_horizontally(theme);
 
         let scale = self.scale.unwrap_or_default();
         // Source of truth for pixel size, in priority order:
@@ -464,25 +476,48 @@ impl RenderOnce for Icon {
 
         if let Some(strategy) = strategy {
             let element: gpui::AnyElement = match strategy {
-                RenderStrategy::Monochrome(path) => {
-                    layers::render_monochrome(path, size, color, render_mode).into_any_element()
-                }
+                RenderStrategy::Monochrome(path) => layers::render_monochrome(
+                    path,
+                    size,
+                    color,
+                    render_mode,
+                    should_flip_directional,
+                )
+                .into_any_element(),
                 RenderStrategy::MultiColor(layer_list) => match render_mode {
                     IconRenderMode::Hierarchical if layer_list.len() > 1 => {
                         layers::render_multi_color_layers_hierarchical(
-                            layer_list, size, self.color, is_glass, window, cx,
+                            layer_list,
+                            size,
+                            self.color,
+                            is_glass,
+                            should_flip_directional,
+                            window,
+                            cx,
                         )
                         .into_any_element()
                     }
                     IconRenderMode::Palette { palette } => {
                         layers::render_multi_color_layers_palette(
-                            layer_list, size, palette, window, cx,
+                            layer_list,
+                            size,
+                            palette,
+                            should_flip_directional,
+                            window,
+                            cx,
                         )
                         .into_any_element()
                     }
                     IconRenderMode::VariableColor { progress } => {
                         layers::render_multi_color_layers_variable(
-                            layer_list, size, self.color, progress, is_glass, window, cx,
+                            layer_list,
+                            size,
+                            self.color,
+                            progress,
+                            is_glass,
+                            should_flip_directional,
+                            window,
+                            cx,
                         )
                         .into_any_element()
                     }
@@ -497,6 +532,7 @@ impl RenderOnce for Icon {
                             source.or(self.color),
                             color,
                             is_glass,
+                            should_flip_directional,
                             window,
                             cx,
                         )
@@ -509,26 +545,34 @@ impl RenderOnce for Icon {
                     _ => {
                         if is_glass {
                             layers::render_multi_color_layers_glass(
-                                layer_list, size, self.color, window, cx,
+                                layer_list,
+                                size,
+                                self.color,
+                                should_flip_directional,
+                                window,
+                                cx,
                             )
                             .into_any_element()
                         } else {
                             layers::render_multi_color_layers(
-                                layer_list, size, self.color, window, cx,
+                                layer_list,
+                                size,
+                                self.color,
+                                should_flip_directional,
+                                window,
+                                cx,
                             )
                             .into_any_element()
                         }
                     }
                 },
             };
-            // Finding 23 in the Zed cross-reference audit: apply RTL mirror
-            // for directional glyphs at the inner SVG layer. GPUI's
-            // `Transformation` is only exposed on `svg()` today, so the
-            // flip is honoured for the monochrome single-layer path;
-            // multi-color strategies stack multiple svg()s in a div and
-            // cannot be flipped as a unit until GPUI lands a transform
-            // API on `Div`. `follow_layout_direction(false)` opts out.
-            let _ = should_flip_directional;
+            // RTL mirror for directional glyphs is applied at each inner
+            // `svg()` via `Transformation::scale(size(-1, 1))`. GPUI mirrors
+            // around `bounds.center()` (see `gpui::elements::svg::Svg::paint`),
+            // so stacking multiple flipped layers produces the same visual as
+            // flipping the stack as a unit. `follow_layout_direction(false)`
+            // opts out.
             return apply_baseline(element, baseline_offset);
         }
 

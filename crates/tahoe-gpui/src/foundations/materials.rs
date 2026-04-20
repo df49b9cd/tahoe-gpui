@@ -1554,17 +1554,6 @@ where
     })
 }
 
-/// Returns the flex direction for a horizontal row, respecting RTL.
-///
-/// LTR returns `FlexDirection::Row`, RTL returns `FlexDirection::RowReverse`.
-pub fn flex_row_directed(theme: &TahoeTheme) -> gpui::FlexDirection {
-    if theme.is_rtl() {
-        gpui::FlexDirection::RowReverse
-    } else {
-        gpui::FlexDirection::Row
-    }
-}
-
 /// Apply the HIG focus ring to an element, preserving any base shadows.
 ///
 /// When `focused`: sets shadows to `base_shadows` + the two focus-ring layers
@@ -1967,24 +1956,6 @@ mod tests {
         let theme = TahoeTheme::dark();
         assert!((f32::from(theme.focus_ring_offset) - 3.0).abs() < f32::EPSILON);
         assert!((f32::from(theme.focus_ring_width) - 3.0).abs() < f32::EPSILON);
-    }
-
-    // ─── RTL Layout Tests ──────────────────────────────────────────────────
-
-    #[test]
-    fn flex_row_directed_ltr_returns_row() {
-        use super::flex_row_directed;
-        let theme = TahoeTheme::dark();
-        assert_eq!(flex_row_directed(&theme), gpui::FlexDirection::Row);
-    }
-
-    #[test]
-    fn flex_row_directed_rtl_returns_row_reverse() {
-        use super::flex_row_directed;
-        use crate::foundations::layout::LayoutDirection;
-        let mut theme = TahoeTheme::dark();
-        theme.layout_direction = LayoutDirection::RightToLeft;
-        assert_eq!(flex_row_directed(&theme), gpui::FlexDirection::RowReverse);
     }
 
     #[test]

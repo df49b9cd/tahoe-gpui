@@ -116,6 +116,23 @@ pub(crate) mod helpers {
         })
     }
 
+    /// Create a test window with a dark theme switched to right-to-left
+    /// layout direction. Used by components that want to smoke-test their
+    /// RTL rendering path without a full visual-regression setup.
+    pub fn setup_test_window_rtl<V: Render + 'static>(
+        cx: &mut TestAppContext,
+        build: impl FnOnce(&mut Window, &mut gpui::Context<V>) -> V,
+    ) -> (Entity<V>, &mut VisualTestContext) {
+        use crate::foundations::layout::LayoutDirection;
+        register_test_keybindings(cx);
+        cx.add_window_view(|window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.layout_direction = LayoutDirection::RightToLeft;
+            cx.set_global(theme);
+            build(window, cx)
+        })
+    }
+
     /// A rendered element found via `debug_bounds`.
     #[derive(Debug, Clone, Copy)]
     pub struct LocatedElement {

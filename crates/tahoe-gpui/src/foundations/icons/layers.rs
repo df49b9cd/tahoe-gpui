@@ -4,11 +4,33 @@
 //! each tinted with a semantic theme color.
 
 use gpui::prelude::*;
-use gpui::{App, Hsla, Pixels, Window, div, svg};
+use gpui::{App, Hsla, Pixels, Transformation, Window, div, size as gpui_size, svg};
 
 use super::assets::IconColorRole;
 use super::icon::IconRenderMode;
 use crate::foundations::theme::{ActiveTheme, TahoeTheme};
+
+/// Horizontal-mirror transformation applied to individual SVG layers.
+///
+/// Returns `Some(scale(-1, 1))` when the icon should flip (mirrors around
+/// `bounds.center()` per `gpui::elements::svg`, so stacking multiple
+/// flipped layers composes to the same visual as flipping the stack as a
+/// unit). Returns `None` in the common LTR path so the `svg()` builder
+/// can skip `.with_transformation(...)` entirely — this keeps GPUI's
+/// `unwrap_or_default()` fast path live and avoids a per-layer matrix
+/// composition for non-flipped icons.
+fn layer_transform(flip_horizontal: bool) -> Option<Transformation> {
+    flip_horizontal.then(|| Transformation::scale(gpui_size(-1.0, 1.0)))
+}
+
+/// Conditionally apply a horizontal-mirror transformation to an `svg()`
+/// builder. Pairs with [`layer_transform`] — no-ops when the flip is off.
+fn maybe_flip(el: gpui::Svg, flip_horizontal: bool) -> gpui::Svg {
+    match layer_transform(flip_horizontal) {
+        Some(t) => el.with_transformation(t),
+        None => el,
+    }
+}
 
 /// Render a single-layer (monochrome path) icon. Supports the single-layer
 /// render modes: Monochrome (plain), VariableColor (opacity-driven by
@@ -18,11 +40,16 @@ use crate::foundations::theme::{ActiveTheme, TahoeTheme};
 /// back to plain Monochrome when applied to a single-layer icon — that
 /// matches SF Symbols' behavior where asking for a palette render on a
 /// monochrome symbol renders it monochrome with the first palette color.
+///
+/// `flip_horizontal` mirrors the glyph across the vertical axis — used to
+/// honour [`Icon::follow_layout_direction`] under RTL themes for
+/// directionally-classified symbols (chevrons, arrows, `Send`).
 pub(super) fn render_monochrome(
     path: &'static str,
     size: Pixels,
     color: Hsla,
     mode: IconRenderMode,
+    flip_horizontal: bool,
 ) -> impl IntoElement {
     let resolved_color = match mode {
         IconRenderMode::VariableColor { progress } => {
@@ -40,9 +67,10 @@ pub(super) fn render_monochrome(
         IconRenderMode::Palette { palette } if !palette.is_empty() => palette[0],
         _ => color,
     };
-    div()
-        .size(size)
-        .child(svg().path(path).size(size).text_color(resolved_color))
+    div().size(size).child(maybe_flip(
+        svg().path(path).size(size).text_color(resolved_color),
+        flip_horizontal,
+    ))
 }
 
 /// Resolve an [`IconColorRole`] to a concrete color from the theme.
@@ -85,6 +113,7 @@ pub(super) fn render_multi_color_layers_glass(
     layers: &'static [(&'static str, IconColorRole)],
     size: Pixels,
     caller_color: Option<Hsla>,
+    flip_horizontal: bool,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -94,7 +123,7 @@ pub(super) fn render_multi_color_layers_glass(
 
     for &(path, role) in layers {
         let color = resolve_role_color_glass(role, caller_color, theme);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -102,7 +131,8 @@ pub(super) fn render_multi_color_layers_glass(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -116,6 +146,7 @@ pub(super) fn render_multi_color_layers(
     layers: &'static [(&'static str, IconColorRole)],
     size: Pixels,
     caller_color: Option<Hsla>,
+    flip_horizontal: bool,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -125,7 +156,7 @@ pub(super) fn render_multi_color_layers(
 
     for &(path, role) in layers {
         let color = resolve_role_color(role, caller_color, theme);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -133,7 +164,8 @@ pub(super) fn render_multi_color_layers(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -149,6 +181,7 @@ pub(super) fn render_multi_color_layers_palette(
     layers: &'static [(&'static str, IconColorRole)],
     size: Pixels,
     palette: &'static [Hsla],
+    flip_horizontal: bool,
     _window: &mut Window,
     _cx: &mut App,
 ) -> impl IntoElement {
@@ -169,7 +202,7 @@ pub(super) fn render_multi_color_layers_palette(
         } else {
             palette[i.min(palette.len() - 1)]
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -177,7 +210,8 @@ pub(super) fn render_multi_color_layers_palette(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -193,6 +227,7 @@ pub(super) fn render_multi_color_layers_variable(
     caller_color: Option<Hsla>,
     progress: f32,
     is_glass: bool,
+    flip_horizontal: bool,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -220,7 +255,7 @@ pub(super) fn render_multi_color_layers_variable(
             a: base.a * alpha_mul,
             ..base
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -228,7 +263,8 @@ pub(super) fn render_multi_color_layers_variable(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -246,6 +282,7 @@ pub(super) fn render_multi_color_layers_gradient(
     source: Option<Hsla>,
     fallback: Hsla,
     is_glass: bool,
+    flip_horizontal: bool,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -271,7 +308,7 @@ pub(super) fn render_multi_color_layers_gradient(
         } else {
             resolve_role_color(role, Some(src), theme)
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -279,12 +316,13 @@ pub(super) fn render_multi_color_layers_gradient(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     // Gradient stop overlay: same shape, darker stop at reduced opacity.
     if let Some(&(primary_path, _)) = layers.first() {
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(primary_path)
                 .size(size)
@@ -295,7 +333,8 @@ pub(super) fn render_multi_color_layers_gradient(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -310,6 +349,7 @@ pub(super) fn render_multi_color_layers_hierarchical(
     size: Pixels,
     caller_color: Option<Hsla>,
     is_glass: bool,
+    flip_horizontal: bool,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -325,7 +365,7 @@ pub(super) fn render_multi_color_layers_hierarchical(
         };
         // Apply hierarchical opacity
         color.a *= super::hierarchical_opacity(i);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
@@ -333,7 +373,8 @@ pub(super) fn render_multi_color_layers_hierarchical(
                 .absolute()
                 .top_0()
                 .left_0(),
-        );
+            flip_horizontal,
+        ));
     }
 
     container
@@ -424,6 +465,28 @@ mod tests {
         assert_eq!(
             resolve_role_color_glass(IconColorRole::Ai, None, &theme),
             theme.glass.icon_ai
+        );
+    }
+
+    // ─── layer_transform / maybe_flip ──────────────────────────────────────
+
+    #[test]
+    fn layer_transform_is_none_when_not_flipping() {
+        // LTR icons must bypass `with_transformation` entirely so GPUI's
+        // `svg::paint` takes the `unwrap_or_default()` fast path. A
+        // regression to `Some(identity)` reintroduces the per-layer matrix
+        // composition this helper was designed to avoid.
+        assert_eq!(super::layer_transform(false), None);
+    }
+
+    #[test]
+    fn layer_transform_mirrors_horizontally_when_flipping() {
+        // The scale must be exactly `(-1, 1)` so GPUI mirrors around
+        // `bounds.center()` with no net translation. Any other tuple
+        // produces an off-center or vertically-mirrored glyph.
+        assert_eq!(
+            super::layer_transform(true),
+            Some(gpui::Transformation::scale(gpui::size(-1.0, 1.0)))
         );
     }
 }

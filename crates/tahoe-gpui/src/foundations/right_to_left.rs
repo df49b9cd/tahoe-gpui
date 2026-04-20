@@ -6,8 +6,8 @@
 //!
 //! # What mirrors automatically
 //!
-//! Components using [`flex_row_directed`](super::materials::flex_row_directed) already
-//! respect the layout direction from `TahoeTheme::layout_direction`.
+//! Components using [`apply_flex_row_direction`] already respect the
+//! layout direction from `TahoeTheme::layout_direction`.
 //!
 //! # What needs manual mirroring
 //!
@@ -20,6 +20,7 @@
 use gpui::Pixels;
 
 pub use super::layout::LayoutDirection;
+use super::theme::TahoeTheme;
 
 /// Returns the flex direction to use when laying out a row whose first child
 /// should appear at the *leading* edge. In LTR the leading edge is the left,
@@ -29,6 +30,25 @@ pub fn flex_direction_for_layout(direction: LayoutDirection) -> gpui::FlexDirect
     match direction {
         LayoutDirection::LeftToRight => gpui::FlexDirection::Row,
         LayoutDirection::RightToLeft => gpui::FlexDirection::RowReverse,
+    }
+}
+
+/// Apply `flex_row` in LTR themes and `flex_row_reverse` in RTL themes to
+/// a `Styled` builder chain.
+///
+/// The canonical way to make a horizontal row honour
+/// `TahoeTheme::layout_direction`: the caller writes the element's children
+/// in semantic order (leading-first, trailing-last) and this helper swaps
+/// the physical direction under RTL so the semantic "leading" child always
+/// sits on the reading-leading edge.
+///
+/// Naming mirrors the file-local `apply_focus_ring` convention in
+/// `materials.rs`: `apply_*` prefixes element-mutating helpers.
+pub fn apply_flex_row_direction<E: gpui::Styled>(el: E, theme: &TahoeTheme) -> E {
+    if theme.is_rtl() {
+        el.flex_row_reverse()
+    } else {
+        el.flex_row()
     }
 }
 

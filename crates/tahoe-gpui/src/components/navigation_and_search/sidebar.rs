@@ -27,6 +27,7 @@ use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
 use crate::foundations::materials::{SurfaceContext, apply_focus_ring};
+use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 type OnResize = Option<Box<dyn Fn(Pixels, &mut Window, &mut App) + 'static>>;
@@ -385,10 +386,10 @@ impl RenderOnce for SidebarSection {
         let theme = cx.theme();
         let show_children = !self.collapsible || self.expanded;
 
-        let mut header = div()
-            .id(self.id.clone())
-            .flex()
-            .flex_row()
+        // `apply_flex_row_direction` keeps the disclosure chevron on the
+        // reading-leading edge in both LTR and RTL layouts. Chevron glyph
+        // flips via `Icon::follow_layout_direction`.
+        let mut header = apply_flex_row_direction(div().id(self.id.clone()).flex(), theme)
             .items_center()
             .gap(theme.spacing_xs)
             .px(theme.spacing_md)
@@ -557,10 +558,10 @@ impl RenderOnce for SidebarItem {
         };
 
         let has_handler = self.on_click.is_some();
-        let mut row = div()
-            .id(self.id)
-            .focusable()
-            .flex()
+        // `apply_flex_row_direction` places the leading icon on the reading-
+        // leading edge under both LTR and RTL themes. The row's symmetric
+        // horizontal padding needs no direction-aware swap.
+        let mut row = apply_flex_row_direction(div().id(self.id).focusable().flex(), theme)
             .items_center()
             .gap(theme.spacing_sm)
             .px(theme.spacing_md)
@@ -841,5 +842,61 @@ mod tests {
     fn sidebar_item_on_reorder_builder() {
         let item = SidebarItem::new("test", "Inbox").on_reorder(|_, _, _| {});
         assert!(item.on_reorder.is_some());
+    }
+}
+
+#[cfg(test)]
+mod rtl_smoke_tests {
+    use super::{SidebarItem, SidebarSection};
+    use crate::foundations::icons::IconName;
+    use crate::test_helpers::helpers::setup_test_window_rtl;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div};
+
+    struct SectionHarness;
+    impl SectionHarness {
+        fn new(_: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+    impl Render for SectionHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            // Collapsed state uses ChevronRight (a Directional glyph that
+            // auto-flips in RTL). Exercises both the header's
+            // `apply_flex_row_direction` wiring and the Icon flip path.
+            SidebarSection::new("section", "Favorites")
+                .collapsible(true)
+                .expanded(false)
+                .child(div())
+        }
+    }
+
+    #[gpui::test]
+    async fn sidebar_section_renders_under_rtl(cx: &mut TestAppContext) {
+        let _ = setup_test_window_rtl(cx, |_window, cx| SectionHarness::new(cx));
+    }
+
+    struct ItemHarness;
+    impl ItemHarness {
+        fn new(_: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+    impl Render for ItemHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            SidebarItem::new("item", "Inbox").icon(IconName::Folder)
+        }
+    }
+
+    #[gpui::test]
+    async fn sidebar_item_renders_under_rtl(cx: &mut TestAppContext) {
+        let _ = setup_test_window_rtl(cx, |_window, cx| ItemHarness::new(cx));
     }
 }
