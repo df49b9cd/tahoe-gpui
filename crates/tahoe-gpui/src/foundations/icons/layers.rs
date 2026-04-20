@@ -10,17 +10,25 @@ use super::assets::IconColorRole;
 use super::icon::IconRenderMode;
 use crate::foundations::theme::{ActiveTheme, TahoeTheme};
 
-/// Layer transformation applied to individual SVG layers. Returns a
-/// horizontal mirror around `bounds.center()` (see `gpui::elements::svg`)
-/// when `flip_horizontal` is true — stacking multiple flipped layers
-/// produces the same visual as flipping the stack as a unit. When false,
-/// returns the identity transform so the builder pattern stays uniform
-/// across both branches.
-fn layer_transform(flip_horizontal: bool) -> Transformation {
-    if flip_horizontal {
-        Transformation::scale(gpui_size(-1.0, 1.0))
-    } else {
-        Transformation::default()
+/// Horizontal-mirror transformation applied to individual SVG layers.
+///
+/// Returns `Some(scale(-1, 1))` when the icon should flip (mirrors around
+/// `bounds.center()` per `gpui::elements::svg`, so stacking multiple
+/// flipped layers composes to the same visual as flipping the stack as a
+/// unit). Returns `None` in the common LTR path so the `svg()` builder
+/// can skip `.with_transformation(...)` entirely — this keeps GPUI's
+/// `unwrap_or_default()` fast path live and avoids a per-layer matrix
+/// composition for non-flipped icons.
+fn layer_transform(flip_horizontal: bool) -> Option<Transformation> {
+    flip_horizontal.then(|| Transformation::scale(gpui_size(-1.0, 1.0)))
+}
+
+/// Conditionally apply a horizontal-mirror transformation to an `svg()`
+/// builder. Pairs with [`layer_transform`] — no-ops when the flip is off.
+fn maybe_flip(el: gpui::Svg, flip_horizontal: bool) -> gpui::Svg {
+    match layer_transform(flip_horizontal) {
+        Some(t) => el.with_transformation(t),
+        None => el,
     }
 }
 
@@ -59,13 +67,10 @@ pub(super) fn render_monochrome(
         IconRenderMode::Palette { palette } if !palette.is_empty() => palette[0],
         _ => color,
     };
-    div().size(size).child(
-        svg()
-            .path(path)
-            .size(size)
-            .text_color(resolved_color)
-            .with_transformation(layer_transform(flip_horizontal)),
-    )
+    div().size(size).child(maybe_flip(
+        svg().path(path).size(size).text_color(resolved_color),
+        flip_horizontal,
+    ))
 }
 
 /// Resolve an [`IconColorRole`] to a concrete color from the theme.
@@ -118,16 +123,16 @@ pub(super) fn render_multi_color_layers_glass(
 
     for &(path, role) in layers {
         let color = resolve_role_color_glass(role, caller_color, theme);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -151,16 +156,16 @@ pub(super) fn render_multi_color_layers(
 
     for &(path, role) in layers {
         let color = resolve_role_color(role, caller_color, theme);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -197,16 +202,16 @@ pub(super) fn render_multi_color_layers_palette(
         } else {
             palette[i.min(palette.len() - 1)]
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -250,16 +255,16 @@ pub(super) fn render_multi_color_layers_variable(
             a: base.a * alpha_mul,
             ..base
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -303,21 +308,21 @@ pub(super) fn render_multi_color_layers_gradient(
         } else {
             resolve_role_color(role, Some(src), theme)
         };
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     // Gradient stop overlay: same shape, darker stop at reduced opacity.
     if let Some(&(primary_path, _)) = layers.first() {
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(primary_path)
                 .size(size)
@@ -327,9 +332,9 @@ pub(super) fn render_multi_color_layers_gradient(
                 })
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -360,16 +365,16 @@ pub(super) fn render_multi_color_layers_hierarchical(
         };
         // Apply hierarchical opacity
         color.a *= super::hierarchical_opacity(i);
-        container = container.child(
+        container = container.child(maybe_flip(
             svg()
                 .path(path)
                 .size(size)
                 .text_color(color)
                 .absolute()
                 .top_0()
-                .left_0()
-                .with_transformation(layer_transform(flip_horizontal)),
-        );
+                .left_0(),
+            flip_horizontal,
+        ));
     }
 
     container
@@ -460,6 +465,28 @@ mod tests {
         assert_eq!(
             resolve_role_color_glass(IconColorRole::Ai, None, &theme),
             theme.glass.icon_ai
+        );
+    }
+
+    // ─── layer_transform / maybe_flip ──────────────────────────────────────
+
+    #[test]
+    fn layer_transform_is_none_when_not_flipping() {
+        // LTR icons must bypass `with_transformation` entirely so GPUI's
+        // `svg::paint` takes the `unwrap_or_default()` fast path. A
+        // regression to `Some(identity)` reintroduces the per-layer matrix
+        // composition this helper was designed to avoid.
+        assert_eq!(super::layer_transform(false), None);
+    }
+
+    #[test]
+    fn layer_transform_mirrors_horizontally_when_flipping() {
+        // The scale must be exactly `(-1, 1)` so GPUI mirrors around
+        // `bounds.center()` with no net translation. Any other tuple
+        // produces an off-center or vertically-mirrored glyph.
+        assert_eq!(
+            super::layer_transform(true),
+            Some(gpui::Transformation::scale(gpui::size(-1.0, 1.0)))
         );
     }
 }

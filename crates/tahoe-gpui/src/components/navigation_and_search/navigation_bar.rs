@@ -14,7 +14,8 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, Pixels, SharedString, Window, div, px};
 
-use crate::foundations::materials::{SurfaceContext, flex_row_directed, glass_surface};
+use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// iOS-style navigation bar primitive.
@@ -116,10 +117,10 @@ impl RenderOnce for NavigationBarIOS {
             div().into_any_element()
         };
 
-        // `flex_row_directed` swaps the physical sides of `leading` and
-        // `trailing` under RTL so the caller's semantic "leading" element
+        // `apply_flex_row_direction` swaps the physical sides of `leading`
+        // and `trailing` under RTL so the caller's semantic "leading" element
         // always sits on the reading-leading edge (HIG Right-to-Left).
-        let controls_layer = flex_row_directed(div().w_full().h_full().flex(), theme)
+        let controls_layer = apply_flex_row_direction(div().w_full().h_full().flex(), theme)
             .items_center()
             .justify_between()
             .child(leading_el)
@@ -171,5 +172,39 @@ mod tests {
         assert!(bar.leading.is_none());
         assert!(bar.trailing.is_none());
         assert_eq!(bar.height, Some(px(50.0)));
+    }
+}
+
+#[cfg(test)]
+mod rtl_smoke_tests {
+    use super::NavigationBarIOS;
+    use crate::test_helpers::helpers::setup_test_window_rtl;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div};
+
+    struct Harness;
+    impl Harness {
+        fn new(_: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+    impl Render for Harness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            NavigationBarIOS::new("nav")
+                .title("Title")
+                .leading(div())
+                .trailing(div())
+        }
+    }
+
+    /// Guards against an accidental revert of `apply_flex_row_direction`
+    /// back to `.flex_row()`. The render path must succeed under an RTL
+    /// theme; a regression would panic or fail layout.
+    #[gpui::test]
+    async fn navigation_bar_renders_under_rtl(cx: &mut TestAppContext) {
+        let _ = setup_test_window_rtl(cx, |_window, cx| Harness::new(cx));
     }
 }

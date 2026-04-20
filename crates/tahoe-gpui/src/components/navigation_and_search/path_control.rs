@@ -26,7 +26,8 @@ use gpui::{App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::components::menus_and_actions::pulldown_button::{PulldownButton, PulldownItem};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{apply_focus_ring, flex_row_directed};
+use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`PathControl`]. Matches the two styles defined by
@@ -203,11 +204,12 @@ impl RenderOnce for PathControl {
         let highlighted = self.highlighted_index;
         let style = self.style;
 
-        // `flex_row_directed` makes the trail read right-to-left under RTL
-        // themes (root segment appears on the right, leaf on the left).
-        // Chevron separators auto-flip via `Icon::follow_layout_direction`
-        // so they continue pointing toward the leaf.
-        let mut row = flex_row_directed(div().id(self.id.clone()).focusable().flex(), theme)
+        // `apply_flex_row_direction` makes the trail read right-to-left
+        // under RTL themes (root segment appears on the right, leaf on the
+        // left). Chevron separators auto-flip via
+        // `Icon::follow_layout_direction` so they continue pointing toward
+        // the leaf.
+        let mut row = apply_flex_row_direction(div().id(self.id.clone()).focusable().flex(), theme)
             .items_center()
             .gap(px(SPACING_4));
 
@@ -505,5 +507,41 @@ mod tests {
     #[test]
     fn path_control_style_default_is_standard() {
         assert_eq!(PathControlStyle::default(), PathControlStyle::Standard);
+    }
+}
+
+#[cfg(test)]
+mod rtl_smoke_tests {
+    use super::{PathControl, PathSegment};
+    use crate::test_helpers::helpers::setup_test_window_rtl;
+    use gpui::{Context, IntoElement, Render, TestAppContext};
+
+    struct Harness;
+    impl Harness {
+        fn new(_: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+    impl Render for Harness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            PathControl::new("path").segments(vec![
+                PathSegment::new("Root"),
+                PathSegment::new("Child"),
+                PathSegment::new("Leaf"),
+            ])
+        }
+    }
+
+    /// Multi-segment trail with chevron separators — exercises both the
+    /// outer `apply_flex_row_direction` call and the chevron glyph flip
+    /// under RTL. A regression to `.flex_row()` would still pass the
+    /// builder tests above; this smoke test catches it at render time.
+    #[gpui::test]
+    async fn path_control_renders_under_rtl(cx: &mut TestAppContext) {
+        let _ = setup_test_window_rtl(cx, |_window, cx| Harness::new(cx));
     }
 }

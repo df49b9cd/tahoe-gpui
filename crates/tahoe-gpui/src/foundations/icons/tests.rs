@@ -653,3 +653,23 @@ fn follow_layout_direction_false_opts_out_of_flip() {
         "opt-out via follow_layout_direction(false) must suppress the flip"
     );
 }
+
+/// Drift guard: pins `Icon::would_flip_horizontally` to
+/// `IconName::layout_behavior()` so either one evolving independently
+/// becomes a test failure. Without this, adding a new directional variant
+/// to `IconName` without updating `layout_behavior` (whose wildcard arm
+/// defaults to `Neutral`) would silently skip the flip with nothing to
+/// catch the regression.
+#[test]
+fn every_variant_flips_iff_classified_directional() {
+    use super::IconLayoutBehavior;
+    let theme = rtl_theme();
+    for &name in ALL_VARIANTS {
+        let expected = matches!(name.layout_behavior(), IconLayoutBehavior::Directional);
+        assert_eq!(
+            Icon::new(name).would_flip_horizontally(&theme),
+            expected,
+            "{name:?}: predicate / layout_behavior classification drift"
+        );
+    }
+}

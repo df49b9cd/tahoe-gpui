@@ -285,9 +285,11 @@ impl Icon {
     /// theme. True iff the caller has not opted out via
     /// [`Icon::follow_layout_direction`], the theme reports an RTL layout,
     /// and the symbol's [`IconName::layout_behavior`] is `Directional`.
-    /// Matches the predicate used by the render path — callers that need
-    /// to mirror surrounding geometry (e.g. custom drop-shadow offsets)
-    /// can consult this instead of re-deriving the logic.
+    ///
+    /// The render path uses this method as its single source of truth for
+    /// the flip decision, so callers that need to mirror surrounding
+    /// geometry (e.g. custom drop-shadow offsets) can consult this instead
+    /// of re-deriving the logic.
     pub fn would_flip_horizontally(&self, theme: &crate::foundations::theme::TahoeTheme) -> bool {
         self.follow_layout_direction
             && theme.is_rtl()

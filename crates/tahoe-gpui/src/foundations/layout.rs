@@ -9,8 +9,6 @@
 
 use gpui::{Div, ParentElement, Pixels, Styled, div, px};
 
-pub use super::materials::flex_row_directed;
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Flex helpers — Zed-style h_flex / v_flex
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

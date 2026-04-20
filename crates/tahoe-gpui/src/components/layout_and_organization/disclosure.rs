@@ -77,6 +77,15 @@ fn arrow_toggles_disclosure(key: &str, is_expanded: bool, is_rtl: bool) -> bool 
     (key == expand_key && !is_expanded) || (key == collapse_key && is_expanded)
 }
 
+/// Combined key-event gate used by the `on_key_down` handler: fires on
+/// Space / Return / Enter (activation keys) OR on a layout-appropriate
+/// arrow toggle. Extracted so the two branches can be composed in tests
+/// exactly as the production closure composes them at render time.
+fn should_fire_toggle(event: &KeyDownEvent, is_expanded: bool, is_rtl: bool) -> bool {
+    crate::foundations::keyboard::is_activation_key(event)
+        || arrow_toggles_disclosure(event.keystroke.key.as_str(), is_expanded, is_rtl)
+}
+
 impl RenderOnce for Disclosure {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -118,10 +127,7 @@ impl RenderOnce for Disclosure {
                     click_handler(new_state, window, cx);
                 })
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    let key = event.keystroke.key.as_str();
-                    let should_fire = crate::foundations::keyboard::is_activation_key(event)
-                        || arrow_toggles_disclosure(key, is_expanded, is_rtl);
-                    if should_fire {
+                    if should_fire_toggle(event, is_expanded, is_rtl) {
                         cx.stop_propagation();
                         handler(new_state, window, cx);
                     }
@@ -134,8 +140,17 @@ impl RenderOnce for Disclosure {
 
 #[cfg(test)]
 mod tests {
-    use super::{Disclosure, arrow_toggles_disclosure};
+    use super::{Disclosure, arrow_toggles_disclosure, should_fire_toggle};
     use core::prelude::v1::test;
+    use gpui::{KeyDownEvent, Keystroke};
+
+    fn make_event(key: &str) -> KeyDownEvent {
+        KeyDownEvent {
+            keystroke: Keystroke::parse(key).unwrap(),
+            is_held: false,
+            prefer_character_input: false,
+        }
+    }
 
     #[test]
     fn disclosure_defaults() {
@@ -193,5 +208,70 @@ mod tests {
         assert!(arrow_toggles_disclosure("right", true, true));
         assert!(!arrow_toggles_disclosure("left", true, true));
         assert!(!arrow_toggles_disclosure("right", false, true));
+    }
+
+    /// Pins the invariant that Space / Return / Enter go exclusively
+    /// through `is_activation_key` and never through the arrow-key
+    /// branch. If a future key-mapping change widens the arrow arm to
+    /// accept "enter" (unlikely but possible), the production gate
+    /// `is_activation_key || arrow_toggles_disclosure` would still fire
+    /// once — but the arrow branch would start claiming a key that
+    /// belongs to the activation branch, breaking the invariant the
+    /// two tests above rely on.
+    #[test]
+    fn activation_key_names_never_route_through_arrow_branch() {
+        for key in ["enter", "space"] {
+            for expanded in [false, true] {
+                for is_rtl in [false, true] {
+                    assert!(
+                        !arrow_toggles_disclosure(key, expanded, is_rtl),
+                        "{key} must not toggle via the arrow branch \
+                         (expanded={expanded}, is_rtl={is_rtl})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Composition test: the production `on_key_down` gate fires iff
+    /// either branch would. Catches a regression that flips `||` to `&&`
+    /// or drops one of the two checks (either would silently pass every
+    /// `arrow_toggles_disclosure` or `is_activation_key` test above).
+    #[test]
+    fn should_fire_toggle_fires_on_activation_keys_regardless_of_direction() {
+        for key in ["enter", "space"] {
+            for expanded in [false, true] {
+                for is_rtl in [false, true] {
+                    assert!(
+                        should_fire_toggle(&make_event(key), expanded, is_rtl),
+                        "{key} must always toggle (expanded={expanded}, is_rtl={is_rtl})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn should_fire_toggle_mirrors_arrow_branch_under_rtl() {
+        // Collapsed in LTR: right expands, left is a no-op.
+        assert!(should_fire_toggle(&make_event("right"), false, false));
+        assert!(!should_fire_toggle(&make_event("left"), false, false));
+        // Collapsed in RTL: left expands, right is a no-op.
+        assert!(should_fire_toggle(&make_event("left"), false, true));
+        assert!(!should_fire_toggle(&make_event("right"), false, true));
+    }
+
+    #[test]
+    fn should_fire_toggle_ignores_unrelated_keys() {
+        for key in ["tab", "escape", "up", "down", "home", "end"] {
+            for expanded in [false, true] {
+                for is_rtl in [false, true] {
+                    assert!(
+                        !should_fire_toggle(&make_event(key), expanded, is_rtl),
+                        "{key} must not toggle (expanded={expanded}, is_rtl={is_rtl})"
+                    );
+                }
+            }
+        }
     }
 }
