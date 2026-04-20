@@ -1107,6 +1107,10 @@ pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
 /// Accessibility: falls back to the opaque ReduceTransparency fill
 /// irrespective of blur support — users who disable transparency never see
 /// the blur either way.
+///
+/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
+/// this fallback runs. Install a `tracing` subscriber (e.g.
+/// `tracing_subscriber::fmt().init()`) to surface it.
 pub fn glass_blur_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1154,6 +1158,10 @@ pub fn glass_blur_surface(
 ///
 /// Accessibility: falls back to the opaque ReduceTransparency fill
 /// irrespective of lens support.
+///
+/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
+/// this fallback runs. Install a `tracing` subscriber (e.g.
+/// `tracing_subscriber::fmt().init()`) to surface it.
 pub fn glass_lens_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1190,6 +1198,8 @@ pub fn glass_lens_surface(
     glass_surface(el, theme, size)
 }
 
+/// Callsite tag for [`warn_blur_fallback_once`] — see that fn for the
+/// rationale behind making this an enum instead of an `&'static str`.
 #[derive(Copy, Clone)]
 enum BlurFallbackSite {
     Blur,
