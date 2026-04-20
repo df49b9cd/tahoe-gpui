@@ -53,13 +53,19 @@ type MermaidCache = FxHashMap<MermaidCacheKey, Timed<MermaidRender>>;
 /// Cache hits refresh the timestamp, so recently-rendered diagrams survive.
 const MERMAID_CACHE_CAP: usize = 64;
 
+/// How long a cached failure remains valid before we retry.
+/// Prevents re-render storms on transient errors while allowing
+/// eventual recovery within a reasonable window.
+const MERMAID_ERROR_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Cached rasterization result. `Ok(image)` means a finished frame;
-/// `Err` means the render failed (invalid source, font issues) — the
-/// failure is memoized so we don't re-attempt on every frame.
+/// `Err(instant)` means the render failed at that time — the failure is
+/// memoized until `MERMAID_ERROR_TTL` elapses, after which the render
+/// is retried.
 #[derive(Clone)]
 enum MermaidRender {
     Ok(Arc<RenderImage>),
-    Err,
+    Err(std::time::Instant),
 }
 
 fn cache() -> &'static Mutex<MermaidCache> {
@@ -96,10 +102,17 @@ fn rasterize_mermaid(
         && let Some(timed) = guard.get_mut(&key)
     {
         timed.last_used = Instant::now();
-        return match &timed.value {
-            MermaidRender::Ok(image) => Some(image.clone()),
-            MermaidRender::Err => None,
-        };
+        match &timed.value {
+            MermaidRender::Ok(image) => return Some(image.clone()),
+            MermaidRender::Err(cached_at) => {
+                if cached_at.elapsed() < MERMAID_ERROR_TTL {
+                    return None;
+                }
+            }
+        }
+        // Error TTL expired — evict and fall through to retry.
+        guard.remove(&key);
+        drop(guard);
     }
 
     let options = mermaid_render_options(dark);
@@ -111,7 +124,7 @@ fn rasterize_mermaid(
                 guard.insert(
                     key,
                     Timed {
-                        value: MermaidRender::Err,
+                        value: MermaidRender::Err(Instant::now()),
                         last_used: Instant::now(),
                     },
                 );
@@ -129,7 +142,7 @@ fn rasterize_mermaid(
                 guard.insert(
                     key,
                     Timed {
-                        value: MermaidRender::Err,
+                        value: MermaidRender::Err(Instant::now()),
                         last_used: Instant::now(),
                     },
                 );
