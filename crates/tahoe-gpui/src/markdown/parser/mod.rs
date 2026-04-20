@@ -136,7 +136,7 @@ impl IncrementalMarkdownParser {
         // repairs from the last streaming parse are dropped in favour of
         // the raw final source.
         self.blocks_dirty = true;
-        let _ = self.parse();
+        let _blocks = self.parse();
     }
 
     /// Get the full source text.
