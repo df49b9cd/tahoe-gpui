@@ -198,10 +198,12 @@ impl Render for CopyButton {
                 .into_any_element()
         };
 
+        let tooltip = if self.copied { "Copied" } else { "Copy" };
         let mut btn = Button::new("copy-btn")
             .icon(animated_icon)
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::IconSmall)
+            .tooltip(tooltip)
             .disabled(self.disabled);
 
         if !self.disabled {

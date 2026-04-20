@@ -99,7 +99,8 @@ impl Render for LiquidGlassGallery {
                             Button::new("gb6")
                                 .icon(Icon::new(IconName::Copy))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon),
+                                .size(ButtonSize::Icon)
+                                .tooltip("Copy"),
                         )
                         .child(
                             Button::new("gb7")
