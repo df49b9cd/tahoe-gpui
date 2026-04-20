@@ -1,11 +1,11 @@
 use super::{
     AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, bold_step, contrast_ratio, macos_tracking,
-    meets_contrast,
+    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
+    macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
-use gpui::{FontFallbacks, FontWeight, hsla};
+use gpui::{FontFallbacks, FontWeight, SharedString, Styled, div, hsla};
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -241,6 +241,60 @@ fn liquid_glass_background_is_dark() {
 }
 
 #[test]
+fn for_appearance_glass_with_a11y_promotes_to_hc_when_requested() {
+    let mode = AccessibilityMode::INCREASE_CONTRAST;
+    let dark = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert!(dark.appearance.is_high_contrast());
+    assert!(dark.appearance.is_dark());
+    // Palette is actually swapped, not just the appearance flag.
+    let dark_base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Dark);
+    assert_ne!(dark.palette.red, dark_base.palette.red);
+
+    let light = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Light, mode);
+    assert!(light.appearance.is_high_contrast());
+    assert!(!light.appearance.is_dark());
+    let light_base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Light);
+    assert_ne!(light.palette.red, light_base.palette.red);
+}
+
+#[test]
+fn for_appearance_glass_with_a11y_no_hc_matches_base() {
+    let base = TahoeTheme::for_appearance_glass(gpui::WindowAppearance::Dark);
+    let same = TahoeTheme::for_appearance_glass_with_a11y(
+        gpui::WindowAppearance::Dark,
+        AccessibilityMode::DEFAULT,
+    );
+    assert_eq!(base.appearance, same.appearance);
+    assert!(!same.appearance.is_high_contrast());
+}
+
+#[test]
+fn for_appearance_glass_with_a11y_propagates_full_mode() {
+    // Flags other than INCREASE_CONTRAST must be written through to
+    // `theme.accessibility_mode` so downstream motion/bold-text branches
+    // see the caller's intent.
+    let mode = AccessibilityMode::REDUCE_MOTION | AccessibilityMode::BOLD_TEXT;
+    let theme = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert_eq!(theme.accessibility_mode, mode);
+    assert!(!theme.appearance.is_high_contrast());
+
+    let hc = mode | AccessibilityMode::INCREASE_CONTRAST;
+    let theme = TahoeTheme::for_appearance_glass_with_a11y(gpui::WindowAppearance::Light, hc);
+    assert_eq!(theme.accessibility_mode, hc);
+    assert!(theme.appearance.is_high_contrast());
+}
+
+#[test]
+fn for_appearance_with_a11y_propagates_full_mode() {
+    // Same guarantee as the glass sibling: the full AccessibilityMode flows
+    // into `theme.accessibility_mode`, not just the INCREASE_CONTRAST bit.
+    let mode = AccessibilityMode::REDUCE_MOTION | AccessibilityMode::BOLD_TEXT;
+    let theme = TahoeTheme::for_appearance_with_a11y(gpui::WindowAppearance::Dark, mode);
+    assert_eq!(theme.accessibility_mode, mode);
+    assert!(!theme.appearance.is_high_contrast());
+}
+
+#[test]
 fn liquid_glass_window_is_blurred() {
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(matches!(
@@ -313,10 +367,37 @@ fn apple_accent_blue() {
 }
 
 #[test]
+fn liquid_glass_accent_color_enum_matches_accent() {
+    // Regression for #24: liquid_glass/liquid_glass_light must report
+    // AccentColor::Blue (not the default Multicolor) because they override
+    // the accent to a specific blue. The enum must not lie.
+    assert_eq!(TahoeTheme::liquid_glass().accent_color, AccentColor::Blue);
+    assert_eq!(
+        TahoeTheme::liquid_glass_light().accent_color,
+        AccentColor::Blue
+    );
+
+    // Replaying with_accent_color with the theme's own accent_color
+    // preserves the enum value (pins the self-consistency invariant the
+    // bug was really about).
+    let theme = TahoeTheme::liquid_glass();
+    let replayed = theme.clone().with_accent_color(theme.accent_color);
+    assert_eq!(replayed.accent_color, theme.accent_color);
+
+    // The constructor's hardcoded accent flows through to ring,
+    // focus_ring_color, and the glass accent tint — pinning the
+    // "no pixel change" contract against a future refactor that
+    // accidentally routes these through palette.blue.
+    assert_eq!(theme.ring, theme.accent);
+    assert_eq!(theme.focus_ring_color, theme.accent);
+    assert_eq!(theme.glass.accent_tint.bg, theme.accent);
+}
+
+#[test]
 fn with_accent_color_propagates_to_derived_tokens() {
-    // Switching the accent updates accent / ring / focus_ring / text_on_accent
-    // and the glass accent tint, so a host that detects a runtime accent
-    // change can rebuild without losing the rest of the theme.
+    // Switching the accent updates accent / ring / focus_ring / text_on_accent,
+    // the glass accent tint, and selected_bg, so a host that detects a runtime
+    // accent change can rebuild without losing the rest of the theme.
     let base = TahoeTheme::dark();
     let purple = base.clone().with_accent_color(AccentColor::Purple);
     assert_ne!(purple.accent, base.accent);
@@ -325,9 +406,21 @@ fn with_accent_color_propagates_to_derived_tokens() {
     assert_eq!(purple.focus_ring_color, purple.accent);
     assert_eq!(purple.glass.accent_tint.bg, purple.accent);
     assert_eq!(purple.accent_color, AccentColor::Purple);
+    // selected_bg tracks the new accent with the dark-mode alpha.
+    assert_eq!(purple.selected_bg.h, purple.accent.h);
+    assert_eq!(purple.selected_bg.s, purple.accent.s);
+    assert_eq!(purple.selected_bg.l, purple.accent.l);
+    assert!((purple.selected_bg.a - 0.28).abs() < f32::EPSILON);
+    assert_ne!(purple.selected_bg, base.selected_bg);
+    // Tool tints are palette-keyed (green/red), not accent-keyed — invariant.
+    assert_eq!(purple.tool_approved_bg, base.tool_approved_bg);
+    assert_eq!(purple.tool_rejected_bg, base.tool_rejected_bg);
     // Non-accent fields stay put.
     assert_eq!(purple.background, base.background);
     assert_eq!(purple.text, base.text);
+    // Light mode exercises the other arm of the appearance-conditional alpha (0.18).
+    let light_purple = TahoeTheme::light().with_accent_color(AccentColor::Purple);
+    assert!((light_purple.selected_bg.a - 0.18).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -822,6 +915,34 @@ fn bold_step_black_stays_black() {
     assert_eq!(bold_step(FontWeight::BLACK), FontWeight::BLACK);
 }
 
+#[test]
+fn bold_step_nan_returns_nan() {
+    let result = bold_step(FontWeight(f32::NAN));
+    assert!(result.0.is_nan(), "NaN input should pass through unchanged");
+}
+
+#[test]
+fn bold_step_positive_infinity_returns_infinity() {
+    let result = bold_step(FontWeight(f32::INFINITY));
+    assert_eq!(result.0, f32::INFINITY);
+}
+
+#[test]
+fn bold_step_negative_infinity_returns_negative_infinity() {
+    let result = bold_step(FontWeight(f32::NEG_INFINITY));
+    assert_eq!(result.0, f32::NEG_INFINITY);
+}
+
+#[test]
+fn bold_step_negative_finite_clamps_to_extra_light() {
+    assert_eq!(bold_step(FontWeight(-100.0)), FontWeight::EXTRA_LIGHT);
+}
+
+#[test]
+fn bold_step_huge_positive_saturates_to_black() {
+    assert_eq!(bold_step(FontWeight(10_000.0)), FontWeight::BLACK);
+}
+
 // ─── HIG Alignment: Contrast Ratio Tests ────────────────────────────────
 
 #[test]
@@ -1252,6 +1373,61 @@ fn font_design_families() {
     assert_eq!(FontDesign::Monospaced.font_family(), "SF Mono");
 }
 
+#[test]
+fn text_style_with_design_sets_font_family() {
+    let theme = TahoeTheme::dark();
+    for (design, expected) in [
+        (FontDesign::Default, ".AppleSystemUIFont"),
+        (FontDesign::Serif, "New York"),
+        (FontDesign::Rounded, ".AppleSystemUIFontRounded"),
+        (FontDesign::Monospaced, "SF Mono"),
+    ] {
+        let mut el = div().text_style_with_design(TextStyle::Body, design, &theme);
+        assert_eq!(
+            Styled::text_style(&mut el).font_family,
+            Some(SharedString::from(expected)),
+            "design={design:?}"
+        );
+
+        let mut el_em =
+            div().text_style_emphasized_with_design(TextStyle::Headline, design, &theme);
+        assert_eq!(
+            Styled::text_style(&mut el_em).font_family,
+            Some(SharedString::from(expected)),
+            "emphasized design={design:?}"
+        );
+    }
+}
+
+#[test]
+fn text_style_preserves_font_family_cascade() {
+    // `text_style` / `text_style_emphasized` must leave `font_family` alone so
+    // callers that set it (on the element or a parent) are not clobbered.
+    let theme = TahoeTheme::dark();
+
+    let mut plain = div().text_style(TextStyle::Body, &theme);
+    assert!(
+        Styled::text_style(&mut plain).font_family.is_none(),
+        "text_style must not set font_family"
+    );
+
+    let mut emphasized = div().text_style_emphasized(TextStyle::Headline, &theme);
+    assert!(
+        Styled::text_style(&mut emphasized).font_family.is_none(),
+        "text_style_emphasized must not set font_family"
+    );
+
+    // Caller-chained `.font_family(...)` before `text_style(...)` must survive
+    // — the pattern `/code/*` and `/markdown/code_block/*` currently use.
+    let mut chained = div()
+        .font_family("SF Mono")
+        .text_style(TextStyle::Body, &theme);
+    assert_eq!(
+        Styled::text_style(&mut chained).font_family,
+        Some(SharedString::from("SF Mono"))
+    );
+}
+
 // ── relative_luminance hue-sector coverage ─────────────────────────────
 
 #[test]
@@ -1347,6 +1523,14 @@ fn liquid_glass_light_text_synced_with_semantic() {
     let theme = TahoeTheme::liquid_glass_light();
     assert_eq!(theme.text, theme.semantic.label);
     assert_eq!(theme.text_muted, theme.semantic.secondary_label);
+}
+
+#[test]
+fn liquid_glass_info_synced_with_semantic() {
+    let dark = TahoeTheme::liquid_glass();
+    assert_eq!(dark.info, dark.semantic.info);
+    let light = TahoeTheme::liquid_glass_light();
+    assert_eq!(light.info, light.semantic.info);
 }
 
 // ─── Phase 4: Clear Glass Variant Tests ─────────────────────────────────

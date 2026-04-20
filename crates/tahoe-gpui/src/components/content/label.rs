@@ -5,7 +5,7 @@
 //! the HIG `TextStyle` system with full Bold-Text accessibility support.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Hsla, SharedString, Window, div};
+use gpui::{AnyElement, App, DefiniteLength, Hsla, SharedString, Window, div};
 // Note: Label uses TextStyle::attrs() / TextStyle::emphasized() directly
 // (rather than TextStyledExt) so it can compose emphasize + color override +
 // per-variant spacing in one place.
@@ -142,7 +142,7 @@ impl RenderOnce for Label {
             .text_size(base_attrs.size)
             .font_weight(weight)
             .text_color(text_color)
-            .line_height(line_height);
+            .line_height(DefiniteLength::from(line_height));
 
         if matches!(self.variant, LabelVariant::FormLabel) {
             el = el.justify_end();

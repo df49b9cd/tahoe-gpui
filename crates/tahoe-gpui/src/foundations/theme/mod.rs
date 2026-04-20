@@ -458,13 +458,8 @@ impl TahoeTheme {
             // Tinted accent fill for selected rows. Mirrors Finder's
             // `selectedContentBackgroundColor` when the window is key: a
             // low-alpha accent tint that stays legible against both the
-            // default and high-contrast appearances. Dark mode gets a
-            // slightly higher alpha so the fill remains visible against
-            // the darker background.
-            selected_bg: Hsla {
-                a: if is_dark { 0.28 } else { 0.18 },
-                ..accent
-            },
+            // default and high-contrast appearances.
+            selected_bg: Self::selected_bg_for(accent, is_dark),
             text_on_accent: text_colors.text_on_accent,
             overlay_bg: if is_dark {
                 hsla(0.0, 0.0, 0.0, 0.5)
@@ -585,6 +580,18 @@ impl TahoeTheme {
             // ring with a 3pt breathing gap to the element edge.
             focus_ring_width: px(3.0),
             focus_ring_offset: px(3.0),
+        }
+    }
+
+    /// Tinted accent fill for selected rows. Dark mode uses a
+    /// slightly higher alpha so the fill stays visible against the
+    /// darker background. Shared between the primary constructor and
+    /// [`TahoeTheme::with_accent_color`] so a runtime accent swap
+    /// cannot drift from the initial derivation.
+    fn selected_bg_for(accent: Hsla, is_dark: bool) -> Hsla {
+        Hsla {
+            a: if is_dark { 0.28 } else { 0.18 },
+            ..accent
         }
     }
 
@@ -992,10 +999,16 @@ impl TahoeTheme {
         theme.panel_surface = hsla(0.0, 0.0, 0.0, 0.40); // matches glass fill
 
         // Apple accent colors (Dark)
+        // NOTE: The hardcoded hsla is Apple's glass-specific blue and
+        // intentionally diverges from `palette.blue` — do not replace with
+        // `theme.palette.blue`. The enum is kept in sync so readers of
+        // `theme.accent_color` don't see the default `Multicolor` lie.
         let accent = hsla(0.57, 1.0, 0.50, 1.0); // #0091FF Blue
+        theme.accent_color = AccentColor::Blue;
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.63,
             ..theme.palette.red
@@ -1295,10 +1308,15 @@ impl TahoeTheme {
         theme.panel_surface = hsla(0.0, 0.0, 1.0, 0.50); // Semi-transparent white
 
         // Apple accent colors (Light -- same hues, adjusted for light background)
+        // NOTE: see `liquid_glass()` — hardcoded hsla is intentionally not
+        // `palette.blue`; the enum is kept in sync so readers of
+        // `theme.accent_color` don't see the default `Multicolor` lie.
         let accent = hsla(0.57, 1.0, 0.50, 1.0); // #0091FF Blue
+        theme.accent_color = AccentColor::Blue;
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.50,
             ..theme.palette.red
@@ -1311,10 +1329,8 @@ impl TahoeTheme {
             l: 0.55,
             ..theme.palette.orange
         };
-        // `info` must remain distinguishable from `accent` (Blue) — use Cyan
-        // per Apple's systemCyan family so informational state reads as
-        // separate from interactive accents.
-        theme.info = theme.palette.cyan;
+        // `theme.info` is synced from `semantic.info` below — semantic owns it
+        // so HC overrides flow through automatically.
 
         // Override accent tint on glass
         theme.glass.accent_tint = GlassTint {
@@ -1421,13 +1437,15 @@ impl TahoeTheme {
     }
 
     /// Like [`Self::for_appearance`] but promotes to a HighContrast appearance
-    /// when `mode.increase_contrast()` is set.
+    /// when `mode.increase_contrast()` is set, and writes the full `mode` into
+    /// `theme.accessibility_mode` so downstream components pick up non-contrast
+    /// flags (`REDUCE_MOTION`, `BOLD_TEXT`, `REDUCE_TRANSPARENCY`, …).
     pub fn for_appearance_with_a11y(
         appearance: WindowAppearance,
         mode: crate::foundations::accessibility::AccessibilityMode,
     ) -> Self {
         let base = Self::for_appearance(appearance);
-        if mode.increase_contrast() {
+        let mut theme = if mode.increase_contrast() {
             let hc_appearance = if base.appearance.is_dark() {
                 Appearance::DarkHighContrast
             } else {
@@ -1436,7 +1454,9 @@ impl TahoeTheme {
             Self::with_accent(hc_appearance, base.accent_color)
         } else {
             base
-        }
+        };
+        theme.accessibility_mode = mode;
+        theme
     }
 
     /// Create a glass theme matching the system appearance.
@@ -1445,6 +1465,41 @@ impl TahoeTheme {
             WindowAppearance::Light | WindowAppearance::VibrantLight => Self::liquid_glass_light(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::liquid_glass(),
         }
+    }
+
+    /// Like [`Self::for_appearance_glass`] but promotes to a HighContrast
+    /// appearance when `mode.increase_contrast()` is set, and writes the full
+    /// `mode` into `theme.accessibility_mode` so downstream components pick up
+    /// non-contrast flags (`REDUCE_MOTION`, `BOLD_TEXT`, `REDUCE_TRANSPARENCY`, …).
+    ///
+    /// Mirrors [`Self::for_appearance_with_a11y`] for the Liquid Glass path so
+    /// hosts installing a glass theme can honour
+    /// [`AccessibilityMode::INCREASE_CONTRAST`](crate::foundations::accessibility::AccessibilityMode::INCREASE_CONTRAST)
+    /// without additional plumbing.
+    ///
+    /// Note: when HC is requested this helper currently only swaps
+    /// `theme.appearance` and `theme.palette` to the HC variant. The glass
+    /// surface / accent / semantic tokens produced by [`Self::liquid_glass`]
+    /// and [`Self::liquid_glass_light`] do not yet have HC-adjusted
+    /// counterparts in the library, so `is_high_contrast()` will return true
+    /// but most glass surfaces remain visually unchanged. Adding HC-adjusted
+    /// glass design tokens is tracked as a follow-up.
+    pub fn for_appearance_glass_with_a11y(
+        appearance: WindowAppearance,
+        mode: crate::foundations::accessibility::AccessibilityMode,
+    ) -> Self {
+        let mut theme = Self::for_appearance_glass(appearance);
+        if mode.increase_contrast() {
+            let hc_appearance = if theme.appearance.is_dark() {
+                Appearance::DarkHighContrast
+            } else {
+                Appearance::LightHighContrast
+            };
+            theme.appearance = hc_appearance;
+            theme.palette = SystemPalette::new(hc_appearance);
+        }
+        theme.accessibility_mode = mode;
+        theme
     }
 
     /// Install a non-glass theme that tracks the window's system appearance.
@@ -1492,9 +1547,13 @@ impl TahoeTheme {
     /// returns a subscription that swaps the global theme when the OS toggles
     /// between light and dark. Keep the returned `Subscription` alive.
     ///
-    /// **Accent colour:** see the note on
-    /// [`Self::install_with_system_appearance`] — accent defaults to Blue
-    /// because GPUI doesn't yet surface `NSColor.controlAccentColor`.
+    /// **Accent colour:** GPUI does not expose the macOS system accent
+    /// (`NSColor.controlAccentColor`) yet, so this helper leaves the accent
+    /// baked into the Liquid Glass presets
+    /// ([`Self::liquid_glass`] / [`Self::liquid_glass_light`]) untouched.
+    /// Hosts that have AppKit access and want to override with the user's
+    /// system accent should call
+    /// [`Self::install_glass_with_system_appearance_and_accent`].
     pub fn install_glass_with_system_appearance(
         window: &mut Window,
         cx: &mut App,
@@ -1502,6 +1561,25 @@ impl TahoeTheme {
         Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
         window.observe_window_appearance(|window, cx| {
             Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
+        })
+    }
+
+    /// Like [`Self::install_glass_with_system_appearance`] but accepts an
+    /// explicit accent colour. Use this when the host can read the user's
+    /// macOS accent preference (e.g. via AppKit FFI) — the accent persists
+    /// across light/dark switches and propagates through the glass theme's
+    /// accent-derived tokens (`accent`, `ring`, `focus_ring_color`,
+    /// `glass.accent_tint`, `text_on_accent`).
+    pub fn install_glass_with_system_appearance_and_accent(
+        window: &mut Window,
+        cx: &mut App,
+        accent: AccentColor,
+    ) -> gpui::Subscription {
+        let theme_for =
+            move |w: &Window| Self::for_appearance_glass(w.appearance()).with_accent_color(accent);
+        theme_for(window).apply_in_window(window, cx);
+        window.observe_window_appearance(move |window, cx| {
+            theme_for(window).apply_in_window(window, cx);
         })
     }
 
@@ -1622,11 +1700,14 @@ impl TahoeTheme {
 
     /// Replace the theme's accent colour and propagate it through the
     /// derived tokens (`accent`, `ring`, `focus_ring_color`,
-    /// `glass.accent_tint`, and `text_on_accent`).
+    /// `glass.accent_tint`, `text_on_accent`, and `selected_bg`).
     ///
     /// Useful when the host detects a runtime accent change after the
     /// theme has been built — call this before `apply` (or on a clone),
     /// then re-apply.
+    ///
+    /// Note: `tool_approved_bg` and `tool_rejected_bg` are palette-keyed
+    /// (green / red), not accent-keyed, so they intentionally stay put.
     pub fn with_accent_color(mut self, accent: AccentColor) -> Self {
         let resolved = accent.resolve(&self.palette);
         self.accent_color = accent;
@@ -1638,6 +1719,7 @@ impl TahoeTheme {
             bg: resolved,
             bg_hover: crate::foundations::color::lighten(resolved, 0.08),
         };
+        self.selected_bg = Self::selected_bg_for(resolved, self.appearance.is_dark());
         self
     }
 }

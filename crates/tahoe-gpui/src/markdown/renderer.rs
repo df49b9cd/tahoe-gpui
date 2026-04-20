@@ -67,12 +67,14 @@ use super::selectable_text::SelectableText;
 use super::selection::MarkdownSelection;
 use super::settings::StreamSettings;
 use crate::citation::{CitationPopover, CitationSource, InlineCitation};
-use crate::foundations::layout::SPACING_8;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::{SPACING_4, SPACING_8};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontFallbacks, FontStyle, FontWeight, HighlightStyle,
-    ObjectFit, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
+    AnyElement, App, ElementId, Entity, FontFallbacks, FontStyle, FontWeight, HighlightStyle, Hsla,
+    ObjectFit, Pixels, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
     TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
 };
 use std::cell::{Cell, RefCell};
@@ -85,6 +87,25 @@ use std::time::Instant;
 /// markdown does not overflow narrow panels. HIG Layout: preserve a
 /// predictable hierarchy without runaway indentation.
 const LIST_MAX_DEPTH: usize = 4;
+
+/// Minimum vertical reservation for markdown image placeholders (fallback +
+/// loading containers). Sized to hold an inline status icon plus padding
+/// without dominating short paragraphs.
+const IMAGE_PLACEHOLDER_MIN_H: f32 = 80.0;
+
+/// Maximum width for inline markdown images and their placeholders. Keeps
+/// hero images from overflowing reading-width columns; the real image
+/// scales down via `ObjectFit::ScaleDown`.
+const IMAGE_PLACEHOLDER_MAX_W: f32 = 400.0;
+
+/// Microcopy for a markdown image that failed to load.
+const IMAGE_UNAVAILABLE: &str = "Image Couldn't Load";
+
+/// Microcopy for a markdown image still loading.
+const IMAGE_LOADING: &str = "Loading Image…";
+
+/// Microcopy for an allowlist-blocked markdown image.
+const IMAGE_BLOCKED: &str = "Image Blocked";
 
 /// Provides source data for citation numbers during rendering.
 #[derive(Default, Clone)]
@@ -604,12 +625,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
         MarkdownBlock::Paragraph(inlines) => div()
             .text_style(TextStyle::Body, ctx.theme)
             .text_color(ctx.theme.text)
-            // HIG Text views: body paragraphs get block-level spacing
-            // equal to the line height so adjacent paragraphs read as
-            // discrete blocks rather than a single wrapped run. The
-            // parent `flex.flex_col().gap()` provides a baseline; the
-            // additional `mb` matches Apple's typography recommendation.
-            .mb(ctx.theme.spacing_sm)
             .child(render_inlines(inlines, ctx))
             .into_any_element(),
         MarkdownBlock::Heading { level, content } => {
@@ -637,7 +652,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             div()
                 .text_style_emphasized(ts, ctx.theme)
                 .text_color(ctx.theme.text)
-                .mb(ctx.theme.spacing_sm)
                 .child(render_inlines(content, ctx))
                 .into_any_element()
         }
@@ -671,7 +685,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .flex_col()
                 .gap(ctx.theme.spacing_xs)
                 .pl(list_indent)
-                .mb(ctx.theme.spacing_sm)
                 .children(items.iter().enumerate().map(|(i, item_blocks)| {
                     let marker = if *ordered {
                         format!("{}. ", start_num + i)
@@ -716,7 +729,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             .border_color(ctx.theme.text_muted)
             .pl(ctx.theme.spacing_md)
             .text_color(ctx.theme.text_muted)
-            .mb(ctx.theme.spacing_sm)
             .flex()
             .flex_col()
             .gap(ctx.theme.spacing_xs)
@@ -770,7 +782,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .border_color(ctx.theme.border)
                 .rounded(ctx.theme.radius_md)
                 .overflow_hidden()
-                .mb(ctx.theme.spacing_sm)
                 .child(
                     div()
                         .flex()
@@ -833,7 +844,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .gap(ctx.theme.spacing_xs)
                 .text_style(TextStyle::Body, ctx.theme)
                 .text_color(ctx.theme.text)
-                .mb(ctx.theme.spacing_sm)
                 .child(
                     div()
                         .flex_shrink_0()
@@ -1183,25 +1193,38 @@ fn render_inlines_mixed(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElemen
                 InlineContent::Image { url, alt } => {
                     flush_segment(segment, ctx, children);
                     let resolved_url = ctx.security.resolve_url(url);
+                    let alt_shared: SharedString = alt.clone().into();
+                    let style = PlaceholderStyle::from_theme(ctx.theme);
                     if !url.is_empty() && ctx.security.is_image_allowed(&resolved_url) {
+                        let alt_for_fb = alt_shared.clone();
+                        let alt_for_load = alt_shared;
                         children.push(
                             img(SharedUri::from(resolved_url.into_owned()))
-                                .max_w(px(400.0))
-                                .rounded(ctx.theme.radius_md)
+                                .max_w(style.max_w)
+                                .rounded(style.radius)
                                 .object_fit(ObjectFit::ScaleDown)
+                                .with_fallback(move || {
+                                    image_placeholder(
+                                        alt_for_fb.clone(),
+                                        PlaceholderKind::Fallback,
+                                        style,
+                                    )
+                                })
+                                .with_loading(move || {
+                                    image_placeholder(
+                                        alt_for_load.clone(),
+                                        PlaceholderKind::Loading,
+                                        style,
+                                    )
+                                })
                                 .into_any_element(),
                         );
-                    } else if !alt.is_empty() {
-                        let styled = StyledText::new(SharedString::from(alt.clone()))
-                            .with_highlights(vec![(
-                                0..alt.len(),
-                                HighlightStyle {
-                                    color: Some(ctx.theme.text_muted),
-                                    font_style: Some(FontStyle::Italic),
-                                    ..Default::default()
-                                },
-                            )]);
-                        children.push(styled.into_any_element());
+                    } else {
+                        children.push(image_placeholder(
+                            alt_shared,
+                            PlaceholderKind::Blocked,
+                            style,
+                        ));
                     }
                 }
                 InlineContent::Bold(inner)
@@ -1229,6 +1252,111 @@ fn render_inlines_mixed(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElemen
         .flex_wrap()
         .items_end()
         .children(children)
+        .into_any_element()
+}
+
+#[derive(Copy, Clone)]
+enum PlaceholderKind {
+    /// Image failed to load (network error, decode failure, etc.).
+    Fallback,
+    /// Image is still loading.
+    Loading,
+    /// Image URL was rejected by the security allowlist.
+    Blocked,
+}
+
+/// Visual style tokens shared by both fallback and loading image placeholders.
+/// Grouped so the render site captures one value instead of six and
+/// `image_placeholder` stays comfortably below the 8-arg clippy threshold.
+#[derive(Copy, Clone)]
+struct PlaceholderStyle {
+    text_muted: Hsla,
+    border: Hsla,
+    bg: Hsla,
+    radius: Pixels,
+    min_h: Pixels,
+    max_w: Pixels,
+}
+
+impl PlaceholderStyle {
+    fn from_theme(theme: &TahoeTheme) -> Self {
+        Self {
+            text_muted: theme.text_muted,
+            border: theme.border,
+            bg: theme.surface,
+            radius: theme.radius_md,
+            min_h: px(IMAGE_PLACEHOLDER_MIN_H),
+            max_w: px(IMAGE_PLACEHOLDER_MAX_W),
+        }
+    }
+}
+
+fn image_placeholder_label(alt: &SharedString, kind: PlaceholderKind) -> SharedString {
+    if !alt.is_empty() {
+        return alt.clone();
+    }
+    match kind {
+        PlaceholderKind::Fallback => SharedString::from(IMAGE_UNAVAILABLE),
+        PlaceholderKind::Loading => SharedString::from(IMAGE_LOADING),
+        PlaceholderKind::Blocked => SharedString::from(IMAGE_BLOCKED),
+    }
+}
+
+/// A single italic-muted `StyledText` run — shared between the denied-branch
+/// alt rendering and the bordered `image_placeholder`.
+fn italic_muted_label(label: SharedString, color: Hsla) -> StyledText {
+    let len = label.len();
+    StyledText::new(label).with_highlights(vec![(
+        0..len,
+        HighlightStyle {
+            color: Some(color),
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+    )])
+}
+
+/// Render a placeholder for a markdown image that is failed, loading, or
+/// blocked by the allowlist. Returns an empty element for decorative failed
+/// or loading images (empty alt): HTML convention treats `alt=""` as
+/// decorative content that assistive tech should skip. `Blocked` still
+/// surfaces its microcopy for empty alt — a silently dropped security
+/// denial would hide real attack surface from readers.
+fn image_placeholder(
+    alt: SharedString,
+    kind: PlaceholderKind,
+    style: PlaceholderStyle,
+) -> AnyElement {
+    let decorative = alt.is_empty() && !matches!(kind, PlaceholderKind::Blocked);
+    if decorative {
+        return div().into_any_element();
+    }
+    let label = image_placeholder_label(&alt, kind);
+    let a11y = AccessibilityProps::new()
+        .label(label.clone())
+        .role(AccessibilityRole::Image);
+    let mut row = div().flex().flex_row().items_center().gap(px(SPACING_8));
+    if matches!(kind, PlaceholderKind::Loading) {
+        row = row.child(
+            Icon::new(IconName::ProgressSpinner)
+                .size(px(16.0))
+                .color(style.text_muted),
+        );
+    }
+    row = row.child(italic_muted_label(label, style.text_muted));
+    div()
+        .max_w(style.max_w)
+        .min_h(style.min_h)
+        .px(px(SPACING_8))
+        .py(px(SPACING_4))
+        .rounded(style.radius)
+        .border_1()
+        .border_color(style.border)
+        .bg(style.bg)
+        .flex()
+        .items_center()
+        .child(row)
+        .with_accessibility(&a11y)
         .into_any_element()
 }
 
@@ -1356,6 +1484,56 @@ mod tests {
             alt: "missing".into(),
         }];
         assert!(!has_complex_inlines(&inlines));
+    }
+
+    #[test]
+    fn image_placeholder_label_falls_back_when_alt_empty() {
+        use super::{
+            IMAGE_BLOCKED, IMAGE_LOADING, IMAGE_UNAVAILABLE, PlaceholderKind,
+            image_placeholder_label,
+        };
+        let empty = gpui::SharedString::default();
+        assert_eq!(
+            image_placeholder_label(&empty, PlaceholderKind::Fallback).as_ref(),
+            IMAGE_UNAVAILABLE
+        );
+        assert_eq!(
+            image_placeholder_label(&empty, PlaceholderKind::Loading).as_ref(),
+            IMAGE_LOADING
+        );
+        assert_eq!(
+            image_placeholder_label(&empty, PlaceholderKind::Blocked).as_ref(),
+            IMAGE_BLOCKED
+        );
+    }
+
+    #[test]
+    fn image_placeholder_label_preserves_alt_when_present() {
+        use super::{PlaceholderKind, image_placeholder_label};
+        let alt = gpui::SharedString::from("diagram of cache flow");
+        for kind in [
+            PlaceholderKind::Fallback,
+            PlaceholderKind::Loading,
+            PlaceholderKind::Blocked,
+        ] {
+            assert_eq!(
+                image_placeholder_label(&alt, kind).as_ref(),
+                "diagram of cache flow"
+            );
+        }
+    }
+
+    #[test]
+    fn image_placeholder_label_preserves_multibyte_alt() {
+        // The allowed and blocked paths both build a highlight range from
+        // `label.len()`, which is byte-indexed. Locks in that contract so a
+        // future refactor to `chars().count()` against a char-indexed API
+        // would fail loudly rather than silently break non-ASCII captions.
+        use super::{PlaceholderKind, image_placeholder_label};
+        let alt = gpui::SharedString::from("日本語 caption 🌸");
+        let label = image_placeholder_label(&alt, PlaceholderKind::Fallback);
+        assert_eq!(label.as_ref(), "日本語 caption 🌸");
+        assert!(label.as_ref().is_char_boundary(label.len()));
     }
 
     #[test]
