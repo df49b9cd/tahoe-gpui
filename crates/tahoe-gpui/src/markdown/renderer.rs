@@ -407,6 +407,16 @@ impl StreamingMarkdown {
         self
     }
 
+    /// Enable or disable inline citation splitting in the underlying parser.
+    ///
+    /// See [`IncrementalMarkdownParser::with_citations`] for the rationale.
+    /// Pass `false` when rendering non-AI Markdown so literal bracketed
+    /// numerals like `"item [5] of 10"` are preserved as plain text.
+    pub fn with_citations(mut self, enabled: bool) -> Self {
+        self.parser = self.parser.with_citations(enabled);
+        self
+    }
+
     /// Replace the streaming settings after construction and trigger a redraw.
     pub fn set_settings(&mut self, settings: StreamSettings, cx: &mut Context<Self>) {
         self.settings = settings;
