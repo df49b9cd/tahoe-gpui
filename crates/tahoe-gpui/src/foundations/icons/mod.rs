@@ -13,6 +13,17 @@
 //!
 //! Without this, icons fall back to Unicode symbol placeholders (the
 //! original behavior).
+//!
+//! # Surface scope
+//!
+//! Icons default to [`IconStyle::Auto`], which resolves to
+//! [`IconStyle::LiquidGlass`] only when an ancestor wraps the subtree in
+//! [`crate::foundations::GlassSurfaceScope`] (or the wrap is done for you
+//! by a glass-aware component such as [`GlassIconTile`] or `Button` with a
+//! glass variant). Under plain `TahoeTheme::liquid_glass()` alone, icons
+//! render [`IconStyle::Standard`] — theme mode does not drive vibrancy,
+//! **surface does**. See [`crate::foundations::surface_scope`] for the
+//! scope mechanism and its known boundaries (deferred draws, sub-windows).
 
 pub mod animated;
 pub mod assets;
@@ -30,6 +41,12 @@ pub(crate) use icon::hierarchical_opacity;
 pub use icon::{Icon, IconRenderMode, IconScale, IconStyle};
 pub use names::{IconLayoutBehavior, IconName};
 pub use provider_anim::AnimatedProviderIcon;
+// Back-compat re-export: older call sites import `GlassSurfaceScope` from
+// `foundations::icons`. New code should reach for
+// `foundations::{GlassSurfaceScope, is_on_glass_surface, …}` — the
+// canonical home — because Liquid Glass is a material concern that icons
+// merely consume. See `foundations/surface_scope.rs`.
+pub use crate::foundations::surface_scope::{GlassSurfaceScope, GlassSurfaceScopeElement};
 
 use gpui::FontWeight;
 

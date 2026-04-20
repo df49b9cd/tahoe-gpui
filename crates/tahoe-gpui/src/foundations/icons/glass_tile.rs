@@ -7,7 +7,8 @@ use crate::foundations::layout::SPACING_4;
 use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, SharedString, Window, div, px};
 
-use super::{Icon, IconName, IconStyle};
+use super::{Icon, IconName};
+use crate::foundations::surface_scope::GlassSurfaceScope;
 use crate::foundations::theme::{ActiveTheme, TextStyle};
 
 /// Proportional corner-radius factor for Liquid Glass icon tiles.
@@ -129,27 +130,36 @@ impl RenderOnce for GlassIconTile {
             .bg(bg)
             .border_1()
             .border_color(border)
-            .child(
-                Icon::new(self.name)
-                    .size(self.icon_size)
-                    .style(IconStyle::LiquidGlass),
-            );
+            .child(Icon::new(self.name).size(self.icon_size));
 
         if let Some(label) = self.label {
             // Use the HIG Caption1 size (10 pt) — the macOS minimum legible
             // size. The previous 8.5 pt value was below Apple's 10 pt floor.
+            //
+            // Under Reduce Transparency the glass tokens are tuned for a
+            // translucent surface; the surface falls back to an opaque
+            // fill, so derive the label color from `theme.text_muted`
+            // instead to keep contrast predictable.
+            let label_base = if theme.accessibility_mode.reduce_transparency() {
+                theme.text_muted
+            } else {
+                theme.glass.icon_text
+            };
             tile = tile.child(
                 div()
                     .text_size(TextStyle::Caption1.attrs().size)
                     .text_color(Hsla {
                         a: 0.42,
-                        ..theme.glass.icon_text
+                        ..label_base
                     })
                     .child(label),
             );
         }
 
-        tile
+        // Wrap in a glass surface scope so the child Icon (and any nested
+        // badges a caller might add in future extensions) resolve their
+        // default IconStyle to the glass vibrancy approximation.
+        GlassSurfaceScope::new(tile)
     }
 }
 

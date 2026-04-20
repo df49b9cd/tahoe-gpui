@@ -19,6 +19,7 @@ use tahoe_gpui::components::presentation::modal::Modal;
 use tahoe_gpui::components::presentation::popover::{Popover, PopoverPlacement};
 use tahoe_gpui::components::selection_and_input::toggle::Toggle;
 use tahoe_gpui::components::status::progress_indicator::ProgressIndicator;
+use tahoe_gpui::foundations::GlassSurfaceScope;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
 use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
@@ -777,15 +778,19 @@ impl Render for GlassMessenger {
 
         let main_area = div().flex_1().flex().flex_col().child(tabs);
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(root_bg)
-            .text_color(text_color)
-            .child(header)
-            .child(div().flex_1().flex().child(sidebar).child(main_area))
-            .child(modal)
+        // The entire messenger UI sits on Liquid Glass chrome — wrap the
+        // root so every descendant Icon auto-resolves to glass coloring.
+        GlassSurfaceScope::new(
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(root_bg)
+                .text_color(text_color)
+                .child(header)
+                .child(div().flex_1().flex().child(sidebar).child(main_area))
+                .child(modal),
+        )
     }
 }
 

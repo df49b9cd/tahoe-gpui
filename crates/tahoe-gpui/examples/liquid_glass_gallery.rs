@@ -9,6 +9,7 @@ use gpui::{App, Bounds, Div, FontWeight, Window, WindowBounds, WindowOptions, di
 use gpui_platform::application;
 use tahoe_gpui::components::content::badge::{Badge, BadgeVariant};
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
+use tahoe_gpui::foundations::GlassSurfaceScope;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
 use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
@@ -24,111 +25,118 @@ impl Render for LiquidGlassGallery {
         // (NSVisualEffectView) shows through, creating true glass depth.
         let root_bg = theme.glass.root_bg;
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(root_bg)
-            .p(px(32.0))
-            .gap(px(32.0))
-            .id("glass-gallery-scroll")
-            .overflow_y_scroll()
-            .text_color(theme.text)
-            // Header
-            .child(header(theme))
-            // Glass cards section - show Small/Medium/Large side-by-side
-            .child(
-                section("Glass Cards (Small / Medium / Large)", theme).child(
-                    div()
-                        .flex()
-                        .gap(px(12.0))
-                        .child(glass_card(
-                            "Small",
-                            "Tab bars, toolbars, buttons",
-                            theme,
-                            GlassSize::Small,
-                        ))
-                        .child(glass_card(
-                            "Medium",
-                            "Cards, panels, containers",
-                            theme,
-                            GlassSize::Medium,
-                        ))
-                        .child(glass_card(
-                            "Large",
-                            "Modals, sheets, popovers",
-                            theme,
-                            GlassSize::Large,
-                        )),
+        // The entire gallery is a Liquid Glass showcase — wrap the root so
+        // descendant Icons (including ones nested inside non-glass Button
+        // variants that sit on our glass cards) auto-resolve to the glass
+        // vibrancy approximation. Matches HIG: "rely on the system's
+        // vibrancy effects for text and icons" on glass surfaces.
+        GlassSurfaceScope::new(
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(root_bg)
+                .p(px(32.0))
+                .gap(px(32.0))
+                .id("glass-gallery-scroll")
+                .overflow_y_scroll()
+                .text_color(theme.text)
+                // Header
+                .child(header(theme))
+                // Glass cards section - show Small/Medium/Large side-by-side
+                .child(
+                    section("Glass Cards (Small / Medium / Large)", theme).child(
+                        div()
+                            .flex()
+                            .gap(px(12.0))
+                            .child(glass_card(
+                                "Small",
+                                "Tab bars, toolbars, buttons",
+                                theme,
+                                GlassSize::Small,
+                            ))
+                            .child(glass_card(
+                                "Medium",
+                                "Cards, panels, containers",
+                                theme,
+                                GlassSize::Medium,
+                            ))
+                            .child(glass_card(
+                                "Large",
+                                "Modals, sheets, popovers",
+                                theme,
+                                GlassSize::Large,
+                            )),
+                    ),
+                )
+                // Buttons section
+                .child(
+                    section("Glass Buttons", theme).child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(8.0))
+                            .child(
+                                Button::new("gb1")
+                                    .label("Primary")
+                                    .variant(ButtonVariant::Primary),
+                            )
+                            .child(
+                                Button::new("gb2")
+                                    .label("Ghost Glass")
+                                    .variant(ButtonVariant::Ghost),
+                            )
+                            .child(
+                                Button::new("gb3")
+                                    .label("Outline Glass")
+                                    .variant(ButtonVariant::Outline),
+                            )
+                            .child(
+                                Button::new("gb4")
+                                    .label("Destructive")
+                                    .variant(ButtonVariant::Destructive),
+                            )
+                            .child(
+                                Button::new("gb5")
+                                    .label("Pill")
+                                    .variant(ButtonVariant::Ghost)
+                                    .round(true),
+                            )
+                            .child(
+                                Button::new("gb6")
+                                    .icon(Icon::new(IconName::Copy))
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Icon)
+                                    .tooltip("Copy"),
+                            )
+                            .child(
+                                Button::new("gb7")
+                                    .label("Small")
+                                    .variant(ButtonVariant::Outline)
+                                    .size(ButtonSize::Small),
+                            ),
+                    ),
+                )
+                // Badges section
+                .child(
+                    section("Glass Badges", theme).child(
+                        div()
+                            .flex()
+                            .gap(px(8.0))
+                            .child(Badge::new("Default"))
+                            .child(Badge::new("Success").variant(BadgeVariant::Success))
+                            .child(Badge::new("Warning").variant(BadgeVariant::Warning))
+                            .child(Badge::new("Error").variant(BadgeVariant::Error))
+                            .child(Badge::new("Info").variant(BadgeVariant::Info))
+                            .child(Badge::new("Muted").variant(BadgeVariant::Muted)),
+                    ),
+                )
+                // Tinted glass section
+                .child(
+                    section("Tinted Glass", theme)
+                        .child(div().flex().gap(px(12.0)).children(tinted_cards(theme))),
                 ),
-            )
-            // Buttons section
-            .child(
-                section("Glass Buttons", theme).child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(px(8.0))
-                        .child(
-                            Button::new("gb1")
-                                .label("Primary")
-                                .variant(ButtonVariant::Primary),
-                        )
-                        .child(
-                            Button::new("gb2")
-                                .label("Ghost Glass")
-                                .variant(ButtonVariant::Ghost),
-                        )
-                        .child(
-                            Button::new("gb3")
-                                .label("Outline Glass")
-                                .variant(ButtonVariant::Outline),
-                        )
-                        .child(
-                            Button::new("gb4")
-                                .label("Destructive")
-                                .variant(ButtonVariant::Destructive),
-                        )
-                        .child(
-                            Button::new("gb5")
-                                .label("Pill")
-                                .variant(ButtonVariant::Ghost)
-                                .round(true),
-                        )
-                        .child(
-                            Button::new("gb6")
-                                .icon(Icon::new(IconName::Copy))
-                                .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Icon)
-                                .tooltip("Copy"),
-                        )
-                        .child(
-                            Button::new("gb7")
-                                .label("Small")
-                                .variant(ButtonVariant::Outline)
-                                .size(ButtonSize::Small),
-                        ),
-                ),
-            )
-            // Badges section
-            .child(
-                section("Glass Badges", theme).child(
-                    div()
-                        .flex()
-                        .gap(px(8.0))
-                        .child(Badge::new("Default"))
-                        .child(Badge::new("Success").variant(BadgeVariant::Success))
-                        .child(Badge::new("Warning").variant(BadgeVariant::Warning))
-                        .child(Badge::new("Error").variant(BadgeVariant::Error))
-                        .child(Badge::new("Info").variant(BadgeVariant::Info))
-                        .child(Badge::new("Muted").variant(BadgeVariant::Muted)),
-                ),
-            )
-            // Tinted glass section
-            .child(
-                section("Tinted Glass", theme)
-                    .child(div().flex().gap(px(12.0)).children(tinted_cards(theme))),
-            )
+        )
     }
 }
 

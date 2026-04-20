@@ -148,6 +148,21 @@ pub enum ButtonVariant {
     Cancel,
 }
 
+impl ButtonVariant {
+    /// True when this variant renders its content on a Liquid Glass
+    /// surface. Used to gate glass-specific chrome (specular edge, no
+    /// border, capsule shape on `RoundedRectangle`) and to propagate the
+    /// scope to descendant `Icon`s via
+    /// [`crate::foundations::surface_scope::GlassSurfaceScope`].
+    ///
+    /// Centralises the predicate so adding a new glass variant only
+    /// updates this method — not every `matches!(variant, Glass | ...)`
+    /// call site.
+    pub fn is_glass_surfaced(self) -> bool {
+        matches!(self, Self::Glass | Self::GlassProminent)
+    }
+}
+
 /// Button shape per HIG.
 ///
 /// Controls the corner radius and proportions of the button.
@@ -644,10 +659,7 @@ impl RenderOnce for Button {
                 (bg, theme.text, transparent_black(), hovered)
             }
         };
-        let is_glass_variant = matches!(
-            self.variant,
-            ButtonVariant::Glass | ButtonVariant::GlassProminent
-        );
+        let is_glass_variant = self.variant.is_glass_surfaced();
         // HIG Help buttons are always a 20pt circle — the shape is part of
         // the affordance itself, not a caller decision — so override any
         // other shape configuration here.
@@ -882,7 +894,15 @@ impl RenderOnce for Button {
             el = el.with_accessibility(&props);
         }
 
-        el
+        // Glass button variants host their child content on a Liquid Glass
+        // surface. Wrap in a scope so descendant Icons auto-resolve to
+        // IconStyle::LiquidGlass — matching the HIG guidance that content
+        // on glass surfaces inherits vibrancy.
+        if is_glass_variant {
+            crate::foundations::surface_scope::GlassSurfaceScope::new(el).into_any_element()
+        } else {
+            el.into_any_element()
+        }
     }
 }
 

@@ -1,7 +1,9 @@
 use super::{
-    EmbeddedIconAssets, Icon, IconName, IconRenderMode, IconScale, RenderStrategy,
+    EmbeddedIconAssets, Icon, IconName, IconRenderMode, IconScale, IconStyle, RenderStrategy,
     hierarchical_opacity, weight_to_stroke_width,
 };
+use crate::foundations::surface_scope::GlassSurfaceGuard;
+use crate::foundations::theme::TahoeTheme;
 use core::prelude::v1::test;
 use gpui::AssetSource;
 
@@ -495,4 +497,84 @@ fn icon_with_rotate_animation_guards_nonpositive_turns() {
         }
         other => panic!("expected Spin, got {:?}", other),
     }
+}
+
+// ─── IconStyle::Auto surface-scope resolution (issue #13) ─────────────────
+
+/// Outside a [`GlassSurfaceGuard`], `IconStyle::Auto` resolves to
+/// `Standard`. This is the core fix for issue #13 — previously `Auto`
+/// always returned `LiquidGlass`, which mis-colored icons under plain
+/// dark/light themes.
+#[test]
+fn icon_style_auto_resolves_to_standard_when_not_scoped() {
+    // Theme doesn't enter the decision; iterate it anyway to lock the
+    // invariant "vibrancy is a surface concern, not a theme one."
+    let _ = TahoeTheme::dark();
+    let _ = TahoeTheme::light();
+    let _ = TahoeTheme::liquid_glass();
+    assert_eq!(IconStyle::Auto.resolve(), IconStyle::Standard);
+}
+
+/// Inside a [`GlassSurfaceGuard`], `IconStyle::Auto` resolves to
+/// `LiquidGlass` — this is how glass-surface components (GlassIconTile,
+/// glass Button variants) flag "my subtree sits on Liquid Glass;
+/// descendants should adopt vibrancy." Surface scope, not theme, drives
+/// the choice.
+#[test]
+fn icon_style_auto_resolves_to_glass_when_scoped() {
+    let _g = GlassSurfaceGuard::enter();
+    assert_eq!(IconStyle::Auto.resolve(), IconStyle::LiquidGlass);
+}
+
+/// Dropping the guard must return the resolution to `Standard` so scope
+/// state doesn't leak across unrelated render subtrees.
+#[test]
+fn glass_surface_guard_is_raii() {
+    {
+        let _g = GlassSurfaceGuard::enter();
+        assert_eq!(IconStyle::Auto.resolve(), IconStyle::LiquidGlass);
+    }
+    assert_eq!(IconStyle::Auto.resolve(), IconStyle::Standard);
+}
+
+/// Nested guards use a depth counter: inner scope exiting does not end the
+/// outer scope. Required because a glass Button variant may be rendered
+/// inside a glass panel, and leaving the button must not strip the panel's
+/// scope from sibling elements.
+#[test]
+fn nested_glass_surface_guards_retain_scope() {
+    let _outer = GlassSurfaceGuard::enter();
+    {
+        let _inner = GlassSurfaceGuard::enter();
+        assert_eq!(IconStyle::Auto.resolve(), IconStyle::LiquidGlass);
+    }
+    // Inner dropped; outer still active.
+    assert_eq!(IconStyle::Auto.resolve(), IconStyle::LiquidGlass);
+}
+
+/// Explicit `IconStyle::Standard` and `IconStyle::LiquidGlass` are
+/// caller overrides; the surface scope must not flip them.
+#[test]
+fn explicit_icon_styles_pass_through_regardless_of_scope() {
+    let _g = GlassSurfaceGuard::enter();
+    assert_eq!(IconStyle::Standard.resolve(), IconStyle::Standard);
+    assert_eq!(IconStyle::LiquidGlass.resolve(), IconStyle::LiquidGlass);
+}
+
+/// `Icon::resolved_stroke_width` reads through `resolve()` and therefore
+/// through the surface scope — locks the observable stroke-width effect
+/// of the fix from icon_gallery's point of view.
+#[test]
+fn resolved_stroke_width_tracks_surface_scope() {
+    let icon = Icon::new(IconName::Check);
+    assert!(
+        (icon.resolved_stroke_width() - 1.2).abs() < f32::EPSILON,
+        "outside a glass scope the stroke width should be 1.2pt"
+    );
+    let _g = GlassSurfaceGuard::enter();
+    let icon = Icon::new(IconName::Check);
+    assert!(
+        (icon.resolved_stroke_width() - 1.5).abs() < f32::EPSILON,
+        "inside a glass scope the stroke width should be 1.5pt"
+    );
 }
