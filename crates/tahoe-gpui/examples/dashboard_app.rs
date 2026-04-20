@@ -312,13 +312,13 @@ impl Render for DashboardApp {
                         Button::new("more")
                             .label("...")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Sm),
+                            .size(ButtonSize::Small),
                     )
                     .child(
                         Button::new("share")
                             .label("Share")
                             .variant(ButtonVariant::Filled)
-                            .size(ButtonSize::Sm),
+                            .size(ButtonSize::Small),
                     )
                     .child(Avatar::new("U").size(px(28.0))),
             );

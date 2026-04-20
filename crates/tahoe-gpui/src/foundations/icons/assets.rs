@@ -209,6 +209,10 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
         include_bytes!("../../../assets/icons/symbols/exclamationmark-triangle.svg"),
     ),
     (
+        "icons/symbols/info-circle.svg",
+        include_bytes!("../../../assets/icons/symbols/info-circle.svg"),
+    ),
+    (
         "icons/symbols/file-code.svg",
         include_bytes!("../../../assets/icons/symbols/file-code.svg"),
     ),
@@ -355,6 +359,10 @@ static ICON_ENTRIES: &[(&str, &[u8])] = &[
     (
         "icons/symbols/square.svg",
         include_bytes!("../../../assets/icons/symbols/square.svg"),
+    ),
+    (
+        "icons/symbols/stop-fill.svg",
+        include_bytes!("../../../assets/icons/symbols/stop-fill.svg"),
     ),
     (
         "icons/symbols/star-fill.svg",

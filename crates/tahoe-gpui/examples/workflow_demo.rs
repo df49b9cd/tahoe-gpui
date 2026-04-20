@@ -39,19 +39,19 @@ impl WorkflowDemo {
                                 Button::new("tb-edit")
                                     .icon(Icon::new(IconName::Pencil))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             )
                             .child(
                                 Button::new("tb-copy")
                                     .icon(Icon::new(IconName::Copy))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             )
                             .child(
                                 Button::new("tb-delete")
                                     .icon(Icon::new(IconName::X))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             )
                     },
                     cx,

@@ -87,7 +87,7 @@ impl Render for ThemeGallery {
                             Button::new("b8")
                                 .label("Small")
                                 .variant(ButtonVariant::Outline)
-                                .size(ButtonSize::Sm),
+                                .size(ButtonSize::Small),
                         ),
                 ),
             )

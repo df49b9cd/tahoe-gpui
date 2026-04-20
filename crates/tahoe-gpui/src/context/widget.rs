@@ -13,8 +13,9 @@ use crate::components::presentation::popover::Popover;
 use crate::components::status::progress_indicator::ProgressIndicator;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
+use crate::ids::next_element_id;
 use gpui::prelude::*;
-use gpui::{App, FontWeight, SharedString, Window, div, px};
+use gpui::{App, ElementId, FontWeight, SharedString, Window, div, px};
 
 /// Width of the expanded detail card.
 const DETAIL_CARD_WIDTH: f32 = 260.0;
@@ -325,6 +326,7 @@ impl RenderOnce for ContextCostFooter {
 /// ```
 #[derive(IntoElement)]
 pub struct ContextView {
+    element_id: ElementId,
     max_tokens: u64,
     used_tokens: u64,
     usage: Usage,
@@ -338,6 +340,7 @@ impl ContextView {
     /// Creates a new context view with default values.
     pub fn new() -> Self {
         Self {
+            element_id: next_element_id("context-view"),
             max_tokens: 0,
             used_tokens: 0,
             usage: Usage::default(),
@@ -495,8 +498,8 @@ impl RenderOnce for ContextView {
         let card = card.into_any_element();
 
         let mut container = div()
-            .id("context-view")
-            .child(Popover::new("context-popover", pill, card).visible(expanded));
+            .id(self.element_id)
+            .child(Popover::new("context-popover", pill, card).open(expanded));
 
         if let Some(handler) = on_hover_change {
             container = container.on_hover(handler);

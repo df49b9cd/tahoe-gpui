@@ -55,7 +55,7 @@ pub fn render(
                     Button::new("tt-save")
                         .label("Save")
                         .variant(ButtonVariant::Primary)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 ))
                 .child(Tooltip::new(
                     "tt-undo-wrap",
@@ -63,7 +63,7 @@ pub fn render(
                     Button::new("tt-undo")
                         .label("Undo")
                         .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 )),
         )
         .into_any_element()

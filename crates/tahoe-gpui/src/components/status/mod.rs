@@ -15,7 +15,7 @@ pub mod progress_indicator;
 pub mod rating_indicator;
 pub mod shimmer;
 
-pub use activity_indicator::{ActivityIndicator, ActivityIndicatorStyle};
+pub use activity_indicator::{ActivityIndicator, ActivityIndicatorSize, ActivityIndicatorStyle};
 pub use activity_ring::{
     ACTIVITY_RING_EXERCISE, ACTIVITY_RING_MOVE, ACTIVITY_RING_STAND, ActivityRing, ActivityRingSet,
 };

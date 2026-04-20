@@ -41,6 +41,7 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ElementId, Entity, KeyDownEvent, SharedString, StyledText, Window, div, px,
 };
+use itoa;
 
 type IndexChangeHandler = Box<dyn Fn(usize, &mut Window, &mut App) + 'static>;
 type ToggleHandler = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
@@ -91,6 +92,7 @@ impl CodeBlockContent {
 impl RenderOnce for CodeBlockContent {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let font_mono = theme.font_mono.clone();
         let lang = self.language.as_deref().unwrap_or("");
         let (styled_code, highlights) =
             syntax::build_styled_highlights(&self.code, lang, &theme.syntax);
@@ -103,7 +105,7 @@ impl RenderOnce for CodeBlockContent {
             div()
                 .overflow_hidden()
                 .p(theme.spacing_md)
-                .font_family(theme.font_mono.clone())
+                .font_family(font_mono.clone())
                 .text_style(TextStyle::Callout, theme)
                 .text_color(theme.text)
                 .flex()
@@ -115,12 +117,14 @@ impl RenderOnce for CodeBlockContent {
                     // body scales up (e.g. Dynamic Type).
                     div().flex().flex_col().mr(theme.spacing_md).children(
                         lines.iter().enumerate().map(|(i, _)| {
+                            let mut buf = itoa::Buffer::new();
+                            let line_num = SharedString::from(buf.format(i + 1).to_owned());
                             div()
                                 .text_color(theme.text_muted)
                                 .flex()
                                 .justify_end()
                                 .min_w(px(32.0))
-                                .child(format!("{}", i + 1))
+                                .child(line_num)
                         }),
                     ),
                 )
@@ -141,7 +145,7 @@ impl RenderOnce for CodeBlockContent {
             div()
                 .id("code-block-content-no-gutter")
                 .p(theme.spacing_md)
-                .font_family(theme.font_mono.clone())
+                .font_family(font_mono.clone())
                 .text_style(TextStyle::Callout, theme)
                 .text_color(theme.text)
                 .overflow_x_scroll()
@@ -342,7 +346,7 @@ impl RenderOnce for CodeBlockLanguageSelector {
         }
 
         Popover::new(self.id, trigger, content)
-            .visible(self.is_open)
+            .open(self.is_open)
             .placement(PopoverPlacement::BelowLeft)
             .when_some(toggle_for_dismiss, |popover, handler| {
                 popover.on_dismiss(move |window, cx| handler(false, window, cx))

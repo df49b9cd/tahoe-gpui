@@ -79,6 +79,7 @@ impl PackageInfoDependency {
 impl RenderOnce for PackageInfoDependency {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let font_mono = theme.font_mono.clone();
 
         let mut row = div()
             .flex()
@@ -88,7 +89,7 @@ impl RenderOnce for PackageInfoDependency {
 
         row = row.child(
             div()
-                .font_family(theme.font_mono.clone())
+                .font_family(font_mono.clone())
                 .text_color(theme.text_muted)
                 .child(self.name),
         );
@@ -96,7 +97,7 @@ impl RenderOnce for PackageInfoDependency {
         if let Some(version) = self.version {
             row = row.child(
                 div()
-                    .font_family(theme.font_mono.clone())
+                    .font_family(font_mono.clone())
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text)
                     .child(version),
@@ -288,13 +289,14 @@ impl PackageInfoVersion {
 impl RenderOnce for PackageInfoVersion {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let font_mono = theme.font_mono.clone();
 
         let container = div()
             .mt(theme.spacing_sm)
             .flex()
             .items_center()
             .gap(theme.spacing_sm)
-            .font_family(theme.font_mono.clone())
+            .font_family(font_mono)
             .text_style(TextStyle::Subheadline, theme)
             .text_color(theme.text_muted);
 

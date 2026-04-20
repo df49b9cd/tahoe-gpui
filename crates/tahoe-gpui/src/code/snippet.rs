@@ -135,6 +135,7 @@ impl Snippet {
 impl RenderOnce for Snippet {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let font_mono = theme.font_mono.clone();
 
         // Reuse the provided CopyButton entity, or create a fresh one.
         let copy_button = if let Some(btn) = self.copy_button {
@@ -206,7 +207,7 @@ impl RenderOnce for Snippet {
                 .items_center()
                 .gap(theme.spacing_sm)
                 .flex_1()
-                .font_family(theme.font_mono.clone())
+                .font_family(font_mono.clone())
                 .text_style(TextStyle::Subheadline, &theme)
                 .text_color(theme.text_muted);
 
@@ -226,7 +227,7 @@ impl RenderOnce for Snippet {
                 div()
                     .text_style(TextStyle::Caption1, &theme)
                     .text_color(theme.text_muted)
-                    .font_family(theme.font_mono.clone())
+                    .font_family(font_mono.clone())
                     .child(language),
             );
         }

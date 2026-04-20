@@ -88,13 +88,13 @@ pub fn render(
                     Button::new("notif-reply")
                         .label("Reply")
                         .variant(ButtonVariant::Outline)
-                        .size(ButtonSize::Sm),
+                        .size(ButtonSize::Small),
                 )
                 .child(
                     Button::new("notif-dismiss")
                         .label("Dismiss")
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Sm),
+                        .size(ButtonSize::Small),
                 ),
         );
 

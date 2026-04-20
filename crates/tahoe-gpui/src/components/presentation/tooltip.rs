@@ -122,6 +122,27 @@ impl Tooltip {
         self.key_binding = Some(binding.into());
         self
     }
+
+    /// Build a tooltip whose keybinding chip is resolved live from the
+    /// window's dispatch tree for `action`. If no binding is registered
+    /// (or the binding uses a multi-keystroke chord), the chip is
+    /// omitted. Prefer this over hand-typed `.key_binding(...)` strings
+    /// so the chip reflects the user's effective keymap.
+    pub fn for_action(
+        id: impl Into<ElementId>,
+        text: impl Into<SharedString>,
+        child: impl IntoElement,
+        action: &dyn gpui::Action,
+        window: &gpui::Window,
+    ) -> Self {
+        let mut tip = Self::new(id, text, child);
+        if let Some(shortcut) =
+            crate::foundations::keyboard_shortcuts::MenuShortcut::for_action(action, window)
+        {
+            tip = tip.key_binding(SharedString::from(shortcut.render()));
+        }
+        tip
+    }
 }
 
 impl RenderOnce for Tooltip {

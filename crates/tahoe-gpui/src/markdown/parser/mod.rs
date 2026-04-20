@@ -91,9 +91,19 @@ impl IncrementalMarkdownParser {
     }
 
     /// Marks the stream as finished.
+    ///
+    /// Performs one final parse without remend preprocessing so the cache
+    /// reflects a clean, authoritative tree even when `push_delta` arrives
+    /// in the same frame as `finish` (in which case the cache is still
+    /// dirty from the pending delta and must be rebuilt from the raw
+    /// source before it is dropped).
     pub fn finish(&mut self) {
         self.is_streaming = false;
-        self.blocks_dirty = false; // Cache is already up to date from the last push_delta + parse cycle.
+        // Force a final reparse without remend so any incomplete-syntax
+        // repairs from the last streaming parse are dropped in favour of
+        // the raw final source.
+        self.blocks_dirty = true;
+        let _ = self.parse();
         // Release raw source string — cached_blocks is now the authority.
         self.source = String::new();
     }
@@ -186,7 +196,8 @@ impl IncrementalMarkdownParser {
                 // pulldown-cmark wraps DisplayMath inside a Paragraph;
                 // detect and extract it as a block-level element.
                 if let Some(Event::DisplayMath(math)) = events.get(start + 1) {
-                    let math_block = MarkdownBlock::DisplayMath(math.to_string());
+                    let math_block =
+                        MarkdownBlock::DisplayMath(gpui::SharedString::from(math.to_string()));
                     // Skip: Start(Paragraph), DisplayMath, End(Paragraph)
                     let end = start + 3;
                     return (Some(math_block), end);
@@ -381,7 +392,9 @@ impl IncrementalMarkdownParser {
             }
             Event::Rule => (Some(MarkdownBlock::ThematicBreak), start + 1),
             Event::DisplayMath(math) => (
-                Some(MarkdownBlock::DisplayMath(math.to_string())),
+                Some(MarkdownBlock::DisplayMath(gpui::SharedString::from(
+                    math.to_string(),
+                ))),
                 start + 1,
             ),
             _ => (None, start + 1),

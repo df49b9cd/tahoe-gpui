@@ -135,13 +135,13 @@ pub fn render(
                             Button::new("form-cancel")
                                 .label("Cancel")
                                 .variant(ButtonVariant::Outline)
-                                .size(ButtonSize::Md),
+                                .size(ButtonSize::Regular),
                         )
                         .child(
                             Button::new("form-save")
                                 .label("Save")
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md),
+                                .size(ButtonSize::Regular),
                         ),
                 ),
         )

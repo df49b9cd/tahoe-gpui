@@ -182,23 +182,23 @@ impl WindowLayouts {
             Button::new("act-archive")
                 .icon(Icon::new(IconName::Folder))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm),
+                .size(ButtonSize::IconSmall),
             Button::new("act-trash")
                 .icon(Icon::new(IconName::Trash))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm),
+                .size(ButtonSize::IconSmall),
             Button::new("act-clipboard")
                 .icon(Icon::new(IconName::Copy))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm),
+                .size(ButtonSize::IconSmall),
             Button::new("act-tag")
                 .icon(Icon::new(IconName::Bookmark))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm),
+                .size(ButtonSize::IconSmall),
             Button::new("act-compose")
                 .icon(Icon::new(IconName::Pencil))
                 .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::IconSm),
+                .size(ButtonSize::IconSmall),
         ]
     }
 
@@ -231,7 +231,7 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSm),
+                            .size(ButtonSize::IconSmall),
                     )
                     .leading(
                         div()
@@ -242,13 +242,13 @@ impl WindowLayouts {
                                 Button::new("nav-back")
                                     .icon(Icon::new(IconName::ChevronLeft))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             )
                             .child(
                                 Button::new("nav-forward")
                                     .icon(Icon::new(IconName::ChevronRight))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             ),
                     )
                     .title(SharedString::from(folder_name));
@@ -260,7 +260,7 @@ impl WindowLayouts {
                     Button::new("act-search")
                         .icon(Icon::new(IconName::Search))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::IconSm),
+                        .size(ButtonSize::IconSmall),
                 );
 
                 tb.into_any_element()
@@ -273,7 +273,7 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSm),
+                            .size(ButtonSize::IconSmall),
                     )
                     .leading(
                         div()
@@ -289,7 +289,7 @@ impl WindowLayouts {
                                 Button::new("nav-forward")
                                     .icon(Icon::new(IconName::ChevronRight))
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::IconSm),
+                                    .size(ButtonSize::IconSmall),
                             ),
                     )
                     .title(SharedString::from(folder_name));
@@ -326,7 +326,7 @@ impl WindowLayouts {
                         Button::new("toggle-sidebar")
                             .icon(Icon::new(IconName::DevSidebar))
                             .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::IconSm),
+                            .size(ButtonSize::IconSmall),
                     )
                     .title(SharedString::from(folder_name));
 
@@ -337,7 +337,7 @@ impl WindowLayouts {
                     Button::new("act-search")
                         .icon(Icon::new(IconName::Search))
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::IconSm),
+                        .size(ButtonSize::IconSmall),
                 );
 
                 tb.into_any_element()
@@ -368,31 +368,31 @@ impl WindowLayouts {
                             Button::new("u-palette")
                                 .icon(Icon::new(IconName::DevPalette))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSm),
+                                .size(ButtonSize::IconSmall),
                         )
                         .child(
                             Button::new("u-settings")
                                 .icon(Icon::new(IconName::Settings))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSm),
+                                .size(ButtonSize::IconSmall),
                         )
                         .child(
                             Button::new("u-grid")
                                 .icon(Icon::new(IconName::DevSplitView))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSm),
+                                .size(ButtonSize::IconSmall),
                         )
                         .child(
                             Button::new("u-image")
                                 .icon(Icon::new(IconName::Image))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSm),
+                                .size(ButtonSize::IconSmall),
                         )
                         .child(
                             Button::new("u-edit")
                                 .icon(Icon::new(IconName::Pencil))
                                 .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::IconSm),
+                                .size(ButtonSize::IconSmall),
                         ),
                 )
                 .into_any_element(),

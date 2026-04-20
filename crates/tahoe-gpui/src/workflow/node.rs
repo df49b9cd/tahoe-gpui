@@ -21,12 +21,23 @@ type SelectChangeHandler = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
 /// etc.). No default action when unset.
 type DoubleClickHandler = Box<dyn Fn(&mut Window, &mut App) + 'static>;
 
-/// Node drag-state opacity while `drag_offset.is_some()`.
+/// Node drag-state opacity while a drag is in flight.
 ///
 /// HIG Drag and drop: "a subtle visual effect — like making the image
 /// slightly translucent — conveys that the item is in motion." Matches
 /// Freeform's ~0.75 opacity for dragged items.
 const DRAG_OPACITY: f32 = 0.75;
+
+/// Snapshot captured at mouse-down so the world-space node position is
+/// recovered from screen-space cursor deltas regardless of viewport
+/// transform changes mid-drag. Without this, a drag at zoom=2.0 would
+/// move the node 2× as fast as the cursor (the old `drag_offset` math
+/// conflated screen and world coordinates).
+#[derive(Clone, Copy, Debug)]
+struct DragAnchor {
+    start_world: (f32, f32),
+    start_screen: (f32, f32),
+}
 
 /// Minimum width of a workflow node (used for port position calculations).
 pub(super) const NODE_MIN_WIDTH: f32 = 384.0;
@@ -302,7 +313,12 @@ pub struct WorkflowNode {
     selected: bool,
     input_ports: Vec<Port>,
     output_ports: Vec<Port>,
-    drag_offset: Option<(f32, f32)>,
+    drag_anchor: Option<DragAnchor>,
+    /// Cached canvas zoom factor so the node's internal drag math can
+    /// translate screen-space cursor deltas into world-space position
+    /// deltas. Updated by `WorkflowCanvas` whenever it mutates zoom.
+    /// Defaults to 1.0 for standalone use (no canvas).
+    viewport_zoom: f32,
     /// Whether to show left (target) handle dot.
     show_target_handle: bool,
     /// Whether to show right (source) handle dot.
@@ -342,7 +358,8 @@ impl WorkflowNode {
             selected: false,
             input_ports: Vec::new(),
             output_ports: Vec::new(),
-            drag_offset: None,
+            drag_anchor: None,
+            viewport_zoom: 1.0,
             show_target_handle: true,
             show_source_handle: true,
             content_builder: None,
@@ -498,7 +515,15 @@ impl WorkflowNode {
     /// compose the hover cursor state and multi-drag badges without
     /// reaching into private fields.
     pub fn is_dragging(&self) -> bool {
-        self.drag_offset.is_some()
+        self.drag_anchor.is_some()
+    }
+
+    /// Update the cached canvas zoom. Called by `WorkflowCanvas` whenever
+    /// the viewport transform changes so the node's drag math stays in
+    /// world coordinates. Safe to call at any time; the next mouse-move
+    /// uses the fresh zoom immediately.
+    pub fn set_viewport_zoom(&mut self, zoom: f32) {
+        self.viewport_zoom = zoom.max(0.01);
     }
 
     /// Set an explicit size. `None` reverts to auto sizing.
@@ -574,7 +599,7 @@ impl Render for WorkflowNode {
         let t_radius_full = theme.radius_full;
 
         let border_color = if self.selected { t_accent } else { t_border };
-        let is_dragging = self.drag_offset.is_some();
+        let is_dragging = self.drag_anchor.is_some();
 
         let mut card = div()
             .id(self.element_id.clone())
@@ -615,35 +640,34 @@ impl Render for WorkflowNode {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _window, _cx| {
-                    let pos = event.position;
-                    this.drag_offset = Some((
-                        f32::from(pos.x) - this.position.0,
-                        f32::from(pos.y) - this.position.1,
-                    ));
+                    this.drag_anchor = Some(DragAnchor {
+                        start_world: this.position,
+                        start_screen: (f32::from(event.position.x), f32::from(event.position.y)),
+                    });
                 }),
             )
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, _event: &MouseUpEvent, _window, _cx| {
-                    this.drag_offset = None;
+                    this.drag_anchor = None;
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, _event: &MouseUpEvent, _window, _cx| {
-                    this.drag_offset = None;
+                    this.drag_anchor = None;
                 }),
             )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
-                if let Some(offset) = this.drag_offset {
+                if let Some(anchor) = this.drag_anchor {
                     if event.pressed_button == Some(MouseButton::Left) {
-                        this.position = (
-                            f32::from(event.position.x) - offset.0,
-                            f32::from(event.position.y) - offset.1,
-                        );
+                        let zoom = this.viewport_zoom.max(0.01);
+                        let dx = (f32::from(event.position.x) - anchor.start_screen.0) / zoom;
+                        let dy = (f32::from(event.position.y) - anchor.start_screen.1) / zoom;
+                        this.position = (anchor.start_world.0 + dx, anchor.start_world.1 + dy);
                         cx.notify();
                     } else {
-                        this.drag_offset = None;
+                        this.drag_anchor = None;
                     }
                 }
             }))

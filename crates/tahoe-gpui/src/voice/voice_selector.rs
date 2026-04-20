@@ -571,7 +571,7 @@ impl Render for VoiceSelectorView {
                 .icon(Icon::new(IconName::Sparkle).size(theme.icon_size_inline))
                 .label(current_label)
                 .variant(ButtonVariant::Outline)
-                .size(ButtonSize::Sm)
+                .size(ButtonSize::Small)
                 .on_click(cx.listener(|this, _event, window, cx| {
                     this.toggle(window, cx);
                 })),

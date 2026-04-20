@@ -267,13 +267,18 @@ impl Render for DigitEntry {
             } else if is_active {
                 let accent = theme.accent;
                 let cursor_h = digit_size;
-                box_el = box_el.child(div().w(px(2.0)).h(cursor_h).bg(accent).with_animation(
-                    ElementId::NamedInteger("cursor-blink".into(), pos as u64),
-                    Animation::new(Duration::from_millis(1000)).repeat(),
-                    |el, delta| {
-                        if delta < 0.5 { el } else { el.opacity(0.0) }
-                    },
-                ));
+                let caret = div().w(px(2.0)).h(cursor_h).bg(accent);
+                box_el = if theme.accessibility_mode.reduce_motion() {
+                    box_el.child(caret)
+                } else {
+                    box_el.child(caret.with_animation(
+                        ElementId::NamedInteger("cursor-blink".into(), pos as u64),
+                        Animation::new(Duration::from_millis(1000)).repeat(),
+                        |el, delta| {
+                            if delta < 0.5 { el } else { el.opacity(0.0) }
+                        },
+                    ))
+                };
             }
 
             row = row.child(box_el);

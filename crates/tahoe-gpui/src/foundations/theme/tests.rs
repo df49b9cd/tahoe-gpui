@@ -675,10 +675,12 @@ fn text_style_headline_is_bold() {
 }
 
 #[test]
-fn text_style_large_title_is_26pt() {
+fn text_style_large_title_is_26pt_bold() {
+    // macOS Tahoe aligned LargeTitle with iOS: the default weight is
+    // Bold (not Regular). Size stays at 26pt.
     let attrs = TextStyle::LargeTitle.attrs();
     assert!((f32::from(attrs.size) - 26.0).abs() < f32::EPSILON);
-    assert_eq!(attrs.weight, FontWeight::NORMAL);
+    assert_eq!(attrs.weight, FontWeight::BOLD);
 }
 
 #[test]

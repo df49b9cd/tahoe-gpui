@@ -2,8 +2,8 @@
 
 use crate::foundations::theme::SyntaxColors;
 use gpui::{FontWeight, HighlightStyle, Hsla, SharedString};
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
@@ -33,11 +33,11 @@ struct HighlightCacheKey {
     content_hash: u64,
 }
 
-type HighlightCache = HashMap<HighlightCacheKey, Arc<Vec<HighlightedSpan>>>;
+type HighlightCache = FxHashMap<HighlightCacheKey, Arc<Vec<HighlightedSpan>>>;
 
 fn highlight_cache() -> &'static Mutex<HighlightCache> {
     static CACHE: OnceLock<Mutex<HighlightCache>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(FxHashMap::default()))
 }
 
 /// Upper bound on cached highlight results. When exceeded the cache is
@@ -48,12 +48,22 @@ const HIGHLIGHT_CACHE_CAP: usize = 256;
 
 fn cap_highlight_cache(cache: &mut HighlightCache) {
     if cache.len() >= HIGHLIGHT_CACHE_CAP {
-        cache.clear();
+        // Evict half the oldest entries (by HashMap iteration order, which is
+        // random but stable within a run) rather than clearing the whole cache.
+        // This avoids the thundering-herd of re-parsing everything at once.
+        let evict: Vec<HighlightCacheKey> = cache
+            .keys()
+            .take(HIGHLIGHT_CACHE_CAP / 2)
+            .copied()
+            .collect();
+        for key in evict {
+            cache.remove(&key);
+        }
     }
 }
 
 fn fnv_hash(s: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = rustc_hash::FxHasher::default();
     s.hash(&mut hasher);
     hasher.finish()
 }

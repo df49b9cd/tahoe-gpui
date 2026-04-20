@@ -332,7 +332,7 @@ impl Render for CodeGallery {
                     } else {
                         ButtonVariant::Outline
                     })
-                    .size(ButtonSize::Sm)
+                    .size(ButtonSize::Small)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_accessibility(flag, cx);
                     }))
@@ -366,14 +366,14 @@ impl Render for CodeGallery {
                                 "\u{263E} Toggle to Dark"
                             })
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Sm)
+                            .size(ButtonSize::Small)
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_theme(cx))),
                     )
                     .child(
                         Button::new("text-size-smaller")
                             .label("A\u{2212}")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Sm)
+                            .size(ButtonSize::Small)
                             .on_click(cx.listener(|this, _, _, cx| this.step_text_size(-1, cx))),
                     )
                     .child(
@@ -386,7 +386,7 @@ impl Render for CodeGallery {
                         Button::new("text-size-larger")
                             .label("A+")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Sm)
+                            .size(ButtonSize::Small)
                             .on_click(cx.listener(|this, _, _, cx| this.step_text_size(1, cx))),
                     ),
             )

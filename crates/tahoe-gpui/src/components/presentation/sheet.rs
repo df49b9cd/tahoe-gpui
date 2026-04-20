@@ -53,7 +53,7 @@ use std::time::Duration;
 use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent,
-    Pixels, SharedString, Window, div, px,
+    Pixels, Window, div, px,
 };
 
 use crate::callback_types::{OnMutCallback, rc_wrap};
@@ -148,7 +148,7 @@ impl SheetPresentation {
 /// ```
 #[derive(IntoElement)]
 pub struct Sheet {
-    id: SharedString,
+    id: ElementId,
     is_open: bool,
     detent: SheetDetent,
     content: AnyElement,
@@ -160,7 +160,7 @@ pub struct Sheet {
 
 impl Sheet {
     /// Create a new sheet with the given id and content element.
-    pub fn new(id: impl Into<SharedString>, content: impl IntoElement) -> Self {
+    pub fn new(id: impl Into<ElementId>, content: impl IntoElement) -> Self {
         Self {
             id: id.into(),
             is_open: false,
@@ -266,7 +266,7 @@ impl RenderOnce for Sheet {
 
 /// iOS/iPadOS bottom-drawer rendering.
 fn render_bottom_drawer(
-    id: SharedString,
+    id: ElementId,
     detent: SheetDetent,
     content: AnyElement,
     theme: &TahoeTheme,
@@ -304,8 +304,8 @@ fn render_bottom_drawer(
             32.0,
         )
     };
-    let anim_id = ElementId::Name(format!("{}-present", id).into());
-    let scroll_id = ElementId::Name(format!("{}-scroll", id).into());
+    let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
+    let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
     let scroll_body = div()
         .id(scroll_id)
         .flex_1()
@@ -320,7 +320,7 @@ fn render_bottom_drawer(
 
     // ── Sheet panel (glass surface) ─────────────────────────────────────
     let top_radius = theme.glass.radius(GlassSize::Large);
-    let panel_id = ElementId::Name(format!("{}-panel", id).into());
+    let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
     let mut panel = glass_surface(div().w_full().overflow_hidden(), theme, GlassSize::Large)
         .rounded_t(top_radius)
         .rounded_b(px(0.0))
@@ -357,7 +357,7 @@ fn render_bottom_drawer(
 
 /// macOS cardlike (centered) rendering.
 fn render_cardlike(
-    id: SharedString,
+    id: ElementId,
     content: AnyElement,
     width: Pixels,
     theme: &TahoeTheme,
@@ -375,8 +375,8 @@ fn render_cardlike(
     } else {
         Duration::from_millis(theme.glass.motion.lift_duration_ms)
     };
-    let anim_id = ElementId::Name(format!("{}-present", id).into());
-    let scroll_id = ElementId::Name(format!("{}-scroll", id).into());
+    let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
+    let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
 
     let animated_body = div()
         .id(scroll_id)
@@ -387,7 +387,7 @@ fn render_cardlike(
             el.opacity(delta)
         });
 
-    let panel_id = ElementId::Name(format!("{}-panel", id).into());
+    let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
     let mut panel = glass_surface(div().w(width).overflow_hidden(), theme, GlassSize::Large)
         .id(panel_id)
         .track_focus(&focus_handle)

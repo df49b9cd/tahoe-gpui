@@ -741,6 +741,15 @@ impl TahoeTheme {
                 hsla(0.0, 0.0, 0.965, 0.84),
             )
         };
+        // HIG `.bar` / Chrome material: denser than Thin so toolbar
+        // labels remain legible when content scrolls beneath the chrome.
+        // Dark ≈ `#000 @34%`, light ≈ `#F6F6F6 @65%` (values between
+        // `Thin` and `Regular`).
+        let chrome_bg = if is_dark {
+            hsla(0.0, 0.0, 0.0, 0.34)
+        } else {
+            hsla(0.0, 0.0, 0.965, 0.65)
+        };
 
         // Drop shadow shape is identical across appearances; only the #000
         // alpha (and medium's y-offset) differ.
@@ -837,6 +846,7 @@ impl TahoeTheme {
             medium_standard_bg,
             thick_bg,
             ultra_thick_bg,
+            chrome_bg,
             small_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
             medium_shadows: vec![shadow(medium_shadow_y, 16.0, medium_shadow_a)],
             large_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
@@ -987,7 +997,7 @@ impl TahoeTheme {
             separator: hsla(0.0, 0.0, 0.33, 0.60),
             opaque_separator: hsla(0.0, 0.0, 0.23, 1.0),
             placeholder_text: hsla(0.0, 0.0, 1.0, 0.30),
-            link: hsla(0.58, 0.99, 0.60, 1.0),
+            link: SystemColor::Blue.resolve(Appearance::Dark),
             system_fill: hsla(0.0, 0.0, 0.47, 0.36),
             secondary_system_fill: hsla(0.0, 0.0, 0.47, 0.32),
             tertiary_system_fill: hsla(0.0, 0.0, 0.46, 0.24),
@@ -1276,7 +1286,7 @@ impl TahoeTheme {
             separator: hsla(0.0, 0.0, 0.24, 0.29),
             opaque_separator: hsla(0.0, 0.0, 0.78, 1.0),
             placeholder_text: hsla(0.0, 0.0, 0.24, 0.30),
-            link: hsla(0.58, 0.99, 0.42, 1.0),
+            link: SystemColor::Blue.resolve(Appearance::Light),
             system_fill: hsla(0.0, 0.0, 0.47, 0.20),
             secondary_system_fill: hsla(0.0, 0.0, 0.47, 0.16),
             tertiary_system_fill: hsla(0.0, 0.0, 0.46, 0.12),
@@ -1350,6 +1360,25 @@ impl TahoeTheme {
         match appearance {
             WindowAppearance::Light | WindowAppearance::VibrantLight => Self::light(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::dark(),
+        }
+    }
+
+    /// Like [`Self::for_appearance`] but promotes to a HighContrast appearance
+    /// when `mode.increase_contrast()` is set.
+    pub fn for_appearance_with_a11y(
+        appearance: WindowAppearance,
+        mode: crate::foundations::accessibility::AccessibilityMode,
+    ) -> Self {
+        let base = Self::for_appearance(appearance);
+        if mode.increase_contrast() {
+            let hc_appearance = if base.appearance.is_dark() {
+                Appearance::DarkHighContrast
+            } else {
+                Appearance::LightHighContrast
+            };
+            Self::with_accent(hc_appearance, base.accent_color)
+        } else {
+            base
         }
     }
 

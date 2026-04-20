@@ -284,7 +284,7 @@ impl Render for MusicApp {
                 Button::new("call-to-action")
                     .label("Call to action")
                     .variant(ButtonVariant::Filled)
-                    .size(ButtonSize::Md),
+                    .size(ButtonSize::Regular),
             );
 
         // Featured playlists section

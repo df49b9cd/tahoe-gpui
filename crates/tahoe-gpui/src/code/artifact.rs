@@ -137,7 +137,7 @@ impl RenderOnce for ArtifactAction {
                     .color(theme.text_muted),
             )
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm);
+            .size(ButtonSize::IconSmall);
 
         if let Some(handler) = self.on_click {
             btn = btn.on_click(move |_, window, cx| handler(window, cx));
@@ -230,7 +230,7 @@ impl RenderOnce for ArtifactClose {
                     .color(theme.text_muted),
             )
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm);
+            .size(ButtonSize::IconSmall);
 
         if let Some(handler) = self.on_click {
             btn = btn.on_click(move |_, window, cx| handler(window, cx));
@@ -465,7 +465,7 @@ impl RenderOnce for Artifact {
                         .color(theme.text_muted),
                     )
                     .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::IconSm);
+                    .size(ButtonSize::IconSmall);
                 if let Some(handler) = on_toggle {
                     btn = btn.on_click(move |_: &ClickEvent, window, cx| {
                         handler(new_state, window, cx);

@@ -201,7 +201,7 @@ impl Render for CopyButton {
         let mut btn = Button::new("copy-btn")
             .icon(animated_icon)
             .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::IconSm)
+            .size(ButtonSize::IconSmall)
             .disabled(self.disabled);
 
         if !self.disabled {

@@ -82,19 +82,19 @@ pub fn render(
                     Button::new("bg-day")
                         .label("Day")
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 )
                 .child(
                     Button::new("bg-week")
                         .label("Week")
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 )
                 .child(
                     Button::new("bg-month")
                         .label("Month")
                         .variant(ButtonVariant::Ghost)
-                        .size(ButtonSize::Md),
+                        .size(ButtonSize::Regular),
                 ),
         )
         .into_any_element()

@@ -77,7 +77,7 @@ pub fn render(
                         Button::new("pb-bl")
                             .label("Below Left")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click({
                                 let entity = entity_bl;
                                 move |_, _, cx| {
@@ -94,7 +94,7 @@ pub fn render(
                         popover_content("This popover anchors below the trigger and aligns left."),
                     )
                     .placement(PopoverPlacement::BelowLeft)
-                    .visible(popover_open == Some(0))
+                    .open(popover_open == Some(0))
                     .on_dismiss(move |_window, cx| {
                         entity_dismiss_bl.update(cx, |this, cx| {
                             this.popover_open = None;
@@ -108,7 +108,7 @@ pub fn render(
                         Button::new("pb-br")
                             .label("Below Right")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click({
                                 let entity = entity_br;
                                 move |_, _, cx| {
@@ -125,7 +125,7 @@ pub fn render(
                         popover_content("This popover aligns right."),
                     )
                     .placement(PopoverPlacement::BelowRight)
-                    .visible(popover_open == Some(1))
+                    .open(popover_open == Some(1))
                     .on_dismiss(move |_window, cx| {
                         entity_dismiss_br.update(cx, |this, cx| {
                             this.popover_open = None;

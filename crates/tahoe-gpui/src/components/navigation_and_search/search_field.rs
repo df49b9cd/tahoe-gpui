@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn search_field_tokens_builder() {
         let field = SearchField::new("test")
-            .tokens(vec![TokenItem::new("rust", "rust")])
+            .tokens(vec![TokenItem::new("rust", "Rust")])
             .on_remove_token(|_, _, _| {});
         assert_eq!(field.tokens.len(), 1);
         assert!(field.on_remove_token.is_some());

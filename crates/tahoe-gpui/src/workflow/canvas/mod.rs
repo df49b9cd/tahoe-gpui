@@ -246,6 +246,8 @@ impl WorkflowCanvas {
     }
 
     pub fn add_node(&mut self, node: Entity<WorkflowNode>, cx: &mut Context<Self>) {
+        let zoom = self.zoom;
+        node.update(cx, |n, _| n.set_viewport_zoom(zoom));
         self.nodes.push(node);
         cx.notify();
     }
@@ -273,7 +275,18 @@ impl WorkflowCanvas {
 
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         self.zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+        self.propagate_viewport_zoom(cx);
         cx.notify();
+    }
+
+    /// Push the current zoom to every child node so their internal drag
+    /// math stays in world coordinates. Cheap: each node's setter is a
+    /// single `f32` write + `max`, and we only notify the canvas.
+    fn propagate_viewport_zoom(&mut self, cx: &mut Context<Self>) {
+        let zoom = self.zoom;
+        for node_entity in &self.nodes {
+            node_entity.update(cx, |node, _| node.set_viewport_zoom(zoom));
+        }
     }
 
     pub fn zoom(&self) -> f32 {
@@ -295,6 +308,7 @@ impl WorkflowCanvas {
     pub fn reset_view(&mut self, cx: &mut Context<Self>) {
         self.pan_offset = (0.0, 0.0);
         self.zoom = 1.0;
+        self.propagate_viewport_zoom(cx);
         cx.notify();
     }
 
@@ -338,6 +352,7 @@ impl WorkflowCanvas {
         ) {
             self.zoom = zoom;
             self.pan_offset = pan;
+            self.propagate_viewport_zoom(cx);
             cx.notify();
         }
     }
@@ -763,7 +778,11 @@ impl WorkflowCanvas {
         if let Some(ref factory) = factory
             && let Some(new_entity) = factory(&source, pos, window, cx)
         {
-            new_entity.update(cx, |n, cx| n.set_position(pos.0, pos.1, cx));
+            let zoom = self.zoom;
+            new_entity.update(cx, |n, cx| {
+                n.set_position(pos.0, pos.1, cx);
+                n.set_viewport_zoom(zoom);
+            });
             let idx = self.nodes.len();
             self.nodes.push(new_entity.clone());
             self.history.push(CanvasCommand::AddNodes {
@@ -1475,6 +1494,7 @@ impl Render for WorkflowCanvas {
                 // 0.5 to 0.55, preserving the perceived pinch feel.
                 let next = this.zoom * (1.0 + event.delta);
                 this.zoom = next.clamp(MIN_ZOOM, MAX_ZOOM);
+                this.propagate_viewport_zoom(cx);
                 cx.notify();
             }))
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
@@ -1487,6 +1507,7 @@ impl Render for WorkflowCanvas {
                         ScrollDelta::Pixels(d) => f32::from(d.y) * 0.002,
                     };
                     this.zoom = (this.zoom + delta).clamp(MIN_ZOOM, MAX_ZOOM);
+                    this.propagate_viewport_zoom(cx);
                 } else {
                     let (dx, dy) = match event.delta {
                         ScrollDelta::Lines(d) => (d.x * 40.0, d.y * 40.0),

@@ -61,7 +61,7 @@ pub fn render(
             Button::new("alerts-show-side")
                 .label("Side-by-side")
                 .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.alerts_state.open = Some(AlertKind::SideBySide);
                     cx.notify();
@@ -71,7 +71,7 @@ pub fn render(
             Button::new("alerts-show-stacked")
                 .label("Stacked (3 actions)")
                 .variant(ButtonVariant::Outline)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.alerts_state.open = Some(AlertKind::Stacked);
                     cx.notify();
@@ -81,7 +81,7 @@ pub fn render(
             Button::new("alerts-show-single")
                 .label("Single action")
                 .variant(ButtonVariant::Outline)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.alerts_state.open = Some(AlertKind::Single);
                     cx.notify();
@@ -91,7 +91,7 @@ pub fn render(
             Button::new("alerts-show-destructive")
                 .label("Destructive")
                 .variant(ButtonVariant::Destructive)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.alerts_state.open = Some(AlertKind::Destructive);
                     cx.notify();

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use crate::foundations::layout::HOVER_CARD_MAX_WIDTH;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, SharedString, Window, div, px};
+use gpui::{AnyElement, App, Context, ElementId, Window, div, px};
 
 /// Default hover-in delay (300 ms). Matches HIG guidance that
 /// rich hover surfaces should not appear during pointer traversal.
@@ -84,7 +84,7 @@ pub struct HoverCard {
     /// Whether the mouse is over the content.
     content_hovered: bool,
     /// Unique id for element identification.
-    id: SharedString,
+    id: ElementId,
     /// Builder for the trigger element.
     trigger: AppElementBuilder,
     /// Builder for the card content.
@@ -103,7 +103,7 @@ pub struct HoverCard {
 }
 
 impl HoverCard {
-    pub fn new(id: impl Into<SharedString>, _cx: &mut Context<Self>) -> Self {
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             is_open: false,
             trigger_hovered: false,
@@ -187,12 +187,14 @@ impl Render for HoverCard {
             None
         };
 
-        let trigger_id = format!("hc-trigger-{}", self.id);
-        let content_id = format!("hc-content-{}", self.id);
+        let trigger_id =
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-trigger".into());
+        let content_id =
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-content".into());
 
         let mut container = div().relative().child(
             div()
-                .id(SharedString::from(trigger_id))
+                .id(trigger_id)
                 .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                     this.trigger_hovered = hovered;
                     if hovered {
@@ -234,7 +236,7 @@ impl Render for HoverCard {
                 theme,
                 GlassSize::Medium,
             )
-            .id(SharedString::from(content_id))
+            .id(content_id)
             .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                 this.content_hovered = hovered;
                 this.update_visibility(cx);

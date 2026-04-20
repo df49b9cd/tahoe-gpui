@@ -29,14 +29,18 @@ pub use crate::foundations::theme::{
 
 // ── Components > Content ───────────────────────────────────────────────────
 
-pub use crate::components::content::{Avatar, Badge, BadgeVariant, Label, TextView};
+pub use crate::components::content::{
+    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelVariant,
+    TextView,
+};
 
 // ── Components > Layout and organization ───────────────────────────────────
 
 pub use crate::components::layout_and_organization::{
-    BoxView, CollectionLayout, CollectionView, Disclosure, DisclosureGroup, FlexActions, FlexAlign,
-    FlexContent, FlexHeader, OutlineNode, OutlineView, SelectionMode, Separator,
-    SeparatorOrientation, SortDirection, SplitView, Table, TableColumn, TableRow,
+    BoxStyle, BoxView, CollectionLayout, CollectionView, Disclosure, DisclosureGroup, FlexActions,
+    FlexAlign, FlexContent, FlexHeader, List, ListRow, ListSection, ListStyle, OutlineNode,
+    OutlineView, SelectionMode, Separator, SeparatorOrientation, SortDirection, SplitOrientation,
+    SplitView, Table, TableColumn, TableRow,
 };
 
 // ── Components > Menus and actions ─────────────────────────────────────────
@@ -51,24 +55,27 @@ pub use crate::components::menus_and_actions::{
 
 pub use crate::components::navigation_and_search::{
     NavigationBarIOS, NavigationSplitView, PathControl, PathControlStyle, PathSegment, SearchBar,
-    SearchField, Sidebar, SidebarItem, SidebarPosition, SidebarSection, TabBar, TabItem,
-    TokenField, TokenItem, Toolbar,
+    SearchField, Sidebar, SidebarItem, SidebarPosition, SidebarSection, TabBar, TabBarStyle,
+    TabItem, TokenField, TokenItem, Toolbar, ToolbarStyle,
 };
 
 // ── Components > Presentation ──────────────────────────────────────────────
 
 pub use crate::components::presentation::{
-    ActionSheet, ActionSheetItem, ActionSheetStyle, Alert, AlertAction, AlertActionRole, HoverCard,
-    Modal, PageControls, Panel, PanelPosition, Popover, PopoverPlacement, ScrollView, Sheet,
-    SheetDetent, Tooltip, WindowStyle,
+    ActionSheet, ActionSheetItem, ActionSheetPresentation, ActionSheetStyle, Alert, AlertAction,
+    AlertActionRole, HoverCard, HoverCardPlacement, Modal, ModalLevel, PageControls, Panel,
+    PanelPosition, PanelStyle, Popover, PopoverPlacement, ScrollView, Sheet, SheetDetent,
+    SheetPresentation, Tooltip, WindowStyle,
 };
 
 // ── Components > Selection and input ───────────────────────────────────────
 
 pub use crate::components::selection_and_input::{
-    Checkbox, CheckboxState, ColorWell, ComboBox, DatePicker, DigitEntry, ImageWell, Picker,
-    PickerItem, SegmentItem, SegmentedControl, SimpleDate, Slider, Stepper, TextField,
-    TextFieldValidation, TimePicker, Toggle,
+    Checkbox, CheckboxState, ColorWell, ColorWellStyle, ComboBox, DateDisplayFormat, DatePicker,
+    DatePickerStyle, DigitEntry, ImageWell, Picker, PickerItem, PickerSection, PickerStyle,
+    SegmentItem, SegmentedControl, SimpleDate, Slider, SliderOrientation, Stepper, SubmitLabel,
+    TextContentType, TextField, TextFieldStyle, TextFieldValidation, TimePicker, TimePickerStyle,
+    Toggle, ToggleSize,
 };
 
 // ── Components > Status ────────────────────────────────────────────────────
@@ -80,9 +87,9 @@ pub use crate::components::selection_and_input::{
 pub use crate::components::status::RatingIndicator;
 pub use crate::components::status::{
     ACTIVITY_RING_EXERCISE, ACTIVITY_RING_MOVE, ACTIVITY_RING_STAND, ActivityIndicator,
-    ActivityIndicatorStyle, ActivityRing, ActivityRingSet, Gauge, GaugeDirection, GaugeStyle,
-    ProgressIndicator, ProgressIndicatorSize, ProgressIndicatorValue, Shimmer, ShimmerEasing,
-    SweepDirection, TextShimmer, TextShimmerState,
+    ActivityIndicatorSize, ActivityIndicatorStyle, ActivityRing, ActivityRingSet, Gauge,
+    GaugeDirection, GaugeStyle, ProgressIndicator, ProgressIndicatorSize, ProgressIndicatorValue,
+    Shimmer, ShimmerEasing, SweepDirection, TextShimmer, TextShimmerState,
 };
 
 // ── Components > System experiences ────────────────────────────────────────

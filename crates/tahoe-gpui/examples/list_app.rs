@@ -392,7 +392,7 @@ impl Render for ListApp {
                     .label("Filter")
                     .icon(Icon::new(IconName::ListTodo).size(px(14.0)))
                     .variant(ButtonVariant::Outline)
-                    .size(ButtonSize::Sm),
+                    .size(ButtonSize::Small),
             )
             // View toggles (list/grid/calendar)
             .child(

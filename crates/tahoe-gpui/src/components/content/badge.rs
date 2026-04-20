@@ -11,6 +11,7 @@
 //!   unread indicators (Zed's `UnreadIndicator` equivalent).
 
 use crate::foundations::color::text_on_background;
+use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, GlassSize, GlassTintColor, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{App, SharedString, Window, div, px};
@@ -176,6 +177,27 @@ impl RenderOnce for Badge {
         }
         if !opaque {
             el = crate::foundations::materials::apply_high_contrast_border(el, theme);
+        }
+
+        // DWC: prepend an icon for semantic variants so state is not color-only.
+        let dwc_icon: Option<IconName> = if theme.accessibility_mode.differentiate_without_color() {
+            match self.variant {
+                BadgeVariant::Success => Some(IconName::Check),
+                BadgeVariant::Warning => Some(IconName::AlertTriangle),
+                BadgeVariant::Error => Some(IconName::XmarkCircleFill),
+                BadgeVariant::Info => Some(IconName::Info),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        if let Some(icon_name) = dwc_icon {
+            el = el
+                .flex()
+                .items_center()
+                .gap(px(3.0))
+                .child(Icon::new(icon_name).size(px(10.0)).color(text_color));
         }
 
         el.child(self.label).into_any_element()

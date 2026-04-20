@@ -8,6 +8,7 @@
 //! <https://developer.apple.com/design/human-interface-guidelines/image-views>
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle};
 use gpui::prelude::*;
 use gpui::{App, Hsla, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img, px};
@@ -220,7 +221,22 @@ impl RenderOnce for Avatar {
             let dot_bg = status_color(status, theme);
             let ring_color = theme.surface;
 
-            let status_dot = div()
+            // DWC shape cue: overlay a tiny icon so state is not color-only.
+            // Online=Check, Away=Minus (moon unavailable), Busy=Minus, Offline=XmarkCircleFill
+            let dwc_icon = if theme.accessibility_mode.differentiate_without_color() {
+                let icon_name = match status {
+                    AvatarStatus::Online => IconName::Check,
+                    AvatarStatus::Away | AvatarStatus::Busy => IconName::Minus,
+                    AvatarStatus::Offline => IconName::XmarkCircleFill,
+                };
+                let icon_size = (f32::from(dot_size) * 0.6).max(6.0);
+                let icon_color = crate::foundations::color::text_on_background(dot_bg);
+                Some(Icon::new(icon_name).size(px(icon_size)).color(icon_color))
+            } else {
+                None
+            };
+
+            let mut status_dot = div()
                 .absolute()
                 .right_0()
                 .bottom_0()
@@ -228,7 +244,13 @@ impl RenderOnce for Avatar {
                 .rounded(theme.radius_full)
                 .bg(dot_bg)
                 .border_2()
-                .border_color(ring_color);
+                .border_color(ring_color)
+                .flex()
+                .items_center()
+                .justify_center();
+            if let Some(icon) = dwc_icon {
+                status_dot = status_dot.child(icon);
+            }
 
             div()
                 .relative()

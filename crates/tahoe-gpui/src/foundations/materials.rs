@@ -608,6 +608,12 @@ pub struct GlassStyle {
     pub medium_standard_bg: Hsla,
     pub thick_bg: Hsla,
     pub ultra_thick_bg: Hsla,
+    /// HIG `.bar` / Chrome fill for toolbars, title bars, and tab bars.
+    /// Darker/denser than `thin_bg` so labels stay legible when content
+    /// scrolls behind the chrome. Dark ≈ `#000 @ 34%`, light ≈ `#F6F6F6
+    /// @ 65%`. Consumed by [`GlassStyle::material_bg`] for
+    /// [`MaterialThickness::Chrome`].
+    pub chrome_bg: Hsla,
 
     // Pre-built shadow sets per size (Apple's specular edge effect)
     pub small_shadows: Vec<BoxShadow>,
@@ -776,7 +782,8 @@ impl GlassStyle {
     pub fn material_bg(&self, thickness: MaterialThickness) -> Hsla {
         match thickness {
             MaterialThickness::UltraThin => self.ultra_thin_bg,
-            MaterialThickness::Thin | MaterialThickness::Chrome => self.thin_bg,
+            MaterialThickness::Thin => self.thin_bg,
+            MaterialThickness::Chrome => self.chrome_bg,
             MaterialThickness::Regular => self.medium_standard_bg,
             MaterialThickness::Thick => self.thick_bg,
             MaterialThickness::UltraThick => self.ultra_thick_bg,

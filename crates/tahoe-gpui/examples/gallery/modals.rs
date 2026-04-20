@@ -61,7 +61,7 @@ pub fn render(
             Button::new("modal-show")
                 .label("Show modal")
                 .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.modal_open = true;
                     cx.notify();
@@ -102,14 +102,14 @@ pub fn render(
                         Button::new("modal-cancel")
                             .label("Cancel")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_, window, cx| dismiss_for_cancel(window, cx)),
                     )
                     .child(
                         Button::new("modal-ok")
                             .label("OK")
                             .variant(ButtonVariant::Primary)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_, window, cx| dismiss_for_ok(window, cx)),
                     ),
             );

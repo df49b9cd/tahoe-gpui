@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::callback_types::OnF32Change;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use crate::ids::next_element_id;
 
@@ -349,6 +350,7 @@ impl Slider {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.focus_handle.focus(window, cx);
         self.is_dragging = true;
         // On the very first click the prepaint hasn't run yet, so
         // `last_bounds` is `None`. Defer the seek: it will fire on the next
@@ -556,7 +558,7 @@ impl Render for Slider {
         // vertical sliders stretch along the y-axis instead of the x-axis.
         // HIG vertical `NSSlider` sizes to a fixed width similar to the
         // hit-area height.
-        let track_div = div()
+        let mut track_div = div()
             .id(self.element_id.clone())
             .debug_selector(|| "slider-track".into())
             .track_focus(&self.focus_handle)
@@ -570,6 +572,24 @@ impl Render for Slider {
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_key_down(cx.listener(Self::handle_key_down))
             .child(track_element);
+
+        // VoiceOver: per HIG Sliders the current value must be spoken on
+        // every change. Use the caller's value_formatter when supplied;
+        // otherwise fall back to a percent representation of the [0, 1]
+        // range (sliders whose domain is outside [0, 1] should always
+        // supply a formatter for meaningful readout).
+        let ax_value_string = self
+            .value_formatter
+            .as_ref()
+            .map(|f| f(self.value))
+            .unwrap_or_else(|| format!("{:.0} percent", self.value * 100.0));
+        let mut props = AccessibilityProps::new()
+            .role(AccessibilityRole::Slider)
+            .value(SharedString::from(ax_value_string));
+        if let Some(label) = self.accessibility_label.clone() {
+            props = props.label(label);
+        }
+        track_div = track_div.with_accessibility(&props);
 
         match self.orientation {
             SliderOrientation::Horizontal => {

@@ -64,7 +64,7 @@ pub fn render(
             Button::new("dialog-show-save")
                 .label("Show Save dialog")
                 .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
+                .size(ButtonSize::Regular)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.dialog_open = true;
                     cx.notify();
@@ -132,21 +132,21 @@ pub fn render(
                         Button::new("dlg-delete")
                             .label("Delete")
                             .variant(ButtonVariant::Destructive)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_, window, cx| dismiss_a(window, cx)),
                     )
                     .child(
                         Button::new("dlg-cancel")
                             .label("Cancel")
                             .variant(ButtonVariant::Outline)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_, window, cx| dismiss_b(window, cx)),
                     )
                     .child(
                         Button::new("dlg-save")
                             .label("Save")
                             .variant(ButtonVariant::Primary)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Regular)
                             .on_click(move |_, window, cx| dismiss_c(window, cx)),
                     ),
             );

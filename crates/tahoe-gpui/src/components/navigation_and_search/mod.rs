@@ -20,6 +20,6 @@ pub use path_control::{PathControl, PathControlStyle, PathSegment};
 pub use search_bar::SearchBar;
 pub use search_field::SearchField;
 pub use sidebar::{Sidebar, SidebarItem, SidebarPosition, SidebarSection};
-pub use tab_bar::{TabBar, TabItem};
+pub use tab_bar::{TabBar, TabBarStyle, TabItem};
 pub use token_field::{TokenContextMenuItem, TokenField, TokenItem};
-pub use toolbar::Toolbar;
+pub use toolbar::{Toolbar, ToolbarStyle};
