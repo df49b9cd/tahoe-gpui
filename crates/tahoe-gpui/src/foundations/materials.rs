@@ -1002,16 +1002,47 @@ pub fn glass_clear_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div 
 /// Dark translucent tint applied on top of [`glass_surface`] so HUD
 /// surfaces render dark regardless of the current appearance.
 ///
-/// Composed as `black @ 60%` to match `NSPanel.StyleMask.HUDWindow`
-/// per HIG `#panels`. Exposed as a constant so callers that need the
-/// raw value (e.g. tinting a sub-element consistently with the HUD
-/// backdrop) can re-use the exact recipe.
+/// This is the **effective visible tint** — `black @ 60%` to match
+/// `NSPanel.StyleMask.HUDWindow` per HIG `#panels` — i.e. the tint a
+/// viewer sees after [`apply_glass_chrome`]'s Layer 2
+/// ([`GLASS_LAYER_TINT_ALPHA`]) has stacked on top. The actual alpha
+/// [`hud_fill`] hands to `compose_black_tint_linear` is lower
+/// ([`HUD_PRE_COMPOSE_ALPHA`]); Layer 2 fills the gap.
+///
+/// Exposed as a constant so callers that need the raw value
+/// (e.g. tinting a sub-element consistently with the HUD backdrop)
+/// can re-use the same effective tint.
 pub const HUD_TINT_ALPHA: f32 = 0.6;
+
+/// Pre-composition alpha used inside [`hud_fill`]. Chosen so that
+/// after [`apply_glass_chrome`] stacks Layer 2
+/// ([`GLASS_LAYER_TINT_ALPHA`]) on top, the effective visible tint
+/// lands at [`HUD_TINT_ALPHA`].
+///
+/// Linear-light Porter–Duff src-over:
+/// `1 - (1 - pre)(1 - layer2) = effective` →
+/// `pre = 1 - (1 - effective)/(1 - layer2)`.
+/// With `effective = 0.60` and `layer2 = 0.20`, `pre = 0.50`.
+const HUD_PRE_COMPOSE_ALPHA: f32 = 1.0 - (1.0 - HUD_TINT_ALPHA) / (1.0 - GLASS_LAYER_TINT_ALPHA);
+
+/// Resolve the HUD surface fill — the base glass fill pre-composed
+/// with a black tint that, after [`apply_glass_chrome`] layers the
+/// universal Layer 2 tint on top, lands at the spec-documented
+/// [`HUD_TINT_ALPHA`] effective visible tint.
+///
+/// Goes through [`default_glass_bg`] so `ReduceTransparency` routes
+/// through the opaque fallback before the HUD tint applies — the
+/// accessibility path darkens the opaque fill rather than a
+/// translucent one.
+fn hud_fill(theme: &TahoeTheme, size: GlassSize) -> Hsla {
+    let base = default_glass_bg(&theme.glass, theme.accessibility_mode, size);
+    crate::foundations::color::compose_black_tint_linear(base, HUD_PRE_COMPOSE_ALPHA)
+}
 
 /// Apply Liquid Glass HUD surface styling to a div.
 ///
-/// Pre-composes the dark translucent HUD tint ([`HUD_TINT_ALPHA`])
-/// into the base glass fill, then hands the result to the standard
+/// Pre-composes the dark HUD tint into the base glass fill via
+/// [`hud_fill`], then hands the result to the standard
 /// [`glass_surface`] chrome (Layer 2 tint + radius + shadows +
 /// high-contrast border), plus [`TahoeTheme::background`] as the
 /// text color so the surface reads as a dark HUD regardless of the
@@ -1029,10 +1060,8 @@ pub const HUD_TINT_ALPHA: f32 = 0.6;
 /// adds a visible border. Inherits the current GPUI backdrop-blur
 /// limitation from [`glass_surface`].
 pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
-    let glass = &theme.glass;
-    let base = default_glass_bg(glass, theme.accessibility_mode, size);
-    let bg = crate::foundations::color::compose_black_tint_linear(base, HUD_TINT_ALPHA);
-    let radius = glass.radius(size);
+    let bg = hud_fill(theme, size);
+    let radius = theme.glass.radius(size);
     apply_glass_chrome(el, theme, bg, radius, size).text_color(theme.background)
 }
 
@@ -2219,17 +2248,22 @@ mod tests {
     #[test]
     fn hud_fill_is_darker_than_base_for_each_size() {
         // Regression for #61: chaining `.bg(hsla(0,0,0,0.6))` after
-        // `glass_surface` overwrote the composited glass fill, leaving HUD
-        // surfaces as flat 60% black rectangles. The fix pre-composes the
-        // HUD tint into the base fill — which must, by construction,
-        // darken the base across every theme × size combination.
-        use super::HUD_TINT_ALPHA;
-        use crate::foundations::color::{compose_black_tint_linear, relative_luminance};
+        // `glass_surface` overwrote the composited glass fill, leaving
+        // HUD surfaces as flat 60% black rectangles. Exercising the real
+        // `hud_fill` path (not `compose_black_tint_linear` in isolation)
+        // means a revert of `glass_surface_hud`'s body back to the buggy
+        // form would have to bypass `hud_fill` to sneak past this guard.
+        use super::hud_fill;
+        use crate::foundations::color::relative_luminance;
 
-        for theme in [TahoeTheme::liquid_glass(), TahoeTheme::dark()] {
+        for theme in [
+            TahoeTheme::liquid_glass(),
+            TahoeTheme::dark(),
+            TahoeTheme::light(),
+        ] {
             for size in [GlassSize::Small, GlassSize::Medium, GlassSize::Large] {
                 let base = theme.glass.bg(size);
-                let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
+                let hud = hud_fill(&theme, size);
                 assert!(
                     relative_luminance(hud) < relative_luminance(base),
                     "HUD fill must be darker than base for size {:?}",
@@ -2243,19 +2277,25 @@ mod tests {
     fn hud_fill_preserves_base_alpha() {
         // Guards against the naive `.bg(hsla(0,0,0,HUD_TINT_ALPHA))`
         // regression, which forced the surface alpha to 0.6 instead of
-        // inheriting the glass-layer translucency.
-        use super::HUD_TINT_ALPHA;
-        use crate::foundations::color::compose_black_tint_linear;
+        // inheriting the glass-layer translucency. Routed through
+        // `hud_fill` so the asserted alpha comes from the same code path
+        // `glass_surface_hud` uses.
+        use super::hud_fill;
 
-        let theme = TahoeTheme::liquid_glass();
-        for size in [GlassSize::Small, GlassSize::Medium, GlassSize::Large] {
-            let base = theme.glass.bg(size);
-            let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
-            assert!(
-                (hud.a - base.a).abs() < f32::EPSILON,
-                "HUD fill must preserve base alpha for size {:?}",
-                size,
-            );
+        for theme in [
+            TahoeTheme::liquid_glass(),
+            TahoeTheme::dark(),
+            TahoeTheme::light(),
+        ] {
+            for size in [GlassSize::Small, GlassSize::Medium, GlassSize::Large] {
+                let base = theme.glass.bg(size);
+                let hud = hud_fill(&theme, size);
+                assert!(
+                    (hud.a - base.a).abs() < f32::EPSILON,
+                    "HUD fill must preserve base alpha for size {:?}",
+                    size,
+                );
+            }
         }
     }
 
@@ -2265,18 +2305,40 @@ mod tests {
         // (`reduced_transparency_bg`, ~0.85-0.90). The HUD fill must
         // inherit that alpha — the naive `.bg(hsla(0,0,0,0.6))`
         // regression would collapse the surface to 60% alpha and let the
-        // window bleed through on accessibility setups.
-        use super::HUD_TINT_ALPHA;
-        use crate::foundations::color::compose_black_tint_linear;
+        // window bleed through on accessibility setups. Mutating
+        // `accessibility_mode` on the test theme asserts `hud_fill`
+        // actually routes through `default_glass_bg`, not `glass.bg`.
+        use super::hud_fill;
 
-        for theme in [TahoeTheme::liquid_glass(), TahoeTheme::light()] {
+        for base_theme in [TahoeTheme::liquid_glass(), TahoeTheme::light()] {
+            let mut theme = base_theme;
+            theme.accessibility_mode = AccessibilityMode::REDUCE_TRANSPARENCY;
             let base = theme.glass.accessibility.reduced_transparency_bg;
-            let hud = compose_black_tint_linear(base, HUD_TINT_ALPHA);
+            let hud = hud_fill(&theme, GlassSize::Small);
             assert!(
                 (hud.a - base.a).abs() < f32::EPSILON,
                 "reduced-transparency HUD fill must inherit fallback alpha",
             );
         }
+    }
+
+    #[test]
+    fn hud_fill_plus_layer_two_lands_at_effective_hud_tint_alpha() {
+        // Locks the algebra behind `HUD_PRE_COMPOSE_ALPHA`: after
+        // `apply_glass_chrome` stacks Layer 2 (`GLASS_LAYER_TINT_ALPHA`)
+        // on top of `hud_fill`'s output, the effective visible tint must
+        // land at `HUD_TINT_ALPHA`. Starting from a fully-opaque white
+        // base makes the composition observable in the alpha channel.
+        use super::{GLASS_LAYER_TINT_ALPHA, HUD_PRE_COMPOSE_ALPHA, HUD_TINT_ALPHA};
+
+        // 1 - (1 - pre)(1 - layer2) must equal effective.
+        let effective = 1.0 - (1.0 - HUD_PRE_COMPOSE_ALPHA) * (1.0 - GLASS_LAYER_TINT_ALPHA);
+        assert!(
+            (effective - HUD_TINT_ALPHA).abs() < 1e-6,
+            "effective tint ({}) must match HUD_TINT_ALPHA ({})",
+            effective,
+            HUD_TINT_ALPHA,
+        );
     }
 
     // ── GlassStyle::labels() contract ─────────────────────────────────────
