@@ -499,6 +499,44 @@ fn icon_with_rotate_animation_guards_nonpositive_turns() {
     }
 }
 
+// ── Resolved Render Size Tests (issue #54) ──────────────────────────────
+
+/// Regression for issue #54: an explicit `.size(px)` must be the final
+/// render size, with `.scale()` having no effect on top. Previously the
+/// render path multiplied `explicit × scale.multiplier()`, silently
+/// shrinking `.size(16).scale(Small)` from 16 to 12.
+#[test]
+fn explicit_size_ignores_scale_small() {
+    use gpui::px;
+    let icon = Icon::new(IconName::Check)
+        .size(px(16.0))
+        .scale(IconScale::Small);
+    assert_eq!(icon.resolved_render_size(px(18.0)), px(16.0));
+}
+
+#[test]
+fn explicit_size_ignores_scale_large() {
+    use gpui::px;
+    let icon = Icon::new(IconName::Check)
+        .size(px(16.0))
+        .scale(IconScale::Large);
+    assert_eq!(icon.resolved_render_size(px(18.0)), px(16.0));
+}
+
+#[test]
+fn scale_applies_to_theme_icon_size() {
+    use gpui::px;
+    let icon = Icon::new(IconName::Check).scale(IconScale::Large);
+    assert_eq!(icon.resolved_render_size(px(16.0)), px(20.0));
+}
+
+#[test]
+fn default_icon_resolves_to_theme_icon_size() {
+    use gpui::px;
+    let icon = Icon::new(IconName::Check);
+    assert_eq!(icon.resolved_render_size(px(18.0)), px(18.0));
+}
+
 // ─── IconStyle::Auto surface-scope resolution (issue #13) ─────────────────
 
 /// Outside a [`GlassSurfaceGuard`], `IconStyle::Auto` resolves to

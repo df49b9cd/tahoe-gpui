@@ -221,6 +221,11 @@ impl Icon {
         self
     }
 
+    /// Set the icon's size in pixels.
+    ///
+    /// Takes precedence over [`Self::scale`] and [`Self::match_text_style`]:
+    /// when set, the icon renders at exactly this size and the scale
+    /// multiplier is **not** applied on top.
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = Some(size);
         self
@@ -236,6 +241,12 @@ impl Icon {
         self
     }
 
+    /// Apply a cap-height-relative scale ([`IconScale::Small`] /
+    /// [`IconScale::Medium`] / [`IconScale::Large`]) to the theme default
+    /// icon size or to a [`Self::match_text_style`]-derived size.
+    ///
+    /// Has no effect when [`Self::size`] is set — an explicit pixel size
+    /// wins.
     pub fn scale(mut self, scale: IconScale) -> Self {
         self.scale = Some(scale);
         self
@@ -313,6 +324,24 @@ impl Icon {
     /// lands.
     pub fn resolved_stroke_width(&self) -> f32 {
         stroke_width_for(self.weight, self.style.resolve())
+    }
+
+    /// Resolved render size in pixels for this icon, given the theme's
+    /// default `icon_size`.
+    ///
+    /// Priority order:
+    ///   1. explicit `.size(px)` — returned as-is, scale does not apply.
+    ///   2. `.match_text_style(ts)` — cap-height-relative × scale.
+    ///   3. theme `icon_size` × scale multiplier.
+    pub(crate) fn resolved_render_size(&self, theme_icon_size: Pixels) -> Pixels {
+        let scale = self.scale.unwrap_or_default();
+        if let Some(explicit) = self.size {
+            explicit
+        } else if let Some(ts) = self.match_text_style {
+            scale.size_for_text_style(ts)
+        } else {
+            gpui::px(f32::from(theme_icon_size) * scale.multiplier())
+        }
     }
 
     /// Convenience: turn this icon into a continuously rotating
@@ -439,18 +468,7 @@ impl RenderOnce for Icon {
         // who need those can inspect `IconName::layout_behavior()` themselves.
         let should_flip_directional = self.would_flip_horizontally(theme);
 
-        let scale = self.scale.unwrap_or_default();
-        // Source of truth for pixel size, in priority order:
-        //   1. explicit .size()
-        //   2. .match_text_style(ts) → cap-height-relative
-        //   3. theme.icon_size × scale multiplier
-        let size = if let Some(explicit) = self.size {
-            gpui::px(f32::from(explicit) * scale.multiplier())
-        } else if let Some(ts) = self.match_text_style {
-            scale.size_for_text_style(ts)
-        } else {
-            gpui::px(f32::from(theme.icon_size) * scale.multiplier())
-        };
+        let size = self.resolved_render_size(theme.icon_size);
 
         // Optical baseline offset: user-supplied explicit offset wins;
         // otherwise when paired with a text style, derive the HIG-default
