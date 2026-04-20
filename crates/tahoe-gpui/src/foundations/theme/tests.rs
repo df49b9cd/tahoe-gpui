@@ -840,6 +840,21 @@ fn palette_available_on_theme() {
 }
 
 #[test]
+fn control_thumb_varies_by_appearance() {
+    let light = TahoeTheme::light().control_thumb;
+    let dark = TahoeTheme::dark().control_thumb;
+    let light_hc = TahoeTheme::light_high_contrast().control_thumb;
+
+    // Light thumb must be dark enough to read on near-white track.
+    assert!(light.l < 0.6, "light thumb too pale: {}", light.l);
+    // Dark thumb preserves current white-puck behaviour.
+    assert!(dark.l > 0.95);
+    // HC pushes farther from the track than the default light value.
+    assert!(light_hc.l < light.l);
+    assert_ne!(light, dark);
+}
+
+#[test]
 fn new_builds_all_four_appearances() {
     for appearance in [
         Appearance::Light,

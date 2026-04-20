@@ -547,6 +547,7 @@ impl Render for Slider {
             rtl,
             tick_count,
             tick_color: theme.text_muted,
+            thumb_color: theme.control_thumb,
             tooltip_text,
             tooltip_bg,
             tooltip_fg,
@@ -647,6 +648,9 @@ struct SliderTrackElement {
     tick_count: Option<usize>,
     /// Colour used for tick marks and tooltip border.
     tick_color: Hsla,
+    /// Fill color for the thumb puck (appearance-resolved; shadow is
+    /// painted separately behind it).
+    thumb_color: Hsla,
     /// When `Some`, paint a tooltip above the thumb while dragging.
     tooltip_text: Option<SharedString>,
     /// Background for the value tooltip.
@@ -779,10 +783,9 @@ impl Element for SliderTrackElement {
             );
         }
 
-        // Draw thumb circle — white with drop shadow per HIG. In RTL
-        // the thumb sits on the *inner* edge of the fill (toward the centre
-        // from the right), so subtract from the right instead of adding to
-        // the left.
+        // Draw thumb puck with a drop shadow per HIG. In RTL the thumb sits
+        // on the *inner* edge of the fill (toward the centre from the right),
+        // so subtract from the right instead of adding to the left.
         let high_x = if self.rtl {
             bounds.right() - bounds.size.width * fill_end_frac - self.thumb_radius
         } else {
@@ -818,9 +821,7 @@ impl Element for SliderTrackElement {
                     spread_radius: px(0.0),
                 }],
             );
-            window.paint_quad(
-                fill(low_bounds, gpui::hsla(0.0, 0.0, 1.0, 1.0)).corner_radii(self.thumb_radius),
-            );
+            window.paint_quad(fill(low_bounds, self.thumb_color).corner_radii(self.thumb_radius));
         }
 
         // Shadow behind thumb
@@ -852,10 +853,8 @@ impl Element for SliderTrackElement {
             );
         }
 
-        // White thumb circle
-        window.paint_quad(
-            fill(thumb_bounds, gpui::hsla(0.0, 0.0, 1.0, 1.0)).corner_radii(self.thumb_radius),
-        );
+        // Paint the thumb puck on top of its shadow/focus ring.
+        window.paint_quad(fill(thumb_bounds, self.thumb_color).corner_radii(self.thumb_radius));
 
         // Tick marks — painted below the track at each step boundary when
         // `show_ticks` is set and the slider is in stepped mode. Ticks are
@@ -1006,9 +1005,7 @@ impl SliderTrackElement {
                 fill(focus_bounds, accent).corner_radii(self.thumb_radius + focus_expand),
             );
         }
-        window.paint_quad(
-            fill(thumb_bounds, gpui::hsla(0.0, 0.0, 1.0, 1.0)).corner_radii(self.thumb_radius),
-        );
+        window.paint_quad(fill(thumb_bounds, self.thumb_color).corner_radii(self.thumb_radius));
 
         if self.range.is_some() {
             let low_y = bounds.bottom() - bounds.size.height * fill_start_frac - self.thumb_radius;
@@ -1026,9 +1023,7 @@ impl SliderTrackElement {
                     spread_radius: px(0.0),
                 }],
             );
-            window.paint_quad(
-                fill(low_bounds, gpui::hsla(0.0, 0.0, 1.0, 1.0)).corner_radii(self.thumb_radius),
-            );
+            window.paint_quad(fill(low_bounds, self.thumb_color).corner_radii(self.thumb_radius));
         }
     }
 }

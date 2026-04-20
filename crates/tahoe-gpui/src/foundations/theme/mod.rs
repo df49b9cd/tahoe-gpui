@@ -246,6 +246,12 @@ pub struct TahoeTheme {
     pub terminal_bg: Hsla,
     /// Vertical connector line color (chain-of-thought, file tree).
     pub connector_line: Hsla,
+    /// Fill color for interactive control thumbs/knobs (e.g. the slider
+    /// thumb). Dark mode keeps HIG's near-white puck; light mode darkens
+    /// to a mid-gray so the thumb stays legible against the near-white
+    /// `glass.accessible_bg` track. HC variants push lightness farther
+    /// from the track to survive IncreaseContrast.
+    pub control_thumb: Hsla,
     /// Tool approval accepted background.
     pub tool_approved_bg: Hsla,
     /// Tool approval rejected background.
@@ -536,6 +542,12 @@ impl TahoeTheme {
                 hsla(0.0, 0.0, 0.35, 1.0), // dark
                 hsla(0.0, 0.0, 0.55, 1.0), // light HC — darker for more contrast
                 hsla(0.0, 0.0, 0.50, 1.0), // dark HC — lighter for more contrast
+            ),
+            control_thumb: appearance.resolve(
+                hsla(0.0, 0.0, 0.45, 1.0), // light    — mid-gray puck, reads on near-white track
+                hsla(0.0, 0.0, 1.0, 1.0),  // dark     — unchanged (current white puck)
+                hsla(0.0, 0.0, 0.28, 1.0), // light HC — darker for IncreaseContrast
+                hsla(0.0, 0.0, 1.0, 1.0),  // dark HC  — already max contrast vs dark track
             ),
             tool_approved_bg: Hsla {
                 a: if is_dark { 0.20 } else { 0.15 },
