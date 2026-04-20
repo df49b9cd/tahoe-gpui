@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use super::options::LinkMode;
 use super::utils::{
     find_matching_closing_bracket, find_matching_opening_bracket, is_inside_code_block,
+    is_list_marker_line,
 };
 
 /// Handles incomplete URLs in links/images: `[text](partial-url`.
@@ -153,6 +154,25 @@ fn make_incomplete_link<'a>(text: &str, open_index: usize, link_mode: LinkMode) 
     }
 }
 
+/// Returns `true` if the `[` at `bracket_pos` is the start of a GFM
+/// task-list marker (`- [`, `- [x`, `  * [X]`, etc.). These must not be
+/// auto-completed as incomplete links during streaming.
+fn is_task_list_marker_start(text: &str, bracket_pos: usize) -> bool {
+    let bytes = text.as_bytes();
+
+    let line_start = bytes[..bracket_pos]
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map(|p| p + 1)
+        .unwrap_or(0);
+
+    if !is_list_marker_line(&text[line_start..bracket_pos]) {
+        return false;
+    }
+
+    matches!(bytes.get(bracket_pos + 1), Some(b' ' | b'x' | b'X'))
+}
+
 /// Handles incomplete links and images by auto-completing or removing them.
 ///
 /// When `links_enabled` is false, incomplete links are left untouched.
@@ -190,6 +210,9 @@ pub fn handle(
         if bytes[i] == b'[' && !is_inside_code_block(text, i) {
             let is_image = text[..i].ends_with('!');
             if (is_image && !images_enabled) || (!is_image && !links_enabled) {
+                continue;
+            }
+            if !is_image && is_task_list_marker_start(text, i) {
                 continue;
             }
             if let Some(result) = handle_incomplete_text(text, i, link_mode) {
@@ -270,6 +293,51 @@ mod tests {
         assert_eq!(
             h_text_only("[text](http://example.com)").as_ref(),
             "[text](http://example.com)"
+        );
+    }
+
+    #[test]
+    fn leaves_unordered_task_list_marker_x() {
+        assert_eq!(h("- [x").as_ref(), "- [x");
+    }
+
+    #[test]
+    fn leaves_unordered_task_list_marker_space() {
+        assert_eq!(h("- [ ").as_ref(), "- [ ");
+    }
+
+    #[test]
+    fn leaves_unordered_task_list_marker_capital_x() {
+        assert_eq!(h("- [X").as_ref(), "- [X");
+    }
+
+    #[test]
+    fn leaves_task_list_with_other_bullet_styles() {
+        assert_eq!(h("* [x").as_ref(), "* [x");
+        assert_eq!(h("+ [ ").as_ref(), "+ [ ");
+    }
+
+    #[test]
+    fn leaves_indented_task_list_marker() {
+        assert_eq!(h("  - [x").as_ref(), "  - [x");
+    }
+
+    #[test]
+    fn completes_real_link_in_list_item() {
+        assert_eq!(h("- [foo").as_ref(), "- [foo](streamdown:incomplete-link)");
+    }
+
+    #[test]
+    fn text_only_leaves_task_list_marker() {
+        assert_eq!(h_text_only("- [x").as_ref(), "- [x");
+        assert_eq!(h_text_only("- [ ").as_ref(), "- [ ");
+    }
+
+    #[test]
+    fn task_list_marker_then_incomplete_link_later() {
+        assert_eq!(
+            h("- [x] prefix [link").as_ref(),
+            "- [x] prefix [link](streamdown:incomplete-link)"
         );
     }
 }
