@@ -38,6 +38,7 @@
 use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use gpui::prelude::*;
 use gpui::{
@@ -203,211 +204,218 @@ impl Element for SelectableText {
         let anchor_click = self.anchor_click.take();
         let element_id = self.element_id.clone();
 
-        window.with_element_state::<SelectableTextState, _>(
-            global_id.expect("SelectableText requires an element id"),
-            |state, window| {
-                let state: SelectableTextState = state.unwrap_or_default();
+        debug_assert!(
+            global_id.is_some(),
+            "SelectableText::paint: global_id is None despite id() returning Some"
+        );
+        let Some(global_id) = global_id else {
+            self.text
+                .paint(None, inspector_id, bounds, &mut (), &mut (), window, cx);
+            warn_global_id_missing_once();
+            return;
+        };
 
-                // Cursor: PointingHand over clickable ranges, IBeam
-                // over body text (matches NSTextView semantics).
-                if hitbox.is_hovered(window) {
-                    let over_link = text_layout
-                        .index_for_position(window.mouse_position())
-                        .ok()
-                        .is_some_and(|ix| clickable_ranges.iter().any(|r| r.contains(&ix)));
-                    let cursor = if over_link {
-                        CursorStyle::PointingHand
-                    } else {
-                        CursorStyle::IBeam
+        window.with_element_state::<SelectableTextState, _>(global_id, |state, window| {
+            let state: SelectableTextState = state.unwrap_or_default();
+
+            // Cursor: PointingHand over clickable ranges, IBeam
+            // over body text (matches NSTextView semantics).
+            if hitbox.is_hovered(window) {
+                let over_link = text_layout
+                    .index_for_position(window.mouse_position())
+                    .ok()
+                    .is_some_and(|ix| clickable_ranges.iter().any(|r| r.contains(&ix)));
+                let cursor = if over_link {
+                    CursorStyle::PointingHand
+                } else {
+                    CursorStyle::IBeam
+                };
+                window.set_cursor_style(cursor, hitbox);
+            }
+
+            // Paint selection background BEFORE the text so the
+            // text strokes sit on top of the tint (NSTextView
+            // order).
+            if let Some(range) = selection.range_for_element(&element_id, text_string.len()) {
+                paint_selection_quads(
+                    &text_layout,
+                    range.start,
+                    range.end,
+                    bounds,
+                    selection_bg,
+                    window,
+                );
+            }
+
+            // Delegate the text paint.
+            self.text
+                .paint(None, inspector_id, bounds, &mut (), &mut (), window, cx);
+
+            // MouseDown — select, word-select, paragraph-select,
+            // shift-extend, or arm a link click, depending on
+            // click_count / modifiers.
+            {
+                let mouse_down_index = state.mouse_down_index.clone();
+                let hitbox = hitbox.clone();
+                let text_layout = text_layout.clone();
+                let text_string = text_string.clone();
+                let selection = selection.clone();
+                let element_id = element_id.clone();
+                window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _cx| {
+                    if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
+                        return;
+                    }
+                    if !hitbox.is_hovered(window) {
+                        return;
+                    }
+                    let Ok(ix) = text_layout.index_for_position(event.position) else {
+                        return;
                     };
-                    window.set_cursor_style(cursor, hitbox);
-                }
-
-                // Paint selection background BEFORE the text so the
-                // text strokes sit on top of the tint (NSTextView
-                // order).
-                if let Some(range) = selection.range_for_element(&element_id, text_string.len()) {
-                    paint_selection_quads(
-                        &text_layout,
-                        range.start,
-                        range.end,
-                        bounds,
-                        selection_bg,
-                        window,
+                    mouse_down_index.set(Some(ix));
+                    selection.mouse_down(
+                        element_id.clone(),
+                        &text_string,
+                        ix,
+                        event.click_count,
+                        event.modifiers.shift,
                     );
-                }
+                    window.refresh();
+                });
+            }
 
-                // Delegate the text paint.
-                self.text
-                    .paint(None, inspector_id, bounds, &mut (), &mut (), window, cx);
+            // MouseMove while any paragraph's left button is
+            // held (coordinator knows if a drag is pending, and
+            // only handlers whose hitbox the cursor is over
+            // contribute an index). Extends the selection
+            // across paragraph boundaries naturally.
+            {
+                let hitbox = hitbox.clone();
+                let text_layout = text_layout.clone();
+                let text_string = text_string.clone();
+                let selection = selection.clone();
+                let element_id = element_id.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    if !selection.is_pending() {
+                        return;
+                    }
+                    if !hitbox.is_hovered(window) {
+                        return;
+                    }
+                    let Ok(ix) = text_layout.index_for_position(event.position) else {
+                        return;
+                    };
+                    selection.drag_to(element_id.clone(), &text_string, ix);
+                    window.refresh();
+                });
+            }
 
-                // MouseDown — select, word-select, paragraph-select,
-                // shift-extend, or arm a link click, depending on
-                // click_count / modifiers.
-                {
-                    let mouse_down_index = state.mouse_down_index.clone();
-                    let hitbox = hitbox.clone();
-                    let text_layout = text_layout.clone();
-                    let text_string = text_string.clone();
-                    let selection = selection.clone();
-                    let element_id = element_id.clone();
-                    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _cx| {
-                        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-                            return;
-                        }
-                        if !hitbox.is_hovered(window) {
-                            return;
-                        }
-                        let Ok(ix) = text_layout.index_for_position(event.position) else {
-                            return;
-                        };
-                        mouse_down_index.set(Some(ix));
-                        selection.mouse_down(
-                            element_id.clone(),
-                            &text_string,
-                            ix,
-                            event.click_count,
-                            event.modifiers.shift,
-                        );
+            // MouseUp — finalise the drag or dispatch a link
+            // click when the gesture was a click (no drag).
+            {
+                let mouse_down_index = state.mouse_down_index.clone();
+                let hitbox = hitbox.clone();
+                let text_layout = text_layout.clone();
+                let link_urls = link_urls.clone();
+                let clickable_ranges = clickable_ranges.clone();
+                let selection = selection.clone();
+                let anchor_click = anchor_click.clone();
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
+                        return;
+                    }
+                    let Some(down_ix) = mouse_down_index.get() else {
+                        return;
+                    };
+                    mouse_down_index.set(None);
+                    selection.end_drag();
+                    if !hitbox.is_hovered(window) {
                         window.refresh();
-                    });
-                }
+                        return;
+                    }
+                    let Ok(up_ix) = text_layout.index_for_position(event.position) else {
+                        return;
+                    };
+                    if down_ix == up_ix
+                        && let Some(url) = clickable_ranges
+                            .iter()
+                            .zip(link_urls.iter())
+                            .find(|(range, _)| range.contains(&down_ix))
+                            .map(|(_, url)| url.clone())
+                    {
+                        // In-document `#fragment` links never reach the
+                        // OS URL handler — routing them through
+                        // `cx.open_url` opens a broken HTTP URL. Invoke
+                        // the consumer's anchor-click handler instead.
+                        // Fragment URLs are only registered as clickable
+                        // when a handler is installed (see the gate in
+                        // `render_inlines_flat`), so this arm always
+                        // has a handler in practice — the `if let`
+                        // survives as defence in depth.
+                        match fragment_of(url.as_ref()) {
+                            Some(fragment) => {
+                                // Defence in depth: fragment links
+                                // are only registered as clickable
+                                // when a handler is installed (see
+                                // `render_inlines_flat`), so this
+                                // arm should always have a handler.
+                                // If we reach it without one the
+                                // render-side gate was bypassed.
+                                debug_assert!(
+                                    anchor_click.is_some(),
+                                    "fragment link click reached without anchor_click handler"
+                                );
+                                if let Some(handler) = &anchor_click {
+                                    handler(&fragment, window, cx);
+                                }
+                            }
+                            None => {
+                                cx.open_url(url.as_ref());
+                            }
+                        }
+                    }
+                    window.refresh();
+                });
+            }
 
-                // MouseMove while any paragraph's left button is
-                // held (coordinator knows if a drag is pending, and
-                // only handlers whose hitbox the cursor is over
-                // contribute an index). Extends the selection
-                // across paragraph boundaries naturally.
-                {
-                    let hitbox = hitbox.clone();
-                    let text_layout = text_layout.clone();
-                    let text_string = text_string.clone();
-                    let selection = selection.clone();
-                    let element_id = element_id.clone();
-                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _cx| {
-                        if phase != DispatchPhase::Bubble {
-                            return;
-                        }
-                        if !selection.is_pending() {
-                            return;
-                        }
-                        if !hitbox.is_hovered(window) {
-                            return;
-                        }
-                        let Ok(ix) = text_layout.index_for_position(event.position) else {
-                            return;
-                        };
-                        selection.drag_to(element_id.clone(), &text_string, ix);
-                        window.refresh();
-                    });
-                }
-
-                // MouseUp — finalise the drag or dispatch a link
-                // click when the gesture was a click (no drag).
-                {
-                    let mouse_down_index = state.mouse_down_index.clone();
-                    let hitbox = hitbox.clone();
-                    let text_layout = text_layout.clone();
-                    let link_urls = link_urls.clone();
-                    let clickable_ranges = clickable_ranges.clone();
-                    let selection = selection.clone();
-                    let anchor_click = anchor_click.clone();
-                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-                        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-                            return;
-                        }
-                        let Some(down_ix) = mouse_down_index.get() else {
-                            return;
-                        };
-                        mouse_down_index.set(None);
-                        selection.end_drag();
-                        if !hitbox.is_hovered(window) {
+            // Cmd/Ctrl+C and Cmd/Ctrl+A — register a key handler
+            // that only acts when the mouse is over this
+            // paragraph (a rough proxy for "the selection is
+            // mine"; a proper focus-scoped implementation would
+            // use `FocusHandle`). Multiple paragraphs may have
+            // the same handler registered; the shared coordinator
+            // guarantees they all act on the same selection
+            // state, so duplicated handlers are idempotent.
+            {
+                let hitbox = hitbox.clone();
+                let selection = selection.clone();
+                window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    if !hitbox.is_hovered(window) {
+                        return;
+                    }
+                    let keystroke = &event.keystroke;
+                    let cmd_or_ctrl = keystroke.modifiers.platform || keystroke.modifiers.control;
+                    if !cmd_or_ctrl {
+                        return;
+                    }
+                    match keystroke.key.as_str() {
+                        "c" => selection.copy_to_clipboard(cx),
+                        "a" => {
+                            selection.select_all();
                             window.refresh();
-                            return;
                         }
-                        let Ok(up_ix) = text_layout.index_for_position(event.position) else {
-                            return;
-                        };
-                        if down_ix == up_ix
-                            && let Some(url) = clickable_ranges
-                                .iter()
-                                .zip(link_urls.iter())
-                                .find(|(range, _)| range.contains(&down_ix))
-                                .map(|(_, url)| url.clone())
-                        {
-                            // In-document `#fragment` links never reach the
-                            // OS URL handler — routing them through
-                            // `cx.open_url` opens a broken HTTP URL. Invoke
-                            // the consumer's anchor-click handler instead.
-                            // Fragment URLs are only registered as clickable
-                            // when a handler is installed (see the gate in
-                            // `render_inlines_flat`), so this arm always
-                            // has a handler in practice — the `if let`
-                            // survives as defence in depth.
-                            match fragment_of(url.as_ref()) {
-                                Some(fragment) => {
-                                    // Defence in depth: fragment links
-                                    // are only registered as clickable
-                                    // when a handler is installed (see
-                                    // `render_inlines_flat`), so this
-                                    // arm should always have a handler.
-                                    // If we reach it without one the
-                                    // render-side gate was bypassed.
-                                    debug_assert!(
-                                        anchor_click.is_some(),
-                                        "fragment link click reached without anchor_click handler"
-                                    );
-                                    if let Some(handler) = &anchor_click {
-                                        handler(&fragment, window, cx);
-                                    }
-                                }
-                                None => {
-                                    cx.open_url(url.as_ref());
-                                }
-                            }
-                        }
-                        window.refresh();
-                    });
-                }
+                        _ => {}
+                    }
+                });
+            }
 
-                // Cmd/Ctrl+C and Cmd/Ctrl+A — register a key handler
-                // that only acts when the mouse is over this
-                // paragraph (a rough proxy for "the selection is
-                // mine"; a proper focus-scoped implementation would
-                // use `FocusHandle`). Multiple paragraphs may have
-                // the same handler registered; the shared coordinator
-                // guarantees they all act on the same selection
-                // state, so duplicated handlers are idempotent.
-                {
-                    let hitbox = hitbox.clone();
-                    let selection = selection.clone();
-                    window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
-                        if phase != DispatchPhase::Bubble {
-                            return;
-                        }
-                        if !hitbox.is_hovered(window) {
-                            return;
-                        }
-                        let keystroke = &event.keystroke;
-                        let cmd_or_ctrl =
-                            keystroke.modifiers.platform || keystroke.modifiers.control;
-                        if !cmd_or_ctrl {
-                            return;
-                        }
-                        match keystroke.key.as_str() {
-                            "c" => selection.copy_to_clipboard(cx),
-                            "a" => {
-                                selection.select_all();
-                                window.refresh();
-                            }
-                            _ => {}
-                        }
-                    });
-                }
-
-                ((), state)
-            },
-        )
+            ((), state)
+        })
     }
 }
 
@@ -501,6 +509,19 @@ fn paint_selection_quads(
         point(end.x, end.y + line_height),
     );
     window.paint_quad(fill(last, color));
+}
+
+/// One-shot warning when `global_id` is `None` at paint time — indicates a
+/// GPUI framework contract violation (should never happen since `id()` always
+/// returns `Some`). `OnceLock` prevents log spam across frames.
+fn warn_global_id_missing_once() {
+    static WARNED: OnceLock<()> = OnceLock::new();
+    WARNED.get_or_init(|| {
+        tracing::warn!(
+            "SelectableText::paint: global_id was None despite id() returning Some. \
+             Selection interaction disabled for this element."
+        );
+    });
 }
 
 #[cfg(test)]
