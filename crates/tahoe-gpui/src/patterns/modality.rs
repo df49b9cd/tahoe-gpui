@@ -132,7 +132,7 @@ impl ModalGuard {
             let mut depth = active
                 .depth
                 .lock()
-                .expect("ModalGuard mutex poisoned — a previous `present()` panicked");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             *depth += 1;
             *depth
         };
@@ -263,5 +263,23 @@ mod tests {
         let _active = a.present();
         assert_eq!(b.depth(), a.depth());
         drop(_active);
+    }
+
+    #[test]
+    fn present_recovers_from_poisoned_mutex() {
+        use std::thread;
+        let guard = ModalGuard::new();
+        // Poison the internal mutex by panicking while holding the lock on
+        // another thread. Use a per-instance guard (not ModalGuard::global)
+        // so the poisoned state doesn't leak into other tests.
+        let depth = guard.depth.clone();
+        let handle = thread::spawn(move || {
+            let _locked = depth.lock().expect("fresh mutex should lock cleanly");
+            panic!("intentional poison");
+        });
+        assert!(handle.join().is_err(), "thread should have panicked");
+        // present() must succeed and depth() must reflect the increment.
+        let _active = guard.present();
+        assert_eq!(guard.depth(), 1);
     }
 }
