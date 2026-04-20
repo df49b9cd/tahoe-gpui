@@ -476,7 +476,7 @@ impl StreamingMarkdown {
     /// # use tahoe_gpui::markdown::{StreamingMarkdown, heading_element_id};
     /// # fn wire(cx: &mut App, scroll: ScrollHandle) {
     /// let md = cx.new(|cx| {
-    ///     StreamingMarkdown::new(cx).on_anchor_click(move |slug, window, cx| {
+    ///     StreamingMarkdown::new(cx).with_anchor_click(move |slug, window, cx| {
     ///         // Resolve the heading's bounds via its element id and
     ///         // ask your ScrollHandle to bring them into view. The
     ///         // real implementation should honour Reduce Motion here.
@@ -486,7 +486,7 @@ impl StreamingMarkdown {
     /// # let _ = md;
     /// # }
     /// ```
-    pub fn on_anchor_click<F>(mut self, handler: F) -> Self
+    pub fn with_anchor_click<F>(mut self, handler: F) -> Self
     where
         F: Fn(&str, &mut Window, &mut App) + 'static,
     {
@@ -1159,7 +1159,7 @@ fn flatten_inlines_to_runs(
     security: &MarkdownSecurity,
     // When false, `#fragment` links render as plain text (no underline, no
     // click target) so consumers that never installed an
-    // [`StreamingMarkdown::on_anchor_click`] handler do not advertise a
+    // [`StreamingMarkdown::with_anchor_click`] handler do not advertise a
     // dead control. External URLs are unaffected.
     anchor_click_available: bool,
     current: &GpuiTextStyle,

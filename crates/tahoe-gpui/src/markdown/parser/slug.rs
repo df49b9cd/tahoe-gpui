@@ -11,33 +11,24 @@
 ///   typically map this to `None` (no anchor).
 pub(super) fn slugify(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
+    let mut prev_dash = false;
     for c in input.chars() {
         if c.is_alphanumeric() {
             for lower in c.to_lowercase() {
                 out.push(lower);
             }
-        } else if c == '_' || c == '-' {
+            prev_dash = false;
+        } else if c == '_' {
             out.push(c);
-        } else if c.is_whitespace() {
-            out.push('-');
-        }
-    }
-
-    let mut collapsed = String::with_capacity(out.len());
-    let mut prev_dash = false;
-    for c in out.chars() {
-        if c == '-' {
+            prev_dash = false;
+        } else if c == '-' || c.is_whitespace() {
             if !prev_dash {
-                collapsed.push('-');
+                out.push('-');
             }
             prev_dash = true;
-        } else {
-            collapsed.push(c);
-            prev_dash = false;
         }
     }
-
-    let trimmed = collapsed.trim_matches('-');
+    let trimmed = out.trim_matches('-');
     trimmed.to_string()
 }
 

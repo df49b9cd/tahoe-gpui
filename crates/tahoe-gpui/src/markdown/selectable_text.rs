@@ -346,6 +346,17 @@ impl Element for SelectableText {
                             // survives as defence in depth.
                             match fragment_of(url.as_ref()) {
                                 Some(fragment) => {
+                                    // Defence in depth: fragment links
+                                    // are only registered as clickable
+                                    // when a handler is installed (see
+                                    // `render_inlines_flat`), so this
+                                    // arm should always have a handler.
+                                    // If we reach it without one the
+                                    // render-side gate was bypassed.
+                                    debug_assert!(
+                                        anchor_click.is_some(),
+                                        "fragment link click reached without anchor_click handler"
+                                    );
                                     if let Some(handler) = &anchor_click {
                                         handler(&fragment, window, cx);
                                     }

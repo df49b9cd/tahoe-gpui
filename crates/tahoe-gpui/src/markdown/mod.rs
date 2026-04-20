@@ -14,8 +14,8 @@
 //! element id of `{HEADING_ID_PREFIX}{slug}` so consumers can locate them in
 //! their scroll container. Fragment links clicked inside the rendered
 //! markdown invoke the handler installed via
-//! [`StreamingMarkdown::on_anchor_click`]. See
-//! [`StreamingMarkdown::on_anchor_click`] for the exact scroll contract and
+//! [`StreamingMarkdown::with_anchor_click`]. See
+//! [`StreamingMarkdown::with_anchor_click`] for the exact scroll contract and
 //! accessibility / motion caveats.
 
 use gpui::{App, Window};
@@ -54,7 +54,7 @@ pub use settings::StreamSettings;
 /// receives, so the handler may call `cx.notify`, adjust a
 /// [`gpui::ScrollHandle`], or update host-level state.
 ///
-/// Installed via [`StreamingMarkdown::on_anchor_click`].
+/// Installed via [`StreamingMarkdown::with_anchor_click`].
 pub type AnchorClickHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 /// Element-id prefix emitted by the renderer for every addressable

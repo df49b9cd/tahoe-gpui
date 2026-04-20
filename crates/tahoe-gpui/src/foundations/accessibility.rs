@@ -273,6 +273,11 @@ pub enum AccessibilityRole {
     /// land on the right rung of the document outline when GPUI exposes
     /// an AX tree. Consumers that pattern-match this role should treat
     /// the payload as the HTML / HIG h-level.
+    ///
+    /// **Invariant**: the inner value must be in `1..=6`. Values outside
+    /// this range will mislead VoiceOver's heading-level navigation.
+    /// Construct via `AccessibilityRole::Heading(level)` only with
+    /// levels produced by the markdown parser (which guarantees 1–6).
     Heading(u8),
 }
 

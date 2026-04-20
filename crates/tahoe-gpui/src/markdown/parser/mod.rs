@@ -567,7 +567,7 @@ fn inline_plain_text(inlines: &[InlineContent]) -> String {
             }
         }
     }
-    let mut out = String::new();
+    let mut out = String::with_capacity(inlines.len() * 16);
     walk(inlines, &mut out);
     out
 }

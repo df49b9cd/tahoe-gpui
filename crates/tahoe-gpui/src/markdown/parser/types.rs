@@ -35,6 +35,10 @@ impl From<pulldown_cmark::Alignment> for TableAlignment {
 /// Marked `#[non_exhaustive]` so future HIG or GFM block additions can
 /// land without forcing downstream consumers to update exhaustive
 /// matches. Add a `_ => …` arm when pattern-matching this enum.
+///
+/// **BREAKING**: this enum was previously exhaustive. Existing `match`
+/// blocks that do not include a `_` wildcard will fail to compile.
+/// Add a `_ => …` arm (or handle new variants explicitly) to migrate.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum MarkdownBlock {
