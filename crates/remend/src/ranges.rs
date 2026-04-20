@@ -1,4 +1,4 @@
-use super::utils::fence_run_length;
+use super::utils::{FenceHit, fence_run_length, parse_fence_at_line_start};
 
 /// Pre-computed ranges of text that are inside code blocks, inline code spans, or math blocks.
 /// Used to skip these regions in emphasis/katex handlers without redundant O(n) scans.
@@ -87,41 +87,62 @@ impl CodeBlockRanges {
     /// Range for each region: [start+1, end+1) where start/end are the first bytes
     /// of the opening/closing delimiters.
     fn compute_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        // NOTE: fence transitions inlined — see FenceScanner for the canonical
+        // implementation. Changes here must be mirrored in is_inside_code_block,
+        // is_within_complete_inline_code, and incomplete_code.rs.
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut ranges = Vec::new();
         let mut in_code_block = false;
+        let mut opening_fence_char: u8 = 0;
         let mut opening_fence_len: usize = 0;
         let mut code_block_start: usize = 0;
         let mut in_inline_code = false;
         let mut inline_code_start: usize = 0;
+        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
         let mut i = 0;
 
         while i < len {
+            // Toggle fence state when we reach the first fence char on a fence line.
+            if !in_inline_code
+                && let Some(hit) = fence_on_line.as_ref()
+                && i == hit.run_start
+            {
+                if !in_code_block {
+                    in_code_block = true;
+                    opening_fence_char = hit.ch;
+                    opening_fence_len = hit.len;
+                    code_block_start = hit.run_start + 1;
+                    i = hit.run_end;
+                    continue;
+                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
+                    let end = hit.run_start + 1;
+                    if code_block_start <= end {
+                        ranges.push(code_block_start..end);
+                    }
+                    in_code_block = false;
+                    opening_fence_char = 0;
+                    opening_fence_len = 0;
+                    i = hit.run_end;
+                    continue;
+                }
+                // Mismatched char or too-short closer — skip run without
+                // changing fence state.
+                i = hit.run_end;
+                continue;
+            }
+
             // Skip escaped backticks.
             if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
                 i += 2;
                 continue;
             }
 
-            // Check for backtick/tilde fence runs (3+ chars).
-            if (bytes[i] == b'`' || bytes[i] == b'~') && !in_inline_code {
-                let ch = bytes[i];
-                let run = fence_run_length(bytes, i, ch);
+            // Mid-line 3+ backtick/tilde runs are inert literals — not a fence
+            // and not a valid single-backtick closer (issue #50 follow-up).
+            if bytes[i] == b'`' || bytes[i] == b'~' {
+                let run = fence_run_length(bytes, i, bytes[i]);
                 if run >= 3 {
-                    if !in_code_block {
-                        in_code_block = true;
-                        opening_fence_len = run;
-                        code_block_start = i + 1; // Position after first byte of opening fence.
-                    } else if run >= opening_fence_len {
-                        // Closing fence at i: position i is still inside, i+1 is not.
-                        let end = i + 1;
-                        if code_block_start <= end {
-                            ranges.push(code_block_start..end);
-                        }
-                        in_code_block = false;
-                        opening_fence_len = 0;
-                    }
                     i += run;
                     continue;
                 }
@@ -138,14 +159,28 @@ impl CodeBlockRanges {
                     inline_code_start = i + 1; // Position after opening backtick.
                 }
             }
+            if bytes[i] == b'\n' {
+                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
+                // Close any open inline span at the newline to match
+                // `is_inside_code_block`'s reset (issue #50 follow-up).
+                if in_inline_code {
+                    ranges.push(inline_code_start..i + 1);
+                    in_inline_code = false;
+                }
+            }
             i += 1;
         }
 
-        // If still in a code block or inline code at end of text, the rest is "inside code".
+        // If still in a code block or inline code at end of text, every position
+        // from the opener through `len` is inside code. Using `len + 1` as the
+        // exclusive end keeps `is_inside_code(len)` in agreement with
+        // `is_inside_code_block(text, len)` for unterminated fences.
+        // See matches_original_is_inside_code_block (uses 0..=len); removing
+        // the +1 breaks agreement at pos == len.
         if in_code_block && code_block_start <= len {
-            ranges.push(code_block_start..len);
+            ranges.push(code_block_start..len + 1);
         } else if in_inline_code && inline_code_start <= len {
-            ranges.push(inline_code_start..len);
+            ranges.push(inline_code_start..len + 1);
         }
 
         ranges
@@ -156,43 +191,66 @@ impl CodeBlockRanges {
     /// Ports the logic from `utils::is_within_complete_inline_code`: only includes
     /// spans where both opening and closing backtick are present.
     fn compute_complete_inline_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        // NOTE: fence transitions inlined — see FenceScanner for the canonical
+        // implementation. Changes here must be mirrored in the other scanners.
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut ranges = Vec::new();
         let mut in_inline_code = false;
         let mut in_multiline_code = false;
+        let mut opening_fence_char: u8 = 0;
+        let mut opening_fence_len: usize = 0;
         let mut inline_code_start: usize = 0;
+        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
         let mut i = 0;
 
         while i < len {
-            // Skip escaped backticks.
+            if !in_inline_code
+                && let Some(hit) = fence_on_line.as_ref()
+                && i == hit.run_start
+            {
+                if !in_multiline_code {
+                    in_multiline_code = true;
+                    opening_fence_char = hit.ch;
+                    opening_fence_len = hit.len;
+                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
+                    in_multiline_code = false;
+                    opening_fence_char = 0;
+                    opening_fence_len = 0;
+                }
+                i = hit.run_end;
+                continue;
+            }
+
             if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
                 i += 2;
                 continue;
             }
 
-            // Check for backtick fence runs (3+ chars).
-            if bytes[i] == b'`' {
-                let run = fence_run_length(bytes, i, b'`');
+            // Mid-line 3+ backtick/tilde runs are inert literals (issue #50 follow-up).
+            if bytes[i] == b'`' || bytes[i] == b'~' {
+                let run = fence_run_length(bytes, i, bytes[i]);
                 if run >= 3 {
-                    in_multiline_code = !in_multiline_code;
                     i += run;
                     continue;
                 }
             }
 
-            // Only check for inline code if not in multiline code.
             if !in_multiline_code && bytes[i] == b'`' {
                 if in_inline_code {
-                    // Found closing backtick -- this is a complete span.
-                    // Range is the interior (between the backticks), matching the
-                    // original `start < position && position < i` check.
                     ranges.push(inline_code_start + 1..i);
                     in_inline_code = false;
                 } else {
                     in_inline_code = true;
                     inline_code_start = i;
                 }
+            }
+            if bytes[i] == b'\n' {
+                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
+                // Inline spans don't survive newlines in this streaming
+                // approximation; discard the unclosed span without pushing a
+                // range since we only track *complete* spans.
+                in_inline_code = false;
             }
             i += 1;
         }
@@ -263,8 +321,11 @@ impl CodeBlockRanges {
         }
 
         // If still in math at end of text, the rest is "inside math".
-        if (in_block_math || in_inline_math) && math_start < len {
-            ranges.push(math_start..len);
+        // See matches_original_is_within_math_block (uses 0..=len); using len+1
+        // keeps agreement at pos == len for unterminated math, matching the
+        // code/inline-code trailing-range convention.
+        if (in_block_math || in_inline_math) && math_start <= len {
+            ranges.push(math_start..len + 1);
         }
 
         ranges
@@ -406,10 +467,24 @@ mod tests {
             "before `inline` after `more code`",
             "```\n**bold\n```",
             "````\n```\nstill inside\n````",
+            // Issue #50: mid-line fence runs are literal text, not fences.
+            "hello ```\ncode",
+            "text ~~~ more",
+            "a ```inline fence``` b",
+            "   ```\ncode",
+            "    ```\nnot a fence",
+            // Issue #50 follow-up: char mismatch, unterminated, and tilde-symmetric.
+            "```\ncode\n~~~\nmore",
+            "~~~\ncode\n```\nmore",
+            "```\nunclosed",
+            "~~~\nunclosed",
+            "````\n```\nshort closer no good\n````",
+            "text ~~~ more\n**bold",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            // Cover position == len too — C10 (trailing-range push) depends on it.
+            for pos in 0..=text.len() {
                 let expected = utils::is_inside_code_block(text, pos);
                 let actual = ranges.is_inside_code(pos);
                 assert_eq!(
@@ -429,10 +504,18 @@ mod tests {
             "`a` `b` `c`",
             "```fence``` not inline",
             "\\`escaped`",
+            // Issue #50: mid-line 3+ backtick runs are inert, not inline code.
+            "hello ```\ncode",
+            "a ```run``` b",
+            // Issue #50 follow-up: newline closes any in-progress inline span.
+            "`unclosed\nnext",
+            "`one`\n`two`",
+            // Unterminated inline span at EOF — hits trailing-range push.
+            "`still open",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            for pos in 0..=text.len() {
                 let expected = utils::is_within_complete_inline_code(text, pos);
                 let actual = ranges.is_within_complete_inline_code(pos);
                 assert_eq!(
@@ -455,7 +538,7 @@ mod tests {
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            for pos in 0..=text.len() {
                 let expected = utils::is_within_math_block(text, pos);
                 let actual = ranges.is_within_math(pos);
                 assert_eq!(

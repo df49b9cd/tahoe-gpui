@@ -2,80 +2,25 @@
 //!
 //! Ported from Streamdown's `incomplete-code-utils.ts`.
 
+use crate::utils::FenceScanner;
+
 /// Returns `true` if the markdown text has an unclosed code fence.
 ///
-/// Walks line-by-line per CommonMark spec: a closing fence must use the same
+/// Walks line-by-line per CommonMark §4.5: a closing fence must use the same
 /// character and be at least as long as the opening fence.
 pub fn has_incomplete_code_fence(markdown: &str) -> bool {
-    let mut open_fence_char: Option<u8> = None;
-    let mut open_fence_length: usize = 0;
+    let mut scanner = FenceScanner::new();
+    let bytes = markdown.as_bytes();
+    let mut line_start = 0usize;
 
-    for line in markdown.split('\n') {
-        if let Some(fence) = parse_code_fence(line) {
-            if let Some(open_char) = open_fence_char {
-                // We're inside a fence — check if this closes it.
-                if fence.char == open_char && fence.len >= open_fence_length {
-                    open_fence_char = None;
-                    open_fence_length = 0;
-                }
-            } else {
-                // Not inside a fence — this opens one.
-                open_fence_char = Some(fence.char);
-                open_fence_length = fence.len;
-            }
+    for i in 0..=bytes.len() {
+        if i == bytes.len() || bytes[i] == b'\n' {
+            scanner.consume_fence_at_line_start(bytes, line_start);
+            line_start = i + 1;
         }
     }
 
-    open_fence_char.is_some()
-}
-
-struct FenceInfo {
-    char: u8,
-    len: usize,
-}
-
-/// Parses a code fence from a line: up to 3 leading spaces, then 3+ backticks or tildes.
-fn parse_code_fence(line: &str) -> Option<FenceInfo> {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    // Skip up to 3 leading spaces/tabs.
-    let mut leading_spaces = 0;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        if bytes[i] == b' ' {
-            leading_spaces += 1;
-        } else {
-            leading_spaces += 4; // tab counts as 4
-        }
-        if leading_spaces > 3 {
-            return None;
-        }
-        i += 1;
-    }
-
-    if i >= bytes.len() {
-        return None;
-    }
-
-    let fence_char = bytes[i];
-    if fence_char != b'`' && fence_char != b'~' {
-        return None;
-    }
-
-    let mut fence_len = 0;
-    while i < bytes.len() && bytes[i] == fence_char {
-        fence_len += 1;
-        i += 1;
-    }
-
-    if fence_len >= 3 {
-        Some(FenceInfo {
-            char: fence_char,
-            len: fence_len,
-        })
-    } else {
-        None
-    }
+    scanner.in_code_block()
 }
 
 /// Returns `true` if the markdown text contains a table delimiter row.
@@ -206,6 +151,23 @@ mod tests {
     #[test]
     fn too_much_indent_is_not_fence() {
         assert!(!has_incomplete_code_fence("    ```\ncode"));
+    }
+
+    #[test]
+    fn no_fence_for_mid_line_backticks() {
+        // Issue #50: mid-line ``` is not a fence, so no block opens.
+        assert!(!has_incomplete_code_fence("hello ```\ncode"));
+    }
+
+    #[test]
+    fn no_fence_for_mid_line_tildes() {
+        assert!(!has_incomplete_code_fence("hello ~~~\ncode"));
+    }
+
+    #[test]
+    fn mid_line_fence_on_only_line_is_not_a_fence() {
+        // Single-line with mid-line run also must not toggle fence state.
+        assert!(!has_incomplete_code_fence("a ```inline fence``` b"));
     }
 
     #[test]

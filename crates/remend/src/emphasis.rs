@@ -2,9 +2,10 @@ use std::borrow::Cow;
 
 use super::ranges::CodeBlockRanges;
 use super::utils::{
-    FenceScanner, cow_append, fence_run_length, find_trailing_delimiter, is_empty_or_markers,
-    is_escaped, is_horizontal_rule, is_list_marker_line, is_within_html_tag,
-    is_within_link_or_image_url, is_within_math_block, is_word_char,
+    FenceScanner, cow_append, fence_run_length, find_trailing_delimiter,
+    for_each_byte_outside_fence, is_empty_or_markers, is_escaped, is_horizontal_rule,
+    is_list_marker_line, is_within_html_tag, is_within_link_or_image_url, is_within_math_block,
+    is_word_char,
 };
 
 // ---------------------------------------------------------------------------
@@ -73,27 +74,16 @@ pub fn count_single_asterisks(text: &str) -> usize {
     let len = bytes.len();
     let has_dollar = text.contains('$');
     let mut count = 0;
-    let mut scanner = FenceScanner::new();
-    let mut i = 0;
 
-    while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
-            i = next;
-            continue;
-        }
-        if scanner.in_code_block() {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'*' {
+    for_each_byte_outside_fence(bytes, |byte, i, _| {
+        if byte == b'*' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
             if !should_skip_asterisk(text, i, prev, next, has_dollar) {
                 count += 1;
             }
         }
-        i += 1;
-    }
+    });
     count
 }
 
@@ -137,27 +127,16 @@ pub fn count_single_underscores(text: &str) -> usize {
     let len = bytes.len();
     let has_dollar = text.contains('$');
     let mut count = 0;
-    let mut scanner = FenceScanner::new();
-    let mut i = 0;
 
-    while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
-            i = next;
-            continue;
-        }
-        if scanner.in_code_block() {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'_' {
+    for_each_byte_outside_fence(bytes, |byte, i, _| {
+        if byte == b'_' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
             if !should_skip_underscore(text, i, prev, next, has_dollar) {
                 count += 1;
             }
         }
-        i += 1;
-    }
+    });
     count
 }
 
@@ -172,9 +151,12 @@ pub fn count_triple_asterisks(text: &str) -> usize {
     let mut consecutive = 0usize;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             if consecutive >= 3 {
                 count += consecutive / 3;
             }
@@ -182,14 +164,18 @@ pub fn count_triple_asterisks(text: &str) -> usize {
             i = next;
             continue;
         }
-        // Short (<3) backtick/tilde runs: skip past without resetting `consecutive`
-        // so a streak of `***` split by a stray `` ` `` still counts.
-        if bytes[i] == b'`' || bytes[i] == b'~' {
-            i += fence_run_length(bytes, i, bytes[i]);
+        if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
+            i += 1;
             continue;
         }
-        if scanner.in_code_block() {
-            i += 1;
+        // Backtick/tilde runs that aren't line-start fences: skip past without
+        // resetting `consecutive` so a streak of `***` split by a stray `` ` ``
+        // (or a mid-line ```) still counts.
+        if bytes[i] == b'`' || bytes[i] == b'~' {
+            i += fence_run_length(bytes, i, bytes[i]);
             continue;
         }
         if bytes[i] == b'*' {
@@ -207,6 +193,9 @@ pub fn count_triple_asterisks(text: &str) -> usize {
                 count += consecutive / 3;
             }
             consecutive = 0;
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -226,13 +215,19 @@ fn count_double_markers_outside_code_blocks(text: &str, marker: u8) -> usize {
     let mut count = 0;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -240,6 +235,9 @@ fn count_double_markers_outside_code_blocks(text: &str, marker: u8) -> usize {
             count += 1;
             i += 2;
             continue;
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -371,13 +369,19 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
     let has_dollar = text.contains('$');
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -423,6 +427,9 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
 
             return Some(i);
         }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
+        }
         i += 1;
     }
     None
@@ -434,13 +441,19 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
     let has_dollar = text.contains('$');
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -479,6 +492,9 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
             }
 
             return Some(i);
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -763,10 +779,78 @@ pub(crate) fn handle_bold_italic_with_ranges<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_bold, handle_bold_italic, handle_double_underscore, handle_italic_asterisk,
-        handle_italic_underscore,
+        count_double_asterisks, count_double_underscores, count_single_asterisks,
+        count_single_underscores, count_triple_asterisks, find_first_single_asterisk_index,
+        find_first_single_underscore_index, handle_bold, handle_bold_italic,
+        handle_double_underscore, handle_italic_asterisk, handle_italic_underscore,
     };
     use std::borrow::Cow;
+
+    // Direct counter coverage (issue #50 follow-up): verify the six fence-aware
+    // emphasis helpers all treat mid-line 3+ runs as prose and honor line-start
+    // fences identically.
+
+    #[test]
+    fn single_asterisks_counted_outside_mid_line_run() {
+        // `*italic` sits after a mid-line ``` which must NOT open a fence.
+        assert_eq!(count_single_asterisks("hello ```\n*italic"), 1);
+    }
+
+    #[test]
+    fn single_asterisks_ignored_inside_fenced_block() {
+        assert_eq!(count_single_asterisks("```\n*italic\n```"), 0);
+    }
+
+    #[test]
+    fn single_underscores_counted_outside_mid_line_run() {
+        assert_eq!(count_single_underscores("hello ```\n_italic"), 1);
+    }
+
+    #[test]
+    fn single_underscores_ignored_inside_fenced_block() {
+        assert_eq!(count_single_underscores("```\n_italic\n```"), 0);
+    }
+
+    #[test]
+    fn triple_asterisks_counted_across_mid_line_run() {
+        // Mid-line ``` splits a `***` streak; run is inert, streak continues.
+        assert_eq!(count_triple_asterisks("**```*"), 1);
+    }
+
+    #[test]
+    fn triple_asterisks_ignored_inside_fenced_block() {
+        assert_eq!(count_triple_asterisks("```\n***\n```"), 0);
+    }
+
+    #[test]
+    fn double_markers_counted_outside_mid_line_run() {
+        // Mid-line ``` must not open a fence, so **bold is countable.
+        assert_eq!(count_double_asterisks("x ```\n**bold"), 1);
+        assert_eq!(count_double_underscores("x ```\n__bold"), 1);
+    }
+
+    #[test]
+    fn double_markers_ignored_inside_fenced_block() {
+        assert_eq!(count_double_asterisks("```\n**bold\n```"), 0);
+        assert_eq!(count_double_underscores("```\n__bold\n```"), 0);
+    }
+
+    #[test]
+    fn first_single_asterisk_index_skips_fenced_block() {
+        // Asterisk inside the fence is ignored; the one on the "after" line wins.
+        assert_eq!(
+            find_first_single_asterisk_index("```\n*inside\n```\n*after"),
+            Some(16),
+        );
+    }
+
+    #[test]
+    fn first_single_underscore_index_skips_fenced_block() {
+        assert_eq!(
+            find_first_single_underscore_index("```\n_inside\n```\n_after"),
+            Some(16),
+        );
+    }
 
     // Bold tests
     #[test]
