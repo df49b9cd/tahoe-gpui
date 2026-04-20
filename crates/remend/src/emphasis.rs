@@ -75,13 +75,19 @@ pub fn count_single_asterisks(text: &str) -> usize {
     let mut count = 0;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -91,6 +97,9 @@ pub fn count_single_asterisks(text: &str) -> usize {
             if !should_skip_asterisk(text, i, prev, next, has_dollar) {
                 count += 1;
             }
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -139,13 +148,19 @@ pub fn count_single_underscores(text: &str) -> usize {
     let mut count = 0;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -155,6 +170,9 @@ pub fn count_single_underscores(text: &str) -> usize {
             if !should_skip_underscore(text, i, prev, next, has_dollar) {
                 count += 1;
             }
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -172,9 +190,12 @@ pub fn count_triple_asterisks(text: &str) -> usize {
     let mut consecutive = 0usize;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             if consecutive >= 3 {
                 count += consecutive / 3;
             }
@@ -182,13 +203,17 @@ pub fn count_triple_asterisks(text: &str) -> usize {
             i = next;
             continue;
         }
-        // Short (<3) backtick/tilde runs: skip past without resetting `consecutive`
-        // so a streak of `***` split by a stray `` ` `` still counts.
+        // Backtick/tilde runs that aren't line-start fences: skip past without
+        // resetting `consecutive` so a streak of `***` split by a stray `` ` ``
+        // (or a mid-line ```) still counts.
         if bytes[i] == b'`' || bytes[i] == b'~' {
             i += fence_run_length(bytes, i, bytes[i]);
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -208,6 +233,9 @@ pub fn count_triple_asterisks(text: &str) -> usize {
             }
             consecutive = 0;
         }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
+        }
         i += 1;
     }
     if consecutive >= 3 {
@@ -226,13 +254,19 @@ fn count_double_markers_outside_code_blocks(text: &str, marker: u8) -> usize {
     let mut count = 0;
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -240,6 +274,9 @@ fn count_double_markers_outside_code_blocks(text: &str, marker: u8) -> usize {
             count += 1;
             i += 2;
             continue;
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }
@@ -371,13 +408,19 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
     let has_dollar = text.contains('$');
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -423,6 +466,9 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
 
             return Some(i);
         }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
+        }
         i += 1;
     }
     None
@@ -434,13 +480,19 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
     let has_dollar = text.contains('$');
     let mut scanner = FenceScanner::new();
     let mut i = 0;
+    let mut line_start = 0usize;
 
     while i < len {
-        if let Some(next) = scanner.consume_fence(bytes, i) {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
             i = next;
             continue;
         }
         if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
             i += 1;
             continue;
         }
@@ -479,6 +531,9 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
             }
 
             return Some(i);
+        }
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
         }
         i += 1;
     }

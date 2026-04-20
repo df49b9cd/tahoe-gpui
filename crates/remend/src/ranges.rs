@@ -1,4 +1,4 @@
-use super::utils::fence_run_length;
+use super::utils::{fence_run_length, parse_fence_at_line_start};
 
 /// Pre-computed ranges of text that are inside code blocks, inline code spans, or math blocks.
 /// Used to skip these regions in emphasis/katex handlers without redundant O(n) scans.
@@ -91,40 +91,65 @@ impl CodeBlockRanges {
         let len = bytes.len();
         let mut ranges = Vec::new();
         let mut in_code_block = false;
+        let mut opening_fence_char: u8 = 0;
         let mut opening_fence_len: usize = 0;
         let mut code_block_start: usize = 0;
         let mut in_inline_code = false;
         let mut inline_code_start: usize = 0;
+        let mut line_start: usize = 0;
+        let mut fence_on_line: Option<crate::utils::FenceHit> = None;
+        let mut fence_line_start_seen = usize::MAX;
         let mut i = 0;
 
         while i < len {
+            // Refresh the per-line fence cache when we cross a line start.
+            if line_start != fence_line_start_seen {
+                fence_on_line = parse_fence_at_line_start(bytes, line_start);
+                fence_line_start_seen = line_start;
+            }
+
+            // Toggle fence state when we reach the first fence char on a fence line.
+            if !in_inline_code
+                && let Some(hit) = fence_on_line.as_ref()
+                && i == hit.run_start
+            {
+                if !in_code_block {
+                    in_code_block = true;
+                    opening_fence_char = hit.ch;
+                    opening_fence_len = hit.len;
+                    code_block_start = hit.run_start + 1;
+                    i = hit.run_end;
+                    continue;
+                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
+                    let end = hit.run_start + 1;
+                    if code_block_start <= end {
+                        ranges.push(code_block_start..end);
+                    }
+                    in_code_block = false;
+                    opening_fence_char = 0;
+                    opening_fence_len = 0;
+                    i = hit.run_end;
+                    continue;
+                }
+                // Mismatched char or too-short closer — skip run without
+                // changing fence state.
+                i = hit.run_end;
+                continue;
+            }
+
             // Skip escaped backticks.
             if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
                 i += 2;
                 continue;
             }
 
-            // Check for backtick/tilde fence runs (3+ chars).
-            if (bytes[i] == b'`' || bytes[i] == b'~') && !in_inline_code {
-                let ch = bytes[i];
-                let run = fence_run_length(bytes, i, ch);
-                if run >= 3 {
-                    if !in_code_block {
-                        in_code_block = true;
-                        opening_fence_len = run;
-                        code_block_start = i + 1; // Position after first byte of opening fence.
-                    } else if run >= opening_fence_len {
-                        // Closing fence at i: position i is still inside, i+1 is not.
-                        let end = i + 1;
-                        if code_block_start <= end {
-                            ranges.push(code_block_start..end);
-                        }
-                        in_code_block = false;
-                        opening_fence_len = 0;
-                    }
-                    i += run;
-                    continue;
-                }
+            // Mid-line 3+ backtick/tilde runs are not fences; skip inert.
+            if !in_inline_code
+                && (bytes[i] == b'`' || bytes[i] == b'~')
+                && fence_run_length(bytes, i, bytes[i]) >= 3
+            {
+                i += fence_run_length(bytes, i, bytes[i]);
+                continue;
             }
 
             // Only check for inline code if not in multiline code.
@@ -137,6 +162,9 @@ impl CodeBlockRanges {
                     in_inline_code = true;
                     inline_code_start = i + 1; // Position after opening backtick.
                 }
+            }
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
             }
             i += 1;
         }
@@ -161,38 +189,62 @@ impl CodeBlockRanges {
         let mut ranges = Vec::new();
         let mut in_inline_code = false;
         let mut in_multiline_code = false;
+        let mut opening_fence_char: u8 = 0;
+        let mut opening_fence_len: usize = 0;
         let mut inline_code_start: usize = 0;
+        let mut line_start: usize = 0;
+        let mut fence_on_line: Option<crate::utils::FenceHit> = None;
+        let mut fence_line_start_seen = usize::MAX;
         let mut i = 0;
 
         while i < len {
-            // Skip escaped backticks.
+            if line_start != fence_line_start_seen {
+                fence_on_line = parse_fence_at_line_start(bytes, line_start);
+                fence_line_start_seen = line_start;
+            }
+
+            if !in_inline_code
+                && let Some(hit) = fence_on_line.as_ref()
+                && i == hit.run_start
+            {
+                if !in_multiline_code {
+                    in_multiline_code = true;
+                    opening_fence_char = hit.ch;
+                    opening_fence_len = hit.len;
+                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
+                    in_multiline_code = false;
+                    opening_fence_char = 0;
+                    opening_fence_len = 0;
+                }
+                i = hit.run_end;
+                continue;
+            }
+
             if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
                 i += 2;
                 continue;
             }
 
-            // Check for backtick fence runs (3+ chars).
-            if bytes[i] == b'`' {
-                let run = fence_run_length(bytes, i, b'`');
-                if run >= 3 {
-                    in_multiline_code = !in_multiline_code;
-                    i += run;
-                    continue;
-                }
+            // Mid-line 3+ backtick/tilde runs are not fences; skip inert.
+            if !in_inline_code
+                && (bytes[i] == b'`' || bytes[i] == b'~')
+                && fence_run_length(bytes, i, bytes[i]) >= 3
+            {
+                i += fence_run_length(bytes, i, bytes[i]);
+                continue;
             }
 
-            // Only check for inline code if not in multiline code.
             if !in_multiline_code && bytes[i] == b'`' {
                 if in_inline_code {
-                    // Found closing backtick -- this is a complete span.
-                    // Range is the interior (between the backticks), matching the
-                    // original `start < position && position < i` check.
                     ranges.push(inline_code_start + 1..i);
                     in_inline_code = false;
                 } else {
                     in_inline_code = true;
                     inline_code_start = i;
                 }
+            }
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
             }
             i += 1;
         }
@@ -406,6 +458,12 @@ mod tests {
             "before `inline` after `more code`",
             "```\n**bold\n```",
             "````\n```\nstill inside\n````",
+            // Issue #50: mid-line fence runs are literal text, not fences.
+            "hello ```\ncode",
+            "text ~~~ more",
+            "a ```inline fence``` b",
+            "   ```\ncode",
+            "    ```\nnot a fence",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
@@ -429,6 +487,9 @@ mod tests {
             "`a` `b` `c`",
             "```fence``` not inline",
             "\\`escaped`",
+            // Issue #50: mid-line 3+ backtick runs are inert, not inline code.
+            "hello ```\ncode",
+            "a ```run``` b",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);

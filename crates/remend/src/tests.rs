@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use proptest::prelude::*;
 
-use super::{LinkMode, RemendHandler, RemendOptions, remend};
+use super::{
+    LinkMode, RemendHandler, RemendOptions, has_incomplete_code_fence, is_inside_code_block, remend,
+};
 
 fn opts() -> RemendOptions {
     RemendOptions::default()
@@ -874,6 +876,51 @@ fn incomplete_italic_after_code_block() {
 }
 
 // ===========================================================================
+// Issue #50: mid-line fence runs must not open code blocks
+// ===========================================================================
+
+// Per CommonMark §4.5, a fenced code block opens only when 3+ backticks (or
+// tildes) appear at the start of a line with ≤3 leading spaces. A mid-line
+// run is literal text and must leave downstream emphasis counters untouched.
+
+#[test]
+fn mid_line_backtick_run_does_not_open_fence_for_italic() {
+    assert_eq!(r("hello ```\n*italic").as_ref(), "hello ```\n*italic*");
+}
+
+#[test]
+fn mid_line_tilde_run_does_not_open_fence_for_bold() {
+    // Disable strikethrough so the test isolates the fence-vs-prose decision:
+    // the `~~~` must NOT open a fenced code block, so `**bold` gets closed.
+    let opts = RemendOptions::default().strikethrough(false);
+    assert_eq!(
+        remend("text ~~~ more\n**bold", &opts).as_ref(),
+        "text ~~~ more\n**bold**"
+    );
+}
+
+#[test]
+fn indented_fence_up_to_three_spaces_still_opens() {
+    let text = "   ```\n**bold";
+    // Leading 3 spaces is a valid fence per CommonMark §4.5; bold stays inside
+    // the unclosed block and is NOT completed.
+    assert_eq!(r(text).as_ref(), text);
+}
+
+#[test]
+fn four_space_indent_is_not_a_fence_so_bold_is_completed() {
+    // 4 leading spaces = indented code block, not a fenced one. The `**bold`
+    // on the next line is prose and gets a closing `**`.
+    assert_eq!(r("    ```\n**bold").as_ref(), "    ```\n**bold**");
+}
+
+#[test]
+fn mid_line_fence_inside_same_line_as_emphasis() {
+    // Mid-line ``` between two asterisks: the markers should complete.
+    assert_eq!(r("a ``` *italic").as_ref(), "a ``` *italic*");
+}
+
+// ===========================================================================
 // Mixed formatting
 // ===========================================================================
 
@@ -1331,6 +1378,26 @@ fn markdown_soup() -> impl Strategy<Value = String> {
     prop::string::string_regex(r#"[ \n\r\t*_`~\[\]()<>{}|!#$\\/:'"a-zA-Z0-9.,-]{0,80}"#).unwrap()
 }
 
+/// Fence-rich generator: mixes prose, newlines, leading-space indents, and
+/// backtick/tilde runs of assorted lengths so line-start vs mid-line fence
+/// decisions get exercised. Used by the cross-scanner agreement proptest.
+fn fence_soup() -> impl Strategy<Value = String> {
+    prop::collection::vec(
+        prop_oneof![
+            prop::string::string_regex(r"[a-z ]{0,6}").unwrap(),
+            Just("\n".into()),
+            Just("```".into()),
+            Just("````".into()),
+            Just("~~~".into()),
+            Just("~~~~".into()),
+            Just("   ".into()),
+            Just("    ".into()),
+        ],
+        0..20,
+    )
+    .prop_map(|parts: Vec<String>| parts.concat())
+}
+
 #[derive(Debug, Clone)]
 struct OptionFlags {
     bold: bool,
@@ -1617,6 +1684,31 @@ proptest! {
         prop_assert!(
             !result.ends_with(' '),
             "single trailing space should be stripped; got {result:?}",
+        );
+    }
+
+    // Issue #50 regression guard: `has_incomplete_code_fence` and
+    // `is_inside_code_block` both drive fence detection and must agree on
+    // fence openness, or streaming emphasis gets silently swallowed.
+    // Restrict to backtick-free inputs so the `in_inline_code` branch of
+    // `is_inside_code_block` never fires — any divergence is then purely
+    // fence-state divergence.
+    #[test]
+    fn fuzz_fence_scanners_agree_without_single_backticks(
+        s in fence_soup().prop_filter(
+            "no single backticks — keeps in_inline_code out of the invariant",
+            |s| !s.chars().any(|c| c == '`')
+                || s.as_bytes().windows(3).any(|w| w == b"```"),
+        ),
+    ) {
+        // Any backtick that remains is part of a 3+ run (fence-only).
+        let has_open = has_incomplete_code_fence(&s);
+        let ends_inside = is_inside_code_block(&s, s.len());
+        prop_assert_eq!(
+            has_open,
+            ends_inside,
+            "fence-open divergence on {:?}",
+            s,
         );
     }
 

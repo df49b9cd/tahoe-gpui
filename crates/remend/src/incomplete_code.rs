@@ -2,80 +2,33 @@
 //!
 //! Ported from Streamdown's `incomplete-code-utils.ts`.
 
+use crate::utils::parse_fence_at_line_start;
+
 /// Returns `true` if the markdown text has an unclosed code fence.
 ///
-/// Walks line-by-line per CommonMark spec: a closing fence must use the same
+/// Walks line-by-line per CommonMark §4.5: a closing fence must use the same
 /// character and be at least as long as the opening fence.
 pub fn has_incomplete_code_fence(markdown: &str) -> bool {
     let mut open_fence_char: Option<u8> = None;
     let mut open_fence_length: usize = 0;
 
     for line in markdown.split('\n') {
-        if let Some(fence) = parse_code_fence(line) {
+        if let Some(hit) = parse_fence_at_line_start(line.as_bytes(), 0) {
             if let Some(open_char) = open_fence_char {
                 // We're inside a fence — check if this closes it.
-                if fence.char == open_char && fence.len >= open_fence_length {
+                if hit.ch == open_char && hit.len >= open_fence_length {
                     open_fence_char = None;
                     open_fence_length = 0;
                 }
             } else {
                 // Not inside a fence — this opens one.
-                open_fence_char = Some(fence.char);
-                open_fence_length = fence.len;
+                open_fence_char = Some(hit.ch);
+                open_fence_length = hit.len;
             }
         }
     }
 
     open_fence_char.is_some()
-}
-
-struct FenceInfo {
-    char: u8,
-    len: usize,
-}
-
-/// Parses a code fence from a line: up to 3 leading spaces, then 3+ backticks or tildes.
-fn parse_code_fence(line: &str) -> Option<FenceInfo> {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    // Skip up to 3 leading spaces/tabs.
-    let mut leading_spaces = 0;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        if bytes[i] == b' ' {
-            leading_spaces += 1;
-        } else {
-            leading_spaces += 4; // tab counts as 4
-        }
-        if leading_spaces > 3 {
-            return None;
-        }
-        i += 1;
-    }
-
-    if i >= bytes.len() {
-        return None;
-    }
-
-    let fence_char = bytes[i];
-    if fence_char != b'`' && fence_char != b'~' {
-        return None;
-    }
-
-    let mut fence_len = 0;
-    while i < bytes.len() && bytes[i] == fence_char {
-        fence_len += 1;
-        i += 1;
-    }
-
-    if fence_len >= 3 {
-        Some(FenceInfo {
-            char: fence_char,
-            len: fence_len,
-        })
-    } else {
-        None
-    }
 }
 
 /// Returns `true` if the markdown text contains a table delimiter row.
