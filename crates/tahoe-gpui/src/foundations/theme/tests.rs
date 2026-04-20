@@ -171,13 +171,13 @@ fn all_themes_have_glass_tokens() {
 
 #[test]
 fn glass_bg_is_semi_transparent() {
-    // Dark small_bg is fully opaque (Figma-accurate composite of 3 fills),
-    // but medium and large use container opacity < 1.0 — the glass achieves
-    // translucency through the window blur, not necessarily the fill alpha.
+    // Every primary glass fill must be translucent: the window-level
+    // NSVisualEffectView blur can only show through fractional-alpha fills.
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(
-        glass.small_bg.a > 0.0,
-        "small_bg should have non-zero alpha"
+        glass.small_bg.a > 0.0 && glass.small_bg.a < 1.0,
+        "small_bg should be semi-transparent, got {}",
+        glass.small_bg.a
     );
     assert!(
         glass.medium_bg.a > 0.0 && glass.medium_bg.a < 1.0,
@@ -625,6 +625,18 @@ fn liquid_glass_light_window_is_blurred() {
 fn liquid_glass_light_root_bg_semi_transparent() {
     let glass = TahoeTheme::liquid_glass_light().glass;
     assert!(glass.root_bg.a > 0.0 && glass.root_bg.a < 1.0);
+}
+
+#[test]
+fn liquid_glass_light_small_bg_semi_transparent() {
+    // Regression for #62: light-mode small_bg must have fractional alpha so
+    // the window-level NSVisualEffectView blur shows through.
+    let glass = TahoeTheme::liquid_glass_light().glass;
+    assert!(
+        glass.small_bg.a > 0.0 && glass.small_bg.a < 1.0,
+        "light small_bg should be semi-transparent, got {}",
+        glass.small_bg.a
+    );
 }
 
 #[test]

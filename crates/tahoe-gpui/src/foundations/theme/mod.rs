@@ -750,7 +750,7 @@ impl TahoeTheme {
         //   Large:  #CCCCCC@100% + #000000@85% + #FFFFFF@3% with 67% container opacity
         //
         // Light:
-        //   Small:  #F7F7F7 + #FFFFFF@50% + #333333 → near-white, opaque
+        //   Small:  #F7F7F7 + #FFFFFF@50% + #333333 → near-white, translucent (α ≈ 0.85)
         //   Medium: #F5F5F5@67% + #262626 → translucent white (backdrop blur)
         //   Large:  #FAFAFA@80% + #262626
         // Clear-variant fills differ by size per Adopting Liquid Glass:
@@ -767,7 +767,7 @@ impl TahoeTheme {
             )
         } else {
             (
-                hsla(0.0, 0.0, 0.969, 1.0),
+                hsla(0.0, 0.0, 0.969, 0.85),
                 hsla(0.0, 0.0, 0.961, 0.67),
                 hsla(0.0, 0.0, 0.98, 0.80),
                 hsla(0.0, 0.0, 0.0, 0.04),
