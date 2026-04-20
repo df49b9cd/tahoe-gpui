@@ -6,6 +6,7 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 use tree_sitter::QueryError;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
@@ -34,30 +35,30 @@ struct HighlightCacheKey {
     content_hash: u64,
 }
 
-type HighlightCache = FxHashMap<HighlightCacheKey, Arc<Vec<HighlightedSpan>>>;
+struct Timed<T> {
+    value: T,
+    last_used: Instant,
+}
+
+type HighlightCache = FxHashMap<HighlightCacheKey, Timed<Arc<Vec<HighlightedSpan>>>>;
 
 fn highlight_cache() -> &'static Mutex<HighlightCache> {
     static CACHE: OnceLock<Mutex<HighlightCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(FxHashMap::default()))
 }
 
-/// Upper bound on cached highlight results. When exceeded the cache is
-/// cleared wholesale; tree-sitter re-parse after eviction is cheap enough
-/// (single-digit ms for the code sizes we serve) that a true LRU would
-/// add complexity without a matching win.
+/// Upper bound on cached highlight results. When exceeded, the oldest
+/// half of entries (by last-access time) are evicted so recently-used
+/// entries survive. Cache hits refresh the timestamp, giving LRU-like
+/// behavior without a dedicated LRU data structure.
 const HIGHLIGHT_CACHE_CAP: usize = 256;
 
 fn cap_highlight_cache(cache: &mut HighlightCache) {
     if cache.len() >= HIGHLIGHT_CACHE_CAP {
-        // Evict half the oldest entries (by HashMap iteration order, which is
-        // random but stable within a run) rather than clearing the whole cache.
-        // This avoids the thundering-herd of re-parsing everything at once.
-        let evict: Vec<HighlightCacheKey> = cache
-            .keys()
-            .take(HIGHLIGHT_CACHE_CAP / 2)
-            .copied()
-            .collect();
-        for key in evict {
+        let mut timed_keys: Vec<(HighlightCacheKey, Instant)> =
+            cache.iter().map(|(k, v)| (*k, v.last_used)).collect();
+        timed_keys.sort_by_key(|(_, t)| *t);
+        for (key, _) in timed_keys.into_iter().take(HIGHLIGHT_CACHE_CAP / 2) {
             cache.remove(&key);
         }
     }
@@ -77,16 +78,23 @@ pub fn cached_highlight_code(code: &str, language: &str) -> Arc<Vec<HighlightedS
         language_hash: fnv_hash(language),
         content_hash: fnv_hash(code),
     };
-    if let Ok(guard) = highlight_cache().lock()
-        && let Some(hit) = guard.get(&key)
+    if let Ok(mut guard) = highlight_cache().lock()
+        && let Some(timed) = guard.get_mut(&key)
     {
-        return hit.clone();
+        timed.last_used = Instant::now();
+        return timed.value.clone();
     }
 
     let spans = Arc::new(highlight_code_uncached(code, language));
     if let Ok(mut guard) = highlight_cache().lock() {
         cap_highlight_cache(&mut guard);
-        guard.insert(key, spans.clone());
+        guard.insert(
+            key,
+            Timed {
+                value: spans.clone(),
+                last_used: Instant::now(),
+            },
+        );
     }
     spans
 }
