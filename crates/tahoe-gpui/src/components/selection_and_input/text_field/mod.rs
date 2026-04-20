@@ -764,7 +764,7 @@ impl TextField {
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = prev_content;
         let start = self.clamp_to_grapheme(prev_range.start);
-        let end = self.clamp_to_grapheme(prev_range.end);
+        let end = self.clamp_to_grapheme_forward(prev_range.end);
         self.selected_range = start..end.max(start);
         self.marked_range = None;
         cx.notify();
@@ -784,7 +784,7 @@ impl TextField {
             .push_back((self.content.clone(), self.selected_range.clone()));
         self.content = next_content;
         let start = self.clamp_to_grapheme(next_range.start);
-        let end = self.clamp_to_grapheme(next_range.end);
+        let end = self.clamp_to_grapheme_forward(next_range.end);
         self.selected_range = start..end.max(start);
         self.marked_range = None;
         cx.notify();
@@ -1937,6 +1937,33 @@ mod interaction_tests {
                 field.selected_range,
                 2..2,
                 "undo must snap clamped range to grapheme boundary"
+            );
+        });
+
+        // Redo should also snap mid-grapheme ranges. The redo stack now
+        // holds the snapshot we just stepped out of ("a👨‍👩‍👧b", 19..19).
+        // After redo restores the longer content, 19..19 is valid again —
+        // so verify redo at least doesn't panic. To exercise the mid-grapheme
+        // path for redo, we fabricate a redo snapshot with an invalid range.
+        field.update_in(cx, |field, _window, _cx| {
+            // "e\u{0301}" = e + combining acute = 3 bytes, 1 grapheme.
+            // Byte 1 is a valid char boundary but mid-grapheme (between 'e'
+            // and the combining mark).
+            field
+                .redo_stack
+                .push_back((gpui::SharedString::from("e\u{0301}"), 1..1));
+        });
+
+        field.update_in(cx, |field, window, cx| {
+            field.handle_redo(&crate::text_actions::Redo, window, cx);
+            assert_eq!(field.text(), "e\u{0301}");
+            // start=1 is mid-grapheme. clamp_to_grapheme snaps back to 0;
+            // clamp_to_grapheme_forward on end=1 snaps ahead to 3 (full
+            // grapheme length). end.max(start) = 3.
+            assert_eq!(
+                field.selected_range,
+                0..3,
+                "redo must snap clamped range to grapheme boundaries"
             );
         });
     }
