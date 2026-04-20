@@ -750,12 +750,14 @@ impl Render for ContextMenu {
         let expanded = self.expanded_submenu;
         let top_items = self.items.as_slice() as *const [ContextMenuEntry];
 
-        // SAFETY: `render_rows` takes `&[ContextMenuEntry]` and an `&mut
-        // Context<ContextMenu>`. We never mutate `self.items` inside the
-        // listener callbacks registered by `render_rows`; the listener
-        // mutates unrelated fields (`expanded_submenu`, `selection_path`).
-        // The raw-pointer borrow avoids the compiler conservatively
-        // rejecting the simultaneous `&self.items` + `&mut cx` loans.
+        // SAFETY: GPUI listener callbacks (`cx.listener`) are dispatched on a
+        // subsequent event-loop turn — after `render()` has returned and the
+        // `&[ContextMenuEntry]` reference is no longer live. The raw pointer
+        // is cast to a reference only for the synchronous duration of this
+        // `render` call, so no aliasing mutation occurs while it is held.
+        // The raw-pointer indirection is needed because the borrow checker
+        // conservatively rejects the simultaneous `&self.items` + `&mut cx`
+        // loans, even though the reference is dropped before `cx` is used.
         let top_children = render_rows(
             unsafe { &*top_items },
             &style_tokens,
@@ -792,14 +794,12 @@ impl Render for ContextMenu {
                     _ => None,
                 };
             nested_items_ptr.map(|items_ptr| {
-                // SAFETY: `items_ptr` was produced from
-                // `self.items.get(parent_idx).items.as_slice()` in the same
-                // stack frame, so the backing buffer is alive for the full
-                // duration of this `render_rows` call. Nothing inside the
-                // rendered listeners mutates `self.items`; they only touch
-                // `expanded_submenu` / `selection_path`, so there is no
-                // aliased mutable borrow. Identical reasoning to the
-                // top-level `top_items` unsafe block above.
+                // SAFETY: Same rationale as the top-level `top_items` block
+                // above. `items_ptr` was produced from `self.items` in this
+                // stack frame, and GPUI listeners are dispatched on a later
+                // event-loop turn — after `render()` returns and this
+                // reference is dropped — so no aliasing mutation occurs
+                // during the synchronous `render_rows` call.
                 let rows = render_rows(
                     unsafe { &*items_ptr },
                     &style_tokens,
