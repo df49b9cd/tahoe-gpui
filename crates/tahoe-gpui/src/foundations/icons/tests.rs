@@ -537,6 +537,23 @@ fn default_icon_resolves_to_theme_icon_size() {
     assert_eq!(icon.resolved_render_size(px(18.0)), px(18.0));
 }
 
+/// Integration: the match_text_style branch of `resolved_render_size`
+/// delegates to `IconScale::size_for_text_style`, ignoring the theme's
+/// fixed icon_size. Pins the middle branch of the helper so a future
+/// refactor can't accidentally drop the text-style path.
+#[test]
+fn match_text_style_path_applies_scale() {
+    use crate::foundations::typography::TextStyle;
+    use gpui::px;
+    let icon = Icon::new(IconName::Check)
+        .match_text_style(TextStyle::Body)
+        .scale(IconScale::Large);
+    assert_eq!(
+        icon.resolved_render_size(px(99.0)),
+        IconScale::Large.size_for_text_style(TextStyle::Body),
+    );
+}
+
 // ─── IconStyle::Auto surface-scope resolution (issue #13) ─────────────────
 
 /// Outside a [`GlassSurfaceGuard`], `IconStyle::Auto` resolves to

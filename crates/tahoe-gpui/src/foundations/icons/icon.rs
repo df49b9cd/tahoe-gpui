@@ -275,9 +275,10 @@ impl Icon {
     }
 
     /// Configure the icon to track the cap height of an adjacent text
-    /// style. Overrides any explicit `size()` unless `size()` is called
-    /// afterwards. HIG: "symbols match the weight of adjacent text when
-    /// using the system font."
+    /// style. When combined with an explicit [`Self::size`], the explicit
+    /// pixel size wins regardless of builder call order — `match_text_style`
+    /// only contributes when no explicit size is set. HIG: "symbols match
+    /// the weight of adjacent text when using the system font."
     pub fn match_text_style(mut self, text_style: TextStyle) -> Self {
         self.match_text_style = Some(text_style);
         self
@@ -333,7 +334,13 @@ impl Icon {
     ///   1. explicit `.size(px)` — returned as-is, scale does not apply.
     ///   2. `.match_text_style(ts)` — cap-height-relative × scale.
     ///   3. theme `icon_size` × scale multiplier.
-    pub(crate) fn resolved_render_size(&self, theme_icon_size: Pixels) -> Pixels {
+    ///
+    /// Intended for consumers that need to introspect the computed
+    /// render size (tests, custom layout code that reserves space around
+    /// icons, host apps that render via a non-GPUI pipeline). Mirrors
+    /// [`Self::resolved_stroke_width`]; the two together expose the
+    /// full geometry the render path uses.
+    pub fn resolved_render_size(&self, theme_icon_size: Pixels) -> Pixels {
         let scale = self.scale.unwrap_or_default();
         if let Some(explicit) = self.size {
             explicit
