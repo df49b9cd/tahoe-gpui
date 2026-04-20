@@ -493,8 +493,8 @@ impl FontDesign {
 /// This makes it easy for components to adopt the HIG type scale:
 /// ```ignore
 /// use crate::foundations::theme::{FontDesign, TextStyledExt};
-/// div().text_style(TextStyle::Body, theme); // size, weight, line_height, SF Pro
-/// div().text_style_with_design(TextStyle::Body, FontDesign::Monospaced, theme); // SF Mono
+/// div().text_style(TextStyle::Body, theme); // size, weight, line_height
+/// div().text_style_with_design(TextStyle::Body, FontDesign::Monospaced, theme); // + SF Mono
 /// ```
 ///
 /// The `theme` parameter is required so that `effective_weight()` is applied,
@@ -503,60 +503,64 @@ impl FontDesign {
 /// host can drive from macOS System Settings → Accessibility → Display →
 /// Text Size so user preferences flow through the type scale.
 ///
-/// The font family is applied before any caller-chained `.font_family(...)`,
-/// so chaining a custom family after `text_style*` still wins (GPUI is
-/// last-writer-wins). If you need a non-default [`FontDesign`], prefer the
-/// `_with_design` methods over a post-hoc `.font_family(...)` so the intent
-/// stays explicit.
+/// [`text_style`](Self::text_style) and [`text_style_emphasized`](Self::text_style_emphasized)
+/// leave the element's `font_family` untouched so the parent's cascade wins. Use the
+/// `_with_design` variants to set it explicitly.
 pub trait TextStyledExt: Styled {
-    /// Applies the text style's size, weight, line height, and SF Pro family.
+    /// Applies the text style's size, weight, and line height. Leaves `font_family`
+    /// alone so the caller's cascade (parent element or an explicit chained
+    /// `.font_family(...)`) wins.
     /// Weight is routed through `theme.effective_weight()` for BoldText accessibility.
     /// Size and leading are multiplied by `theme.font_scale_factor`.
     fn text_style(self, style: TextStyle, theme: &TahoeTheme) -> Self {
-        apply_text_style_attrs(self, style.attrs(), FontDesign::Default, theme)
+        apply_text_style_attrs(self, style.attrs(), theme)
     }
 
-    /// Applies the text style with the emphasized (HIG) weight and SF Pro family.
+    /// Applies the text style with the emphasized (HIG) weight. Leaves `font_family`
+    /// alone — see [`text_style`](Self::text_style) for cascade semantics.
     /// Weight is routed through `theme.effective_weight()` for BoldText accessibility.
     /// Size and leading are multiplied by `theme.font_scale_factor`.
     fn text_style_emphasized(self, style: TextStyle, theme: &TahoeTheme) -> Self {
-        apply_text_style_attrs(self, style.emphasized(), FontDesign::Default, theme)
+        apply_text_style_attrs(self, style.emphasized(), theme)
     }
 
-    /// Like [`text_style`](Self::text_style) but with an explicit [`FontDesign`]
-    /// (e.g. `FontDesign::Monospaced` for SF Mono).
+    /// Like [`text_style`](Self::text_style) but also sets the font family from
+    /// the given [`FontDesign`] (e.g. `FontDesign::Monospaced` for SF Mono).
     fn text_style_with_design(
         self,
         style: TextStyle,
         design: FontDesign,
         theme: &TahoeTheme,
     ) -> Self {
-        apply_text_style_attrs(self, style.attrs(), design, theme)
+        apply_text_style_attrs_with_design(self, style.attrs(), design, theme)
     }
 
-    /// Like [`text_style_emphasized`](Self::text_style_emphasized) but with an
-    /// explicit [`FontDesign`].
+    /// Like [`text_style_emphasized`](Self::text_style_emphasized) but also sets
+    /// the font family from the given [`FontDesign`].
     fn text_style_emphasized_with_design(
         self,
         style: TextStyle,
         design: FontDesign,
         theme: &TahoeTheme,
     ) -> Self {
-        apply_text_style_attrs(self, style.emphasized(), design, theme)
+        apply_text_style_attrs_with_design(self, style.emphasized(), design, theme)
     }
 }
 
-fn apply_text_style_attrs<E: Styled>(
+fn apply_text_style_attrs<E: Styled>(el: E, attrs: TextStyleAttrs, theme: &TahoeTheme) -> E {
+    let scale = theme.font_scale_factor.max(0.0);
+    el.text_size(px(f32::from(attrs.size) * scale))
+        .font_weight(theme.effective_weight(attrs.weight))
+        .line_height(px(f32::from(attrs.leading) * scale))
+}
+
+fn apply_text_style_attrs_with_design<E: Styled>(
     el: E,
     attrs: TextStyleAttrs,
     design: FontDesign,
     theme: &TahoeTheme,
 ) -> E {
-    let scale = theme.font_scale_factor.max(0.0);
-    el.text_size(px(f32::from(attrs.size) * scale))
-        .font_weight(theme.effective_weight(attrs.weight))
-        .line_height(px(f32::from(attrs.leading) * scale))
-        .font_family(design.font_family())
+    apply_text_style_attrs(el, attrs, theme).font_family(design.font_family())
 }
 
 impl<E: Styled> TextStyledExt for E {}
