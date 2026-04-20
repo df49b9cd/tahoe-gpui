@@ -1364,6 +1364,19 @@ fn macos_tracking_large_sizes_approach_zero() {
 }
 
 #[test]
+fn macos_tracking_extreme_sizes_do_not_overflow() {
+    // Regression for #46: `u32::MAX as f32` rounds up to 2^32, so the previous
+    // clamp allowed the `as u32` cast to overflow. Any finite input must
+    // short-circuit safely to the `_ => 0.0` arm without panicking.
+    assert_eq!(macos_tracking(f32::MAX), 0.0);
+    assert_eq!(macos_tracking(u32::MAX as f32), 0.0);
+    assert_eq!(macos_tracking(1.0e30), 0.0);
+    assert_eq!(macos_tracking(f32::INFINITY), 0.0);
+    assert_eq!(macos_tracking(f32::NAN), 0.0);
+    assert_eq!(macos_tracking(-1.0e30), 0.0);
+}
+
+#[test]
 fn font_design_families() {
     assert_eq!(FontDesign::Default.font_family(), ".AppleSystemUIFont");
     assert_eq!(FontDesign::Serif.font_family(), "New York");
