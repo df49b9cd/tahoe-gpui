@@ -19,6 +19,7 @@ mod gallery {
     pub mod boxes;
     pub mod button_groups;
     pub mod buttons;
+    pub mod checkboxes;
     pub mod collections;
     pub mod color_wells;
     pub mod colors;
@@ -173,6 +174,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Buttons",
         render: gallery::buttons::render,
+    },
+    Demo {
+        label: "Checkboxes",
+        render: gallery::checkboxes::render,
     },
     Demo {
         label: "Collections",
@@ -407,6 +412,7 @@ pub struct ComponentGallery {
 
     // ── Interactive state for gallery pages ──────────────────────────────
     pub toggle_on: bool,
+    pub checkbox_state: tahoe_gpui::components::selection_and_input::checkbox::CheckboxState,
     pub stepper_value: f64,
     pub picker_selected: Option<SharedString>,
     pub picker_open: bool,
@@ -500,6 +506,8 @@ impl ComponentGallery {
             }),
             // Interactive state for gallery pages
             toggle_on: false,
+            checkbox_state:
+                tahoe_gpui::components::selection_and_input::checkbox::CheckboxState::Unchecked,
             stepper_value: 5.0,
             picker_selected: Some(SharedString::from("cherry")),
             picker_open: false,

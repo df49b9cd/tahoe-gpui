@@ -180,7 +180,17 @@ impl RenderOnce for Toggle {
         // surfaces for the active/selected state or outer containers, so
         // the inert off-state must read as a plain system fill.
         let off_track = theme.semantic.tertiary_system_fill;
-        let track_bg = if self.checked { on_tint } else { off_track };
+        // HIG: disabled state uses a fixed muted neutral fill rather than
+        // proportional opacity — opacity(0.5) can fail WCAG 4.5:1 on low-
+        // contrast variants. Same rationale as `button.rs` disabled branch.
+        // The on/off distinction remains legible via thumb position.
+        let track_bg = if self.disabled {
+            theme.semantic.secondary_system_fill
+        } else if self.checked {
+            on_tint
+        } else {
+            off_track
+        };
 
         // `leading_offset` is the thumb's distance from the track's *leading*
         // edge. In LTR that is the left edge; in RTL the right edge. The
@@ -249,9 +259,12 @@ impl RenderOnce for Toggle {
 
         // Border: off-state uses a visible hairline; on-state uses a
         // transparent border of the same thickness so the thumb doesn't
-        // shift by 1pt between states.
+        // shift by 1pt between states. Disabled overrides both with a muted
+        // hairline so the control reads as inert in either on/off state.
         track_visual = track_visual.border_1();
-        if self.checked {
+        if self.disabled {
+            track_visual = track_visual.border_color(theme.text_disabled());
+        } else if self.checked {
             track_visual = track_visual.border_color(gpui::transparent_black());
         } else {
             track_visual = track_visual.border_color(theme.border);
@@ -283,7 +296,7 @@ impl RenderOnce for Toggle {
         track = apply_focus_ring(track, theme, focused, &[]);
 
         if self.disabled {
-            track = track.opacity(0.5);
+            track = track.cursor_default();
         } else if let Some(handler) = self.on_change {
             let handler = std::rc::Rc::new(handler);
             let click_handler = handler.clone();

@@ -171,18 +171,28 @@ impl RenderOnce for Checkbox {
             .map(|h| h.is_focused(window))
             .unwrap_or(false);
 
-        let bg = if filled {
-            theme.accent
+        // HIG: disabled state uses fixed muted tokens rather than proportional
+        // opacity — opacity(0.5) can fail WCAG 4.5:1 on low-contrast variants.
+        // Same rationale as `button.rs` disabled branch.
+        let (bg, border, glyph_color, label_color) = if self.disabled {
+            let muted = theme.text_disabled();
+            (theme.semantic.secondary_system_fill, muted, muted, muted)
+        } else if filled {
+            (theme.accent, theme.accent, theme.text_on_accent, theme.text)
         } else {
-            theme.semantic.secondary_system_fill
+            (
+                theme.semantic.secondary_system_fill,
+                theme.border,
+                theme.text_on_accent,
+                theme.text,
+            )
         };
-        let border = if filled { theme.accent } else { theme.border };
 
         let glyph: Option<gpui::AnyElement> = match self.state {
             CheckboxState::Checked => Some(
                 Icon::new(IconName::Check)
                     .size(px(10.0))
-                    .color(theme.text_on_accent)
+                    .color(glyph_color)
                     .into_any_element(),
             ),
             CheckboxState::Mixed => Some(
@@ -191,7 +201,7 @@ impl RenderOnce for Checkbox {
                     .w(px(6.0))
                     .h(px(2.0))
                     .rounded(px(1.0))
-                    .bg(theme.text_on_accent)
+                    .bg(glyph_color)
                     .into_any_element(),
             ),
             CheckboxState::Unchecked => None,
@@ -231,7 +241,7 @@ impl RenderOnce for Checkbox {
             row = row.child(
                 div()
                     .text_style(TextStyle::Body, theme)
-                    .text_color(theme.text)
+                    .text_color(label_color)
                     .child(label_text),
             );
         }
@@ -243,7 +253,7 @@ impl RenderOnce for Checkbox {
         row = apply_focus_ring(row, theme, focused, &[]);
 
         if self.disabled {
-            row = row.opacity(0.5);
+            row = row.cursor_default();
         } else if let Some(handler) = self.on_change {
             let handler = std::rc::Rc::new(handler);
             let click = handler.clone();
