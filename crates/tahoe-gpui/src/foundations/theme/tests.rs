@@ -337,6 +337,9 @@ fn with_accent_color_propagates_to_derived_tokens() {
     // Non-accent fields stay put.
     assert_eq!(purple.background, base.background);
     assert_eq!(purple.text, base.text);
+    // Light mode exercises the other arm of the appearance-conditional alpha (0.18).
+    let light_purple = TahoeTheme::light().with_accent_color(AccentColor::Purple);
+    assert!((light_purple.selected_bg.a - 0.18).abs() < f32::EPSILON);
 }
 
 #[test]

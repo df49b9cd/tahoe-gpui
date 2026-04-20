@@ -424,13 +424,8 @@ impl TahoeTheme {
             // Tinted accent fill for selected rows. Mirrors Finder's
             // `selectedContentBackgroundColor` when the window is key: a
             // low-alpha accent tint that stays legible against both the
-            // default and high-contrast appearances. Dark mode gets a
-            // slightly higher alpha so the fill remains visible against
-            // the darker background.
-            selected_bg: Hsla {
-                a: if is_dark { 0.28 } else { 0.18 },
-                ..accent
-            },
+            // default and high-contrast appearances.
+            selected_bg: Self::selected_bg_for(accent, is_dark),
             text_on_accent: text_colors.text_on_accent,
             overlay_bg: if is_dark {
                 hsla(0.0, 0.0, 0.0, 0.5)
@@ -550,6 +545,18 @@ impl TahoeTheme {
             // ring with a 3pt breathing gap to the element edge.
             focus_ring_width: px(3.0),
             focus_ring_offset: px(3.0),
+        }
+    }
+
+    /// Tinted accent fill for selected rows. Dark mode uses a
+    /// slightly higher alpha so the fill stays visible against the
+    /// darker background. Shared between the primary constructor and
+    /// [`TahoeTheme::with_accent_color`] so a runtime accent swap
+    /// cannot drift from the initial derivation.
+    fn selected_bg_for(accent: Hsla, is_dark: bool) -> Hsla {
+        Hsla {
+            a: if is_dark { 0.28 } else { 0.18 },
+            ..accent
         }
     }
 
@@ -1537,7 +1544,6 @@ impl TahoeTheme {
     /// (green / red), not accent-keyed, so they intentionally stay put.
     pub fn with_accent_color(mut self, accent: AccentColor) -> Self {
         let resolved = accent.resolve(&self.palette);
-        let is_dark = self.appearance.is_dark();
         self.accent_color = accent;
         self.accent = resolved;
         self.ring = resolved;
@@ -1547,10 +1553,7 @@ impl TahoeTheme {
             bg: resolved,
             bg_hover: crate::foundations::color::lighten(resolved, 0.08),
         };
-        self.selected_bg = Hsla {
-            a: if is_dark { 0.28 } else { 0.18 },
-            ..resolved
-        };
+        self.selected_bg = Self::selected_bg_for(resolved, self.appearance.is_dark());
         self
     }
 }
