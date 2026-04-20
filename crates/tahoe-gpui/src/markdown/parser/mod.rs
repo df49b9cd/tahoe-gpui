@@ -1,6 +1,7 @@
 //! Incremental markdown parser that accumulates deltas.
 
 mod citations;
+mod slug;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -9,6 +10,7 @@ use citations::split_citations;
 pub use types::{InlineContent, MarkdownBlock, TableAlignment};
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Incremental markdown parser that accumulates text deltas and produces blocks.
@@ -145,7 +147,8 @@ impl IncrementalMarkdownParser {
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_TASKLISTS
             | Options::ENABLE_MATH
-            | Options::ENABLE_FOOTNOTES;
+            | Options::ENABLE_FOOTNOTES
+            | Options::ENABLE_HEADING_ATTRIBUTES;
 
         // Apply remend preprocessing if enabled and still streaming.
         let preprocessed: std::borrow::Cow<'_, str> = if self.is_streaming {
@@ -176,6 +179,8 @@ impl IncrementalMarkdownParser {
             }
         }
 
+        dedupe_heading_anchors(&mut blocks);
+
         self.cached_blocks = Rc::new(blocks);
         Rc::clone(&self.cached_blocks)
     }
@@ -203,14 +208,22 @@ impl IncrementalMarkdownParser {
                 let (inlines, end) = self.collect_inlines(events, start + 1, TagEnd::Paragraph);
                 (Some(MarkdownBlock::Paragraph(inlines)), end)
             }
-            Event::Start(Tag::Heading { level, .. }) => {
+            Event::Start(Tag::Heading { level, id, .. }) => {
                 let level_num = *level as u8;
                 let end_tag = TagEnd::Heading(*level);
                 let (inlines, end) = self.collect_inlines(events, start + 1, end_tag);
+                let explicit = id.as_ref().map(|s| s.as_ref()).unwrap_or("").trim();
+                let anchor_id = if !explicit.is_empty() {
+                    Some(explicit.to_string())
+                } else {
+                    let slug = slug::slugify(&inline_plain_text(&inlines));
+                    if slug.is_empty() { None } else { Some(slug) }
+                };
                 (
                     Some(MarkdownBlock::Heading {
                         level: level_num,
                         content: inlines,
+                        anchor_id,
                     }),
                     end,
                 )
@@ -514,5 +527,66 @@ impl IncrementalMarkdownParser {
 impl Default for IncrementalMarkdownParser {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Flatten inline content to plain text for slug computation. Concatenates
+/// text runs, recurses through nesting (bold/italic/strikethrough/link),
+/// maps line breaks to a single space, and drops non-textual inlines
+/// (images, math, citations, task markers) so the resulting slug reflects
+/// only what a reader would speak aloud.
+fn inline_plain_text(inlines: &[InlineContent]) -> String {
+    fn walk(inlines: &[InlineContent], out: &mut String) {
+        for inline in inlines {
+            match inline {
+                InlineContent::Text(t) => out.push_str(t),
+                InlineContent::Code(c) => out.push_str(c),
+                InlineContent::Bold(inner)
+                | InlineContent::Italic(inner)
+                | InlineContent::Strikethrough(inner) => walk(inner, out),
+                InlineContent::Link { content, .. } => walk(content, out),
+                InlineContent::SoftBreak | InlineContent::HardBreak => out.push(' '),
+                InlineContent::Citation(_)
+                | InlineContent::Image { .. }
+                | InlineContent::InlineMath(_)
+                | InlineContent::TaskMarker(_) => {}
+            }
+        }
+    }
+    let mut out = String::new();
+    walk(inlines, &mut out);
+    out
+}
+
+/// Append `-2`, `-3`, … to duplicate heading anchors so each slug is unique
+/// within the document (matches GitHub's anchor-generation rules). Skips
+/// any numeric suffix that is already taken by an explicit id or a prior
+/// generated one so explicit and generated ids never collide.
+fn dedupe_heading_anchors(blocks: &mut [MarkdownBlock]) {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    for block in blocks.iter_mut() {
+        if let MarkdownBlock::Heading {
+            anchor_id: Some(id),
+            ..
+        } = block
+        {
+            if !seen.contains_key(id.as_str()) {
+                seen.insert(id.clone(), 1);
+                continue;
+            }
+            let base = id.clone();
+            let start = seen.get(&base).copied().unwrap_or(1) + 1;
+            let mut n = start;
+            let unique = loop {
+                let candidate = format!("{base}-{n}");
+                if !seen.contains_key(&candidate) {
+                    break candidate;
+                }
+                n += 1;
+            };
+            seen.insert(base, n);
+            seen.insert(unique.clone(), 1);
+            *id = unique;
+        }
     }
 }

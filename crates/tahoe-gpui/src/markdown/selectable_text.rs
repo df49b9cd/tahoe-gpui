@@ -48,6 +48,11 @@ use gpui::{
 
 use super::selection::MarkdownSelection;
 
+/// Handler for in-document `#fragment` link clicks. Mirrors
+/// [`crate::markdown::renderer::AnchorClickHandler`]; redeclared locally
+/// so this module does not need to import the renderer.
+pub type AnchorClickHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
+
 /// A [`StyledText`] wrapper that participates in a shared
 /// [`MarkdownSelection`]. See the module docs for gestures and
 /// cross-paragraph semantics.
@@ -59,6 +64,7 @@ pub struct SelectableText {
     link_urls: Vec<SharedString>,
     selection_bg: Hsla,
     selection: MarkdownSelection,
+    anchor_click: Option<AnchorClickHandler>,
 }
 
 /// Per-element state persisted across frames. Only tracks whether the
@@ -97,6 +103,7 @@ impl SelectableText {
             link_urls: Vec::new(),
             selection_bg,
             selection,
+            anchor_click: None,
         }
     }
 
@@ -112,6 +119,15 @@ impl SelectableText {
         );
         self.clickable_ranges = ranges;
         self.link_urls = urls;
+        self
+    }
+
+    /// Install a handler for `#fragment` link clicks. When set, clicking a
+    /// fragment URL invokes the handler instead of `cx.open_url` — the
+    /// latter treats `#section` as an HTTP URL and silently fails. The
+    /// handler receives the fragment string without the leading `#`.
+    pub fn with_anchor_click_handler(mut self, handler: Option<AnchorClickHandler>) -> Self {
+        self.anchor_click = handler;
         self
     }
 }
@@ -174,6 +190,7 @@ impl Element for SelectableText {
         let selection_bg = self.selection_bg;
         let clickable_ranges = std::mem::take(&mut self.clickable_ranges);
         let link_urls = std::mem::take(&mut self.link_urls);
+        let anchor_click = self.anchor_click.take();
         let element_id = self.element_id.clone();
 
         window.with_element_state::<SelectableTextState, _>(
@@ -284,6 +301,7 @@ impl Element for SelectableText {
                     let link_urls = link_urls.clone();
                     let clickable_ranges = clickable_ranges.clone();
                     let selection = selection.clone();
+                    let anchor_click = anchor_click.clone();
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
                             return;
@@ -307,7 +325,19 @@ impl Element for SelectableText {
                                 .find(|(range, _)| range.contains(&down_ix))
                                 .map(|(_, url)| url.clone())
                         {
-                            cx.open_url(url.as_ref());
+                            // In-document `#fragment` links never reach the
+                            // OS URL handler — routing them through
+                            // `cx.open_url` opens a broken HTTP URL. Invoke
+                            // the consumer's anchor-click handler instead;
+                            // fall back to a silent no-op when no handler
+                            // is installed.
+                            if let Some(fragment) = url.strip_prefix('#') {
+                                if let Some(handler) = &anchor_click {
+                                    handler(fragment, window, cx);
+                                }
+                            } else {
+                                cx.open_url(url.as_ref());
+                            }
                         }
                         window.refresh();
                     });

@@ -80,7 +80,15 @@ use gpui::{
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::rc::Rc;
 use std::time::Instant;
+
+/// Callback invoked when a reader clicks a `#fragment` link in rendered
+/// markdown. Gives the consumer the fragment string (without the leading
+/// `#`) and the current window + app context so they can scroll their
+/// scroll container to the target heading, update URL history, or react
+/// however they like. See [`StreamingMarkdown::on_anchor_click`].
+pub type AnchorClickHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 /// Maximum nesting depth at which list items keep adding indentation.
 /// Beyond this, the left padding is clamped so deeply nested AI-generated
@@ -366,6 +374,10 @@ pub struct StreamingMarkdown {
     /// the entire rendered markdown rather than each paragraph in
     /// isolation.
     selection: MarkdownSelection,
+    /// Invoked when the reader clicks a `#fragment` link. `None` means
+    /// fragment-link clicks are silently ignored (previously they were
+    /// passed to `cx.open_url`, which treated them as broken HTTP URLs).
+    anchor_click: Option<AnchorClickHandler>,
 }
 
 impl StreamingMarkdown {
@@ -382,6 +394,7 @@ impl StreamingMarkdown {
             rendered_popovers: RefCell::new(HashSet::new()),
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
+            anchor_click: None,
         }
     }
 
@@ -398,6 +411,7 @@ impl StreamingMarkdown {
             rendered_popovers: RefCell::new(HashSet::new()),
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
+            anchor_click: None,
         }
     }
 
@@ -424,6 +438,25 @@ impl StreamingMarkdown {
     /// drop any existing highlight (e.g. when focus moves away).
     pub fn selection(&self) -> MarkdownSelection {
         self.selection.clone()
+    }
+
+    /// Install a handler invoked when the reader clicks a `#fragment`
+    /// link inside the rendered markdown.
+    ///
+    /// Each rendered heading carries an element id of the form
+    /// `md-heading-{slug}` so consumers can locate the target in their
+    /// own scroll container and call their preferred scroll API. For
+    /// example, a host that wraps the markdown in `overflow_y_scroll`
+    /// can look up the heading's bounds through its `ScrollHandle` and
+    /// offset the viewport accordingly. The default (no handler) drops
+    /// `#fragment` clicks silently — strictly better than the previous
+    /// behaviour of sending them to `cx.open_url`.
+    pub fn on_anchor_click<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(&str, &mut Window, &mut App) + 'static,
+    {
+        self.anchor_click = Some(Rc::new(handler));
+        self
     }
 
     /// Set the security configuration for URL allowlists.
@@ -532,6 +565,7 @@ impl StreamingMarkdown {
             popovers,
             rendered_popovers: &self.rendered_popovers,
             selection: &self.selection,
+            anchor_click: self.anchor_click.as_ref(),
         };
 
         blocks
@@ -606,6 +640,10 @@ pub struct RenderCtx<'a> {
     /// drag-select, multi-click gestures, and Cmd+C copy can span
     /// across paragraphs.
     pub selection: &'a MarkdownSelection,
+    /// Optional handler for `#fragment` link clicks. When present, each
+    /// [`SelectableText`] captures a clone so its mouse-up handler can
+    /// route fragment clicks to the consumer instead of `cx.open_url`.
+    pub anchor_click: Option<&'a AnchorClickHandler>,
 }
 
 /// Render a single markdown block as a GPUI element.
@@ -627,7 +665,11 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             .text_color(ctx.theme.text)
             .child(render_inlines(inlines, ctx))
             .into_any_element(),
-        MarkdownBlock::Heading { level, content } => {
+        MarkdownBlock::Heading {
+            level,
+            content,
+            anchor_id,
+        } => {
             // macOS HIG type ramp below Title 3 has four distinct weights
             // (Headline 13pt Bold, Body 13pt Regular, Callout 12pt,
             // Subheadline 11pt). Mapping h4–h6 to separate styles
@@ -649,11 +691,19 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 _ => TextStyle::Subheadline,
             };
 
-            div()
+            let base = div()
                 .text_style_emphasized(ts, ctx.theme)
                 .text_color(ctx.theme.text)
-                .child(render_inlines(content, ctx))
-                .into_any_element()
+                .child(render_inlines(content, ctx));
+            // Anchor id: when the heading has a resolvable slug, expose it
+            // to the paint tree as a stateful element id (`md-heading-{slug}`)
+            // so consumers can look up its bounds and implement scroll-to.
+            match anchor_id {
+                Some(id) => base
+                    .id(ElementId::Name(format!("md-heading-{id}").into()))
+                    .into_any_element(),
+                None => base.into_any_element(),
+            }
         }
         MarkdownBlock::CodeBlock { language, code } => {
             if language.as_deref() == Some("mermaid") {
@@ -1031,6 +1081,7 @@ fn render_inlines_flat(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElement
         ctx.selection.clone(),
     )
     .with_links(builder.link_ranges, urls)
+    .with_anchor_click_handler(ctx.anchor_click.cloned())
     .into_any_element()
 }
 
