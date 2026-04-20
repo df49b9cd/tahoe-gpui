@@ -960,11 +960,6 @@ impl EntityInputHandler for TextField {
         if self.is_mutation_blocked() {
             return;
         }
-        // Mirror `replace_text_in_range`: record pre-mutation state so IME
-        // composition is undoable (issue #48). Snapshotting per keystroke
-        // matches native macOS IME behavior and covers the cancel-via-
-        // `unmark_text` path, which does not snapshot on its own.
-        self.push_undo_snapshot();
         let range = range_utf16
             .as_ref()
             .map(|r| self.range_from_utf16(r))
@@ -980,48 +975,65 @@ impl EntityInputHandler for TextField {
             new_text
         };
 
-        // Enforce max_length: truncate the incoming preedit to whatever fits.
-        let truncated: String;
-        let text = if let Some(max) = self.max_length {
-            let replaced = range.end - range.start;
+        // Enforce max_length by rejecting over-cap deltas outright. Truncating
+        // a preedit mid-composition would leave the text field out of sync
+        // with the IME popup (popup shows full candidate, field shows prefix);
+        // rejecting keeps the views aligned and lets the IME self-correct.
+        // The sibling commit path truncates, so the final content still
+        // honors the cap.
+        if let Some(max) = self.max_length {
+            let replaced = range.end.saturating_sub(range.start);
             let current_without_range = self.content.len() - replaced;
             let room = max.saturating_sub(current_without_range);
-            if text.len() <= room {
-                text
-            } else {
-                truncated = text
-                    .char_indices()
-                    .take_while(|(i, c)| *i + c.len_utf8() <= room)
-                    .map(|(_, c)| c)
-                    .collect();
-                &truncated
+            if text.len() > room {
+                return;
             }
-        } else {
-            text
-        };
+        }
 
+        // Skip pure no-ops (empty delta, collapsed range, no active
+        // composition). Without this guard, an IME sending an empty preedit
+        // delta on a state transition would push a no-op snapshot and consume
+        // a user-visible Cmd-Z step.
+        if text.is_empty() && range.start == range.end && self.marked_range.is_none() {
+            return;
+        }
+
+        // Record pre-mutation state so IME composition is undoable (issue
+        // #48). Unlike NSTextView, which coalesces composition into a single
+        // grouped undo step, we snapshot per keystroke — this covers the
+        // cancel-via-`unmark_text` path (which has no snapshot of its own)
+        // without tracking composition-start state.
+        self.push_undo_snapshot();
         self.content =
             (self.content[0..range.start].to_owned() + text + &self.content[range.end..]).into();
-        if !text.is_empty() {
-            self.marked_range = Some(range.start..range.start + text.len());
+        if text.is_empty() {
+            self.marked_range.take();
         } else {
-            self.marked_range = None;
+            self.marked_range = Some(range.start..range.start + text.len());
         }
-        // Clamp the IME-supplied caret hint to the (possibly truncated)
-        // preedit; an unclamped offset past the preedit end would desync
-        // the secure-input renderer that reads `marked_range`.
+        // Defensive clamp: IMEs occasionally send malformed caret hints past
+        // the preedit end. Since over-cap deltas are rejected above, the
+        // preedit length always matches `text.len()` here.
         self.selected_range = new_selected_range_utf16
             .as_ref()
             .map(|r| self.range_from_utf16(r))
             .map(|new_range| {
-                let end = (range.start + new_range.end).min(range.start + text.len());
+                let preedit_end = range.start + text.len();
+                let end = (range.start + new_range.end).min(preedit_end);
                 let start = (range.start + new_range.start).min(end);
                 start..end
             })
             .unwrap_or_else(|| range.start + text.len()..range.start + text.len());
         cx.notify();
 
-        if let Some(on_change) = &self.on_change {
+        // Only notify listeners when composition has ended (commit or cancel).
+        // TokenField / SearchField consumers that tokenize or debounce on
+        // every change must not see half-composed CJK preedits; NSTextView's
+        // `textDidChange` gates on `markedRange.length == 0` for the same
+        // reason.
+        if self.marked_range.is_none()
+            && let Some(on_change) = &self.on_change
+        {
             on_change(&self.content, window, cx);
         }
     }
@@ -2004,16 +2016,17 @@ mod interaction_tests {
         });
     }
 
-    // Regression for #48: IME composition path (`replace_and_mark_text_in_range`)
-    // must mirror the commit path — snapshot for undo, enforce `max_length`,
-    // fire `on_change`. Without this, non-Latin-script input was uncapped,
-    // unobservable to parents, and silently unrecoverable with Cmd-Z.
+    // Regression suite for #48: the IME composition path
+    // (`replace_and_mark_text_in_range`) must record undo snapshots, respect
+    // `max_length`, and expose post-composition edits to `on_change`. Before
+    // the fix, non-Latin-script input was uncapped, unobservable to parents,
+    // and silently unrecoverable with Cmd-Z.
+
     #[gpui::test]
     async fn ime_compose_pushes_undo_snapshot(cx: &mut TestAppContext) {
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
         field.update_in(cx, |field, window, cx| {
             field.set_text("seed", window, cx);
-            // set_text pushed a snapshot; clear for a clean baseline.
             field.undo_stack.clear();
         });
         field.update_in(cx, |field, window, cx| {
@@ -2028,13 +2041,13 @@ mod interaction_tests {
             assert_eq!(
                 field.text(),
                 "seed",
-                "undo must restore pre-preedit content"
+                "undo must restore pre-preedit content",
             );
         });
     }
 
     #[gpui::test]
-    async fn ime_compose_fires_on_change(cx: &mut TestAppContext) {
+    async fn ime_compose_does_not_fire_on_change_during_preedit(cx: &mut TestAppContext) {
         let changes = Rc::new(RefCell::new(Vec::new()));
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
         field.update_in(cx, |field, _window, _cx| {
@@ -2046,33 +2059,91 @@ mod interaction_tests {
         field.update_in(cx, |field, window, cx| {
             field.replace_and_mark_text_in_range(None, "n", None, window, cx);
             field.replace_and_mark_text_in_range(None, "ni", None, window, cx);
+            assert_eq!(field.marked_range, Some(0..2));
+        });
+        assert!(
+            changes.borrow().is_empty(),
+            "on_change must not fire while composition is active",
+        );
+        // Committing the preedit ends composition and should fire on_change
+        // exactly once with the final text.
+        field.update_in(cx, |field, window, cx| {
+            field.replace_text_in_range(None, "你", window, cx);
         });
         assert_eq!(
             &*changes.borrow(),
-            &["n".to_string(), "ni".to_string()],
-            "IME compose must fire on_change for each preedit step",
+            &["你".to_string()],
+            "on_change must fire once on commit with the final text",
         );
     }
 
     #[gpui::test]
-    async fn ime_compose_respects_max_length(cx: &mut TestAppContext) {
+    async fn ime_compose_rejects_over_cap_delta(cx: &mut TestAppContext) {
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
         field.update_in(cx, |field, window, cx| {
             field.set_max_length(Some(5));
-            field.set_text("ab", window, cx);
+            field.set_text("abc", window, cx);
+            field.undo_stack.clear();
         });
+        // "か" is 3 bytes; room = 5 - 3 = 2 bytes. Reject without mutating.
         field.update_in(cx, |field, window, cx| {
-            // Room = 5 - 2 = 3 bytes; "cdef" (4 bytes) must truncate to "cde".
-            field.replace_and_mark_text_in_range(None, "cdef", None, window, cx);
+            field.replace_and_mark_text_in_range(None, "か", None, window, cx);
             assert_eq!(
                 field.text(),
-                "abcde",
-                "IME preedit must truncate to max_length"
+                "abc",
+                "over-cap preedit must leave content unchanged",
             );
+            assert_eq!(field.marked_range, None);
             assert_eq!(
-                field.marked_range,
-                Some(2..5),
-                "marked_range must reflect truncated preedit length",
+                field.undo_stack.len(),
+                0,
+                "rejected delta must not push an undo snapshot",
+            );
+            assert!(
+                field.content.is_char_boundary(field.content.len()),
+                "content must stay on a UTF-8 boundary",
+            );
+        });
+        // An in-cap delta composed after rejection still works.
+        field.update_in(cx, |field, window, cx| {
+            field.replace_and_mark_text_in_range(None, "xy", None, window, cx);
+            assert_eq!(field.text(), "abcxy");
+            assert_eq!(field.marked_range, Some(3..5));
+        });
+    }
+
+    #[gpui::test]
+    async fn ime_compose_with_max_length_zero_rejects(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+        field.update_in(cx, |field, _window, _cx| {
+            field.set_max_length(Some(0));
+            field.undo_stack.clear();
+        });
+        field.update_in(cx, |field, window, cx| {
+            field.replace_and_mark_text_in_range(None, "かき", None, window, cx);
+            assert_eq!(field.text(), "");
+            assert_eq!(
+                field.marked_range, None,
+                "rejected delta must not create a phantom composition",
+            );
+            assert_eq!(field.undo_stack.len(), 0);
+        });
+    }
+
+    #[gpui::test]
+    async fn ime_compose_empty_delta_is_noop(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+        field.update_in(cx, |field, window, cx| {
+            field.set_text("seed", window, cx);
+            field.undo_stack.clear();
+        });
+        field.update_in(cx, |field, window, cx| {
+            field.replace_and_mark_text_in_range(None, "", None, window, cx);
+            assert_eq!(field.text(), "seed");
+            assert_eq!(
+                field.undo_stack.len(),
+                0,
+                "empty preedit must not consume an undo step",
             );
         });
     }
@@ -2080,9 +2151,10 @@ mod interaction_tests {
     #[gpui::test]
     async fn ime_commit_undoes_back_through_preedit(cx: &mut TestAppContext) {
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
-        field.update_in(cx, |field, window, cx| {
+        let pre_caret = field.update_in(cx, |field, window, cx| {
             field.set_text("seed", window, cx);
             field.undo_stack.clear();
+            field.selected_range.clone()
         });
         field.update_in(cx, |field, window, cx| {
             field.replace_and_mark_text_in_range(None, "n", None, window, cx);
@@ -2100,11 +2172,15 @@ mod interaction_tests {
             assert_eq!(field.text(), "seedn");
             field.handle_undo(&crate::text_actions::Undo, window, cx);
             assert_eq!(field.text(), "seed");
+            assert_eq!(
+                field.selected_range, pre_caret,
+                "undo must restore the pre-preedit caret",
+            );
         });
     }
 
     #[gpui::test]
-    async fn ime_unmark_after_compose_leaves_undo_intact(cx: &mut TestAppContext) {
+    async fn ime_unmark_after_compose_allows_undo_past_composition(cx: &mut TestAppContext) {
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
         field.update_in(cx, |field, window, cx| {
             field.set_text("seed", window, cx);
@@ -2126,6 +2202,33 @@ mod interaction_tests {
                 "seed",
                 "undo must reach pre-preedit state even after unmark",
             );
+        });
+    }
+
+    #[gpui::test]
+    async fn ime_accept_preserves_committed_text(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+        field.update_in(cx, |field, window, cx| {
+            field.set_text("seed", window, cx);
+            field.undo_stack.clear();
+        });
+        // Accept path: compose, commit the final glyph, then unmark.
+        field.update_in(cx, |field, window, cx| {
+            field.replace_and_mark_text_in_range(None, "ni", None, window, cx);
+            field.replace_text_in_range(None, "你", window, cx);
+            field.unmark_text(window, cx);
+            assert_eq!(field.text(), "seed你");
+            assert_eq!(field.marked_range, None);
+        });
+        field.update_in(cx, |field, window, cx| {
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(
+                field.text(),
+                "seedni",
+                "first undo must drop the committed text, not the whole composition",
+            );
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(field.text(), "seed");
         });
     }
 }
