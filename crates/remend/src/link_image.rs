@@ -136,6 +136,8 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
                         j = close_idx + 2 + url_end + 1;
                         continue;
                     }
+                    // ) is not on the same line — the link is incomplete per CommonMark.
+                    return j;
                 }
                 j = close_idx + 1;
             } else {
@@ -471,5 +473,16 @@ mod tests {
     #[test]
     fn text_only_close_paren_on_next_line_does_not_complete_link() {
         assert_eq!(h_text_only("[a](url\nother)").as_ref(), "a");
+    }
+
+    #[test]
+    fn find_first_incomplete_bracket_multiline_url() {
+        // [a](url\nmore) is incomplete (no same-line ')'), so
+        // find_first_incomplete_bracket should return position 0 — the
+        // first `[` is stripped, leaving the rest of the text intact.
+        assert_eq!(
+            h_text_only("[a](url\nmore) [b](ok) [incomplete").as_ref(),
+            "a](url\nmore) [b](ok) [incomplete"
+        );
     }
 }
