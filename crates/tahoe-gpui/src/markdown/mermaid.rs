@@ -20,6 +20,7 @@
 use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::icons::{Icon, IconName};
@@ -36,16 +37,20 @@ struct MermaidCacheKey {
     dark: bool,
 }
 
-type MermaidCache = FxHashMap<MermaidCacheKey, MermaidRender>;
+struct Timed<T> {
+    value: T,
+    last_used: Instant,
+}
+
+type MermaidCache = FxHashMap<MermaidCacheKey, Timed<MermaidRender>>;
 
 /// Upper bound on the number of cached Mermaid renders.
 ///
 /// Without a cap the cache grows unbounded as diagrams in long-lived
 /// sessions churn. 64 is large enough to cover every visible diagram
 /// plus recent history in a typical chat/notebook session; when the cap
-/// is hit the cache is cleared wholesale — simpler than a true LRU and
-/// acceptable because a Mermaid rasterisation is a few-millisecond
-/// operation, so re-filling the cache is cheap.
+/// is hit the oldest half of entries (by last-access time) are evicted.
+/// Cache hits refresh the timestamp, so recently-rendered diagrams survive.
 const MERMAID_CACHE_CAP: usize = 64;
 
 /// Cached rasterization result. `Ok(image)` means a finished frame;
@@ -87,10 +92,11 @@ fn rasterize_mermaid(
         dark,
     };
 
-    if let Ok(guard) = cache().lock()
-        && let Some(entry) = guard.get(&key)
+    if let Ok(mut guard) = cache().lock()
+        && let Some(timed) = guard.get_mut(&key)
     {
-        return match entry {
+        timed.last_used = Instant::now();
+        return match &timed.value {
             MermaidRender::Ok(image) => Some(image.clone()),
             MermaidRender::Err => None,
         };
@@ -102,7 +108,13 @@ fn rasterize_mermaid(
         Err(_) => {
             if let Ok(mut guard) = cache().lock() {
                 cap_cache(&mut guard);
-                guard.insert(key, MermaidRender::Err);
+                guard.insert(
+                    key,
+                    Timed {
+                        value: MermaidRender::Err,
+                        last_used: Instant::now(),
+                    },
+                );
             }
             return None;
         }
@@ -114,7 +126,13 @@ fn rasterize_mermaid(
         Err(_) => {
             if let Ok(mut guard) = cache().lock() {
                 cap_cache(&mut guard);
-                guard.insert(key, MermaidRender::Err);
+                guard.insert(
+                    key,
+                    Timed {
+                        value: MermaidRender::Err,
+                        last_used: Instant::now(),
+                    },
+                );
             }
             return None;
         }
@@ -122,7 +140,13 @@ fn rasterize_mermaid(
 
     if let Ok(mut guard) = cache().lock() {
         cap_cache(&mut guard);
-        guard.insert(key, MermaidRender::Ok(image.clone()));
+        guard.insert(
+            key,
+            Timed {
+                value: MermaidRender::Ok(image.clone()),
+                last_used: Instant::now(),
+            },
+        );
     }
     Some(image)
 }
@@ -132,11 +156,10 @@ fn rasterize_mermaid(
 /// beyond `MERMAID_CACHE_CAP`.
 fn cap_cache(cache: &mut MermaidCache) {
     if cache.len() >= MERMAID_CACHE_CAP {
-        // Evict half the entries rather than clearing the whole cache to avoid
-        // the thundering-herd of re-rendering every diagram at once.
-        let evict: Vec<MermaidCacheKey> =
-            cache.keys().take(MERMAID_CACHE_CAP / 2).copied().collect();
-        for key in evict {
+        let mut timed_keys: Vec<(MermaidCacheKey, Instant)> =
+            cache.iter().map(|(k, v)| (*k, v.last_used)).collect();
+        timed_keys.sort_by_key(|(_, t)| *t);
+        for (key, _) in timed_keys.into_iter().take(MERMAID_CACHE_CAP / 2) {
             cache.remove(&key);
         }
     }
