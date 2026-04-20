@@ -4,7 +4,7 @@
 //! each tinted with a semantic theme color.
 
 use gpui::prelude::*;
-use gpui::{App, Hsla, Pixels, Transformation, Window, div, size as gpui_size, svg};
+use gpui::{App, Hsla, Pixels, SharedString, Transformation, Window, div, size as gpui_size, svg};
 
 use super::assets::IconColorRole;
 use super::icon::IconRenderMode;
@@ -32,6 +32,18 @@ fn maybe_flip(el: gpui::Svg, flip_horizontal: bool) -> gpui::Svg {
     }
 }
 
+/// Build an asset path, optionally qualifying it with a stroke-width suffix
+/// so the `AssetSource` returns a mutated SVG with the requested weight.
+///
+/// - `None` → `SharedString` borrowed from the static `&str` (zero alloc).
+/// - `Some(sw)` → `format!("{path}__sw{sw}")` (allocates once per layer).
+fn qualified_path(path: &'static str, stroke_width: Option<f32>) -> SharedString {
+    match stroke_width {
+        Some(sw) => format!("{path}__sw{sw}").into(),
+        None => SharedString::from(path),
+    }
+}
+
 /// Render a single-layer (monochrome path) icon. Supports the single-layer
 /// render modes: Monochrome (plain), VariableColor (opacity-driven by
 /// progress), and Gradient (linear gradient applied via two overlaid SVGs).
@@ -44,12 +56,16 @@ fn maybe_flip(el: gpui::Svg, flip_horizontal: bool) -> gpui::Svg {
 /// `flip_horizontal` mirrors the glyph across the vertical axis — used to
 /// honour [`Icon::follow_layout_direction`] under RTL themes for
 /// directionally-classified symbols (chevrons, arrows, `Send`).
+///
+/// `stroke_width` overrides the SVG's baked-in `stroke-width` attribute.
+/// When `None`, the original asset is used unchanged.
 pub(super) fn render_monochrome(
     path: &'static str,
     size: Pixels,
     color: Hsla,
     mode: IconRenderMode,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
 ) -> impl IntoElement {
     let resolved_color = match mode {
         IconRenderMode::VariableColor { progress } => {
@@ -67,8 +83,9 @@ pub(super) fn render_monochrome(
         IconRenderMode::Palette { palette } if !palette.is_empty() => palette[0],
         _ => color,
     };
+    let svg_path = qualified_path(path, stroke_width);
     div().size(size).child(maybe_flip(
-        svg().path(path).size(size).text_color(resolved_color),
+        svg().path(svg_path).size(size).text_color(resolved_color),
         flip_horizontal,
     ))
 }
@@ -114,6 +131,7 @@ pub(super) fn render_multi_color_layers_glass(
     size: Pixels,
     caller_color: Option<Hsla>,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -123,9 +141,10 @@ pub(super) fn render_multi_color_layers_glass(
 
     for &(path, role) in layers {
         let color = resolve_role_color_glass(role, caller_color, theme);
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -147,6 +166,7 @@ pub(super) fn render_multi_color_layers(
     size: Pixels,
     caller_color: Option<Hsla>,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -156,9 +176,10 @@ pub(super) fn render_multi_color_layers(
 
     for &(path, role) in layers {
         let color = resolve_role_color(role, caller_color, theme);
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -182,6 +203,7 @@ pub(super) fn render_multi_color_layers_palette(
     size: Pixels,
     palette: &'static [Hsla],
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     _cx: &mut App,
 ) -> impl IntoElement {
@@ -202,9 +224,10 @@ pub(super) fn render_multi_color_layers_palette(
         } else {
             palette[i.min(palette.len() - 1)]
         };
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -228,6 +251,7 @@ pub(super) fn render_multi_color_layers_variable(
     progress: f32,
     is_glass: bool,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -255,9 +279,10 @@ pub(super) fn render_multi_color_layers_variable(
             a: base.a * alpha_mul,
             ..base
         };
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -283,6 +308,7 @@ pub(super) fn render_multi_color_layers_gradient(
     fallback: Hsla,
     is_glass: bool,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -308,9 +334,10 @@ pub(super) fn render_multi_color_layers_gradient(
         } else {
             resolve_role_color(role, Some(src), theme)
         };
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -322,9 +349,10 @@ pub(super) fn render_multi_color_layers_gradient(
 
     // Gradient stop overlay: same shape, darker stop at reduced opacity.
     if let Some(&(primary_path, _)) = layers.first() {
+        let svg_path = qualified_path(primary_path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(primary_path)
+                .path(svg_path)
                 .size(size)
                 .text_color(Hsla {
                     a: stop.a * 0.5,
@@ -350,6 +378,7 @@ pub(super) fn render_multi_color_layers_hierarchical(
     caller_color: Option<Hsla>,
     is_glass: bool,
     flip_horizontal: bool,
+    stroke_width: Option<f32>,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
@@ -365,9 +394,10 @@ pub(super) fn render_multi_color_layers_hierarchical(
         };
         // Apply hierarchical opacity
         color.a *= super::hierarchical_opacity(i);
+        let svg_path = qualified_path(path, stroke_width);
         container = container.child(maybe_flip(
             svg()
-                .path(path)
+                .path(svg_path)
                 .size(size)
                 .text_color(color)
                 .absolute()
@@ -383,7 +413,7 @@ pub(super) fn render_multi_color_layers_hierarchical(
 #[cfg(test)]
 mod tests {
     use super::super::assets::IconColorRole;
-    use super::{resolve_role_color, resolve_role_color_glass};
+    use super::{qualified_path, resolve_role_color, resolve_role_color_glass};
     use crate::foundations::theme::TahoeTheme;
     use core::prelude::v1::test;
     use gpui::hsla;
@@ -488,5 +518,19 @@ mod tests {
             super::layer_transform(true),
             Some(gpui::Transformation::scale(gpui::size(-1.0, 1.0)))
         );
+    }
+
+    // ─── qualified_path ────────────────────────────────────────────────
+
+    #[test]
+    fn qualified_path_none_returns_static_path() {
+        let path = qualified_path("icons/symbols/checkmark.svg", None);
+        assert_eq!(path.as_ref(), "icons/symbols/checkmark.svg");
+    }
+
+    #[test]
+    fn qualified_path_some_appends_sw_suffix() {
+        let path = qualified_path("icons/symbols/checkmark.svg", Some(1.4));
+        assert_eq!(path.as_ref(), "icons/symbols/checkmark.svg__sw1.4");
     }
 }

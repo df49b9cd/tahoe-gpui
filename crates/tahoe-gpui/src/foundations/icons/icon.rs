@@ -259,16 +259,10 @@ impl Icon {
 
     /// Set the icon stroke weight.
     ///
-    /// # Pending GPUI support
-    ///
-    /// GPUI's `svg()` element does not currently expose a per-instance
-    /// stroke-width setter, so this builder stores the value but does
-    /// not affect visual rendering today — the weight baked into the
-    /// SVG asset wins. The weight is still carried through the render
-    /// pipeline so that once GPUI lands stroke-width, every caller of
-    /// `weight(...)` picks up the behaviour without a code change, and
-    /// so host apps on the native AppKit backend can map the weight
-    /// onto `NSImage.symbolConfiguration(weight:)` in the meantime.
+    /// The weight is mapped to a stroke-width value via
+    /// [`weight_to_stroke_width`](super::weight_to_stroke_width) and applied
+    /// at render time by mutating the SVG asset's `stroke-width` attribute.
+    /// When no weight is set, the SVG's baked-in stroke-width is used as-is.
     pub fn weight(mut self, weight: FontWeight) -> Self {
         self.weight = Some(weight);
         self
@@ -316,13 +310,6 @@ impl Icon {
     /// - Explicit weight via `Icon::weight()` takes priority.
     /// - Otherwise uses the style default: 1.2 pt for Standard, 1.5 pt
     ///   for Liquid Glass.
-    ///
-    /// Intended for consumers that need to introspect the computed
-    /// stroke width (tests, custom SVG renderers). Production
-    /// `Icon::render` does not yet forward this into GPUI's svg element
-    /// because upstream does not expose per-SVG stroke-width, but the
-    /// value is authoritative and will be wired through when that API
-    /// lands.
     pub fn resolved_stroke_width(&self) -> f32 {
         stroke_width_for(self.weight, self.style.resolve())
     }
@@ -404,8 +391,7 @@ impl Icon {
 /// Compute the stroke width for an already-resolved `IconStyle`, honoring
 /// an explicit weight override when set. Shared between
 /// `Icon::resolved_stroke_width` (introspection) and `Icon::render`
-/// (actual paint pipeline) so both paths stay in lockstep without a
-/// double surface-scope lookup per frame.
+/// (actual paint pipeline).
 fn stroke_width_for(weight: Option<FontWeight>, resolved_style: IconStyle) -> f32 {
     if let Some(w) = weight {
         return super::weight_to_stroke_width(w);
@@ -484,13 +470,13 @@ impl RenderOnce for Icon {
             .baseline_offset
             .or_else(|| self.match_text_style.map(optical_baseline_offset));
 
-        // Compute stroke width. GPUI does not yet support per-SVG
-        // stroke-width, so the value is consumed only by the icon's own
-        // introspection API today; the computation is cheap and kept
-        // in the render pipeline so it goes live the moment GPUI lands
-        // the feature. Uses the already-resolved style so the
-        // surface-scope thread-local read happens exactly once per render.
-        let _stroke_width = stroke_width_for(self.weight, resolved_style);
+        // Compute stroke width. Only pass through to the render pipeline
+        // when the caller explicitly set `.weight()` — otherwise the SVG's
+        // baked-in `stroke-width` attribute is the authoritative value and
+        // no runtime mutation is needed.
+        let stroke_width = self
+            .weight
+            .map(|_| stroke_width_for(self.weight, resolved_style));
 
         let render_mode = self.render_mode.unwrap_or_default();
 
@@ -507,6 +493,7 @@ impl RenderOnce for Icon {
                     color,
                     render_mode,
                     should_flip_directional,
+                    stroke_width,
                 )
                 .into_any_element(),
                 RenderStrategy::MultiColor(layer_list) => match render_mode {
@@ -517,6 +504,7 @@ impl RenderOnce for Icon {
                             self.color,
                             is_glass,
                             should_flip_directional,
+                            stroke_width,
                             window,
                             cx,
                         )
@@ -528,6 +516,7 @@ impl RenderOnce for Icon {
                             size,
                             palette,
                             should_flip_directional,
+                            stroke_width,
                             window,
                             cx,
                         )
@@ -541,6 +530,7 @@ impl RenderOnce for Icon {
                             progress,
                             is_glass,
                             should_flip_directional,
+                            stroke_width,
                             window,
                             cx,
                         )
@@ -558,6 +548,7 @@ impl RenderOnce for Icon {
                             color,
                             is_glass,
                             should_flip_directional,
+                            stroke_width,
                             window,
                             cx,
                         )
@@ -574,6 +565,7 @@ impl RenderOnce for Icon {
                                 size,
                                 self.color,
                                 should_flip_directional,
+                                stroke_width,
                                 window,
                                 cx,
                             )
@@ -584,6 +576,7 @@ impl RenderOnce for Icon {
                                 size,
                                 self.color,
                                 should_flip_directional,
+                                stroke_width,
                                 window,
                                 cx,
                             )

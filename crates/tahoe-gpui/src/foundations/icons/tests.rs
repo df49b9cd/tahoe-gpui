@@ -773,3 +773,96 @@ fn every_variant_flips_iff_classified_directional() {
         );
     }
 }
+
+// ─── Stroke-Width SVG Mutation (issue #82) ────────────────────────────────
+
+#[test]
+fn replace_stroke_width_replaces_single_attribute() {
+    use super::assets::replace_stroke_width;
+    let svg = br#"<svg><line stroke-width="1.75"/></svg>"#;
+    let result = replace_stroke_width(svg, 1.4);
+    let result_str = std::str::from_utf8(&result).unwrap();
+    assert_eq!(result_str, r#"<svg><line stroke-width="1.4"/></svg>"#);
+}
+
+#[test]
+fn replace_stroke_width_replaces_multiple_attributes() {
+    use super::assets::replace_stroke_width;
+    let svg = br#"<svg><line stroke-width="1.75"/><circle stroke-width="1.5"/></svg>"#;
+    let result = replace_stroke_width(svg, 0.8);
+    let result_str = std::str::from_utf8(&result).unwrap();
+    assert_eq!(
+        result_str,
+        r#"<svg><line stroke-width="0.8"/><circle stroke-width="0.8"/></svg>"#
+    );
+}
+
+#[test]
+fn replace_stroke_width_preserves_svg_without_attribute() {
+    use super::assets::replace_stroke_width;
+    let svg = br#"<svg><circle fill="red"/></svg>"#;
+    let result = replace_stroke_width(svg, 1.4);
+    assert_eq!(result, svg.as_slice());
+}
+
+#[test]
+fn parse_stroke_width_path_extracts_base_and_value() {
+    use super::assets::parse_stroke_width_path;
+    let (base, sw) = parse_stroke_width_path("icons/symbols/checkmark.svg__sw1.4").unwrap();
+    assert_eq!(base, "icons/symbols/checkmark.svg");
+    assert!((sw - 1.4).abs() < f32::EPSILON);
+}
+
+#[test]
+fn parse_stroke_width_path_rejects_non_svg_base() {
+    use super::assets::parse_stroke_width_path;
+    assert!(parse_stroke_width_path("icons/symbols/checkmark__sw1.4").is_none());
+}
+
+#[test]
+fn parse_stroke_width_path_rejects_plain_path() {
+    use super::assets::parse_stroke_width_path;
+    assert!(parse_stroke_width_path("icons/symbols/checkmark.svg").is_none());
+}
+
+#[test]
+fn qualified_path_loads_mutated_svg_via_asset_source() {
+    // A stroke-width–qualified path should resolve via EmbeddedIconAssets
+    // to an SVG whose stroke-width has been replaced.
+    let assets = EmbeddedIconAssets;
+    let qualified = "icons/symbols/checkmark.svg__sw0.8";
+    let result = assets.load(qualified).unwrap();
+    assert!(result.is_some(), "qualified path should resolve");
+    let bytes = result.unwrap();
+    let svg_str = std::str::from_utf8(&bytes).unwrap();
+    assert!(
+        svg_str.contains("stroke-width=\"0.8\""),
+        "mutated SVG should contain stroke-width=\"0.8\", got: {svg_str}"
+    );
+    assert!(
+        !svg_str.contains("stroke-width=\"1.75\""),
+        "original stroke-width should be gone, got: {svg_str}"
+    );
+}
+
+#[test]
+fn qualified_path_caches_and_returns_same_bytes() {
+    let assets = EmbeddedIconAssets;
+    let qualified = "icons/symbols/chevron-down.svg__sw1.4";
+    let first = assets.load(qualified).unwrap().unwrap().to_vec();
+    let second = assets.load(qualified).unwrap().unwrap().to_vec();
+    assert_eq!(
+        first, second,
+        "cached variant should return identical bytes"
+    );
+}
+
+#[test]
+fn icon_weight_affects_resolved_stroke_width() {
+    use gpui::FontWeight;
+    let icon = Icon::new(IconName::Check).weight(FontWeight::BOLD);
+    assert!((icon.resolved_stroke_width() - 1.8).abs() < f32::EPSILON);
+
+    let icon_no_weight = Icon::new(IconName::Check);
+    assert!((icon_no_weight.resolved_stroke_width() - 1.2).abs() < f32::EPSILON);
+}
