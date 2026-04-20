@@ -604,12 +604,8 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
         MarkdownBlock::Paragraph(inlines) => div()
             .text_style(TextStyle::Body, ctx.theme)
             .text_color(ctx.theme.text)
-            // HIG Text views: body paragraphs get block-level spacing
-            // equal to the line height so adjacent paragraphs read as
-            // discrete blocks rather than a single wrapped run. The
-            // parent `flex.flex_col().gap()` provides a baseline; the
-            // additional `mb` matches Apple's typography recommendation.
-            .mb(ctx.theme.spacing_sm)
+            // Inter-block spacing is owned by the parent container's
+            // `flex.flex_col().gap()` — see `StreamingMarkdown::render`.
             .child(render_inlines(inlines, ctx))
             .into_any_element(),
         MarkdownBlock::Heading { level, content } => {
@@ -637,7 +633,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             div()
                 .text_style_emphasized(ts, ctx.theme)
                 .text_color(ctx.theme.text)
-                .mb(ctx.theme.spacing_sm)
                 .child(render_inlines(content, ctx))
                 .into_any_element()
         }
@@ -671,7 +666,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .flex_col()
                 .gap(ctx.theme.spacing_xs)
                 .pl(list_indent)
-                .mb(ctx.theme.spacing_sm)
                 .children(items.iter().enumerate().map(|(i, item_blocks)| {
                     let marker = if *ordered {
                         format!("{}. ", start_num + i)
@@ -716,7 +710,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             .border_color(ctx.theme.text_muted)
             .pl(ctx.theme.spacing_md)
             .text_color(ctx.theme.text_muted)
-            .mb(ctx.theme.spacing_sm)
             .flex()
             .flex_col()
             .gap(ctx.theme.spacing_xs)
@@ -770,7 +763,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .border_color(ctx.theme.border)
                 .rounded(ctx.theme.radius_md)
                 .overflow_hidden()
-                .mb(ctx.theme.spacing_sm)
                 .child(
                     div()
                         .flex()
@@ -833,7 +825,6 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .gap(ctx.theme.spacing_xs)
                 .text_style(TextStyle::Body, ctx.theme)
                 .text_color(ctx.theme.text)
-                .mb(ctx.theme.spacing_sm)
                 .child(
                     div()
                         .flex_shrink_0()
