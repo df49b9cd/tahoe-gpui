@@ -1004,10 +1004,10 @@ pub fn glass_clear_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div 
 ///
 /// This is the **effective visible tint** — `black @ 60%` to match
 /// `NSPanel.StyleMask.HUDWindow` per HIG `#panels` — i.e. the tint a
-/// viewer sees after [`apply_glass_chrome`]'s Layer 2
-/// ([`GLASS_LAYER_TINT_ALPHA`]) has stacked on top. The actual alpha
-/// [`hud_fill`] hands to `compose_black_tint_linear` is lower
-/// ([`HUD_PRE_COMPOSE_ALPHA`]); Layer 2 fills the gap.
+/// viewer sees after `apply_glass_chrome`'s Layer 2
+/// (`GLASS_LAYER_TINT_ALPHA`) has stacked on top. The actual alpha
+/// `hud_fill` hands to `compose_black_tint_linear` is lower
+/// (`HUD_PRE_COMPOSE_ALPHA`); Layer 2 fills the gap.
 ///
 /// Exposed as a constant so callers that need the raw value
 /// (e.g. tinting a sub-element consistently with the HUD backdrop)
@@ -1042,7 +1042,7 @@ fn hud_fill(theme: &TahoeTheme, size: GlassSize) -> Hsla {
 /// Apply Liquid Glass HUD surface styling to a div.
 ///
 /// Pre-composes the dark HUD tint into the base glass fill via
-/// [`hud_fill`], then hands the result to the standard
+/// `hud_fill`, then hands the result to the standard
 /// [`glass_surface`] chrome (Layer 2 tint + radius + shadows +
 /// high-contrast border), plus [`TahoeTheme::background`] as the
 /// text color so the surface reads as a dark HUD regardless of the
