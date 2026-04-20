@@ -123,14 +123,19 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
             }
             // Check if this `[` has a matching `]`.
             if let Some(close_idx) = find_matching_closing_bracket(text, j) {
-                // Check if it's a full link `[text](url)`.
-                if close_idx + 1 < bytes.len()
-                    && bytes[close_idx + 1] == b'('
-                    && let Some(url_end) = text[close_idx + 2..].find(')')
-                {
-                    // Skip past this complete link.
-                    j = close_idx + 2 + url_end + 1;
-                    continue;
+                // Check if it's a full link `[text](url)` — but only if `)` is
+                // on the same line (links cannot span lines per CommonMark).
+                if close_idx + 1 < bytes.len() && bytes[close_idx + 1] == b'(' {
+                    let after_paren = &text[close_idx + 2..];
+                    let line_end = after_paren
+                        .bytes()
+                        .position(|b| matches!(b, b'\n' | b'\r'))
+                        .unwrap_or(after_paren.len());
+                    if let Some(url_end) = after_paren[..line_end].find(')') {
+                        // Skip past this complete link.
+                        j = close_idx + 2 + url_end + 1;
+                        continue;
+                    }
                 }
                 j = close_idx + 1;
             } else {
@@ -415,5 +420,19 @@ mod tests {
     #[test]
     fn removes_incomplete_image_with_crlf() {
         assert_eq!(h("text ![alt](\r\nhttp://exam").as_ref(), "text");
+    }
+
+    #[test]
+    fn close_paren_on_next_line_does_not_complete_link() {
+        // `)` on line 2 must not close the URL — the link is incomplete.
+        assert_eq!(
+            h("[a](url\nother)").as_ref(),
+            "[a](streamdown:incomplete-link)"
+        );
+    }
+
+    #[test]
+    fn text_only_close_paren_on_next_line_does_not_complete_link() {
+        assert_eq!(h_text_only("[a](url\nother)").as_ref(), "a");
     }
 }
