@@ -9,9 +9,9 @@
 //!
 //! When the theme's accessibility mode reports Bold-Text / high-contrast
 //! preferences, `TextView` applies the same `effective_weight` +
-//! `font_scale_factor` adjustments that [`TextStyledExt`] uses for the rest
-//! of the design system. This keeps the text-body scale consistent with
-//! sidebar / menu / button typography when the user enables an
+//! `effective_font_scale_factor` adjustments that [`TextStyledExt`] uses for
+//! the rest of the design system. This keeps the text-body scale consistent
+//! with sidebar / menu / button typography when the user enables an
 //! accessibility text-size mode.
 
 use gpui::prelude::*;
@@ -74,7 +74,7 @@ impl RenderOnce for TextView {
         let theme = cx.theme();
 
         // `text_style` applies per-style size, weight, and line-height —
-        // scaled by `theme.font_scale_factor` and bumped per
+        // scaled by `theme.effective_font_scale_factor()` and bumped per
         // `theme.effective_weight()` when Bold-Text is active. Matches the
         // Dynamic-Type behaviour of the rest of the design system.
         let mut el = div().text_style(self.style, theme).text_color(theme.text);

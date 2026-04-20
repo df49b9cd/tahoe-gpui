@@ -1297,6 +1297,7 @@ impl TahoeTheme {
     /// is a public field — direct assignment (`theme.font_scale_factor =
     /// 0.0`) would bypass the setter and produce `px(0.0)` text. Rendering
     /// code should read the scale through this helper.
+    #[inline]
     pub fn effective_font_scale_factor(&self) -> f32 {
         if self.font_scale_factor.is_finite() && self.font_scale_factor > 0.0 {
             self.font_scale_factor
@@ -1711,7 +1712,7 @@ impl TahoeTheme {
 
     /// Returns the point size for `style` at the current Dynamic Type
     /// size, honouring both [`TahoeTheme::dynamic_type_size`] and
-    /// [`TahoeTheme::font_scale_factor`]. Equivalent to reading
+    /// [`TahoeTheme::effective_font_scale_factor`]. Equivalent to reading
     /// `style.attrs().size` scaled by the current user preferences.
     ///
     /// # Single source of truth
@@ -1730,8 +1731,10 @@ impl TahoeTheme {
     ///   multiplier so hosts exposing a "text size" slider still get
     ///   proportional sizing.
     ///
-    /// In both branches the result is multiplied by `font_scale_factor`
-    /// so the accessibility "Text Size" preference flows through uniformly.
+    /// In both branches the result is multiplied by the sanitized
+    /// [`effective_font_scale_factor`](Self::effective_font_scale_factor)
+    /// so the accessibility "Text Size" preference flows through uniformly,
+    /// with invalid field values folding to `1.0`.
     pub fn text_size_for(&self, style: TextStyle) -> Pixels {
         let base_pt: f32 = match self.platform {
             Platform::IOS | Platform::VisionOS | Platform::WatchOS => {

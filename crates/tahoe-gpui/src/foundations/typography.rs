@@ -498,10 +498,13 @@ impl FontDesign {
 /// ```
 ///
 /// The `theme` parameter is required so that `effective_weight()` is applied,
-/// ensuring `AccessibilityMode::BOLD_TEXT` is respected. The text size and
-/// line height are also multiplied by `theme.font_scale_factor`, which the
-/// host can drive from macOS System Settings → Accessibility → Display →
-/// Text Size so user preferences flow through the type scale.
+/// ensuring `AccessibilityMode::BOLD_TEXT` is respected. Text size and line
+/// height are also multiplied by
+/// [`TahoeTheme::effective_font_scale_factor`], which sanitizes the raw
+/// `font_scale_factor` field (non-finite or non-positive → `1.0`) so a
+/// host-driven accessibility scale — macOS System Settings → Accessibility →
+/// Display → Text Size — flows through the type scale without ever producing
+/// `px(0.0)` or infinite text.
 ///
 /// [`text_style`](Self::text_style) and [`text_style_emphasized`](Self::text_style_emphasized)
 /// leave the element's `font_family` untouched so the parent's cascade wins. Use the
@@ -509,17 +512,15 @@ impl FontDesign {
 pub trait TextStyledExt: Styled {
     /// Applies the text style's size, weight, and line height. Leaves `font_family`
     /// alone so the caller's cascade (parent element or an explicit chained
-    /// `.font_family(...)`) wins.
-    /// Weight is routed through `theme.effective_weight()` for BoldText accessibility.
-    /// Size and leading are multiplied by `theme.font_scale_factor`.
+    /// `.font_family(...)`) wins. See the trait-level doc for the sanitized
+    /// scale and weight routing.
     fn text_style(self, style: TextStyle, theme: &TahoeTheme) -> Self {
         apply_text_style_attrs(self, style.attrs(), theme)
     }
 
     /// Applies the text style with the emphasized (HIG) weight. Leaves `font_family`
-    /// alone — see [`text_style`](Self::text_style) for cascade semantics.
-    /// Weight is routed through `theme.effective_weight()` for BoldText accessibility.
-    /// Size and leading are multiplied by `theme.font_scale_factor`.
+    /// alone — see [`text_style`](Self::text_style) for cascade semantics and the
+    /// trait-level doc for the sanitized scale and weight routing.
     fn text_style_emphasized(self, style: TextStyle, theme: &TahoeTheme) -> Self {
         apply_text_style_attrs(self, style.emphasized(), theme)
     }

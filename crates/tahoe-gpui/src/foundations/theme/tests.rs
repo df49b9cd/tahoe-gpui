@@ -1861,7 +1861,7 @@ fn with_font_scale_factor_sets_positive_value() {
 
 #[test]
 fn with_font_scale_factor_rejects_invalid_values() {
-    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+    for bad in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         let theme = TahoeTheme::dark().with_font_scale_factor(bad);
         assert!(
             (theme.font_scale_factor - 1.0).abs() < f32::EPSILON,
@@ -1888,8 +1888,9 @@ fn effective_font_scale_factor_returns_stored_value_when_valid() {
 fn effective_font_scale_factor_clamps_invalid_field_values() {
     // Direct pub-field assignment bypasses `with_font_scale_factor`'s guard,
     // so the reader must enforce the same contract to prevent invisible or
-    // infinite text. Regression test for #66.
-    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+    // infinite text. Regression test for #66. `-0.0` pins the strict `> 0.0`
+    // invariant — a naive refactor to `>= 0.0` would silently regress.
+    for bad in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         let mut theme = TahoeTheme::dark();
         theme.font_scale_factor = bad;
         assert!(
