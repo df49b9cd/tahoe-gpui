@@ -4,11 +4,6 @@
 //! representing a rating value. When interactive, each star acts as a
 //! clickable touch target.
 //!
-//! # Platform
-//!
-//! Per HIG this control is **macOS only**. See
-//! <https://developer.apple.com/design/human-interface-guidelines/rating-indicators>.
-//!
 //! # HIG Reference
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/rating-indicators>

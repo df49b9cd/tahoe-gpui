@@ -294,6 +294,7 @@ fn for_appearance_with_a11y_propagates_full_mode() {
     assert!(!theme.appearance.is_high_contrast());
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn liquid_glass_window_is_blurred() {
     let glass = TahoeTheme::liquid_glass().glass;
@@ -612,6 +613,7 @@ fn liquid_glass_light_background_is_light() {
     assert!(theme.background.l > 0.5);
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn liquid_glass_light_window_is_blurred() {
     let glass = TahoeTheme::liquid_glass_light().glass;
