@@ -94,6 +94,7 @@ use tahoe_gpui::components::menus_and_actions::context_menu::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle,
 };
 use tahoe_gpui::components::presentation::hover_card::HoverCard;
+use tahoe_gpui::components::selection_and_input::checkbox::CheckboxState;
 use tahoe_gpui::components::selection_and_input::date_picker::SimpleDate;
 use tahoe_gpui::foundations::accessibility::AccessibilityMode;
 
@@ -412,7 +413,7 @@ pub struct ComponentGallery {
 
     // ── Interactive state for gallery pages ──────────────────────────────
     pub toggle_on: bool,
-    pub checkbox_state: tahoe_gpui::components::selection_and_input::checkbox::CheckboxState,
+    pub checkbox_state: CheckboxState,
     pub stepper_value: f64,
     pub picker_selected: Option<SharedString>,
     pub picker_open: bool,
@@ -506,8 +507,7 @@ impl ComponentGallery {
             }),
             // Interactive state for gallery pages
             toggle_on: false,
-            checkbox_state:
-                tahoe_gpui::components::selection_and_input::checkbox::CheckboxState::Unchecked,
+            checkbox_state: CheckboxState::Unchecked,
             stepper_value: 5.0,
             picker_selected: Some(SharedString::from("cherry")),
             picker_open: false,

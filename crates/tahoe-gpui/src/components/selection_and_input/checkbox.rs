@@ -171,28 +171,30 @@ impl RenderOnce for Checkbox {
             .map(|h| h.is_focused(window))
             .unwrap_or(false);
 
-        // HIG: disabled state uses fixed muted tokens rather than proportional
-        // opacity — opacity(0.5) can fail WCAG 4.5:1 on low-contrast variants.
-        // Same rationale as `button.rs` disabled branch.
-        let (bg, border, glyph_color, label_color) = if self.disabled {
-            let muted = theme.text_disabled();
-            (theme.semantic.secondary_system_fill, muted, muted, muted)
-        } else if filled {
-            (theme.accent, theme.accent, theme.text_on_accent, theme.text)
+        let bg = if filled {
+            theme.accent
         } else {
-            (
-                theme.semantic.secondary_system_fill,
-                theme.border,
-                theme.text_on_accent,
-                theme.text,
-            )
+            theme.semantic.secondary_system_fill
+        };
+        let border = if filled { theme.accent } else { theme.border };
+
+        // HIG: disabled tint is a fixed muted color, not a proportional
+        // opacity — opacity(0.5) fails WCAG 4.5:1 on low-contrast variants.
+        // Same pattern as `button.rs` disabled branch: the label is muted
+        // via `text_disabled()` and the cursor reverts; the box keeps its
+        // active fill/border/glyph so filled-vs-unfilled and checked-vs-
+        // unchecked stay visually distinct.
+        let label_color = if self.disabled {
+            theme.text_disabled()
+        } else {
+            theme.text
         };
 
         let glyph: Option<gpui::AnyElement> = match self.state {
             CheckboxState::Checked => Some(
                 Icon::new(IconName::Check)
                     .size(px(10.0))
-                    .color(glyph_color)
+                    .color(theme.text_on_accent)
                     .into_any_element(),
             ),
             CheckboxState::Mixed => Some(
@@ -201,7 +203,7 @@ impl RenderOnce for Checkbox {
                     .w(px(6.0))
                     .h(px(2.0))
                     .rounded(px(1.0))
-                    .bg(glyph_color)
+                    .bg(theme.text_on_accent)
                     .into_any_element(),
             ),
             CheckboxState::Unchecked => None,
