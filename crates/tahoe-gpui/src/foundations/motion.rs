@@ -606,4 +606,41 @@ mod tests {
         let crossfaded = reduce_motion_substitute(base.clone(), AccessibilityMode::REDUCE_MOTION);
         assert_eq!(crossfaded.duration, REDUCE_MOTION_CROSSFADE);
     }
+
+    #[test]
+    fn accessible_transition_animation_covers_three_a11y_states() {
+        use super::{REDUCE_MOTION_CROSSFADE, accessible_transition_animation};
+        use crate::foundations::accessibility::AccessibilityMode;
+
+        let tokens = default_tokens();
+        let natural_ms = tokens.spring_duration_ms();
+
+        // REDUCE_MOTION overrides everything: 150 ms linear cross-fade.
+        let reduced = accessible_transition_animation(&tokens, AccessibilityMode::REDUCE_MOTION);
+        assert_eq!(reduced.duration, REDUCE_MOTION_CROSSFADE);
+        assert!(
+            ((reduced.easing)(0.5) - 0.5).abs() < 1e-6,
+            "REDUCE_MOTION easing must be linear"
+        );
+
+        // PREFER_CROSS_FADE keeps the natural duration but swaps the curve
+        // for linear so translation-heavy transitions read as pure opacity.
+        let cross_fade = accessible_transition_animation(
+            &tokens,
+            AccessibilityMode::PREFER_CROSS_FADE_TRANSITIONS,
+        );
+        assert_eq!(cross_fade.duration.as_millis() as u64, natural_ms);
+        assert!(
+            ((cross_fade.easing)(0.5) - 0.5).abs() < 1e-6,
+            "PREFER_CROSS_FADE easing must be linear"
+        );
+
+        // Default path uses the spring curve (non-linear at t = 0.5).
+        let spring = accessible_transition_animation(&tokens, AccessibilityMode::DEFAULT);
+        assert_eq!(spring.duration.as_millis() as u64, natural_ms);
+        assert!(
+            ((spring.easing)(0.5) - 0.5).abs() > 1e-3,
+            "Default path must use a non-linear spring easing"
+        );
+    }
 }

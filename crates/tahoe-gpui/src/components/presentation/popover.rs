@@ -8,15 +8,13 @@
 //! to the element that revealed it") and caps its width at
 //! [`POPOVER_MAX_WIDTH`] so it stays within the HIG sizing envelope.
 
-use std::time::Duration;
-
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
-use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
+use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 use gpui::prelude::*;
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent,
-    Window, div, px,
+    AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Window,
+    div, px,
 };
 
 /// Arrow width in points. Chosen to match macOS popover callouts
@@ -233,23 +231,22 @@ impl RenderOnce for Popover {
             // Present-transition: HIG calls for popovers to scale from the
             // anchor. GPUI's style API doesn't yet expose a transform-origin
             // scale, so we approximate with a short fade plus a small
-            // vertical translate toward the anchor. Under Reduce Motion
-            // we drop the translate per `foundations.md:1100`.
-            let reduce_motion = theme.accessibility_mode.reduce_motion();
-            let (anim_duration, translate_px) = if reduce_motion {
-                (REDUCE_MOTION_CROSSFADE, 0.0)
-            } else {
-                (
-                    Duration::from_millis(theme.glass.motion.lift_duration_ms),
-                    6.0,
-                )
-            };
+            // vertical translate toward the anchor. Under Reduce Motion or
+            // Prefer Cross-Fade we drop the translate per
+            // `foundations.md:1100`.
+            let accessibility = theme.accessibility_mode;
+            let translate_px =
+                if accessibility.reduce_motion() || accessibility.prefer_cross_fade_transitions() {
+                    0.0
+                } else {
+                    6.0
+                };
             let is_above = self.placement.is_above();
             let anim_id = ElementId::Name("popover-present".into());
             let populated_wrapper = wrapper.child(content_col);
             let animated_wrapper = populated_wrapper.with_animation(
                 anim_id,
-                Animation::new(anim_duration),
+                accessible_transition_animation(&theme.glass.motion, accessibility),
                 move |el, delta| {
                     let offset = translate_px * (1.0 - delta);
                     let signed = if is_above { offset } else { -offset };

@@ -48,18 +48,16 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/sheets>
 
-use std::time::Duration;
-
 use gpui::prelude::*;
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent,
-    Pixels, Window, div, px,
+    AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Pixels,
+    Window, div, px,
 };
 
 use crate::callback_types::{OnMutCallback, rc_wrap};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{backdrop_overlay, glass_surface};
-use crate::foundations::motion::REDUCE_MOTION_CROSSFADE;
+use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -295,15 +293,15 @@ fn render_bottom_drawer(
         );
 
     // ── Scrollable content area (animated) ──────────────────────────────
-    let reduce_motion = theme.accessibility_mode.reduce_motion();
-    let (anim_duration, slide_offset_pt) = if reduce_motion {
-        (REDUCE_MOTION_CROSSFADE, 0.0)
-    } else {
-        (
-            Duration::from_millis(theme.glass.motion.shape_shift_duration_ms),
-            32.0,
-        )
-    };
+    // Under Reduce Motion or Prefer Cross-Fade, the 32 pt slide-up
+    // collapses to a pure opacity fade.
+    let accessibility = theme.accessibility_mode;
+    let slide_offset_pt =
+        if accessibility.reduce_motion() || accessibility.prefer_cross_fade_transitions() {
+            0.0
+        } else {
+            32.0
+        };
     let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
     let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
     let scroll_body = div()
@@ -313,10 +311,14 @@ fn render_bottom_drawer(
         .px(theme.spacing_lg)
         .pb(theme.spacing_lg)
         .child(content)
-        .with_animation(anim_id, Animation::new(anim_duration), move |el, delta| {
-            let offset = slide_offset_pt * (1.0 - delta);
-            el.opacity(delta).mt(px(offset))
-        });
+        .with_animation(
+            anim_id,
+            accessible_transition_animation(&theme.glass.motion, accessibility),
+            move |el, delta| {
+                let offset = slide_offset_pt * (1.0 - delta);
+                el.opacity(delta).mt(px(offset))
+            },
+        );
 
     // ── Sheet panel (glass surface) ─────────────────────────────────────
     let top_radius = theme.glass.radius(GlassSize::Large);
@@ -369,12 +371,6 @@ fn render_cardlike(
         .items_center()
         .justify_center();
 
-    let reduce_motion = theme.accessibility_mode.reduce_motion();
-    let anim_duration = if reduce_motion {
-        REDUCE_MOTION_CROSSFADE
-    } else {
-        Duration::from_millis(theme.glass.motion.lift_duration_ms)
-    };
     let anim_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "present".into());
     let scroll_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "scroll".into());
 
@@ -383,9 +379,11 @@ fn render_cardlike(
         .overflow_y_scroll()
         .p(theme.spacing_lg)
         .child(content)
-        .with_animation(anim_id, Animation::new(anim_duration), |el, delta| {
-            el.opacity(delta)
-        });
+        .with_animation(
+            anim_id,
+            accessible_transition_animation(&theme.glass.motion, theme.accessibility_mode),
+            |el, delta| el.opacity(delta),
+        );
 
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
     let mut panel = glass_surface(div().w(width).overflow_hidden(), theme, GlassSize::Large)
