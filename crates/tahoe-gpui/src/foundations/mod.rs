@@ -28,8 +28,12 @@ pub mod privacy;
 pub mod right_to_left;
 pub mod sf_symbols;
 pub mod spatial_layout;
+pub mod surface_scope;
 pub mod theme;
 pub mod typography;
 pub mod writing;
 
+pub use surface_scope::{
+    GlassSurfaceGuard, GlassSurfaceScope, GlassSurfaceScopeElement, is_on_glass_surface,
+};
 pub use theme::TahoeTheme;

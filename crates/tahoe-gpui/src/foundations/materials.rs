@@ -977,6 +977,32 @@ pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
         .text_color(theme.background)
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Liquid Glass surface scope
+//
+// Per HIG §Materials / Liquid Glass (`docs/hig/foundations.md:1045`),
+// content placed on a Liquid Glass surface should inherit vibrancy. Any
+// `Icon` descendant using the default `IconStyle::Auto` automatically
+// resolves to the glass variant when it sits inside a
+// [`crate::foundations::surface_scope::GlassSurfaceScope`]. To opt a
+// subtree into that behaviour, wrap the glass-surface Div:
+//
+// ```ignore
+// use tahoe_gpui::foundations::surface_scope::GlassSurfaceScope;
+// use tahoe_gpui::foundations::materials::glass_surface;
+//
+// GlassSurfaceScope::new(
+//     glass_surface(div(), theme, GlassSize::Medium)
+//         .child(Icon::new(IconName::Star))
+// )
+// ```
+//
+// Keeping scope separate from the non-scoped `glass_surface*` functions
+// means callers who only need the chrome (no icon propagation) keep the
+// `Div -> Div` signature and its chain-ability; and callers who want the
+// full propagation compose with one extra `GlassSurfaceScope::new(…)`.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 /// Apply per-element glass blur effect to a div.
 ///
 /// # ⚠️ Backdrop blur is not yet implemented

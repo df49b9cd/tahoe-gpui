@@ -1,6 +1,7 @@
 //! Icon component with SVG rendering and Unicode fallback.
 
-use crate::foundations::theme::{ActiveTheme, TahoeTheme};
+use crate::foundations::surface_scope;
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, FontWeight, Hsla, Pixels, Window, div};
 
@@ -10,28 +11,48 @@ use super::names::IconName;
 use crate::foundations::typography::TextStyle;
 
 /// Visual style for icon rendering.
+///
+/// This enum is a tahoe-gpui *approximation* of Apple's vibrancy effect on
+/// Liquid Glass surfaces — it is not a HIG concept. Per HIG
+/// §Foundations / Materials (`docs/hig/foundations.md:1045`), icons placed
+/// on a Liquid Glass surface inherit vibrancy automatically. Since GPUI
+/// cannot composite `NSVisualEffectView` vibrancy onto an SVG icon layer,
+/// this crate approximates the visual by swapping color tokens (glass uses
+/// `theme.glass.icon_*`; standard uses `theme.text_muted`) and stroke
+/// widths (glass 1.5pt, standard 1.2pt).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum IconStyle {
-    /// Derive the style from the current theme — glass themes render glass
-    /// icons, non-glass themes render standard icons. This keeps icons
-    /// coherent with the theme automatically when the theme changes.
+    /// Resolve against the ambient surface scope: `LiquidGlass` when the
+    /// icon sits inside a [`super::GlassSurfaceScope`] (set by the
+    /// `*_scoped` helpers in `foundations::materials` and by glass-aware
+    /// components such as [`super::GlassIconTile`]), otherwise `Standard`.
     #[default]
     Auto,
-    /// Standard flat icons (stroke-width 1.2, muted colors).
+    /// Standard flat icons (stroke-width 1.2, muted text color).
     Standard,
-    /// Apple Liquid Glass style (stroke-width 1.5, bright pastels,
-    /// designed for frosted glass containers).
+    /// Liquid Glass vibrancy approximation (stroke-width 1.5, glass pastel
+    /// tokens `theme.glass.icon_*`). Use on Liquid Glass surfaces only.
     LiquidGlass,
 }
 
 impl IconStyle {
-    /// Resolve `Auto` against the current theme; pass-through for explicit styles.
-    pub fn resolve(self, _theme: &TahoeTheme) -> IconStyle {
+    /// Resolve `Auto` against the ambient surface scope; pass-through for
+    /// explicit styles.
+    ///
+    /// Consults [`surface_scope::is_on_glass_surface`], which reflects
+    /// whether an ancestor element declared itself a Liquid Glass surface
+    /// via [`super::GlassSurfaceScope`]. Resolution no longer depends on
+    /// the active theme — vibrancy is a surface concern, not a theme one.
+    pub fn resolve(self) -> IconStyle {
         match self {
-            // Per HIG macOS Tahoe, glass is always present — `Auto`
-            // resolves to the glass icon style.
-            IconStyle::Auto => IconStyle::LiquidGlass,
-            _ => self,
+            IconStyle::Auto => {
+                if surface_scope::is_on_glass_surface() {
+                    IconStyle::LiquidGlass
+                } else {
+                    IconStyle::Standard
+                }
+            }
+            other => other,
         }
     }
 }
@@ -272,14 +293,8 @@ impl Icon {
     /// because upstream does not expose per-SVG stroke-width, but the
     /// value is authoritative and will be wired through when that API
     /// lands.
-    pub fn resolved_stroke_width(&self, theme: &TahoeTheme) -> f32 {
-        if let Some(w) = self.weight {
-            return super::weight_to_stroke_width(w);
-        }
-        match self.style.resolve(theme) {
-            IconStyle::LiquidGlass => 1.5,
-            _ => 1.2,
-        }
+    pub fn resolved_stroke_width(&self) -> f32 {
+        stroke_width_for(self.weight, self.style.resolve())
     }
 
     /// Convenience: turn this icon into a continuously rotating
@@ -332,6 +347,21 @@ impl Icon {
     }
 }
 
+/// Compute the stroke width for an already-resolved `IconStyle`, honoring
+/// an explicit weight override when set. Shared between
+/// `Icon::resolved_stroke_width` (introspection) and `Icon::render`
+/// (actual paint pipeline) so both paths stay in lockstep without a
+/// double surface-scope lookup per frame.
+fn stroke_width_for(weight: Option<FontWeight>, resolved_style: IconStyle) -> f32 {
+    if let Some(w) = weight {
+        return super::weight_to_stroke_width(w);
+    }
+    match resolved_style {
+        IconStyle::LiquidGlass => 1.5,
+        _ => 1.2,
+    }
+}
+
 /// Hierarchical opacity for a given layer index within a multi-layer icon.
 /// primary (0) = 1.0, secondary (1) = 0.50, tertiary (2+) = 0.25.
 pub(crate) fn hierarchical_opacity(layer_index: usize) -> f32 {
@@ -370,9 +400,15 @@ pub fn optical_baseline_offset(text_style: TextStyle) -> Pixels {
 impl RenderOnce for Icon {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let resolved_style = self.style.resolve(theme);
+        let resolved_style = self.style.resolve();
         let is_glass = resolved_style == IconStyle::LiquidGlass;
-        let color = self.color.unwrap_or(if is_glass {
+        // Default color selection. Under `Reduce Transparency` the glass
+        // chrome becomes opaque; the icon tokens (`glass.icon_*` pastels)
+        // are tuned for translucent surfaces, so fall back to
+        // `theme.text_muted` in that mode to keep contrast predictable on
+        // the opaque fallback fill.
+        let reduce_transparency = theme.accessibility_mode.reduce_transparency();
+        let color = self.color.unwrap_or(if is_glass && !reduce_transparency {
             theme.glass.icon_text
         } else {
             theme.text_muted
@@ -415,8 +451,9 @@ impl RenderOnce for Icon {
         // stroke-width, so the value is consumed only by the icon's own
         // introspection API today; the computation is cheap and kept
         // in the render pipeline so it goes live the moment GPUI lands
-        // the feature.
-        let _stroke_width = self.resolved_stroke_width(theme);
+        // the feature. Uses the already-resolved style so the
+        // surface-scope thread-local read happens exactly once per render.
+        let _stroke_width = stroke_width_for(self.weight, resolved_style);
 
         let render_mode = self.render_mode.unwrap_or_default();
 
