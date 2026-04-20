@@ -1,11 +1,11 @@
 use super::{
     AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, bold_step, contrast_ratio, macos_tracking,
-    meets_contrast,
+    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
+    macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
-use gpui::{FontWeight, hsla};
+use gpui::{FontWeight, SharedString, Styled, div, hsla};
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -1371,6 +1371,61 @@ fn font_design_families() {
         ".AppleSystemUIFontRounded"
     );
     assert_eq!(FontDesign::Monospaced.font_family(), "SF Mono");
+}
+
+#[test]
+fn text_style_with_design_sets_font_family() {
+    let theme = TahoeTheme::dark();
+    for (design, expected) in [
+        (FontDesign::Default, ".AppleSystemUIFont"),
+        (FontDesign::Serif, "New York"),
+        (FontDesign::Rounded, ".AppleSystemUIFontRounded"),
+        (FontDesign::Monospaced, "SF Mono"),
+    ] {
+        let mut el = div().text_style_with_design(TextStyle::Body, design, &theme);
+        assert_eq!(
+            Styled::text_style(&mut el).font_family,
+            Some(SharedString::from(expected)),
+            "design={design:?}"
+        );
+
+        let mut el_em =
+            div().text_style_emphasized_with_design(TextStyle::Headline, design, &theme);
+        assert_eq!(
+            Styled::text_style(&mut el_em).font_family,
+            Some(SharedString::from(expected)),
+            "emphasized design={design:?}"
+        );
+    }
+}
+
+#[test]
+fn text_style_preserves_font_family_cascade() {
+    // `text_style` / `text_style_emphasized` must leave `font_family` alone so
+    // callers that set it (on the element or a parent) are not clobbered.
+    let theme = TahoeTheme::dark();
+
+    let mut plain = div().text_style(TextStyle::Body, &theme);
+    assert!(
+        Styled::text_style(&mut plain).font_family.is_none(),
+        "text_style must not set font_family"
+    );
+
+    let mut emphasized = div().text_style_emphasized(TextStyle::Headline, &theme);
+    assert!(
+        Styled::text_style(&mut emphasized).font_family.is_none(),
+        "text_style_emphasized must not set font_family"
+    );
+
+    // Caller-chained `.font_family(...)` before `text_style(...)` must survive
+    // — the pattern `/code/*` and `/markdown/code_block/*` currently use.
+    let mut chained = div()
+        .font_family("SF Mono")
+        .text_style(TextStyle::Body, &theme);
+    assert_eq!(
+        Styled::text_style(&mut chained).font_family,
+        Some(SharedString::from("SF Mono"))
+    );
 }
 
 // ── relative_luminance hue-sector coverage ─────────────────────────────
