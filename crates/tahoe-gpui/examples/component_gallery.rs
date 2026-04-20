@@ -475,11 +475,7 @@ impl ComponentGallery {
                 input.set_placeholder("Enter your name");
                 input
             }),
-            text_input_filled: cx.new(|cx| {
-                let mut input = TextField::new(cx);
-                input.set_text("Søren Magnus Olesen", cx);
-                input
-            }),
+            text_input_filled: cx.new(|cx| TextField::new_with_text(cx, "Søren Magnus Olesen")),
             split_view: cx.new(|cx| {
                 let mut sv = SplitView::new(cx);
                 sv.set_primary(

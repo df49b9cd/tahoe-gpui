@@ -206,6 +206,13 @@ impl SearchField {
     /// key-event accumulator with GPUI's full text-editing surface (cursor,
     /// selection, IME, paste, undo). The caller owns the [`TextField`]
     /// entity and controls its change callback via `field.set_on_change`.
+    ///
+    /// Clicking the built-in clear button wipes the embedded field via
+    /// `TextField::set_text("", …)`, which fires the TextField's `on_change`
+    /// with an empty string before the `SearchField`-level `on_change` runs.
+    /// A host that wires both callbacks will therefore observe two
+    /// empty-string events for a single clear click — register on only one
+    /// side, or dedupe explicitly.
     pub fn text_field(mut self, field: Entity<TextField>) -> Self {
         self.text_field = Some(field);
         self
@@ -425,7 +432,7 @@ impl RenderOnce for SearchField {
                     .on_click(move |_event, window, cx| {
                         if let Some(ref field) = text_field_for_clear {
                             field.update(cx, |tf, cx| {
-                                tf.set_text("", cx);
+                                tf.set_text("", window, cx);
                             });
                         }
                         if let Some(ref handler) = clear_handler {

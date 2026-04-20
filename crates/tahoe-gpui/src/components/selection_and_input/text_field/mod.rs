@@ -352,16 +352,64 @@ impl TextField {
         &self.content
     }
 
-    /// Set the text content and reset cursor to end.
-    pub fn set_text(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+    /// Replace the text content imperatively.
+    ///
+    /// Strips newlines, truncates to `max_length`, resets the cursor to the
+    /// end, pushes an undo snapshot, and fires `on_change` — so parents
+    /// driving the field stay in sync and the programmatic write is undoable.
+    ///
+    /// Unlike user-typed edits, `set_text` intentionally bypasses the
+    /// `disabled` / `read_only` gate: it's the owner's write path (e.g. a
+    /// parent refreshing the field from a data source) and must still succeed
+    /// when interactive input is blocked.
+    pub fn set_text(
+        &mut self,
+        text: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.push_undo_snapshot();
+        self.assign_content(text);
+        cx.notify();
+        if let Some(on_change) = &self.on_change {
+            on_change(&self.content, window, cx);
+        }
+    }
+
+    /// Construct a `TextField` seeded with initial text.
+    ///
+    /// Usable from `cx.new(|cx| TextField::new_with_text(cx, …))` where no
+    /// `Window` is in scope. Does not push an undo snapshot or fire
+    /// `on_change`; if a handler was attached on `self` before this call it
+    /// will not be invoked — use `set_text` after construction when you need
+    /// the callback to fire.
+    pub fn new_with_text(cx: &mut Context<Self>, text: impl Into<SharedString>) -> Self {
+        let mut this = Self::new(cx);
+        this.assign_content(text);
+        this
+    }
+
+    /// Normalise incoming text (strip newlines, truncate to `max_length`),
+    /// assign it to `self.content`, and reset the selection/IME state.
+    /// Shared by `set_text` and `new_with_text` so both entry points keep
+    /// identical normalisation semantics.
+    fn assign_content(&mut self, text: impl Into<SharedString>) {
         let mut s: String = text.into().to_string();
         s.retain(|c| c != '\n');
+        if let Some(max) = self.max_length
+            && s.len() > max
+        {
+            s = s
+                .char_indices()
+                .take_while(|(i, c)| *i + c.len_utf8() <= max)
+                .map(|(_, c)| c)
+                .collect();
+        }
         self.content = SharedString::from(s);
         let len = self.content.len();
         self.selected_range = len..len;
         self.selection_reversed = false;
         self.marked_range = None;
-        cx.notify();
     }
 
     /// Set the callback invoked after every text modification.
@@ -1637,13 +1685,13 @@ mod interaction_tests {
         let changes = Rc::new(RefCell::new(Vec::new()));
         let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
 
-        field.update_in(cx, |field, _window, cx| {
+        field.update_in(cx, |field, window, cx| {
             field.set_show_clear_button(true);
             field.set_on_change({
                 let changes = changes.clone();
                 move |text, _, _| changes.borrow_mut().push(text.to_string())
             });
-            field.set_text("search", cx);
+            field.set_text("search", window, cx);
         });
 
         // HIG: clear button is focus-gated, so the field has to own focus
@@ -1655,7 +1703,92 @@ mod interaction_tests {
         field.update_in(cx, |field, _window, _cx| {
             assert_eq!(field.text(), "");
         });
-        assert_eq!(&*changes.borrow(), &[String::new()]);
+        assert_eq!(&*changes.borrow(), &["search".to_string(), String::new()]);
+    }
+
+    // Regression for #18: programmatic `set_text` must mirror typed edits —
+    // push an undo snapshot and fire `on_change`, so parents driving the
+    // field imperatively stay in sync and the write is undoable.
+    #[gpui::test]
+    async fn set_text_fires_on_change_and_is_undoable(cx: &mut TestAppContext) {
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+
+        field.update_in(cx, |field, window, cx| {
+            field.set_on_change({
+                let changes = changes.clone();
+                move |text, _, _| changes.borrow_mut().push(text.to_string())
+            });
+            field.set_text("hello", window, cx);
+        });
+
+        field.update_in(cx, |field, _window, _cx| {
+            assert_eq!(field.text(), "hello");
+            assert_eq!(
+                field.undo_stack.len(),
+                1,
+                "set_text must push an undo snapshot"
+            );
+        });
+        assert_eq!(&*changes.borrow(), &["hello".to_string()]);
+
+        // Type a character, then undo. The undo snapshot taken by `set_text`
+        // should carry the field back to "hello". We call `handle_undo`
+        // directly because the test harness doesn't register the Cmd-Z
+        // binding (see `test_helpers::text_field_keybindings`).
+        focus_text_field(&field, cx);
+        cx.type_text("!");
+        field.update_in(cx, |field, _window, _cx| {
+            assert_eq!(field.text(), "hello!");
+        });
+
+        field.update_in(cx, |field, window, cx| {
+            field.handle_undo(&crate::text_actions::Undo, window, cx);
+            assert_eq!(field.text(), "hello");
+            // After the undo, the redo stack should hold the "hello!" state
+            // we just stepped out of.
+            assert_eq!(field.redo_stack.len(), 1);
+        });
+
+        // A fresh `set_text` must invalidate the redo stack — standard HIG
+        // undo semantics, and the guarantee `push_undo_snapshot` offers.
+        field.update_in(cx, |field, window, cx| {
+            field.set_text("fresh", window, cx);
+            assert!(
+                field.redo_stack.is_empty(),
+                "set_text must clear redo stack"
+            );
+        });
+    }
+
+    // `new_with_text` is a construction-time seeder: no undo snapshot, no
+    // `on_change` (even if one happened to be wired beforehand), newlines
+    // stripped, cursor parked at end.
+    #[gpui::test]
+    async fn new_with_text_seeds_without_notification(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| {
+            TextField::new_with_text(cx, "init\nvalue")
+        });
+
+        field.update_in(cx, |field, _window, _cx| {
+            assert_eq!(field.text(), "initvalue");
+            assert!(field.undo_stack.is_empty());
+            let len = field.text().len();
+            assert_eq!(field.selected_range, len..len);
+        });
+    }
+
+    // `set_text` must truncate to `max_length`, matching typed-edit behaviour
+    // in `replace_text_in_range`.
+    #[gpui::test]
+    async fn set_text_respects_max_length(cx: &mut TestAppContext) {
+        let (field, cx) = setup_test_window(cx, |_window, cx| TextField::new(cx));
+
+        field.update_in(cx, |field, window, cx| {
+            field.set_max_length(Some(5));
+            field.set_text("exceeded length", window, cx);
+            assert_eq!(field.text(), "excee");
+        });
     }
 
     #[gpui::test]
