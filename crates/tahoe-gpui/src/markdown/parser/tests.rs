@@ -742,7 +742,7 @@ fn parse_citation_disabled_inside_heading() {
     // collect_inlines runs for headings via parse_block on TagEnd::Heading.
     let blocks = parse_without_citations("# Section [5] of 10");
     match &blocks[0] {
-        MarkdownBlock::Heading { level, content } => {
+        MarkdownBlock::Heading { level, content, .. } => {
             assert_eq!(*level, 1);
             assert_eq!(content.len(), 1);
             assert!(matches!(&content[0], InlineContent::Text(t) if t == "Section [5] of 10"));
