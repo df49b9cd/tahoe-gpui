@@ -31,7 +31,7 @@ fn handle_incomplete_url<'a>(
     }
 
     // Find matching `[` for the `]`.
-    let open = find_matching_opening_bracket(text, bracket_paren_index)?;
+    let open = find_matching_opening_bracket(text, bracket_paren_index, ranges)?;
 
     if ranges.is_inside_code(open) {
         return None;
@@ -97,7 +97,7 @@ fn handle_incomplete_text<'a>(
     }
 
     // Check if the closing bracket actually matches (accounting for nesting).
-    let closing = find_matching_closing_bracket(text, open_index);
+    let closing = find_matching_closing_bracket(text, open_index, ranges);
     if closing.is_none() {
         let before = &text[..start];
         if is_image {
@@ -122,7 +122,7 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
                 continue;
             }
             // Check if this `[` has a matching `]`.
-            if let Some(close_idx) = find_matching_closing_bracket(text, j) {
+            if let Some(close_idx) = find_matching_closing_bracket(text, j, ranges) {
                 // Check if it's a full link `[text](url)`.
                 if close_idx + 1 < bytes.len()
                     && bytes[close_idx + 1] == b'('
@@ -225,7 +225,7 @@ pub(crate) fn handle_with_ranges<'a>(
         && !ranges.is_inside_code(pos)
     {
         // Check if this is an image (preceded by `![`).
-        let open = find_matching_opening_bracket(text, pos);
+        let open = find_matching_opening_bracket(text, pos, ranges);
         let is_image = open.is_some_and(|o| text[..o].ends_with('!'));
         if ((is_image && images_enabled) || (!is_image && links_enabled))
             && let Some(result) = handle_incomplete_url(text, pos, link_mode, ranges)
@@ -415,5 +415,42 @@ mod tests {
     #[test]
     fn removes_incomplete_image_with_crlf() {
         assert_eq!(h("text ![alt](\r\nhttp://exam").as_ref(), "text");
+    }
+
+    // Issue #78: brackets inside inline code must not participate in link matching.
+    #[test]
+    fn bracket_inside_inline_code_not_matched() {
+        // The [ inside backticks should not form a link.
+        assert!(matches!(h("`[incomplete`"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn closing_bracket_inside_inline_code_ignored() {
+        // The ] inside backticks should not close the link; the [ is still incomplete.
+        assert_eq!(
+            h("[text `code]more`").as_ref(),
+            "[text `code]more`](streamdown:incomplete-link)"
+        );
+    }
+
+    #[test]
+    fn complete_link_with_inline_code_in_text() {
+        // A complete link whose text contains inline code should be left alone.
+        assert!(matches!(h("[text `code]more`](url)"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn inline_code_brackets_dont_interfere_with_real_link() {
+        // Inline code brackets should not prevent detecting a real incomplete link.
+        assert_eq!(
+            h("`[code]` [link](url").as_ref(),
+            "`[code]` [link](streamdown:incomplete-link)"
+        );
+    }
+
+    #[test]
+    fn inline_code_closing_bracket_doesnt_false_match() {
+        // `](` outside code but `[` inside code — not a link.
+        assert!(matches!(h("`[text` ](url"), Cow::Borrowed(_)));
     }
 }
