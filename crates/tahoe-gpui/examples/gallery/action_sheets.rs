@@ -48,10 +48,15 @@ pub fn render(
                         .text_color(theme.text)
                         .child("Default Style"),
                 )
-                .child(ActionSheet::new("demo-action-sheet").items(vec![
-                    ActionSheetItem::new("Copy"),
-                    ActionSheetItem::new("Move to Trash").style(ActionSheetStyle::Destructive),
-                ]))
+                .child(
+                    ActionSheet::new("demo-action-sheet")
+                        .items(vec![
+                            ActionSheetItem::new("Copy"),
+                            ActionSheetItem::new("Move to Trash")
+                                .style(ActionSheetStyle::Destructive),
+                        ])
+                        .open(true),
+                )
                 .child(div().h(px(16.0)))
                 .child(
                     div()
@@ -67,7 +72,8 @@ pub fn render(
                             ActionSheetItem::new("Delete Permanently")
                                 .style(ActionSheetStyle::Destructive),
                         ])
-                        .cancel_text("Dismiss"),
+                        .cancel_text("Dismiss")
+                        .open(true),
                 ),
         )
         .into_any_element()

@@ -112,6 +112,9 @@ impl ActionSheetItem {
 ///
 /// Displays a vertical stack of action items with a cancel button at the bottom.
 /// When a glass theme is active, uses `GlassSize::Large` for sheet-level surfaces.
+///
+/// Defaults to closed; call [`ActionSheet::open`] with `true` to present it,
+/// matching the gate used by `Alert`, `Modal`, and `Sheet`.
 #[derive(IntoElement)]
 pub struct ActionSheet {
     id: ElementId,
@@ -131,10 +134,7 @@ impl ActionSheet {
             cancel_text: SharedString::from("Cancel"),
             on_cancel: None,
             focus_handle: None,
-            // Default to open so pre-existing call sites that managed
-            // visibility by unmount/remount behave unchanged. New code
-            // should prefer the explicit `.open(bool)` gate.
-            is_open: true,
+            is_open: false,
             presentation: None,
         }
     }
@@ -430,7 +430,7 @@ mod tests {
         let sheet = ActionSheet::new("sheet");
         assert!(sheet.items.is_empty());
         assert_eq!(sheet.cancel_text.as_ref(), "Cancel");
-        assert!(sheet.is_open, "default is_open should be true");
+        assert!(!sheet.is_open, "default is_open should be false");
         assert!(sheet.presentation.is_none());
     }
 
@@ -579,6 +579,7 @@ mod interaction_tests {
                     move |_, _| *cancel_count.borrow_mut() += 1
                 })
                 .focus_handle(self.focus_handle.clone())
+                .open(true)
         }
     }
 
