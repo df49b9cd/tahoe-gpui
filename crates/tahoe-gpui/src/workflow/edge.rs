@@ -211,18 +211,20 @@ impl RenderOnce for EdgeElement {
                 let mut points: Vec<(f32, f32)> = Vec::with_capacity(segments as usize + 1);
                 let mut arc_lengths = Vec::with_capacity(segments as usize + 1);
                 let mut cumulative = 0.0_f32;
+
+                points.push(eval(0.0));
                 arc_lengths.push(0.0);
 
-                for i in 0..=segments {
+                for i in 1..=segments {
                     let t = i as f32 / segments as f32;
                     let p = eval(t);
-                    if i > 0 {
-                        let prev: (f32, f32) = points[i as usize - 1];
-                        let dx = p.0 - prev.0;
-                        let dy = p.1 - prev.1;
-                        cumulative += (dx * dx + dy * dy).sqrt();
-                        arc_lengths.push(cumulative);
-                    }
+                    let prev = *points
+                        .last()
+                        .expect("points is seeded with eval(0.0) before the loop");
+                    let dx = p.0 - prev.0;
+                    let dy = p.1 - prev.1;
+                    cumulative += (dx * dx + dy * dy).sqrt();
+                    arc_lengths.push(cumulative);
                     points.push(p);
                 }
 
@@ -230,17 +232,17 @@ impl RenderOnce for EdgeElement {
                 let dash_len = 5.0;
                 let pattern_len = dash_len * 2.0;
 
-                for i in 0..segments as usize {
+                for (arc_pair, pt_pair) in arc_lengths.windows(2).zip(points.windows(2)) {
                     // For dashed style, skip segments in the "gap" phase
                     if is_dashed {
-                        let mid_arc = (arc_lengths[i] + arc_lengths[i + 1]) / 2.0;
+                        let mid_arc = (arc_pair[0] + arc_pair[1]) / 2.0;
                         if mid_arc % pattern_len >= dash_len {
                             continue;
                         }
                     }
 
-                    let p0 = points[i];
-                    let p1 = points[i + 1];
+                    let p0 = pt_pair[0];
+                    let p1 = pt_pair[1];
 
                     let cx_pos = (p0.0 + p1.0) / 2.0 + offset_x;
                     let cy_pos = (p0.1 + p1.1) / 2.0 + offset_y;
