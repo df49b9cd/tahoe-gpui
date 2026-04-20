@@ -109,7 +109,7 @@ impl IncrementalMarkdownParser {
             self.has_table = remend::has_table(&self.source);
         }
 
-        // Detect text direction once from first ~200 chars, then cache.
+        // Detect text direction once from first ~32 chars (or immediately on RTL), then cache.
         if !self.direction_detected {
             let dir_end = self
                 .source
@@ -117,7 +117,7 @@ impl IncrementalMarkdownParser {
                 .nth(200)
                 .map_or(self.source.len(), |(idx, _)| idx);
             self.text_direction = remend::detect_text_direction(&self.source[..dir_end]);
-            if self.source.len() >= 200 {
+            if self.source.len() >= 32 || self.text_direction == remend::TextDirection::Rtl {
                 self.direction_detected = true;
             }
         }
