@@ -2,33 +2,25 @@
 //!
 //! Ported from Streamdown's `incomplete-code-utils.ts`.
 
-use crate::utils::parse_fence_at_line_start;
+use crate::utils::FenceScanner;
 
 /// Returns `true` if the markdown text has an unclosed code fence.
 ///
 /// Walks line-by-line per CommonMark §4.5: a closing fence must use the same
 /// character and be at least as long as the opening fence.
 pub fn has_incomplete_code_fence(markdown: &str) -> bool {
-    let mut open_fence_char: Option<u8> = None;
-    let mut open_fence_length: usize = 0;
+    let mut scanner = FenceScanner::new();
+    let bytes = markdown.as_bytes();
+    let mut line_start = 0usize;
 
-    for line in markdown.split('\n') {
-        if let Some(hit) = parse_fence_at_line_start(line.as_bytes(), 0) {
-            if let Some(open_char) = open_fence_char {
-                // We're inside a fence — check if this closes it.
-                if hit.ch == open_char && hit.len >= open_fence_length {
-                    open_fence_char = None;
-                    open_fence_length = 0;
-                }
-            } else {
-                // Not inside a fence — this opens one.
-                open_fence_char = Some(hit.ch);
-                open_fence_length = hit.len;
-            }
+    for i in 0..=bytes.len() {
+        if i == bytes.len() || bytes[i] == b'\n' {
+            scanner.consume_fence_at_line_start(bytes, line_start);
+            line_start = i + 1;
         }
     }
 
-    open_fence_char.is_some()
+    scanner.in_code_block()
 }
 
 /// Returns `true` if the markdown text contains a table delimiter row.

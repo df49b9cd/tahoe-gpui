@@ -87,6 +87,9 @@ impl CodeBlockRanges {
     /// Range for each region: [start+1, end+1) where start/end are the first bytes
     /// of the opening/closing delimiters.
     fn compute_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        // NOTE: fence transitions inlined — see FenceScanner for the canonical
+        // implementation. Changes here must be mirrored in is_inside_code_block,
+        // is_within_complete_inline_code, and incomplete_code.rs.
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut ranges = Vec::new();
@@ -172,6 +175,8 @@ impl CodeBlockRanges {
         // from the opener through `len` is inside code. Using `len + 1` as the
         // exclusive end keeps `is_inside_code(len)` in agreement with
         // `is_inside_code_block(text, len)` for unterminated fences.
+        // See matches_original_is_inside_code_block (uses 0..=len); removing
+        // the +1 breaks agreement at pos == len.
         if in_code_block && code_block_start <= len {
             ranges.push(code_block_start..len + 1);
         } else if in_inline_code && inline_code_start <= len {
@@ -186,6 +191,8 @@ impl CodeBlockRanges {
     /// Ports the logic from `utils::is_within_complete_inline_code`: only includes
     /// spans where both opening and closing backtick are present.
     fn compute_complete_inline_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        // NOTE: fence transitions inlined — see FenceScanner for the canonical
+        // implementation. Changes here must be mirrored in the other scanners.
         let bytes = text.as_bytes();
         let len = bytes.len();
         let mut ranges = Vec::new();
@@ -314,8 +321,11 @@ impl CodeBlockRanges {
         }
 
         // If still in math at end of text, the rest is "inside math".
-        if (in_block_math || in_inline_math) && math_start < len {
-            ranges.push(math_start..len);
+        // See matches_original_is_within_math_block (uses 0..=len); using len+1
+        // keeps agreement at pos == len for unterminated math, matching the
+        // code/inline-code trailing-range convention.
+        if (in_block_math || in_inline_math) && math_start <= len {
+            ranges.push(math_start..len + 1);
         }
 
         ranges
@@ -500,6 +510,8 @@ mod tests {
             // Issue #50 follow-up: newline closes any in-progress inline span.
             "`unclosed\nnext",
             "`one`\n`two`",
+            // Unterminated inline span at EOF — hits trailing-range push.
+            "`still open",
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
@@ -526,7 +538,7 @@ mod tests {
         ];
         for text in &texts {
             let ranges = CodeBlockRanges::new(text);
-            for pos in 0..text.len() {
+            for pos in 0..=text.len() {
                 let expected = utils::is_within_math_block(text, pos);
                 let actual = ranges.is_within_math(pos);
                 assert_eq!(

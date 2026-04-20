@@ -129,8 +129,9 @@ impl FenceScanner {
         Self::default()
     }
 
-    /// Returns `true` if the most recent `consume_fence_at_line_start` call
+    /// Returns `True` if the most recent `consume_fence_at_line_start` call
     /// left the scanner inside a fenced code block.
+    #[inline]
     pub fn in_code_block(&self) -> bool {
         self.in_code_block
     }
@@ -143,6 +144,7 @@ impl FenceScanner {
     /// A closing fence must use the same character and be at least as long as
     /// the opening fence: `` ```` `` is not closed by ``` ``` ``, and a
     /// backtick fence is not closed by a tilde run.
+    #[inline]
     pub fn consume_fence_at_line_start(
         &mut self,
         bytes: &[u8],
@@ -162,6 +164,42 @@ impl FenceScanner {
     }
 }
 
+/// Iterates every byte position in `bytes` that is outside a fenced code block,
+/// calling `visitor(byte, i, at_line_start)` for each. The callback receives
+/// the byte value, its index, and whether it sits at a line start (just after
+/// a `\n` or at offset 0).
+///
+/// This eliminates the duplicated FenceScanner + line_start scaffold from
+/// the emphasis-counting helpers in emphasis.rs.
+pub(crate) fn for_each_byte_outside_fence(bytes: &[u8], mut visitor: impl FnMut(u8, usize, bool)) {
+    let len = bytes.len();
+    let mut scanner = FenceScanner::new();
+    let mut i = 0;
+    let mut line_start = 0usize;
+
+    while i < len {
+        if i == line_start
+            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
+        {
+            i = next;
+            continue;
+        }
+        if scanner.in_code_block() {
+            if bytes[i] == b'\n' {
+                line_start = i + 1;
+            }
+            i += 1;
+            continue;
+        }
+        let at_line_start = i == line_start;
+        visitor(bytes[i], i, at_line_start);
+        if bytes[i] == b'\n' {
+            line_start = i + 1;
+        }
+        i += 1;
+    }
+}
+
 /// Returns `true` if the position is inside a fenced code block (between ``` markers)
 /// or an inline code span (between `` ` `` markers).
 ///
@@ -169,12 +207,22 @@ impl FenceScanner {
 /// fences must start at the beginning of a line with ≤3 leading spaces. A
 /// 3+ backtick or tilde run in the middle of a line is NOT a fence.
 pub fn is_inside_code_block(text: &str, position: usize) -> bool {
+    // NOTE: fence open/close transitions are inlined here rather than using
+    // FenceScanner because this function scans 0..position (not the full text)
+    // and must collect inline-code state too. Any change to the fence-matching
+    // logic must be kept in sync with FenceScanner (emphasis.rs), ranges.rs
+    // (compute_code_ranges, compute_complete_inline_code_ranges), and
+    // incomplete_code.rs (has_incomplete_code_fence).
     let bytes = text.as_bytes();
     let mut in_code_block = false;
     let mut opening_fence_char: u8 = 0;
     let mut opening_fence_len: usize = 0;
     let mut in_inline_code = false;
-    let mut fence_on_line = parse_fence_at_line_start(bytes, 0);
+    let mut fence_on_line: Option<FenceHit> = if position > 0 {
+        parse_fence_at_line_start(bytes, 0)
+    } else {
+        None
+    };
     let mut i = 0;
 
     while i < position && i < bytes.len() {
@@ -239,6 +287,9 @@ pub fn is_inside_code_block(text: &str, position: usize) -> bool {
 /// — this function scans the full text each time (O(n)).
 #[cfg(test)]
 pub(crate) fn is_within_complete_inline_code(text: &str, position: usize) -> bool {
+    // NOTE: fence transitions inlined — see FenceScanner for the canonical
+    // implementation. Changes here must be mirrored in is_inside_code_block,
+    // ranges.rs, and incomplete_code.rs.
     let bytes = text.as_bytes();
     let mut in_multiline_code = false;
     let mut opening_fence_char: u8 = 0;
@@ -298,7 +349,6 @@ pub(crate) fn is_within_complete_inline_code(text: &str, position: usize) -> boo
         if bytes[i] == b'\n' {
             fence_on_line = parse_fence_at_line_start(bytes, i + 1);
             in_inline_code = false;
-            inline_code_start = None;
         }
         i += 1;
     }
@@ -663,6 +713,12 @@ mod tests {
         assert!(is_inside_code_block("   ```\ninside", 10));
         // 4 leading spaces disqualifies the fence (indented code block syntax).
         assert!(!is_inside_code_block("    ```\nnot-inside", 10));
+        // Newline resets inline code span — unclosed backtick doesn't cross \n.
+        assert!(is_inside_code_block("`unclosed", 5));
+        assert!(!is_inside_code_block("`unclosed\nnext", 14));
+        // Fence opens after a newline: prose line is outside, code line is inside.
+        assert!(!is_inside_code_block("plain\n```\ncode", 5));
+        assert!(is_inside_code_block("plain\n```\ncode", 10));
     }
 
     #[test]
@@ -826,6 +882,7 @@ mod tests {
         // A tab counts as 4 columns; no fence can open after a leading tab.
         let mut scanner = FenceScanner::new();
         assert_eq!(scanner.consume_fence_at_line_start(b"\t```\nx", 0), None);
+        assert!(!scanner.in_code_block());
     }
 
     #[test]

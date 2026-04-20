@@ -1406,12 +1406,12 @@ fn fence_soup() -> impl Strategy<Value = String> {
 fn tilde_fence_soup() -> impl Strategy<Value = String> {
     prop::collection::vec(
         prop_oneof![
-            prop::string::string_regex(r"[a-z ]{0,6}").unwrap(),
-            Just("\n".into()),
-            Just("~~~".into()),
-            Just("~~~~".into()),
-            Just("   ".into()),
-            Just("    ".into()),
+            2 => prop::string::string_regex(r"[a-z ]{0,6}").unwrap(),
+            2 => Just("\n".into()),
+            1 => Just("~~~".into()),
+            1 => Just("~~~~".into()),
+            1 => Just("   ".into()),
+            1 => Just("    ".into()),
         ],
         0..20,
     )
@@ -1753,6 +1753,9 @@ proptest! {
     // inline code, so no filter is needed.
     #[test]
     fn fuzz_tilde_fence_scanners_agree(s in tilde_fence_soup()) {
+        // Self-guard: the invariant assumes no backtick characters; if a
+        // future refactor adds backticks to the generator, this catches it.
+        prop_assume!(!s.as_bytes().contains(&b'`'));
         let has_open = has_incomplete_code_fence(&s);
         let ends_inside = is_inside_code_block(&s, s.len());
         prop_assert_eq!(
