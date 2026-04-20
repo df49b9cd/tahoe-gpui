@@ -1,12 +1,16 @@
 //! Selectable text element with cross-paragraph drag-select, link
-//! click, multi-click selection modes, and Cmd/Ctrl+C copy.
+//! click, and multi-click selection modes.
 //!
 //! Wraps [`StyledText`] into a custom [`gpui::Element`] that paints a
 //! selection background before delegating the text paint, then
-//! registers mouse + key handlers that talk to a shared
+//! registers mouse handlers that talk to a shared
 //! [`MarkdownSelection`] coordinator so the selection can span
 //! multiple paragraphs within the same
 //! [`crate::markdown::StreamingMarkdown`] entity.
+//!
+//! Keyboard shortcuts (Cmd/Ctrl+C copy, Cmd/Ctrl+A select all) are
+//! handled by the parent entity's `FocusHandle` rather than per-
+//! paragraph handlers — see [`crate::markdown::renderer`].
 //!
 //! # Supported gestures
 //!
@@ -20,9 +24,6 @@
 //!   (cross-paragraph selection is mediated by the coordinator).
 //! - **Shift + click** — extend the current selection without
 //!   moving the anchor.
-//! - **Cmd / Ctrl + C** — copy the selected text (empty string if
-//!   no selection). Cross-paragraph selections are joined with `\n`.
-//! - **Cmd / Ctrl + A** — select every registered paragraph.
 //! - **Click on a link** — opens the URL via `cx.open_url` when the
 //!   gesture is a click (no drag).
 //!
@@ -42,8 +43,8 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, CursorStyle, DispatchPhase, ElementId, GlobalElementId, Hitbox, HitboxBehavior,
-    Hsla, InspectorElementId, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, SharedString, StyledText, Window, fill, point,
+    Hsla, InspectorElementId, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, SharedString, StyledText, Window, fill, point,
 };
 
 use super::AnchorClickHandler;
@@ -378,40 +379,6 @@ impl Element for SelectableText {
                         }
                     }
                     window.refresh();
-                });
-            }
-
-            // Cmd/Ctrl+C and Cmd/Ctrl+A — register a key handler
-            // that only acts when the mouse is over this
-            // paragraph (a rough proxy for "the selection is
-            // mine"; a proper focus-scoped implementation would
-            // use `FocusHandle`). Multiple paragraphs may have
-            // the same handler registered; the shared coordinator
-            // guarantees they all act on the same selection
-            // state, so duplicated handlers are idempotent.
-            {
-                let hitbox = hitbox.clone();
-                let selection = selection.clone();
-                window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
-                    if phase != DispatchPhase::Bubble {
-                        return;
-                    }
-                    if !hitbox.is_hovered(window) {
-                        return;
-                    }
-                    let keystroke = &event.keystroke;
-                    let cmd_or_ctrl = keystroke.modifiers.platform || keystroke.modifiers.control;
-                    if !cmd_or_ctrl {
-                        return;
-                    }
-                    match keystroke.key.as_str() {
-                        "c" => selection.copy_to_clipboard(cx),
-                        "a" => {
-                            selection.select_all();
-                            window.refresh();
-                        }
-                        _ => {}
-                    }
                 });
             }
 
