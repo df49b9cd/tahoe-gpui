@@ -59,7 +59,7 @@ pub fn render(
                      into a hierarchy. Rows use the `SidebarItem` primitive, which \
                      provides keyboard focus, Enter/Space activation, a visible \
                      focus ring, and a platform-appropriate minimum row height \
-                     (28 pt macOS / 44 pt iOS).",
+                     (28 pt macOS, 44 pt iOS/iPadOS/watchOS).",
                 ),
         )
         .child(div().h(theme.spacing_sm))

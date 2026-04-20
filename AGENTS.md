@@ -141,7 +141,7 @@ All `unsafe` blocks must use `// SAFETY:` comment convention with a multi-line j
 - **Don't use glob imports in tests** — always explicit `use` statements.
 - **Don't hardcode colors/metrics** — read them from `TahoeTheme` tokens so light/dark/liquid-glass variants stay consistent.
 - **Don't use `unwrap()` in production code** — use `.expect("reason")` or propagate errors.
-- **Don't hardcode control heights** — use `theme.target_size()` so each platform picks up the correct AppKit / SwiftUI control metric (28 pt macOS, 44 pt iOS/iPadOS/watchOS). macOS has no published pointer-accessibility minimum; extend the hit region past the visual size when neighbouring targets are tight (see `foundations::layout::hit_region`).
+- **Don't hardcode control heights** — use `theme.target_size()` so each platform picks up the correct AppKit / SwiftUI control metric (28 pt macOS, 44 pt iOS/iPadOS/watchOS). On macOS, extend the hit region past the visual size when neighbouring targets are tight (see `foundations::layout::hit_region`); Apple does not publish a pointer-accessibility minimum, so scale relative to the control tiers rather than pinning an ad-hoc floor.
 - **Don't use `// Safety:` comment style** — use `// SAFETY:` (uppercase, colon suffix).
 
 # Code Style

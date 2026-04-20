@@ -321,18 +321,20 @@ fn grid_custom_dot_size_overrides_default() {
 
 // ── Hit-target regression guards ──────────────────────────────────
 //
-// Pin the screen-space tolerances against the tuned comfort floors so
-// future refactors don't silently shrink the effective hit target below
-// what feels good for mouse pointing. If the design intentionally
-// changes, update the constant and these asserts together — the test
-// failure is the checkpoint.
+// Pin the screen-space tolerances against their tuned production values
+// so future refactors don't silently shrink the effective hit target.
+// Each floor is set to `PROD − 1.0` so any drop of ≥ 1 px trips the
+// assert; see [`super::PORT_HIT_RADIUS_SCREEN_PX`] and
+// [`super::EDGE_HIT_TOLERANCE_SCREEN_PX`] for the mouse-pointing
+// rationale behind the production values themselves. If the design
+// intentionally changes, update the constant and the floor together —
+// the test failure is the checkpoint.
 
-/// Comfort floor for the port hit radius. Chosen so the hit circle stays
-/// usefully larger than the 8 px visual handle without swallowing
-/// neighbouring ports.
-const PORT_HIT_COMFORT_FLOOR_PX: f32 = 20.0;
-/// Comfort floor for the edge hit tolerance. A 1 pt line needs roughly
-/// this much screen-space slack on either side to land clicks reliably.
+/// Regression floor for the port hit radius — tracks
+/// [`super::PORT_HIT_RADIUS_SCREEN_PX`] minus a 1 px slack.
+const PORT_HIT_COMFORT_FLOOR_PX: f32 = 21.0;
+/// Regression floor for the edge hit tolerance — tracks
+/// [`super::EDGE_HIT_TOLERANCE_SCREEN_PX`] minus a 1 px slack.
 const EDGE_HIT_COMFORT_FLOOR_PX: f32 = 10.0;
 
 #[test]
