@@ -1,11 +1,11 @@
 use super::{
     AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, bold_step, contrast_ratio, macos_tracking,
-    meets_contrast,
+    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
+    macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
-use gpui::{FontWeight, hsla};
+use gpui::{FontWeight, div, hsla};
 
 #[test]
 fn dark_theme_has_dark_background() {
@@ -1250,6 +1250,24 @@ fn font_design_families() {
         ".AppleSystemUIFontRounded"
     );
     assert_eq!(FontDesign::Monospaced.font_family(), "SF Mono");
+}
+
+#[test]
+fn text_style_with_design_dispatches() {
+    // Compile+dispatch smoke test. GPUI's `Styled` exposes no read-back
+    // for `font_family`; the value mapping is covered by
+    // `font_design_families` above.
+    let theme = TahoeTheme::dark();
+    let _ = div().text_style(TextStyle::Body, &theme);
+    let _ = div().text_style_emphasized(TextStyle::Headline, &theme);
+    let _ = div().text_style_with_design(TextStyle::Body, FontDesign::Monospaced, &theme);
+    let _ = div().text_style_with_design(TextStyle::Title1, FontDesign::Serif, &theme);
+    let _ = div().text_style_with_design(TextStyle::Caption1, FontDesign::Rounded, &theme);
+    let _ = div().text_style_emphasized_with_design(
+        TextStyle::Headline,
+        FontDesign::Monospaced,
+        &theme,
+    );
 }
 
 // ── relative_luminance hue-sector coverage ─────────────────────────────
