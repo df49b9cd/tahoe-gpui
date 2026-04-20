@@ -337,6 +337,46 @@ fn all_paths_live_under_known_roots() {
     }
 }
 
+/// Every embedded SVG in `ICON_ENTRIES` must be reachable from some
+/// `IconName::render_strategy()` arm. An asset that no variant references
+/// is dead weight in the binary — the inverse of
+/// `all_render_strategy_paths_resolve`, and the guard that catches orphans
+/// left behind after a variant is removed or renamed.
+#[test]
+fn no_orphaned_icon_entries() {
+    use std::collections::HashSet;
+
+    let mut referenced: HashSet<&str> = HashSet::new();
+    for v in ALL_VARIANTS {
+        if let Some(strategy) = v.render_strategy() {
+            match strategy {
+                RenderStrategy::Monochrome(path) => {
+                    referenced.insert(path);
+                }
+                RenderStrategy::MultiColor(layers) => {
+                    for (layer_path, _role) in layers {
+                        referenced.insert(layer_path);
+                    }
+                }
+            }
+        }
+    }
+
+    let assets = EmbeddedIconAssets;
+    let all_paths = assets.list("").unwrap();
+    let orphans: Vec<String> = all_paths
+        .iter()
+        .map(|s| s.to_string())
+        .filter(|p| !referenced.contains(p.as_str()))
+        .collect();
+
+    assert!(
+        orphans.is_empty(),
+        "Orphaned entries in ICON_ENTRIES (no IconName::render_strategy() arm \
+         references them): {orphans:#?}"
+    );
+}
+
 // ── IconScale Tests ──────────────────────────────────────────────────────
 
 #[test]
