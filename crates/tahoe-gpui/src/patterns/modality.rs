@@ -173,9 +173,11 @@ pub struct ActiveModal {
 
 impl Drop for ActiveModal {
     fn drop(&mut self) {
-        if let Ok(mut depth) = self.depth.lock()
-            && *depth > 0
-        {
+        let mut depth = self
+            .depth
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *depth > 0 {
             *depth -= 1;
         }
     }
@@ -279,7 +281,11 @@ mod tests {
         });
         assert!(handle.join().is_err(), "thread should have panicked");
         // present() must succeed and depth() must reflect the increment.
-        let _active = guard.present();
+        let active = guard.present();
         assert_eq!(guard.depth(), 1);
+        // Drop must also decrement — PoisonError::into_inner does not clear
+        // the poison flag, so drop has to recover on every lock attempt too.
+        drop(active);
+        assert_eq!(guard.depth(), 0, "drop must decrement even after poison");
     }
 }
