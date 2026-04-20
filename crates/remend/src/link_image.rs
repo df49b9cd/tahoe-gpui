@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
 use super::options::LinkMode;
+use super::ranges::CodeBlockRanges;
 use super::utils::{
-    find_matching_closing_bracket, find_matching_opening_bracket, is_inside_code_block,
-    is_list_marker_line,
+    find_matching_closing_bracket, find_matching_opening_bracket, is_list_marker_line,
 };
 
 /// Handles incomplete URLs in links/images: `[text](partial-url`.
-fn handle_incomplete_url(
-    text: &str,
+fn handle_incomplete_url<'a>(
+    text: &'a str,
     bracket_paren_index: usize,
     link_mode: LinkMode,
-) -> Option<Cow<'_, str>> {
+    ranges: &CodeBlockRanges,
+) -> Option<Cow<'a, str>> {
     // `bracket_paren_index` points to `]` in `](`.
     // Only consider `)` on the same line — a `)` later in the document
     // (e.g., from an emoticon or another link) should not prevent completion.
@@ -32,7 +33,7 @@ fn handle_incomplete_url(
     // Find matching `[` for the `]`.
     let open = find_matching_opening_bracket(text, bracket_paren_index)?;
 
-    if is_inside_code_block(text, open) {
+    if ranges.is_inside_code(open) {
         return None;
     }
 
@@ -73,11 +74,12 @@ fn handle_incomplete_url(
 }
 
 /// Handles incomplete link text: `[partial-text` without closing `]`.
-fn handle_incomplete_text(
-    text: &str,
+fn handle_incomplete_text<'a>(
+    text: &'a str,
     open_index: usize,
     link_mode: LinkMode,
-) -> Option<Cow<'_, str>> {
+    ranges: &CodeBlockRanges,
+) -> Option<Cow<'a, str>> {
     let is_image = text[..open_index].ends_with('!');
     let start = if is_image { open_index - 1 } else { open_index };
 
@@ -91,7 +93,7 @@ fn handle_incomplete_text(
             return Some(Cow::Owned(before.trim_end().to_owned()));
         }
 
-        return Some(make_incomplete_link(text, open_index, link_mode));
+        return Some(make_incomplete_link(text, open_index, link_mode, ranges));
     }
 
     // Check if the closing bracket actually matches (accounting for nesting).
@@ -101,7 +103,7 @@ fn handle_incomplete_text(
         if is_image {
             return Some(Cow::Owned(before.trim_end().to_owned()));
         }
-        return Some(make_incomplete_link(text, open_index, link_mode));
+        return Some(make_incomplete_link(text, open_index, link_mode, ranges));
     }
 
     None
@@ -109,11 +111,11 @@ fn handle_incomplete_text(
 
 /// Finds the first incomplete `[` by scanning forward, skipping complete links.
 /// `max_pos` is the position of a known incomplete `[` (fallback).
-fn find_first_incomplete_bracket(text: &str, max_pos: usize) -> usize {
+fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockRanges) -> usize {
     let bytes = text.as_bytes();
     let mut j = 0;
     while j < max_pos {
-        if bytes[j] == b'[' && !is_inside_code_block(text, j) {
+        if bytes[j] == b'[' && !ranges.is_inside_code(j) {
             // Skip images.
             if text[..j].ends_with('!') {
                 j += 1;
@@ -144,11 +146,16 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize) -> usize {
 }
 
 /// Creates the appropriate incomplete link output based on link mode.
-fn make_incomplete_link<'a>(text: &str, open_index: usize, link_mode: LinkMode) -> Cow<'a, str> {
+fn make_incomplete_link<'a>(
+    text: &str,
+    open_index: usize,
+    link_mode: LinkMode,
+    ranges: &CodeBlockRanges,
+) -> Cow<'a, str> {
     match link_mode {
         LinkMode::TextOnly => {
             // Find the first incomplete `[` (scanning forward) and strip just that bracket.
-            let first_incomplete = find_first_incomplete_bracket(text, open_index);
+            let first_incomplete = find_first_incomplete_bracket(text, open_index, ranges);
             let mut result = String::with_capacity(text.len());
             result.push_str(&text[..first_incomplete]);
             result.push_str(&text[first_incomplete + 1..]);
@@ -192,6 +199,23 @@ pub fn handle(
     links_enabled: bool,
     images_enabled: bool,
 ) -> Cow<'_, str> {
+    handle_with_ranges(
+        text,
+        link_mode,
+        links_enabled,
+        images_enabled,
+        &CodeBlockRanges::new(text),
+    )
+}
+
+/// Handles incomplete links and images, using pre-computed code block ranges.
+pub fn handle_with_ranges<'a>(
+    text: &'a str,
+    link_mode: LinkMode,
+    links_enabled: bool,
+    images_enabled: bool,
+    ranges: &CodeBlockRanges,
+) -> Cow<'a, str> {
     if !links_enabled && !images_enabled {
         return Cow::Borrowed(text);
     }
@@ -200,13 +224,13 @@ pub fn handle(
 
     // Phase 1: Look for `](` pattern — incomplete URL.
     if let Some(pos) = text.rfind("](")
-        && !is_inside_code_block(text, pos)
+        && !ranges.is_inside_code(pos)
     {
         // Check if this is an image (preceded by `![`).
         let open = find_matching_opening_bracket(text, pos);
         let is_image = open.is_some_and(|o| text[..o].ends_with('!'));
         if ((is_image && images_enabled) || (!is_image && links_enabled))
-            && let Some(result) = handle_incomplete_url(text, pos, link_mode)
+            && let Some(result) = handle_incomplete_url(text, pos, link_mode, ranges)
         {
             return result;
         }
@@ -216,7 +240,7 @@ pub fn handle(
     let mut i = bytes.len();
     while i > 0 {
         i -= 1;
-        if bytes[i] == b'[' && !is_inside_code_block(text, i) {
+        if bytes[i] == b'[' && !ranges.is_inside_code(i) {
             let is_image = text[..i].ends_with('!');
             if (is_image && !images_enabled) || (!is_image && !links_enabled) {
                 continue;
@@ -224,7 +248,7 @@ pub fn handle(
             if !is_image && is_task_list_marker_start(text, i) {
                 continue;
             }
-            if let Some(result) = handle_incomplete_text(text, i, link_mode) {
+            if let Some(result) = handle_incomplete_text(text, i, link_mode, ranges) {
                 return result;
             }
         }

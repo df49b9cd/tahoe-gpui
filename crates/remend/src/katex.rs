@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
-use super::utils::{FenceScanner, cow_append, is_part_of_triple_backtick};
+use super::ranges::CodeBlockRanges;
+use super::utils::cow_append;
 
 /// What the dollar-scanner sees at each non-escaped, non-code-block position.
 enum DollarToken {
@@ -10,16 +11,12 @@ enum DollarToken {
     Single,
 }
 
-/// Walk `text`, skipping escapes, fenced code blocks, and inline code spans,
-/// and invoke `f` for every `$` / `$$` occurrence found outside those
-/// regions. Lets `count_dollar_pairs` and `count_single_dollars` share a
-/// single scanning loop instead of duplicating the fence/inline-code
-/// bookkeeping.
-fn scan_dollars(text: &str, mut f: impl FnMut(DollarToken)) {
+/// Walk `text` using pre-computed code block ranges to skip code regions.
+/// Only checks `ranges.is_inside_code(i)` at `$` positions, which is
+/// much cheaper than per-byte fence/inline-code tracking.
+fn scan_dollars_with_ranges(text: &str, ranges: &CodeBlockRanges, mut f: impl FnMut(DollarToken)) {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    let mut in_inline_code = false;
-    let mut scanner = FenceScanner::new();
     let mut i = 0;
 
     while i < len {
@@ -28,20 +25,7 @@ fn scan_dollars(text: &str, mut f: impl FnMut(DollarToken)) {
             i += 2;
             continue;
         }
-        if let Some(next) = scanner.consume_fence(bytes, i) {
-            i = next;
-            continue;
-        }
-        if scanner.in_code_block() {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'`' && !is_part_of_triple_backtick(text, i) {
-            in_inline_code = !in_inline_code;
-            i += 1;
-            continue;
-        }
-        if !in_inline_code && bytes[i] == b'$' {
+        if bytes[i] == b'$' && !ranges.is_inside_code(i) {
             if i + 1 < len && bytes[i + 1] == b'$' {
                 f(DollarToken::Double);
                 i += 2;
@@ -55,10 +39,10 @@ fn scan_dollars(text: &str, mut f: impl FnMut(DollarToken)) {
     }
 }
 
-/// Counts `$$` pairs outside of inline code blocks and fenced code blocks.
-fn count_dollar_pairs(text: &str) -> usize {
+/// Counts `$$` pairs outside of code blocks, using pre-computed ranges.
+fn count_dollar_pairs_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
     let mut pairs = 0;
-    scan_dollars(text, |tok| {
+    scan_dollars_with_ranges(text, ranges, |tok| {
         if let DollarToken::Double = tok {
             pairs += 1;
         }
@@ -66,10 +50,10 @@ fn count_dollar_pairs(text: &str) -> usize {
     pairs
 }
 
-/// Counts single `$` signs (excluding `$$`) outside of code blocks.
-fn count_single_dollars(text: &str) -> usize {
+/// Counts single `$` signs outside of code blocks, using pre-computed ranges.
+fn count_single_dollars_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
     let mut count = 0;
-    scan_dollars(text, |tok| {
+    scan_dollars_with_ranges(text, ranges, |tok| {
         if let DollarToken::Single = tok {
             count += 1;
         }
@@ -79,7 +63,12 @@ fn count_single_dollars(text: &str) -> usize {
 
 /// Completes incomplete block KaTeX formatting (`$$`).
 pub fn handle_block(text: &str) -> Cow<'_, str> {
-    let pairs = count_dollar_pairs(text);
+    handle_block_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+/// Completes incomplete block KaTeX formatting, using pre-computed code block ranges.
+pub fn handle_block_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+    let pairs = count_dollar_pairs_with_ranges(text, ranges);
     if pairs.is_multiple_of(2) {
         return Cow::Borrowed(text);
     }
@@ -103,7 +92,12 @@ pub fn handle_block(text: &str) -> Cow<'_, str> {
 
 /// Completes incomplete inline KaTeX formatting (`$`).
 pub fn handle_inline(text: &str) -> Cow<'_, str> {
-    let count = count_single_dollars(text);
+    handle_inline_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+/// Completes incomplete inline KaTeX formatting, using pre-computed code block ranges.
+pub fn handle_inline_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) -> Cow<'a, str> {
+    let count = count_single_dollars_with_ranges(text, ranges);
     if count % 2 == 1 {
         return cow_append(text, "$");
     }

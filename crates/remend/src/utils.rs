@@ -162,7 +162,11 @@ pub fn is_inside_code_block(text: &str, position: usize) -> bool {
 /// Returns `true` if the position is inside a *complete* inline code span
 /// (both opening and closing backtick present). Returns `false` for incomplete
 /// spans so emphasis markers can still be completed during streaming.
-pub fn is_within_complete_inline_code(text: &str, position: usize) -> bool {
+///
+/// Prefer `CodeBlockRanges::is_within_complete_inline_code` for repeated queries
+/// — this function scans the full text each time (O(n)).
+#[cfg(test)]
+pub(crate) fn is_within_complete_inline_code(text: &str, position: usize) -> bool {
     let bytes = text.as_bytes();
     let mut in_inline_code = false;
     let mut in_multiline_code = false;

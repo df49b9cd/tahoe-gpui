@@ -232,8 +232,26 @@ fn run_builtin_pipeline<'a>(mut result: Cow<'a, str>, options: &RemendOptions) -
     if options.comparison_operators {
         result = apply(result, comparison_operators::handle);
     }
+
+    // Compute CodeBlockRanges once for all handlers that need code-block detection,
+    // converting ~15 O(n) scans per streaming delta into 1 O(n) scan + O(log n) queries.
+    let needs_ranges = options.html_tags
+        || options.links
+        || options.images
+        || options.bold_italic
+        || options.bold
+        || options.italic
+        || options.strikethrough
+        || options.katex
+        || options.inline_katex;
+    let ranges = needs_ranges.then(|| ranges::CodeBlockRanges::new(&result));
+
     if options.html_tags {
-        result = apply(result, html_tags::handle);
+        if let Some(ref r) = ranges {
+            result = apply_with(result, |text| html_tags::handle_with_ranges(text, r));
+        } else {
+            result = apply(result, html_tags::handle);
+        }
     }
     if options.setext_headings {
         result = apply(result, setext_heading::handle);
@@ -242,49 +260,74 @@ fn run_builtin_pipeline<'a>(mut result: Cow<'a, str>, options: &RemendOptions) -
         let link_mode = options.link_mode;
         let links_enabled = options.links;
         let images_enabled = options.images;
-        result = apply_with(result, move |text| {
-            link_image::handle(text, link_mode, links_enabled, images_enabled)
-        });
+        if let Some(ref r) = ranges {
+            result = apply_with(result, move |text| {
+                link_image::handle_with_ranges(text, link_mode, links_enabled, images_enabled, r)
+            });
+        } else {
+            result = apply_with(result, move |text| {
+                link_image::handle(text, link_mode, links_enabled, images_enabled)
+            });
+        }
         if result.ends_with(INCOMPLETE_LINK_MARKER) {
             return result;
         }
     }
-    // Compute CodeBlockRanges once for all emphasis handlers (avoids 5x redundant O(n) scans).
-    if options.bold_italic || options.bold || options.italic {
-        let ranges = ranges::CodeBlockRanges::new(&result);
+    if let Some(ref r) = ranges {
         if options.bold_italic {
             result = apply_with(result, |text| {
-                emphasis::handle_bold_italic_with_ranges(text, &ranges)
+                emphasis::handle_bold_italic_with_ranges(text, r)
             });
         }
         if options.bold {
-            result = apply_with(result, |text| {
-                emphasis::handle_bold_with_ranges(text, &ranges)
-            });
+            result = apply_with(result, |text| emphasis::handle_bold_with_ranges(text, r));
         }
         if options.italic {
             result = apply_with(result, |text| {
-                emphasis::handle_double_underscore_with_ranges(text, &ranges)
+                emphasis::handle_double_underscore_with_ranges(text, r)
             });
             result = apply_with(result, |text| {
-                emphasis::handle_italic_asterisk_with_ranges(text, &ranges)
+                emphasis::handle_italic_asterisk_with_ranges(text, r)
             });
             result = apply_with(result, |text| {
-                emphasis::handle_italic_underscore_with_ranges(text, &ranges)
+                emphasis::handle_italic_underscore_with_ranges(text, r)
             });
         }
+        if options.strikethrough {
+            result = apply_with(result, |text| strikethrough::handle_with_ranges(text, r));
+        }
+        if options.katex {
+            result = apply_with(result, |text| katex::handle_block_with_ranges(text, r));
+        }
+        if options.inline_katex {
+            result = apply_with(result, |text| katex::handle_inline_with_ranges(text, r));
+        }
+    } else {
+        // No ranges computed — use the public entry points that compute their own.
+        if options.bold_italic {
+            result = apply(result, emphasis::handle_bold_italic);
+        }
+        if options.bold {
+            result = apply(result, emphasis::handle_bold);
+        }
+        if options.italic {
+            result = apply(result, emphasis::handle_double_underscore);
+            result = apply(result, emphasis::handle_italic_asterisk);
+            result = apply(result, emphasis::handle_italic_underscore);
+        }
+        if options.strikethrough {
+            result = apply(result, strikethrough::handle);
+        }
+        if options.katex {
+            result = apply(result, katex::handle_block);
+        }
+        if options.inline_katex {
+            result = apply(result, katex::handle_inline);
+        }
     }
+
     if options.inline_code {
         result = apply(result, inline_code::handle);
-    }
-    if options.strikethrough {
-        result = apply(result, strikethrough::handle);
-    }
-    if options.katex {
-        result = apply(result, katex::handle_block);
-    }
-    if options.inline_katex {
-        result = apply(result, katex::handle_inline);
     }
 
     result
