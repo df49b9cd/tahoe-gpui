@@ -37,9 +37,14 @@ fn parse_heading_levels() {
         let blocks = parse(&input);
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            MarkdownBlock::Heading { level: l, content } => {
+            MarkdownBlock::Heading {
+                level: l,
+                content,
+                anchor_id,
+            } => {
                 assert_eq!(*l, level);
                 assert!(!content.is_empty());
+                assert_eq!(anchor_id.as_deref(), Some("heading"));
             }
             _ => panic!("expected heading for h{}", level),
         }
@@ -265,6 +270,99 @@ fn parse_streaming_delta() {
     let blocks = p.parse();
     assert_eq!(blocks.len(), 1);
     assert_eq!(first_paragraph_text(&blocks), "Hello world");
+}
+
+fn heading_anchor(block: &MarkdownBlock) -> Option<&str> {
+    match block {
+        MarkdownBlock::Heading { anchor_id, .. } => anchor_id.as_deref(),
+        _ => panic!("expected heading"),
+    }
+}
+
+#[test]
+fn parse_heading_explicit_id() {
+    let blocks = parse("## Hello {#custom-id}");
+    assert_eq!(heading_anchor(&blocks[0]), Some("custom-id"));
+}
+
+#[test]
+fn parse_heading_auto_slug() {
+    let blocks = parse("## Hello World");
+    assert_eq!(heading_anchor(&blocks[0]), Some("hello-world"));
+}
+
+#[test]
+fn parse_heading_auto_slug_with_punctuation() {
+    let blocks = parse("## Hello, World!");
+    assert_eq!(heading_anchor(&blocks[0]), Some("hello-world"));
+}
+
+#[test]
+fn parse_heading_auto_slug_uses_inline_content() {
+    // Emphasis and code spans should contribute to the slug; citations
+    // and images should not.
+    let blocks = parse("## The **bold** `code` path");
+    assert_eq!(heading_anchor(&blocks[0]), Some("the-bold-code-path"));
+}
+
+#[test]
+fn parse_heading_duplicate_dedupe() {
+    let blocks = parse("## Title\n\n## Title\n\n## Title");
+    assert_eq!(heading_anchor(&blocks[0]), Some("title"));
+    assert_eq!(heading_anchor(&blocks[1]), Some("title-2"));
+    assert_eq!(heading_anchor(&blocks[2]), Some("title-3"));
+}
+
+#[test]
+fn parse_heading_dedupe_skips_explicit_collision() {
+    // A second generated `title-2` must not collide with the explicit one.
+    let blocks = parse("## Title\n\n## Other {#title-2}\n\n## Title");
+    assert_eq!(heading_anchor(&blocks[0]), Some("title"));
+    assert_eq!(heading_anchor(&blocks[1]), Some("title-2"));
+    assert_eq!(heading_anchor(&blocks[2]), Some("title-3"));
+}
+
+#[test]
+fn parse_heading_empty_or_punct_has_no_anchor() {
+    let blocks = parse("## !!!");
+    assert_eq!(heading_anchor(&blocks[0]), None);
+}
+
+#[test]
+fn parse_heading_duplicate_explicit_ids_are_disambiguated() {
+    // Two headings with the same explicit `{#x}` must produce unique
+    // anchors so fragment links remain resolvable. We disambiguate the
+    // second occurrence as `x-2`, matching how GitHub treats both
+    // explicit and auto-generated duplicates.
+    let blocks = parse("## A {#x}\n\n## B {#x}");
+    assert_eq!(heading_anchor(&blocks[0]), Some("x"));
+    assert_eq!(heading_anchor(&blocks[1]), Some("x-2"));
+}
+
+#[test]
+fn parse_heading_explicit_id_is_slugified() {
+    // Explicit `{#id}` attributes are passed through `slugify` so
+    // mixed-case or stylised ids normalize to the same fragment-safe
+    // form as auto-generated ones. pulldown-cmark's attribute parser
+    // already rejects whitespace inside the id, but pass-through still
+    // matters for non-canonical case and for Unicode punctuation.
+    let blocks = parse("## Section {#CamelCaseID}");
+    assert_eq!(heading_anchor(&blocks[0]), Some("camelcaseid"));
+}
+
+#[test]
+fn parse_heading_slug_ignores_citation_number() {
+    // Citations inside a heading don't leak their number text into the
+    // slug, and they act as a word separator so `foo[^1]bar` doesn't
+    // slug as `foobar`.
+    let blocks = parse("## See [^1] now\n\n[^1]: First note");
+    assert_eq!(heading_anchor(&blocks[0]), Some("see-now"));
+}
+
+#[test]
+fn parse_heading_slug_includes_image_alt() {
+    let blocks = parse("## ![Logo](logo.png) Project");
+    assert_eq!(heading_anchor(&blocks[0]), Some("logo-project"));
 }
 
 #[test]
@@ -644,7 +742,7 @@ fn parse_citation_disabled_inside_heading() {
     // collect_inlines runs for headings via parse_block on TagEnd::Heading.
     let blocks = parse_without_citations("# Section [5] of 10");
     match &blocks[0] {
-        MarkdownBlock::Heading { level, content } => {
+        MarkdownBlock::Heading { level, content, .. } => {
             assert_eq!(*level, 1);
             assert_eq!(content.len(), 1);
             assert!(matches!(&content[0], InlineContent::Text(t) if t == "Section [5] of 10"));

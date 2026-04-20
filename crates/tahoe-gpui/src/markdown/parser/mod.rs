@@ -1,6 +1,7 @@
 //! Incremental markdown parser that accumulates deltas.
 
 mod citations;
+mod slug;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -9,6 +10,7 @@ use citations::split_citations;
 pub use types::{InlineContent, MarkdownBlock, TableAlignment};
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Incremental markdown parser that accumulates text deltas and produces blocks.
@@ -176,7 +178,8 @@ impl IncrementalMarkdownParser {
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_TASKLISTS
             | Options::ENABLE_MATH
-            | Options::ENABLE_FOOTNOTES;
+            | Options::ENABLE_FOOTNOTES
+            | Options::ENABLE_HEADING_ATTRIBUTES;
 
         // Apply remend preprocessing if enabled and still streaming.
         let preprocessed: std::borrow::Cow<'_, str> = if self.is_streaming {
@@ -207,6 +210,8 @@ impl IncrementalMarkdownParser {
             }
         }
 
+        dedupe_heading_anchors(&mut blocks);
+
         self.cached_blocks = Rc::new(blocks);
         Rc::clone(&self.cached_blocks)
     }
@@ -234,14 +239,33 @@ impl IncrementalMarkdownParser {
                 let (inlines, end) = self.collect_inlines(events, start + 1, TagEnd::Paragraph);
                 (Some(MarkdownBlock::Paragraph(inlines)), end)
             }
-            Event::Start(Tag::Heading { level, .. }) => {
+            Event::Start(Tag::Heading { level, id, .. }) => {
                 let level_num = *level as u8;
                 let end_tag = TagEnd::Heading(*level);
                 let (inlines, end) = self.collect_inlines(events, start + 1, end_tag);
+                // Both explicit `{#id}` attributes and auto-derived
+                // heading text go through `slugify` so the resulting
+                // anchor is always URL-fragment safe. Explicit ids like
+                // `{#My Custom ID}` become `my-custom-id`; this matches
+                // GFM's treatment and means consumers don't have to
+                // second-guess whether an id contains whitespace or
+                // other characters that would break fragment matching.
+                let explicit = id.as_ref().map(|s| s.as_ref()).unwrap_or("").trim();
+                let candidate = if !explicit.is_empty() {
+                    slug::slugify(explicit)
+                } else {
+                    slug::slugify(&inline_plain_text(&inlines))
+                };
+                let anchor_id = if candidate.is_empty() {
+                    None
+                } else {
+                    Some(candidate)
+                };
                 (
                     Some(MarkdownBlock::Heading {
                         level: level_num,
                         content: inlines,
+                        anchor_id,
                     }),
                     end,
                 )
@@ -553,5 +577,81 @@ impl IncrementalMarkdownParser {
 impl Default for IncrementalMarkdownParser {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Flatten inline content to plain text for slug computation. Concatenates
+/// text runs, recurses through nesting (bold/italic/strikethrough/link),
+/// maps line breaks to a single space, and includes image alt text so
+/// `## ![Logo](logo.png) Project` slugs as `logo-project` (matching
+/// GitHub). Non-textual inlines (citations, math, task markers) emit a
+/// single space rather than vanishing so adjacent text doesn't merge —
+/// `## foo[^1]bar` slugs as `foo-bar`, not `foobar`. The extra spaces
+/// collapse to single `-` separators in `slugify`.
+fn inline_plain_text(inlines: &[InlineContent]) -> String {
+    fn walk(inlines: &[InlineContent], out: &mut String) {
+        for inline in inlines {
+            match inline {
+                InlineContent::Text(t) => out.push_str(t),
+                InlineContent::Code(c) => out.push_str(c),
+                InlineContent::Bold(inner)
+                | InlineContent::Italic(inner)
+                | InlineContent::Strikethrough(inner) => walk(inner, out),
+                InlineContent::Link { content, .. } => walk(content, out),
+                InlineContent::Image { alt, .. } => out.push_str(alt),
+                InlineContent::SoftBreak | InlineContent::HardBreak => out.push(' '),
+                InlineContent::Citation(_)
+                | InlineContent::InlineMath(_)
+                | InlineContent::TaskMarker(_) => out.push(' '),
+            }
+        }
+    }
+    let mut out = String::with_capacity(inlines.len() * 16);
+    walk(inlines, &mut out);
+    out
+}
+
+/// Append `-2`, `-3`, … to duplicate heading anchors so each slug is unique
+/// within the document (matches GitHub's anchor-generation rules). Skips
+/// any numeric suffix that is already taken by an explicit id or a prior
+/// generated one so explicit and generated ids never collide.
+fn dedupe_heading_anchors(blocks: &mut [MarkdownBlock]) {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    for block in blocks.iter_mut() {
+        if let MarkdownBlock::Heading {
+            anchor_id: Some(id),
+            ..
+        } = block
+        {
+            match seen.get(id.as_str()).copied() {
+                None => {
+                    // First occurrence — register the id as seen with
+                    // counter 1. We clone rather than `mem::take`
+                    // because the block must retain its slug as the
+                    // block's `anchor_id`.
+                    seen.insert(id.clone(), 1);
+                }
+                Some(last) => {
+                    // Collision — scan `{id}-{n}` candidates starting
+                    // from `last + 1` until we find one not already in
+                    // `seen` (covers prior generated AND prior explicit
+                    // ids). Update both the base counter and the new
+                    // unique id's counter so further collisions resume
+                    // past this suffix.
+                    let mut n = last + 1;
+                    let unique = loop {
+                        let candidate = format!("{id}-{n}");
+                        if !seen.contains_key(&candidate) {
+                            break candidate;
+                        }
+                        n += 1;
+                    };
+                    let base = id.clone();
+                    seen.insert(base, n);
+                    seen.insert(unique.clone(), 1);
+                    *id = unique;
+                }
+            }
+        }
     }
 }

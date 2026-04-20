@@ -46,6 +46,7 @@ use gpui::{
     MouseUpEvent, Pixels, SharedString, StyledText, Window, fill, point,
 };
 
+use super::AnchorClickHandler;
 use super::selection::MarkdownSelection;
 
 /// A [`StyledText`] wrapper that participates in a shared
@@ -59,6 +60,7 @@ pub struct SelectableText {
     link_urls: Vec<SharedString>,
     selection_bg: Hsla,
     selection: MarkdownSelection,
+    anchor_click: Option<AnchorClickHandler>,
 }
 
 /// Per-element state persisted across frames. Only tracks whether the
@@ -97,6 +99,7 @@ impl SelectableText {
             link_urls: Vec::new(),
             selection_bg,
             selection,
+            anchor_click: None,
         }
     }
 
@@ -112,6 +115,29 @@ impl SelectableText {
         );
         self.clickable_ranges = ranges;
         self.link_urls = urls;
+        self
+    }
+
+    /// Install a handler for `#fragment` link clicks. When set, clicking a
+    /// fragment URL invokes the handler instead of `cx.open_url` — the
+    /// latter treats `#section` as an HTTP URL and silently fails. The
+    /// handler receives the fragment string with the leading `#` stripped
+    /// and any percent-encoding decoded so it matches the slug on
+    /// [`crate::markdown::MarkdownBlock::Heading::anchor_id`].
+    pub fn with_anchor_click_handler<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(&str, &mut Window, &mut App) + 'static,
+    {
+        self.anchor_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Variant of [`Self::with_anchor_click_handler`] that takes an
+    /// already-wrapped handler. Used internally by the renderer when
+    /// forwarding a shared handler from [`crate::markdown::StreamingMarkdown`]
+    /// across many `SelectableText` elements on one frame.
+    pub fn with_anchor_click_handler_rc(mut self, handler: AnchorClickHandler) -> Self {
+        self.anchor_click = Some(handler);
         self
     }
 }
@@ -174,6 +200,7 @@ impl Element for SelectableText {
         let selection_bg = self.selection_bg;
         let clickable_ranges = std::mem::take(&mut self.clickable_ranges);
         let link_urls = std::mem::take(&mut self.link_urls);
+        let anchor_click = self.anchor_click.take();
         let element_id = self.element_id.clone();
 
         window.with_element_state::<SelectableTextState, _>(
@@ -284,6 +311,7 @@ impl Element for SelectableText {
                     let link_urls = link_urls.clone();
                     let clickable_ranges = clickable_ranges.clone();
                     let selection = selection.clone();
+                    let anchor_click = anchor_click.clone();
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
                             return;
@@ -307,7 +335,36 @@ impl Element for SelectableText {
                                 .find(|(range, _)| range.contains(&down_ix))
                                 .map(|(_, url)| url.clone())
                         {
-                            cx.open_url(url.as_ref());
+                            // In-document `#fragment` links never reach the
+                            // OS URL handler — routing them through
+                            // `cx.open_url` opens a broken HTTP URL. Invoke
+                            // the consumer's anchor-click handler instead.
+                            // Fragment URLs are only registered as clickable
+                            // when a handler is installed (see the gate in
+                            // `render_inlines_flat`), so this arm always
+                            // has a handler in practice — the `if let`
+                            // survives as defence in depth.
+                            match fragment_of(url.as_ref()) {
+                                Some(fragment) => {
+                                    // Defence in depth: fragment links
+                                    // are only registered as clickable
+                                    // when a handler is installed (see
+                                    // `render_inlines_flat`), so this
+                                    // arm should always have a handler.
+                                    // If we reach it without one the
+                                    // render-side gate was bypassed.
+                                    debug_assert!(
+                                        anchor_click.is_some(),
+                                        "fragment link click reached without anchor_click handler"
+                                    );
+                                    if let Some(handler) = &anchor_click {
+                                        handler(&fragment, window, cx);
+                                    }
+                                }
+                                None => {
+                                    cx.open_url(url.as_ref());
+                                }
+                            }
                         }
                         window.refresh();
                     });
@@ -361,6 +418,45 @@ impl IntoElement for SelectableText {
     }
 }
 
+/// Classify a link URL as either an in-document fragment or an external
+/// link. Returns `Some(fragment)` with the leading `#` stripped and any
+/// percent-encoding decoded — so `#my%20section` round-trips to the same
+/// slug an auto-generated heading carries. Returns `None` for URLs that
+/// do not begin with `#` (absolute URLs with a trailing `#frag` are
+/// external — the OS URL handler resolves them correctly).
+pub(super) fn fragment_of(url: &str) -> Option<String> {
+    url.strip_prefix('#').map(percent_decode_fragment)
+}
+
+/// Minimal, dependency-free percent decoder. `%XX` is folded to a byte
+/// when the two digits are valid hex. Malformed escapes or non-UTF-8
+/// decoded output fall back to the input unchanged.
+///
+/// Pulling in `percent-encoding` would be cleaner, but fragments are
+/// typically <100 bytes of ASCII — this inline walker is adequate.
+fn percent_decode_fragment(input: &str) -> String {
+    if !input.contains('%') {
+        return input.to_string();
+    }
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
+}
+
 /// Paints the selection background as up to three quads covering the
 /// range `[lo, hi)` within `bounds`. Mirrors Zed's `paint_selection`
 /// geometry (`crates/markdown/src/markdown.rs:1022`): single-line
@@ -409,6 +505,7 @@ fn paint_selection_quads(
 
 #[cfg(test)]
 mod tests {
+    use super::{fragment_of, percent_decode_fragment};
     use core::prelude::v1::test;
 
     fn normalize(a: usize, b: usize) -> (usize, usize) {
@@ -429,5 +526,63 @@ mod tests {
         assert_eq!(&text[lo..hi], "llo w");
         let (lo, hi) = normalize(2, 7);
         assert_eq!(&text[lo..hi], "llo w");
+    }
+
+    #[test]
+    fn fragment_of_strips_leading_hash() {
+        assert_eq!(fragment_of("#section"), Some("section".to_string()));
+    }
+
+    #[test]
+    fn fragment_of_empty_fragment_is_empty_string() {
+        // `[home](#)` is a valid markdown link that points nowhere in
+        // particular. The handler receives the empty string and decides
+        // the policy (e.g. scroll to top, or no-op).
+        assert_eq!(fragment_of("#"), Some(String::new()));
+    }
+
+    #[test]
+    fn fragment_of_decodes_percent_encoding() {
+        assert_eq!(fragment_of("#my%20section"), Some("my section".to_string()));
+        assert_eq!(fragment_of("#caf%C3%A9"), Some("café".to_string()));
+    }
+
+    #[test]
+    fn fragment_of_rejects_external_urls_with_fragment() {
+        // Absolute URLs with a fragment are still external links — the
+        // OS URL handler resolves the fragment server-side. `fragment_of`
+        // only matches URLs that *start* with `#`.
+        assert_eq!(fragment_of("https://example.com#frag"), None);
+    }
+
+    #[test]
+    fn fragment_of_rejects_plain_url() {
+        assert_eq!(fragment_of("https://example.com"), None);
+        assert_eq!(fragment_of("mailto:foo@example.com"), None);
+    }
+
+    #[test]
+    fn percent_decode_passes_plain_input_through() {
+        assert_eq!(percent_decode_fragment("plain-slug"), "plain-slug");
+    }
+
+    #[test]
+    fn percent_decode_handles_malformed_escape() {
+        // `%Z` is invalid hex — the sequence is kept verbatim rather
+        // than panicking.
+        assert_eq!(percent_decode_fragment("%Znot-hex"), "%Znot-hex");
+    }
+
+    #[test]
+    fn percent_decode_handles_trailing_percent() {
+        assert_eq!(percent_decode_fragment("trailing%"), "trailing%");
+        assert_eq!(percent_decode_fragment("trailing%2"), "trailing%2");
+    }
+
+    #[test]
+    fn percent_decode_invalid_utf8_falls_back_to_input() {
+        // `%FF` alone is not valid UTF-8 — we return the input unchanged
+        // rather than corrupt the string.
+        assert_eq!(percent_decode_fragment("%FF"), "%FF");
     }
 }

@@ -80,7 +80,10 @@ use gpui::{
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::rc::Rc;
 use std::time::Instant;
+
+use super::{AnchorClickHandler, heading_element_id};
 
 /// Maximum nesting depth at which list items keep adding indentation.
 /// Beyond this, the left padding is clamped so deeply nested AI-generated
@@ -366,6 +369,10 @@ pub struct StreamingMarkdown {
     /// the entire rendered markdown rather than each paragraph in
     /// isolation.
     selection: MarkdownSelection,
+    /// Invoked when the reader clicks a `#fragment` link. `None` means
+    /// fragment-link clicks are silently ignored (previously they were
+    /// passed to `cx.open_url`, which treated them as broken HTTP URLs).
+    anchor_click: Option<AnchorClickHandler>,
 }
 
 impl StreamingMarkdown {
@@ -382,6 +389,7 @@ impl StreamingMarkdown {
             rendered_popovers: RefCell::new(HashSet::new()),
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
+            anchor_click: None,
         }
     }
 
@@ -398,6 +406,7 @@ impl StreamingMarkdown {
             rendered_popovers: RefCell::new(HashSet::new()),
             settings: StreamSettings::default(),
             selection: MarkdownSelection::new(),
+            anchor_click: None,
         }
     }
 
@@ -434,6 +443,65 @@ impl StreamingMarkdown {
     /// drop any existing highlight (e.g. when focus moves away).
     pub fn selection(&self) -> MarkdownSelection {
         self.selection.clone()
+    }
+
+    /// Install a handler invoked when the reader clicks a `#fragment`
+    /// link inside the rendered markdown.
+    ///
+    /// Each rendered heading carries an element id built from
+    /// [`super::HEADING_ID_PREFIX`] plus the heading's slug, also
+    /// obtainable via [`super::heading_element_id`]. Consumers locate
+    /// the target in their own scroll container and call their
+    /// preferred scroll API. Fragment URLs are only advertised as
+    /// clickable when a handler is installed, so without one the
+    /// fragment link renders as plain prose rather than a dead-looking
+    /// control.
+    ///
+    /// The fragment string the handler receives has the leading `#`
+    /// stripped and any percent-encoding decoded, so it matches the
+    /// slug on [`super::parser::MarkdownBlock::Heading::anchor_id`]
+    /// directly.
+    ///
+    /// # Caveats consumers must handle
+    ///
+    /// - **Reduce Motion.** Scrolling to an anchor is a motion event.
+    ///   Respect [`crate::foundations::theme::AccessibilityMode::reduce_motion`]
+    ///   (available as `theme.accessibility_mode.reduce_motion()`) by
+    ///   using an instant snap under Reduce Motion and an animated
+    ///   transition otherwise.
+    /// - **Dynamic Type.** Heading bounds shift when the user changes
+    ///   type scale mid-session. Re-query the target's bounds on every
+    ///   click rather than caching from an earlier render.
+    /// - **Streaming.** During streaming, pulldown-cmark re-parses on
+    ///   every delta, so a heading's slug can drift as more tokens
+    ///   arrive. Hosts that build a table of contents alongside a
+    ///   streaming document should re-derive anchor ids from the
+    ///   current parse tree each frame rather than caching them from
+    ///   an earlier render. Slugs stabilise once the stream completes.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use gpui::{App, AppContext, ScrollHandle};
+    /// # use tahoe_gpui::markdown::{StreamingMarkdown, heading_element_id};
+    /// # fn wire(cx: &mut App, scroll: ScrollHandle) {
+    /// let md = cx.new(|cx| {
+    ///     StreamingMarkdown::new(cx).with_anchor_click(move |slug, window, cx| {
+    ///         // Resolve the heading's bounds via its element id and
+    ///         // ask your ScrollHandle to bring them into view. The
+    ///         // real implementation should honour Reduce Motion here.
+    ///         let _ = (slug, window, cx, &scroll, heading_element_id(slug));
+    ///     })
+    /// });
+    /// # let _ = md;
+    /// # }
+    /// ```
+    pub fn with_anchor_click<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(&str, &mut Window, &mut App) + 'static,
+    {
+        self.anchor_click = Some(Rc::new(handler));
+        self
     }
 
     /// Set the security configuration for URL allowlists.
@@ -542,6 +610,7 @@ impl StreamingMarkdown {
             popovers,
             rendered_popovers: &self.rendered_popovers,
             selection: &self.selection,
+            anchor_click: self.anchor_click.as_ref(),
         };
 
         blocks
@@ -582,7 +651,18 @@ impl Render for StreamingMarkdown {
         // Zed's markdown element applies this via its custom `Element`
         // impl; for the builder-style path we at least swap the cursor
         // on hover.
+        //
+        // The root div is made stateful with a per-entity element id so
+        // two StreamingMarkdown instances on the same window can share
+        // the `md-heading-{slug}` child id space without colliding —
+        // GPUI scopes interactive child ids under the nearest stateful
+        // ancestor, and each entity's root differs.
+        let entity_id = cx.entity_id().as_u64();
         div()
+            .id(ElementId::NamedInteger(
+                "tahoe-streaming-markdown".into(),
+                entity_id,
+            ))
             .flex()
             .flex_col()
             .gap(px(SPACING_8))
@@ -616,6 +696,10 @@ pub struct RenderCtx<'a> {
     /// drag-select, multi-click gestures, and Cmd+C copy can span
     /// across paragraphs.
     pub selection: &'a MarkdownSelection,
+    /// Optional handler for `#fragment` link clicks. When present, each
+    /// [`SelectableText`] captures a clone so its mouse-up handler can
+    /// route fragment clicks to the consumer instead of `cx.open_url`.
+    pub anchor_click: Option<&'a AnchorClickHandler>,
 }
 
 /// Render a single markdown block as a GPUI element.
@@ -637,7 +721,11 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             .text_color(ctx.theme.text)
             .child(render_inlines(inlines, ctx))
             .into_any_element(),
-        MarkdownBlock::Heading { level, content } => {
+        MarkdownBlock::Heading {
+            level,
+            content,
+            anchor_id,
+        } => {
             // macOS HIG type ramp below Title 3 has four distinct weights
             // (Headline 13pt Bold, Body 13pt Regular, Callout 12pt,
             // Subheadline 11pt). Mapping h4–h6 to separate styles
@@ -659,11 +747,27 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 _ => TextStyle::Subheadline,
             };
 
-            div()
+            // Tag the heading with an AX role carrying its h-level so
+            // VoiceOver's heading-navigation gestures have a rung to land
+            // on once GPUI exposes an AX tree. `with_accessibility` is a
+            // no-op today (see foundations/accessibility.rs) so this is
+            // data-in-place rather than a visible behaviour change.
+            let ax_props = AccessibilityProps::new().role(AccessibilityRole::Heading(*level));
+            let base = div()
                 .text_style_emphasized(ts, ctx.theme)
                 .text_color(ctx.theme.text)
-                .child(render_inlines(content, ctx))
-                .into_any_element()
+                .with_accessibility(&ax_props)
+                .child(render_inlines(content, ctx));
+            // Anchor id: when the heading has a resolvable slug, expose it
+            // to the paint tree as a stateful element id (see
+            // `markdown::HEADING_ID_PREFIX`) so consumers can look up its
+            // bounds and implement scroll-to. `ElementId::Name` (not
+            // `NamedInteger`) keeps the id deterministic across renders
+            // so the lookup key is stable per slug.
+            match anchor_id {
+                Some(id) => base.id(heading_element_id(id)).into_any_element(),
+                None => base.into_any_element(),
+            }
         }
         MarkdownBlock::CodeBlock { language, code } => {
             if language.as_deref() == Some("mermaid") {
@@ -1015,7 +1119,15 @@ fn render_inlines(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElement {
 fn render_inlines_flat(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElement {
     let styles = InlineTextStyles::from_theme(ctx.theme);
     let mut builder = InlineRuns::new();
-    flatten_inlines_to_runs(inlines, &styles, ctx.security, &styles.base, &mut builder);
+    let anchor_click_available = ctx.anchor_click.is_some();
+    flatten_inlines_to_runs(
+        inlines,
+        &styles,
+        ctx.security,
+        anchor_click_available,
+        &styles.base,
+        &mut builder,
+    );
 
     let text: SharedString = SharedString::from(builder.text);
     let styled = StyledText::new(text.clone()).with_runs(builder.runs);
@@ -1033,15 +1145,18 @@ fn render_inlines_flat(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElement
         bg.a = 0.28;
         bg
     };
-    SelectableText::new(
+    let mut el = SelectableText::new(
         ElementId::Name(format!("md-inlines-{id}").into()),
         text,
         styled,
         selection_bg,
         ctx.selection.clone(),
     )
-    .with_links(builder.link_ranges, urls)
-    .into_any_element()
+    .with_links(builder.link_ranges, urls);
+    if let Some(handler) = ctx.anchor_click {
+        el = el.with_anchor_click_handler_rc(handler.clone());
+    }
+    el.into_any_element()
 }
 
 /// Recursively walk inline content, emitting text + `TextRun`s via a
@@ -1052,6 +1167,11 @@ fn flatten_inlines_to_runs(
     inlines: &[InlineContent],
     styles: &InlineTextStyles,
     security: &MarkdownSecurity,
+    // When false, `#fragment` links render as plain text (no underline, no
+    // click target) so consumers that never installed an
+    // [`StreamingMarkdown::with_anchor_click`] handler do not advertise a
+    // dead control. External URLs are unaffected.
+    anchor_click_available: bool,
     current: &GpuiTextStyle,
     out: &mut InlineRuns,
 ) {
@@ -1075,37 +1195,78 @@ fn flatten_inlines_to_runs(
             InlineContent::Bold(inner) => {
                 let mut bold_style = current.clone();
                 bold_style.font_weight = FontWeight::BOLD;
-                flatten_inlines_to_runs(inner, styles, security, &bold_style, out);
+                flatten_inlines_to_runs(
+                    inner,
+                    styles,
+                    security,
+                    anchor_click_available,
+                    &bold_style,
+                    out,
+                );
             }
             InlineContent::Italic(inner) => {
                 let mut italic_style = current.clone();
                 italic_style.font_style = FontStyle::Italic;
-                flatten_inlines_to_runs(inner, styles, security, &italic_style, out);
+                flatten_inlines_to_runs(
+                    inner,
+                    styles,
+                    security,
+                    anchor_click_available,
+                    &italic_style,
+                    out,
+                );
             }
             InlineContent::Strikethrough(inner) => {
                 let mut strike_style = current.clone();
                 strike_style.strikethrough = Some(styles.strikethrough);
                 strike_style.color = styles.strikethrough_color;
-                flatten_inlines_to_runs(inner, styles, security, &strike_style, out);
+                flatten_inlines_to_runs(
+                    inner,
+                    styles,
+                    security,
+                    anchor_click_available,
+                    &strike_style,
+                    out,
+                );
             }
             InlineContent::Link { content, url } => {
                 let start = out.text.len();
                 let resolved = security.resolve_url(url);
-                if security.is_link_allowed(&resolved) {
+                // In-document fragment links only get link styling +
+                // clickability when a handler is installed. Without one
+                // the click has nowhere to go, so we render the label
+                // as plain prose rather than advertise a dead control.
+                let fragment_without_handler = !anchor_click_available && resolved.starts_with('#');
+                if security.is_link_allowed(&resolved) && !fragment_without_handler {
                     let mut link_style = current.clone();
                     link_style.color = styles.link_color;
                     link_style.underline = Some(styles.link_underline);
-                    flatten_inlines_to_runs(content, styles, security, &link_style, out);
+                    flatten_inlines_to_runs(
+                        content,
+                        styles,
+                        security,
+                        anchor_click_available,
+                        &link_style,
+                        out,
+                    );
                     let end = out.text.len();
                     if end > start {
                         out.link_ranges.push(start..end);
                         out.link_urls.push(resolved.into_owned());
                     }
                 } else {
-                    // Allowlist denied: render the label as plain text
-                    // so readers still see the surrounding context, but
-                    // do not mark it clickable.
-                    flatten_inlines_to_runs(content, styles, security, current, out);
+                    // Allowlist denied, or a fragment link without a
+                    // handler: render the label as plain text so readers
+                    // still see the surrounding context without being
+                    // invited to click a dead target.
+                    flatten_inlines_to_runs(
+                        content,
+                        styles,
+                        security,
+                        anchor_click_available,
+                        current,
+                        out,
+                    );
                 }
             }
             InlineContent::Citation(n) => {
@@ -1926,7 +2087,7 @@ mod tests {
             },
         ];
         let base_style = styles.base.clone();
-        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+        flatten_inlines_to_runs(&inlines, &styles, &security, true, &base_style, &mut out);
 
         assert_eq!(
             out.link_urls,
@@ -1951,7 +2112,7 @@ mod tests {
         let mut out = InlineRuns::new();
         let inlines = vec![InlineContent::Code("let x = 1;".into())];
         let base_style = styles.base.clone();
-        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+        flatten_inlines_to_runs(&inlines, &styles, &security, true, &base_style, &mut out);
 
         assert_eq!(out.runs.len(), 1);
         let fallbacks = out.runs[0]
@@ -1977,7 +2138,7 @@ mod tests {
         let mut out = InlineRuns::new();
         let inlines = vec![InlineContent::InlineMath("x^2".into())];
         let base_style = styles.base.clone();
-        flatten_inlines_to_runs(&inlines, &styles, &security, &base_style, &mut out);
+        flatten_inlines_to_runs(&inlines, &styles, &security, true, &base_style, &mut out);
 
         assert_eq!(out.runs.len(), 1);
         let fallbacks = out.runs[0]

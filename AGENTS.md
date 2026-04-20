@@ -4,7 +4,7 @@ You are an experienced, pragmatic software engineering AI agent. Do not over-eng
 
 `tahoe-gpui` is a component library that brings Apple's macOS Tahoe HIG (San Francisco typography, SF Symbols, Liquid Glass materials, Dynamic Type, spring motion) to applications built on [Zed's GPUI framework](https://github.com/zed-industries/zed/tree/main/crates/gpui). Standalone — no AI SDK dependency required.
 
-- **Language**: Rust 2024 edition, MSRV 1.94.1 (clippy lints against 1.87.0 for forward compatibility)
+- **Language**: Rust 2024 edition, MSRV 1.95.0 (clippy lints against 1.95.0 for forward compatibility)
 - **License**: Apache-2.0
 - **Target platform**: macOS first-class; Linux/Windows track GPUI's support.
 - **Test runner**: `cargo nextest` (never plain `cargo test`).
@@ -147,7 +147,7 @@ All `unsafe` blocks must use `// SAFETY:` comment convention with a multi-line j
 # Code Style
 
 - **Formatter**: `rustfmt` with edition 2024, `max_width 100`, `imports_granularity = "Crate"`, `group_imports = "StdExternalCrate"`.
-- **Linting**: clippy with MSRV 1.87.0 (intentionally lower than the workspace `rust-version` so clippy flags suggestions that would require newer Rust), `too-many-arguments-threshold = 8`, `type-complexity-threshold = 300`.
+- **Linting**: clippy with MSRV 1.95.0 (matches the workspace `rust-version` so clippy flags suggestions that require the latest stable), `too-many-arguments-threshold = 8`, `type-complexity-threshold = 300`.
 - **Documentation**: public items on `tahoe-gpui` should carry doc comments; crate-level docs should describe the HIG mapping.
 
 # Commit and Pull Request Guidelines

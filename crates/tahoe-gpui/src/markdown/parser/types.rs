@@ -31,14 +31,32 @@ impl From<pulldown_cmark::Alignment> for TableAlignment {
 }
 
 /// A parsed block of markdown content.
+///
+/// Marked `#[non_exhaustive]` so future HIG or GFM block additions can
+/// land without forcing downstream consumers to update exhaustive
+/// matches. Add a `_ => …` arm when pattern-matching this enum.
+///
+/// **BREAKING**: this enum was previously exhaustive. Existing `match`
+/// blocks that do not include a `_` wildcard will fail to compile.
+/// Add a `_ => …` arm (or handle new variants explicitly) to migrate.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum MarkdownBlock {
     /// A paragraph of inline content.
     Paragraph(Vec<InlineContent>),
     /// A heading with level (1-6) and inline content.
+    ///
+    /// `anchor_id` is the slug used as the heading's URL fragment — either
+    /// the explicit `{#id}` attribute (when the author wrote one) or a
+    /// GitHub-style auto-slug derived from the heading's plain text. `None`
+    /// means the heading produced no usable slug (empty or all-punctuation
+    /// text) and should not be addressed by a `#fragment` link. Slugs are
+    /// deduplicated across the document by appending `-2`, `-3`, … to the
+    /// later occurrences, matching GitHub's rendering.
     Heading {
         level: u8,
         content: Vec<InlineContent>,
+        anchor_id: Option<String>,
     },
     /// A fenced code block with optional language.
     CodeBlock {

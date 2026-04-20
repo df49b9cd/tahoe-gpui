@@ -1,6 +1,6 @@
 # Lint against the latest Rust (1.95) so clippy suggests idioms — e.g.
 # let-chain `if let ... && ...` in place of nested `if let { if ... }` —
-# that are available on all toolchains ≥ workspace `rust-version = 1.94.1`.
+# that are available on all toolchains ≥ workspace `rust-version = 1.95.0`.
 msrv = "1.95.0"
 too-many-arguments-threshold = 8
 type-complexity-threshold = 300

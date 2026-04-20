@@ -6,6 +6,20 @@
 //!
 //! Uses [`remend`] for auto-completing incomplete markdown syntax during
 //! streaming, and provides word-level fade-in animation.
+//!
+//! # Heading anchors
+//!
+//! Headings carry GitHub-compatible slug anchors (see
+//! [`parser::MarkdownBlock::Heading::anchor_id`]) and are rendered with an
+//! element id of `{HEADING_ID_PREFIX}{slug}` so consumers can locate them in
+//! their scroll container. Fragment links clicked inside the rendered
+//! markdown invoke the handler installed via
+//! [`StreamingMarkdown::with_anchor_click`]. See
+//! [`StreamingMarkdown::with_anchor_click`] for the exact scroll contract and
+//! accessibility / motion caveats.
+
+use gpui::{App, Window};
+use std::rc::Rc;
 
 pub mod animation;
 pub mod caret;
@@ -31,3 +45,36 @@ pub use renderer::{
 };
 pub use selection::MarkdownSelection;
 pub use settings::StreamSettings;
+
+/// Handler invoked when a reader clicks a `#fragment` link in rendered
+/// markdown. The first argument is the fragment string with the leading
+/// `#` stripped and any percent-encoding already decoded — it matches the
+/// slug stored on [`parser::MarkdownBlock::Heading::anchor_id`]. The
+/// `Window` and `App` handles are the same contexts a mouse handler
+/// receives, so the handler may call `cx.notify`, adjust a
+/// [`gpui::ScrollHandle`], or update host-level state.
+///
+/// Installed via [`StreamingMarkdown::with_anchor_click`].
+pub type AnchorClickHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
+
+/// Element-id prefix emitted by the renderer for every addressable
+/// heading. The full id is `{HEADING_ID_PREFIX}{slug}` where `slug` comes
+/// from [`parser::MarkdownBlock::Heading::anchor_id`]. Consumers that
+/// implement scroll-to-anchor should reference this constant rather than
+/// hard-coding the literal so a future rename surfaces as a compile
+/// error.
+pub const HEADING_ID_PREFIX: &str = "md-heading-";
+
+/// Build the [`gpui::ElementId`] the renderer attaches to an addressable
+/// heading. Exposed so consumers implementing scroll-to-anchor can look
+/// up the element bounds without duplicating the formatting.
+///
+/// The returned id is the **child** id; GPUI scopes it under the nearest
+/// stateful ancestor. `StreamingMarkdown`'s root is itself stateful
+/// (keyed by its entity id), so two markdown entities on the same
+/// window never collide on this child id. Consumers whose lookup API
+/// needs a full path should compose it with the scrollable container's
+/// own id.
+pub fn heading_element_id(slug: &str) -> gpui::ElementId {
+    gpui::ElementId::Name(format!("{HEADING_ID_PREFIX}{slug}").into())
+}
