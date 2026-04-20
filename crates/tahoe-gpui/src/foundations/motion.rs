@@ -123,13 +123,16 @@ pub struct MotionTokens {
 }
 
 impl MotionTokens {
-    /// Approximate settling time for the spring in milliseconds.
+    /// Approximate settling time for the spring in milliseconds, capped at
+    /// [`MotionRamp::Long`] (450 ms) to stay within the HIG 250-500 ms system
+    /// animation range.
     pub fn spring_duration_ms(&self) -> u64 {
         if self.spring_response <= 0.0 {
             return 0;
         }
-        // Approximate: settling time ~ 4 * response for critically/underdamped springs
-        ((4.0 * self.spring_response) * 1000.0) as u64
+        const HIG_MAX_SPRING_MS: u64 = MotionRamp::Long.duration_ms();
+        let raw = ((4.0 * self.spring_response) * 1000.0) as u64;
+        raw.min(HIG_MAX_SPRING_MS)
     }
 
     /// Resolve the token duration for a semantic [`MotionRamp`].
@@ -405,9 +408,10 @@ pub fn reduce_motion_substitute(
 /// [`SpringPreset`] constants and note GPUI's missing velocity-preserving
 /// interruption (open question #1 on the internal tracker).
 pub fn spring_easing(damping: f32, response: f32, bounce: f32) -> impl Fn(f32) -> f32 {
-    // Total animation spans ~`4 * response` seconds (see `spring_duration_ms`),
-    // so `t ∈ [0, 1]` already covers four response periods. Scale oscillation
-    // frequency so shorter response yields tighter wobble, matching SwiftUI.
+    // The wall-clock duration is capped by `spring_duration_ms` to the HIG max
+    // (450 ms), so the curve may run in a shorter window than `4 * response`
+    // seconds. This is intentional: the exponential decay is already
+    // imperceptible at that boundary.
     let response = response.max(1e-3);
     let periods = (4.0 / response).clamp(1.0, 12.0);
     move |t: f32| {
@@ -542,8 +546,11 @@ mod tests {
         use super::accessible_spring_animation;
         let tokens = default_tokens();
         let anim = accessible_spring_animation(&tokens, false);
-        // Derived from 4 * spring_response seconds = 1400ms
-        assert_eq!(anim.duration.as_millis() as u64, 1400);
+        // Duration is capped at MotionRamp::Long (450ms) per HIG.
+        assert_eq!(
+            anim.duration.as_millis() as u64,
+            MotionRamp::Long.duration_ms()
+        );
     }
 
     #[test]

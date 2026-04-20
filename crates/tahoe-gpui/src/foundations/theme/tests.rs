@@ -1200,10 +1200,11 @@ fn spring_tokens_present() {
 fn spring_duration_ms_is_reasonable() {
     let glass = TahoeTheme::liquid_glass().glass;
     let dur = glass.motion.spring_duration_ms();
-    // With response=0.35, duration should be ~1400ms
+    // Duration must be within the HIG 250-500ms system animation range,
+    // capped at MotionRamp::Long (450ms).
     assert!(
-        dur > 500 && dur < 3000,
-        "spring_duration_ms should be reasonable, got {}",
+        (250..=500).contains(&dur),
+        "spring_duration_ms should be within HIG range (250-500ms), got {}",
         dur
     );
 }
