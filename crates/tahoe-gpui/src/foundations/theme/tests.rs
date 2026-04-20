@@ -313,6 +313,33 @@ fn apple_accent_blue() {
 }
 
 #[test]
+fn liquid_glass_accent_color_enum_matches_accent() {
+    // Regression for #24: liquid_glass/liquid_glass_light must report
+    // AccentColor::Blue (not the default Multicolor) because they override
+    // the accent to a specific blue. The enum must not lie.
+    assert_eq!(TahoeTheme::liquid_glass().accent_color, AccentColor::Blue);
+    assert_eq!(
+        TahoeTheme::liquid_glass_light().accent_color,
+        AccentColor::Blue
+    );
+
+    // Replaying with_accent_color with the theme's own accent_color
+    // preserves the enum value (pins the self-consistency invariant the
+    // bug was really about).
+    let theme = TahoeTheme::liquid_glass();
+    let replayed = theme.clone().with_accent_color(theme.accent_color);
+    assert_eq!(replayed.accent_color, theme.accent_color);
+
+    // The constructor's hardcoded accent flows through to ring,
+    // focus_ring_color, and the glass accent tint — pinning the
+    // "no pixel change" contract against a future refactor that
+    // accidentally routes these through palette.blue.
+    assert_eq!(theme.ring, theme.accent);
+    assert_eq!(theme.focus_ring_color, theme.accent);
+    assert_eq!(theme.glass.accent_tint.bg, theme.accent);
+}
+
+#[test]
 fn with_accent_color_propagates_to_derived_tokens() {
     // Switching the accent updates accent / ring / focus_ring / text_on_accent,
     // the glass accent tint, and selected_bg, so a host that detects a runtime

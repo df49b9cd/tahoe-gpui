@@ -955,10 +955,16 @@ impl TahoeTheme {
         theme.panel_surface = hsla(0.0, 0.0, 0.0, 0.40); // matches glass fill
 
         // Apple accent colors (Dark)
+        // NOTE: The hardcoded hsla is Apple's glass-specific blue and
+        // intentionally diverges from `palette.blue` — do not replace with
+        // `theme.palette.blue`. The enum is kept in sync so readers of
+        // `theme.accent_color` don't see the default `Multicolor` lie.
         let accent = hsla(0.57, 1.0, 0.50, 1.0); // #0091FF Blue
+        theme.accent_color = AccentColor::Blue;
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.63,
             ..theme.palette.red
@@ -1258,10 +1264,15 @@ impl TahoeTheme {
         theme.panel_surface = hsla(0.0, 0.0, 1.0, 0.50); // Semi-transparent white
 
         // Apple accent colors (Light -- same hues, adjusted for light background)
+        // NOTE: see `liquid_glass()` — hardcoded hsla is intentionally not
+        // `palette.blue`; the enum is kept in sync so readers of
+        // `theme.accent_color` don't see the default `Multicolor` lie.
         let accent = hsla(0.57, 1.0, 0.50, 1.0); // #0091FF Blue
+        theme.accent_color = AccentColor::Blue;
         theme.accent = accent;
         theme.text_on_accent = text_on_background(accent);
         theme.ring = accent;
+        theme.focus_ring_color = accent;
         theme.error = Hsla {
             l: 0.50,
             ..theme.palette.red
