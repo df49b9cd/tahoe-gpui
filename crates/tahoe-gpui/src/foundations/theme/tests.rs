@@ -1930,3 +1930,37 @@ async fn active_theme_trait_resolves_to_registered_global(cx: &mut gpui::TestApp
         );
     });
 }
+
+// Regression for https://github.com/df49b9cd/tahoe-gpui/issues/55:
+// every public `TahoeTheme` constructor — including the four liquid-glass
+// variants that build `SemanticColors` via struct literal instead of
+// `SemanticColors::new()` — must keep `activity_ring_backdrop` pinned to
+// the HIG "system dark gray" value. Catches value drift in any of the four
+// construction sites even though the compiler already enforces field
+// presence.
+#[test]
+fn activity_ring_backdrop_is_system_dark_gray_in_every_theme() {
+    let themes: &[(&str, TahoeTheme)] = &[
+        ("dark", TahoeTheme::dark()),
+        ("light", TahoeTheme::light()),
+        ("liquid_glass", TahoeTheme::liquid_glass()),
+        ("liquid_glass_light", TahoeTheme::liquid_glass_light()),
+        ("liquid_glass_clear", TahoeTheme::liquid_glass_clear()),
+        (
+            "liquid_glass_clear_light",
+            TahoeTheme::liquid_glass_clear_light(),
+        ),
+    ];
+    for (name, theme) in themes {
+        let backdrop = theme.semantic.activity_ring_backdrop;
+        assert!(
+            (backdrop.l - 0.07).abs() < 1e-4,
+            "{name}: activity_ring_backdrop lightness should be 0.07, got {}",
+            backdrop.l
+        );
+        assert!(
+            (backdrop.a - 1.0).abs() < f32::EPSILON,
+            "{name}: activity_ring_backdrop must be opaque"
+        );
+    }
+}
