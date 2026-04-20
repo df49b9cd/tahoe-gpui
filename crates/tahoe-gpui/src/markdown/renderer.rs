@@ -67,13 +67,13 @@ use super::selectable_text::SelectableText;
 use super::selection::MarkdownSelection;
 use super::settings::StreamSettings;
 use crate::citation::{CitationPopover, CitationSource, InlineCitation};
-use crate::foundations::layout::SPACING_8;
+use crate::foundations::layout::{SPACING_4, SPACING_8};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontStyle, FontWeight, HighlightStyle, ObjectFit,
-    SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun, TextStyle as GpuiTextStyle,
-    UnderlineStyle, Window, div, img, px,
+    AnyElement, App, ElementId, Entity, FontStyle, FontWeight, HighlightStyle, Hsla, ObjectFit,
+    Pixels, SharedString, SharedUri, StrikethroughStyle, StyledText, TextRun,
+    TextStyle as GpuiTextStyle, UnderlineStyle, Window, div, img, px,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -1176,11 +1176,45 @@ fn render_inlines_mixed(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElemen
                     flush_segment(segment, ctx, children);
                     let resolved_url = ctx.security.resolve_url(url);
                     if !url.is_empty() && ctx.security.is_image_allowed(&resolved_url) {
+                        let alt_shared: SharedString = alt.clone().into();
+                        let text_muted = ctx.theme.text_muted;
+                        let border = ctx.theme.border;
+                        let bg = ctx.theme.surface;
+                        let radius = ctx.theme.radius_md;
+                        let min_h = px(80.0);
+                        let max_w = px(400.0);
+                        let alt_for_fb = alt_shared.clone();
+                        let alt_for_load = alt_shared;
                         children.push(
                             img(SharedUri::from(resolved_url.into_owned()))
-                                .max_w(px(400.0))
-                                .rounded(ctx.theme.radius_md)
+                                .max_w(max_w)
+                                .min_h(min_h)
+                                .rounded(radius)
                                 .object_fit(ObjectFit::ScaleDown)
+                                .with_fallback(move || {
+                                    image_placeholder(
+                                        alt_for_fb.clone(),
+                                        PlaceholderKind::Fallback,
+                                        text_muted,
+                                        border,
+                                        bg,
+                                        radius,
+                                        min_h,
+                                        max_w,
+                                    )
+                                })
+                                .with_loading(move || {
+                                    image_placeholder(
+                                        alt_for_load.clone(),
+                                        PlaceholderKind::Loading,
+                                        text_muted,
+                                        border,
+                                        bg,
+                                        radius,
+                                        min_h,
+                                        max_w,
+                                    )
+                                })
                                 .into_any_element(),
                         );
                     } else if !alt.is_empty() {
@@ -1221,6 +1255,56 @@ fn render_inlines_mixed(inlines: &[InlineContent], ctx: &RenderCtx) -> AnyElemen
         .flex_wrap()
         .items_end()
         .children(children)
+        .into_any_element()
+}
+
+#[derive(Copy, Clone)]
+enum PlaceholderKind {
+    Fallback,
+    Loading,
+}
+
+fn image_placeholder_label(alt: &SharedString, kind: PlaceholderKind) -> SharedString {
+    if !alt.is_empty() {
+        return alt.clone();
+    }
+    match kind {
+        PlaceholderKind::Fallback => SharedString::from("Image unavailable"),
+        PlaceholderKind::Loading => SharedString::from("Loading image…"),
+    }
+}
+
+fn image_placeholder(
+    alt: SharedString,
+    kind: PlaceholderKind,
+    text_muted: Hsla,
+    border: Hsla,
+    bg: Hsla,
+    radius: Pixels,
+    min_h: Pixels,
+    max_w: Pixels,
+) -> AnyElement {
+    let label = image_placeholder_label(&alt, kind);
+    let len = label.len();
+    div()
+        .max_w(max_w)
+        .min_h(min_h)
+        .px(px(SPACING_8))
+        .py(px(SPACING_4))
+        .rounded(radius)
+        .border_1()
+        .border_color(border)
+        .bg(bg)
+        .flex()
+        .items_center()
+        .child(StyledText::new(label).with_highlights(vec![(
+            0..len,
+            HighlightStyle {
+                color: Some(text_muted),
+                font_style: Some(FontStyle::Italic),
+                ..Default::default()
+            },
+        )]))
         .into_any_element()
 }
 
@@ -1342,6 +1426,60 @@ mod tests {
             alt: "missing".into(),
         }];
         assert!(!has_complex_inlines(&inlines));
+    }
+
+    #[test]
+    fn image_placeholder_label_falls_back_when_alt_empty() {
+        use super::{PlaceholderKind, image_placeholder_label};
+        let empty = gpui::SharedString::default();
+        assert_eq!(
+            image_placeholder_label(&empty, PlaceholderKind::Fallback).as_ref(),
+            "Image unavailable"
+        );
+        assert_eq!(
+            image_placeholder_label(&empty, PlaceholderKind::Loading).as_ref(),
+            "Loading image…"
+        );
+    }
+
+    #[test]
+    fn image_placeholder_label_preserves_alt_when_present() {
+        use super::{PlaceholderKind, image_placeholder_label};
+        let alt = gpui::SharedString::from("diagram of cache flow");
+        assert_eq!(
+            image_placeholder_label(&alt, PlaceholderKind::Fallback).as_ref(),
+            "diagram of cache flow"
+        );
+        assert_eq!(
+            image_placeholder_label(&alt, PlaceholderKind::Loading).as_ref(),
+            "diagram of cache flow"
+        );
+    }
+
+    #[test]
+    fn image_placeholder_builds_for_both_kinds() {
+        use super::{PlaceholderKind, image_placeholder};
+        let alt = gpui::SharedString::from("photo");
+        let _ = image_placeholder(
+            alt.clone(),
+            PlaceholderKind::Fallback,
+            ZERO_HSLA,
+            ZERO_HSLA,
+            ZERO_HSLA,
+            px(8.0),
+            px(80.0),
+            px(400.0),
+        );
+        let _ = image_placeholder(
+            alt,
+            PlaceholderKind::Loading,
+            ZERO_HSLA,
+            ZERO_HSLA,
+            ZERO_HSLA,
+            px(8.0),
+            px(80.0),
+            px(400.0),
+        );
     }
 
     #[test]
