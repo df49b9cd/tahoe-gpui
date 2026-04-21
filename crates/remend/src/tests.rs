@@ -1541,6 +1541,67 @@ fn idempotency_regression_0144() {
     assert_eq!(twice, once);
 }
 
+/// Pipeline-level idempotency tripwires for each proptest regression seed.
+/// These exercise the full remend() pipeline (not individual handlers).
+#[test]
+fn idempotency_seeds_pipeline() {
+    fn only(f: impl FnOnce(&mut RemendOptions)) -> RemendOptions {
+        let mut o = RemendOptions {
+            bold: false,
+            italic: false,
+            bold_italic: false,
+            inline_code: false,
+            strikethrough: false,
+            links: false,
+            images: false,
+            katex: false,
+            inline_katex: false,
+            setext_headings: false,
+            html_tags: false,
+            single_tilde: false,
+            comparison_operators: false,
+            link_mode: LinkMode::Protocol,
+            handlers: Vec::new(),
+        };
+        f(&mut o);
+        o
+    }
+
+    let seeds: &[(&str, RemendOptions)] = &[
+        ("_$", only(|o| { o.italic = true; o.inline_katex = true; })),
+        ("[[", only(|o| { o.links = true; })),
+        ("`\\", only(|o| { o.inline_code = true; })),
+        ("*\\", only(|o| { o.italic = true; })),
+        ("_*>0", only(|o| { o.italic = true; })),
+        ("``[ [", only(|o| { o.links = true; o.link_mode = LinkMode::TextOnly; })),
+        ("$**", only(|o| { o.bold = true; o.inline_katex = true; })),
+    ];
+
+    for (input, opts) in seeds {
+        let once = remend(input, opts).into_owned();
+        let twice = remend(&once, opts).into_owned();
+        assert_eq!(
+            twice, once,
+            "idempotency violated for seed {input:?} with opts {opts:?}"
+        );
+    }
+}
+
+/// Deterministic coverage for known-risky prefix + trailing-backslash combos.
+#[test]
+fn idempotency_trailing_backslash_combos() {
+    let inputs = ["**\\", "~~\\", "$*\\", "$$\\", "***\\"];
+    let opts = RemendOptions::default();
+    for input in inputs {
+        let once = remend(input, &opts).into_owned();
+        let twice = remend(&once, &opts).into_owned();
+        assert_eq!(
+            twice, once,
+            "idempotency violated for trailing-backslash input {input:?}"
+        );
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
 

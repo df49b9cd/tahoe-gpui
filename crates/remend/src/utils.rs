@@ -415,9 +415,9 @@ pub(crate) fn ends_with_odd_backslashes(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        count_single_backticks, find_trailing_delimiter, is_empty_or_markers, is_horizontal_rule,
-        is_inside_code_block, is_within_html_tag, is_within_link_or_image_url,
-        is_within_math_block, is_word_char,
+        count_single_backticks, ends_with_odd_backslashes, find_trailing_delimiter,
+        is_empty_or_markers, is_horizontal_rule, is_inside_code_block, is_within_html_tag,
+        is_within_link_or_image_url, is_within_math_block, is_word_char,
     };
 
     #[test]
@@ -440,6 +440,18 @@ mod tests {
         assert!(is_empty_or_markers("*_~`"));
         assert!(!is_empty_or_markers("hello"));
         assert!(!is_empty_or_markers("*a"));
+    }
+
+    #[test]
+    fn test_ends_with_odd_backslashes() {
+        assert!(!ends_with_odd_backslashes(""));
+        assert!(!ends_with_odd_backslashes("a"));
+        assert!(ends_with_odd_backslashes("\\"));
+        assert!(!ends_with_odd_backslashes("\\\\"));
+        assert!(ends_with_odd_backslashes("\\\\\\"));
+        assert!(ends_with_odd_backslashes("a\\"));
+        assert!(!ends_with_odd_backslashes("a\\\\"));
+        assert!(ends_with_odd_backslashes("é\\"));
     }
 
     #[test]

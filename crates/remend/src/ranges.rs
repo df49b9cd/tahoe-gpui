@@ -233,7 +233,10 @@ impl CodeBlockRanges {
     }
 
     /// Like `compute_math_ranges` but only emits ranges for math spans that
-    /// actually close. Unterminated math at EOF produces no range.
+    /// actually close. Unterminated math at EOF produces no range — emphasis
+    /// counters rely on this so a lone dollar sign doesn't swallow their
+    /// trailing completion markers across passes. Boundary rules otherwise
+    /// match `compute_math_ranges` (see its doc comment for worked examples).
     fn compute_complete_math_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
         let bytes = text.as_bytes();
         let len = bytes.len();

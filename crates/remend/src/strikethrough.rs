@@ -119,4 +119,16 @@ mod tests {
     fn inside_code_block() {
         assert!(matches!(handle("```\n~~strike\n```"), Cow::Borrowed(_)));
     }
+
+    #[test]
+    fn leaves_trailing_backslash() {
+        assert!(matches!(handle("~~\\"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn idempotent_with_trailing_backslash() {
+        let once = handle("~~\\").into_owned();
+        let twice = handle(&once).into_owned();
+        assert_eq!(twice, once);
+    }
 }

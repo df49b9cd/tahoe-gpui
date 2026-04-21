@@ -51,7 +51,8 @@ fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8) -> bool {
         }
     }
 
-    // Asymmetric: SOF is ws (so `"* foo"` stays a list bullet); EOF is not (so our own trailing `*` remains countable as a closer).
+    // Asymmetric: SOF is ws (so "* foo" stays a list bullet); EOF is not
+    // (so our own trailing `*` remains countable as a closer).
     let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
     let next_ws = matches!(next, b' ' | b'\t' | b'\n');
     if prev_ws && next_ws {
@@ -720,6 +721,8 @@ pub(crate) fn handle_italic_underscore_with_ranges<'a>(
 
     let count = count_single_underscores_with_ranges(text, ranges);
     if count % 2 == 1 {
+        // Must gate before the helpers: they produce non-suffix insertions
+        // that a trailing-backslash escape would invalidate on the next pass.
         if ends_with_odd_backslashes(text) {
             return Cow::Borrowed(text);
         }
@@ -1018,8 +1021,9 @@ mod tests {
     }
 
     #[test]
-    fn italic_underscore_trailing_asterisk_with_non_word_prev() {
-        // Trailing `*` preceded by a non-word char stays safe to append after.
+    fn italic_underscore_falls_through_when_trailing_asterisk_non_word() {
+        // handle_trailing_single_asterisk_for_underscore returns None (space
+        // before *), so insert_closing_underscore appends _ at EOF.
         assert_eq!(handle_italic_underscore("_. *").as_ref(), "_. *_");
     }
 

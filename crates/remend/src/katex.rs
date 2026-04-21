@@ -140,14 +140,22 @@ pub(crate) fn handle_inline_with_ranges<'a>(
     ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
     let count = count_single_dollars_with_ranges(text, ranges);
-    // Don't append when that would merge into an existing `$` (creating `$$` that block katex would then try to close) or land inside an unclosed code span.
-    if count % 2 == 1 && !text.ends_with('$') && !ranges.is_inside_code(text.len()) {
-        if ends_with_odd_backslashes(text) {
-            return Cow::Borrowed(text);
-        }
-        return cow_append(text, "$");
+    if count.is_multiple_of(2) {
+        return Cow::Borrowed(text);
     }
-    Cow::Borrowed(text)
+    // Don't merge into an existing `$` (creating `$$` that block katex
+    // would then try to close).
+    if text.ends_with('$') {
+        return Cow::Borrowed(text);
+    }
+    // Don't append into an unclosed code span.
+    if ranges.is_inside_code(text.len()) {
+        return Cow::Borrowed(text);
+    }
+    if ends_with_odd_backslashes(text) {
+        return Cow::Borrowed(text);
+    }
+    cow_append(text, "$")
 }
 
 #[cfg(test)]
