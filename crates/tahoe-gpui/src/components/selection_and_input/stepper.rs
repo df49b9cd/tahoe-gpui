@@ -230,7 +230,7 @@ impl RenderOnce for Stepper {
         if self.disabled || at_min {
             minus_btn = minus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
-            let h = handler.clone();
+            let h_click = handler.clone();
             minus_btn =
                 minus_btn
                     .cursor_pointer()
@@ -240,7 +240,7 @@ impl RenderOnce for Stepper {
                         } else {
                             decremented
                         };
-                        h(next, window, cx);
+                        h_click(next, window, cx);
                     });
         }
 
@@ -263,7 +263,7 @@ impl RenderOnce for Stepper {
         if self.disabled || at_max {
             plus_btn = plus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
-            let h = handler.clone();
+            let h_click = handler.clone();
             plus_btn =
                 plus_btn
                     .cursor_pointer()
@@ -273,7 +273,7 @@ impl RenderOnce for Stepper {
                         } else {
                             incremented
                         };
-                        h(next, window, cx);
+                        h_click(next, window, cx);
                     });
         }
 
@@ -328,6 +328,22 @@ impl RenderOnce for Stepper {
                                 shift_decremented
                             } else {
                                 decremented
+                            },
+                            window,
+                            cx,
+                        );
+                    }
+                    // Space/Enter activate the stepper (increment). The
+                    // single-tab-stop design means there is no natural "which
+                    // button" answer — incrementing matches the leading `+`
+                    // visual and common convention.
+                    _ if crate::foundations::keyboard::is_activation_key(event) => {
+                        cx.stop_propagation();
+                        handler(
+                            if shift {
+                                shift_incremented
+                            } else {
+                                incremented
                             },
                             window,
                             cx,
@@ -501,6 +517,37 @@ mod interaction_tests {
         host.update_in(cx, |host, _window, _cx| {
             assert!((host.value - 5.0).abs() < f64::EPSILON);
             assert_eq!(host.changes, vec![6.0, 7.0, 6.0, 5.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn space_and_enter_increment_after_focus(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| StepperHarness::new(cx, 5.0));
+
+        cx.click_on(STEPPER_PLUS);
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!((host.value - 7.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![6.0, 7.0]);
+        });
+
+        cx.press("space");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!((host.value - 8.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![6.0, 7.0, 8.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn shift_enter_applies_10x_step(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| StepperHarness::new(cx, 5.0));
+
+        cx.click_on(STEPPER_PLUS);
+        cx.press("shift-enter");
+        host.update_in(cx, |host, _window, _cx| {
+            // 5.0 + 10×1.0 = 15.0, but clamped to max 10.0
+            assert!((host.value - 10.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![6.0, 10.0]);
         });
     }
 }
