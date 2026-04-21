@@ -82,7 +82,7 @@ pub fn handle(text: &str) -> Cow<'_, str> {
         if content.is_empty()
             || content
                 .bytes()
-                .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'_' | b'~' | b'*' | b'`'))
+                .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'_' | b'~' | b'*' | b'`' | b'$'))
         {
             return Cow::Borrowed(text);
         }

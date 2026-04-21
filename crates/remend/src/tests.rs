@@ -1613,6 +1613,13 @@ fn idempotency_seeds_pipeline() {
                 o.inline_katex = true;
             }),
         ),
+        (
+            "$`\n",
+            only(|o| {
+                o.inline_code = true;
+                o.inline_katex = true;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {
