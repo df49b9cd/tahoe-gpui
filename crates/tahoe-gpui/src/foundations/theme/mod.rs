@@ -588,7 +588,8 @@ impl TahoeTheme {
 
             semantic,
 
-            accessibility_mode: AccessibilityMode::DEFAULT,
+            accessibility_mode: crate::foundations::accessibility::detect_system_accessibility_mode(
+            ),
 
             layout_direction: LayoutDirection::LeftToRight,
             first_weekday: 0,
@@ -1591,12 +1592,11 @@ impl TahoeTheme {
         cx: &mut App,
         accent: AccentColor,
     ) -> gpui::Subscription {
+        use crate::foundations::accessibility::detect_system_accessibility_mode;
+
         let theme_for = move |w: &Window| {
-            let appearance = match w.appearance() {
-                WindowAppearance::Light | WindowAppearance::VibrantLight => Appearance::Light,
-                WindowAppearance::Dark | WindowAppearance::VibrantDark => Appearance::Dark,
-            };
-            Self::with_accent(appearance, accent)
+            let mode = detect_system_accessibility_mode();
+            Self::for_appearance_with_a11y(w.appearance(), mode).with_accent_color(accent)
         };
         theme_for(window).apply(cx);
         window.observe_window_appearance(move |window, cx| {
@@ -1638,8 +1638,12 @@ impl TahoeTheme {
         cx: &mut App,
         accent: AccentColor,
     ) -> gpui::Subscription {
-        let theme_for =
-            move |w: &Window| Self::for_appearance_glass(w.appearance()).with_accent_color(accent);
+        use crate::foundations::accessibility::detect_system_accessibility_mode;
+
+        let theme_for = move |w: &Window| {
+            let mode = detect_system_accessibility_mode();
+            Self::for_appearance_glass_with_a11y(w.appearance(), mode).with_accent_color(accent)
+        };
         theme_for(window).apply_in_window(window, cx);
         window.observe_window_appearance(move |window, cx| {
             theme_for(window).apply_in_window(window, cx);
