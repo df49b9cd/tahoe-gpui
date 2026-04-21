@@ -827,6 +827,82 @@ mod interaction_tests {
         });
     }
 
+    #[gpui::test]
+    async fn initial_focus_lands_on_first_focus_group_member_bottom_drawer(
+        cx: &mut TestAppContext,
+    ) {
+        // WAI-ARIA dialog pattern: on open, focus the first focusable child.
+        // The harness hands the sheet a populated focus group but never
+        // focuses the outer handle — opening the sheet must land focus on
+        // the first registered member on its own.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "initial render should focus the first focus-group member"
+            );
+            assert!(
+                !host.outer_focus.is_focused(window),
+                "outer container must not steal focus when a member exists"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn initial_focus_lands_on_first_focus_group_member_cardlike(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::Cardlike)
+        });
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.first.is_focused(window));
+            assert!(!host.outer_focus.is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    async fn home_jumps_to_first_group_member(cx: &mut TestAppContext) {
+        // Home lands on the first member only when a group member is
+        // currently focused, so text inputs outside the group retain
+        // their native start-of-line behavior.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.second.focus(window, cx);
+            assert!(
+                host.second.is_focused(window),
+                "precondition: second focused"
+            );
+        });
+        cx.press("home");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Home lands on the first member"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn end_jumps_to_last_group_member(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.first.focus(window, cx);
+            assert!(host.first.is_focused(window), "precondition: first focused");
+        });
+        cx.press("end");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.second.is_focused(window),
+                "End lands on the last member"
+            );
+        });
+    }
+
     // Harness with no focus_cycle — verifies the empty-trap contract:
     // Tab must be swallowed even when no child handles are registered,
     // so focus cannot escape the sheet surface.
