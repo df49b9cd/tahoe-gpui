@@ -22,20 +22,33 @@
 //! # Keyboard
 //!
 //! Pass an [`Open`-mode][FocusGroupMode::Open] [`FocusGroup`] per pane via
-//! [`sidebar_focus_group`](Self::sidebar_focus_group) /
-//! [`content_focus_group`](Self::content_focus_group) /
-//! [`inspector_focus_group`](Self::inspector_focus_group) to turn each pane
-//! into a distinct focus region. When the user presses
-//! **Cmd-Opt-Left / Cmd-Opt-Right** with focus inside a pane, focus jumps
-//! to the first registered member of the previous / next **visible,
-//! non-empty** pane (order: sidebar → content → inspector). Hidden panes
-//! (`sidebar_collapsed(true)`, `inspector_visible(false)`) and panes with
-//! no registered group members are skipped.
+//! [`NavigationSplitView::sidebar_focus_group`] /
+//! [`NavigationSplitView::content_focus_group`] /
+//! [`NavigationSplitView::inspector_focus_group`] to turn each pane into a
+//! distinct focus region. When the user presses
+//! **Cmd-Opt-`[` / Cmd-Opt-`]`** with focus inside a pane, focus jumps to
+//! the first registered member of the previous / next **visible, non-empty**
+//! pane in reading order (sidebar → content → inspector in LTR; reversed
+//! visually in RTL without any config change — the bracket chord is
+//! direction-agnostic). Hidden panes (`sidebar_collapsed(true)`,
+//! `inspector_visible(false)`) and panes with no registered group members
+//! are skipped. The chord is a no-op when focus is outside every
+//! registered pane group, or when the host has configured no pane groups
+//! at all.
 //!
-//! The caller owns each `FocusGroup` across renders and is responsible for
-//! calling [`FocusGroup::set_members`] each render with the current
-//! focusable children of that pane. See `examples/gallery/focus_groups.rs`
-//! for the reference wiring.
+//! Bracket chords (rather than arrow chords) avoid the `Cmd-Opt-Left` /
+//! `Cmd-Opt-Right` collision with Safari/Chrome/Firefox/Terminal tab
+//! switching when the split view is embedded in a tabbed shell.
+//!
+//! The caller owns each `FocusGroup` across renders. Two wiring patterns
+//! are supported: (a) call [`FocusGroupExt::focus_group`] per item in the
+//! pane's children — the idempotent [`FocusGroup::register`] keeps the
+//! member list stable across renders; or (b) call
+//! [`FocusGroup::set_members`] explicitly each render when the host owns
+//! the member list out-of-band or membership changes frame-to-frame.
+//! See `examples/gallery/focus_groups.rs` for the reference wiring.
+//!
+//! [`FocusGroupExt::focus_group`]: crate::foundations::accessibility::FocusGroupExt::focus_group
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, KeyDownEvent, Pixels, SharedString, Window, div, px};
@@ -70,6 +83,16 @@ pub struct NavigationSplitView {
     sidebar_accessibility_label: Option<SharedString>,
     content_accessibility_label: Option<SharedString>,
     inspector_accessibility_label: Option<SharedString>,
+}
+
+#[track_caller]
+fn assert_open_focus_group(group: &FocusGroup, builder: &str) {
+    assert_eq!(
+        group.mode(),
+        FocusGroupMode::Open,
+        "{builder} requires an Open-mode FocusGroup (Cycle/Trap would wrap within a pane \
+         and defeat the cross-pane jump chord)",
+    );
 }
 
 impl NavigationSplitView {
@@ -143,43 +166,32 @@ impl NavigationSplitView {
     }
 
     /// Attach a caller-owned [`FocusGroup`] covering the sidebar pane's
-    /// focusable children. Enables `Cmd-Opt-Left / Cmd-Opt-Right` pane
-    /// jumps (see the module-level `# Keyboard` section). Must be in
-    /// [`FocusGroupMode::Open`] — trips a `debug_assert` otherwise.
+    /// focusable children. Enables the pane-jump chord (see the
+    /// module-level `# Keyboard` section). Must be in
+    /// [`FocusGroupMode::Open`] — panics otherwise in both debug and
+    /// release to prevent silent misuse (wrong mode would let
+    /// `focus_next` / `focus_previous` wrap within a pane, violating the
+    /// no-wrap pane-jump contract).
     pub fn sidebar_focus_group(mut self, group: FocusGroup) -> Self {
-        debug_assert_eq!(
-            group.mode(),
-            FocusGroupMode::Open,
-            "sidebar_focus_group requires an Open-mode FocusGroup",
-        );
+        assert_open_focus_group(&group, "sidebar_focus_group");
         self.sidebar_focus_group = Some(group);
         self
     }
 
     /// Attach a caller-owned [`FocusGroup`] covering the content pane's
-    /// focusable children. Enables `Cmd-Opt-Left / Cmd-Opt-Right` pane
-    /// jumps (see the module-level `# Keyboard` section). Must be in
-    /// [`FocusGroupMode::Open`] — trips a `debug_assert` otherwise.
+    /// focusable children. See [`NavigationSplitView::sidebar_focus_group`]
+    /// for the mode contract.
     pub fn content_focus_group(mut self, group: FocusGroup) -> Self {
-        debug_assert_eq!(
-            group.mode(),
-            FocusGroupMode::Open,
-            "content_focus_group requires an Open-mode FocusGroup",
-        );
+        assert_open_focus_group(&group, "content_focus_group");
         self.content_focus_group = Some(group);
         self
     }
 
     /// Attach a caller-owned [`FocusGroup`] covering the inspector pane's
-    /// focusable children. Enables `Cmd-Opt-Left / Cmd-Opt-Right` pane
-    /// jumps (see the module-level `# Keyboard` section). Must be in
-    /// [`FocusGroupMode::Open`] — trips a `debug_assert` otherwise.
+    /// focusable children. See [`NavigationSplitView::sidebar_focus_group`]
+    /// for the mode contract.
     pub fn inspector_focus_group(mut self, group: FocusGroup) -> Self {
-        debug_assert_eq!(
-            group.mode(),
-            FocusGroupMode::Open,
-            "inspector_focus_group requires an Open-mode FocusGroup",
-        );
+        assert_open_focus_group(&group, "inspector_focus_group");
         self.inspector_focus_group = Some(group);
         self
     }
@@ -216,46 +228,57 @@ impl RenderOnce for NavigationSplitView {
         let sidebar_visible = self.sidebar.is_some() && !self.sidebar_collapsed;
         let inspector_visible = self.inspector.is_some() && self.inspector_visible;
 
+        // Each pane attaches `role=Group` unconditionally so VoiceOver can
+        // distinguish panes during the pane-jump chord even when the host
+        // forgot to set an accessibility label. The caller's label wins
+        // when supplied.
+        let pane_props = |label: Option<SharedString>| {
+            let mut props = AccessibilityProps::new().role(AccessibilityRole::Group);
+            if let Some(label) = label {
+                props = props.label(label);
+            }
+            props
+        };
+
         // Leading: sidebar (when present and not collapsed).
         if let (Some(sidebar), true) = (self.sidebar, sidebar_visible) {
-            let mut pane = div().w(self.sidebar_width).h_full().child(sidebar);
-            if let Some(label) = self.sidebar_accessibility_label {
-                let props = AccessibilityProps::new()
-                    .role(AccessibilityRole::Group)
-                    .label(label);
-                pane = pane.with_accessibility(&props);
-            }
+            let pane = div()
+                .w(self.sidebar_width)
+                .h_full()
+                .child(sidebar)
+                .with_accessibility(&pane_props(self.sidebar_accessibility_label));
             row = row.child(pane);
             row = row.child(div().w(separator_thickness).h_full().bg(separator_color));
         }
 
         // Center: content always renders, filling the remaining width.
-        let mut content_pane = div().flex_1().h_full().child(self.content);
-        if let Some(label) = self.content_accessibility_label {
-            let props = AccessibilityProps::new()
-                .role(AccessibilityRole::Group)
-                .label(label);
-            content_pane = content_pane.with_accessibility(&props);
-        }
+        let content_pane = div()
+            .flex_1()
+            .h_full()
+            .child(self.content)
+            .with_accessibility(&pane_props(self.content_accessibility_label));
         row = row.child(content_pane);
 
         // Trailing: inspector (when visible and an element was supplied).
         if let (Some(inspector), true) = (self.inspector, inspector_visible) {
             row = row.child(div().w(separator_thickness).h_full().bg(separator_color));
-            let mut pane = div().w(self.inspector_width).h_full().child(inspector);
-            if let Some(label) = self.inspector_accessibility_label {
-                let props = AccessibilityProps::new()
-                    .role(AccessibilityRole::Group)
-                    .label(label);
-                pane = pane.with_accessibility(&props);
-            }
+            let pane = div()
+                .w(self.inspector_width)
+                .h_full()
+                .child(inspector)
+                .with_accessibility(&pane_props(self.inspector_accessibility_label));
             row = row.child(pane);
         }
 
-        // Pane navigation: Cmd-Opt-Left / Cmd-Opt-Right jumps between the
-        // visible, non-empty pane groups (order: sidebar → content →
-        // inspector). Hidden or empty panes are skipped. No-op when no
-        // pane group contains focus or when no neighbor is reachable.
+        // Pane navigation: Cmd-Opt-`[` / Cmd-Opt-`]` jumps between the
+        // visible, non-empty pane groups in reading order (sidebar →
+        // content → inspector). Brackets are direction-agnostic so RTL
+        // layouts need no special handling — `[` always means
+        // "previous pane in reading order," regardless of visual side.
+        // Hidden or empty panes are skipped. No-op when no pane group
+        // contains focus, when no neighbor is reachable, or when no pane
+        // group was configured at all (the whole closure is skipped in
+        // that last case so the chord bubbles past this component).
         let sidebar_group = self.sidebar_focus_group.filter(|_| sidebar_visible);
         let content_group = self.content_focus_group;
         let inspector_group = self.inspector_focus_group.filter(|_| inspector_visible);
@@ -270,30 +293,28 @@ impl RenderOnce for NavigationSplitView {
                     return;
                 }
                 let direction: i32 = match event.keystroke.key.as_str() {
-                    "left" => -1,
-                    "right" => 1,
+                    "[" => -1,
+                    "]" => 1,
                     _ => return,
                 };
 
-                // Ordered list of `(group, visible, non_empty)` tuples
-                // matches LTR pane order. We filter to the "jumpable" set
-                // (visible + non-empty) and then walk forwards or
-                // backwards from the currently focused pane.
+                // `panes` is in logical (reading) order, which is the same
+                // order arrays index from 0..3 regardless of layout
+                // direction. We filter to the "jumpable" set (visible +
+                // non-empty) and then step forwards or backwards from the
+                // pane that currently contains focus.
                 let panes: [Option<&FocusGroup>; 3] = [
                     sidebar_group.as_ref(),
                     content_group.as_ref(),
                     inspector_group.as_ref(),
                 ];
 
-                let jumpable: Vec<(usize, &FocusGroup)> = panes
+                let jumpable: Vec<&FocusGroup> = panes
                     .iter()
-                    .enumerate()
-                    .filter_map(|(i, g)| g.and_then(|g| (!g.is_empty()).then_some((i, g))))
+                    .filter_map(|g| g.and_then(|g| (!g.is_empty()).then_some(g)))
                     .collect();
 
-                let Some(current_idx) = jumpable
-                    .iter()
-                    .position(|(_, g)| g.contains_focused(window))
+                let Some(current_idx) = jumpable.iter().position(|g| g.contains_focused(window))
                 else {
                     return;
                 };
@@ -302,7 +323,11 @@ impl RenderOnce for NavigationSplitView {
                 if target_idx < 0 || target_idx as usize >= jumpable.len() {
                     return;
                 }
-                jumpable[target_idx as usize].1.focus_first(window, cx);
+                // TODO(last-focused): track per-group "last focused" handle
+                // and restore it here instead of `focus_first`. Matches
+                // Apple's Mail / Xcode split-view convention of resuming
+                // where the user left off in the destination pane.
+                jumpable[target_idx as usize].focus_first(window, cx);
                 cx.stop_propagation();
             });
         }
@@ -408,7 +433,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Open-mode FocusGroup")]
-    fn sidebar_focus_group_rejects_non_open_mode_in_debug() {
+    fn sidebar_focus_group_rejects_non_open_mode() {
         use crate::foundations::accessibility::FocusGroup;
         let _ = NavigationSplitView::new("nsv", div()).sidebar_focus_group(FocusGroup::cycle());
     }
@@ -421,7 +446,7 @@ mod interaction_tests {
 
     use super::NavigationSplitView;
     use crate::foundations::accessibility::{FocusGroup, FocusGroupExt};
-    use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
+    use crate::test_helpers::helpers::{InteractionExt, setup_test_window, setup_test_window_rtl};
 
     /// Harness that owns three pane `FocusGroup`s with two handles each,
     /// rendered inside a `NavigationSplitView`. The `sidebar_collapsed` and
@@ -521,91 +546,91 @@ mod interaction_tests {
     }
 
     #[gpui::test]
-    async fn cmd_alt_right_from_sidebar_jumps_to_content(cx: &mut TestAppContext) {
+    async fn cmd_alt_close_bracket_from_sidebar_jumps_to_content(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.sidebar_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-right");
+        cx.press("cmd-alt-]");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.content_handles[0].is_focused(window),
-                "cmd-alt-right from sidebar → content[0]"
+                "cmd-alt-] from sidebar → content[0]"
             );
         });
     }
 
     #[gpui::test]
-    async fn cmd_alt_right_from_content_jumps_to_inspector(cx: &mut TestAppContext) {
+    async fn cmd_alt_close_bracket_from_content_jumps_to_inspector(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.content_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-right");
+        cx.press("cmd-alt-]");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.inspector_handles[0].is_focused(window),
-                "cmd-alt-right from content → inspector[0]"
+                "cmd-alt-] from content → inspector[0]"
             );
         });
     }
 
     #[gpui::test]
-    async fn cmd_alt_left_from_inspector_jumps_to_content(cx: &mut TestAppContext) {
+    async fn cmd_alt_open_bracket_from_inspector_jumps_to_content(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.inspector_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-left");
+        cx.press("cmd-alt-[");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.content_handles[0].is_focused(window),
-                "cmd-alt-left from inspector → content[0]"
+                "cmd-alt-[ from inspector → content[0]"
             );
         });
     }
 
     #[gpui::test]
-    async fn cmd_alt_left_from_content_jumps_to_sidebar(cx: &mut TestAppContext) {
+    async fn cmd_alt_open_bracket_from_content_jumps_to_sidebar(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.content_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-left");
+        cx.press("cmd-alt-[");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.sidebar_handles[0].is_focused(window),
-                "cmd-alt-left from content → sidebar[0]"
+                "cmd-alt-[ from content → sidebar[0]"
             );
         });
     }
 
     #[gpui::test]
-    async fn cmd_alt_right_at_inspector_edge_is_noop(cx: &mut TestAppContext) {
+    async fn cmd_alt_close_bracket_at_inspector_edge_is_noop(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.inspector_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-right");
+        cx.press("cmd-alt-]");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.inspector_handles[0].is_focused(window),
-                "cmd-alt-right on rightmost pane is a no-op"
+                "cmd-alt-] on last pane is a no-op"
             );
         });
     }
 
     #[gpui::test]
-    async fn cmd_alt_left_at_sidebar_edge_is_noop(cx: &mut TestAppContext) {
+    async fn cmd_alt_open_bracket_at_sidebar_edge_is_noop(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.sidebar_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-left");
+        cx.press("cmd-alt-[");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.sidebar_handles[0].is_focused(window),
-                "cmd-alt-left on leftmost pane is a no-op"
+                "cmd-alt-[ on first pane is a no-op"
             );
         });
     }
@@ -617,16 +642,16 @@ mod interaction_tests {
             h.sidebar_collapsed = true;
             h
         });
-        // Content is the leftmost visible pane; cmd-alt-left should be a
-        // no-op because the collapsed sidebar is skipped.
+        // Content is the first visible pane; cmd-alt-[ must no-op because
+        // the collapsed sidebar is filtered out of the jumpable set.
         host.update_in(cx, |host, window, cx| {
             host.content_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-left");
+        cx.press("cmd-alt-[");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.content_handles[0].is_focused(window),
-                "cmd-alt-left with collapsed sidebar is a no-op"
+                "cmd-alt-[ with collapsed sidebar is a no-op"
             );
         });
     }
@@ -641,27 +666,147 @@ mod interaction_tests {
         host.update_in(cx, |host, window, cx| {
             host.content_handles[0].focus(window, cx);
         });
-        cx.press("cmd-alt-right");
+        cx.press("cmd-alt-]");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.content_handles[0].is_focused(window),
-                "cmd-alt-right with hidden inspector is a no-op"
+                "cmd-alt-] with hidden inspector is a no-op"
             );
         });
     }
 
     #[gpui::test]
-    async fn plain_arrow_not_consumed(cx: &mut TestAppContext) {
+    async fn plain_bracket_without_modifiers_not_consumed(cx: &mut TestAppContext) {
         let (host, cx) = setup_test_window(cx, |_window, cx| NsvHarness::new(cx));
         host.update_in(cx, |host, window, cx| {
             host.content_handles[0].focus(window, cx);
         });
-        // Plain left (no modifiers) should not trigger pane navigation.
-        cx.press("left");
+        // Plain `]` (no modifiers) must not trigger pane navigation —
+        // verifies the modifier guard at the top of the handler.
+        cx.press("]");
         host.update_in(cx, |host, window, _cx| {
             assert!(
                 host.content_handles[0].is_focused(window),
-                "plain left without cmd-alt does not jump panes"
+                "plain ] without cmd-alt does not jump panes"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn bracket_chord_is_direction_agnostic_under_rtl(cx: &mut TestAppContext) {
+        // RTL smoke test: the bracket chord means "previous/next pane in
+        // reading order" — the array `[sidebar, content, inspector]` is in
+        // logical order, so `cmd-alt-]` must still advance sidebar →
+        // content regardless of visual layout direction. This pins the
+        // contract and guards against a future refactor that adds a
+        // misguided `is_rtl` flip.
+        let (host, cx) = setup_test_window_rtl(cx, |_window, cx| NsvHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.sidebar_handles[0].focus(window, cx);
+        });
+        cx.press("cmd-alt-]");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.content_handles[0].is_focused(window),
+                "RTL: cmd-alt-] from sidebar advances to content in reading order"
+            );
+        });
+    }
+
+    /// Minimal harness used by the "no focus groups configured" and
+    /// "empty pane" regression tests. Mints one internal and one external
+    /// focus handle so we can assert the chord does not steal focus when
+    /// the NSV has no pane-jump wiring or the focused pane is empty.
+    struct BareNsvHarness {
+        inside_handle: FocusHandle,
+        outside_handle: FocusHandle,
+        attach_empty_sidebar_group: bool,
+        sidebar_group: FocusGroup,
+    }
+
+    impl BareNsvHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                inside_handle: cx.focus_handle(),
+                outside_handle: cx.focus_handle(),
+                attach_empty_sidebar_group: false,
+                sidebar_group: FocusGroup::open(),
+            }
+        }
+    }
+
+    impl Render for BareNsvHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            // Outside-element lives next to the NSV so focus can be parked
+            // somewhere that no pane knows about.
+            let outside = div()
+                .id("outside")
+                .track_focus(&self.outside_handle)
+                .child("outside");
+
+            let nsv = NavigationSplitView::new(
+                "nsv",
+                div()
+                    .id("content-only")
+                    .track_focus(&self.inside_handle)
+                    .child("content"),
+            );
+            let nsv = if self.attach_empty_sidebar_group {
+                // Sidebar pane is wired with a FocusGroup but no items are
+                // registered — simulates the "frame with cleared members"
+                // case. Inspector / content stay unwired.
+                nsv.sidebar(div().child("empty sidebar"))
+                    .sidebar_focus_group(self.sidebar_group.clone())
+            } else {
+                nsv
+            };
+
+            div().flex().flex_col().child(outside).child(nsv)
+        }
+    }
+
+    #[gpui::test]
+    async fn cmd_alt_bracket_not_consumed_when_no_focus_groups_attached(cx: &mut TestAppContext) {
+        // With no pane groups configured, the on_key_down handler is not
+        // attached — `cmd-alt-]` must bubble past the NSV with zero
+        // effect. Guards against a refactor that moves the closure
+        // outside the `any_group_configured` gate.
+        let (host, cx) = setup_test_window(cx, |_window, cx| BareNsvHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.outside_handle.focus(window, cx);
+        });
+        cx.press("cmd-alt-]");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.outside_handle.is_focused(window),
+                "cmd-alt-] must not move focus when no pane groups are wired"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_alt_bracket_noop_when_focused_pane_group_is_empty(cx: &mut TestAppContext) {
+        // Sidebar pane is wired to a FocusGroup but no items have
+        // registered. The `(!g.is_empty()).then_some(...)` filter must
+        // skip it, so the chord is a no-op even though the NSV does have
+        // a handler attached.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            let mut h = BareNsvHarness::new(cx);
+            h.attach_empty_sidebar_group = true;
+            h
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.outside_handle.focus(window, cx);
+        });
+        cx.press("cmd-alt-]");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.outside_handle.is_focused(window),
+                "cmd-alt-] is a no-op when the only registered pane group is empty"
             );
         });
     }

@@ -80,8 +80,15 @@ pub enum AccessibilityRole {
     /// Group of related controls with an accessibility label.
     Group,
     /// Toolbar — horizontal bar of related actions. Matches WAI-ARIA
-    /// `role="toolbar"` and NSAccessibilityRole `.toolbar`. Arrow keys
-    /// navigate between members; Tab exits the group.
+    /// `role="toolbar"` and NSAccessibilityRole `.toolbar`.
+    ///
+    /// Keyboard semantics implemented by
+    /// [`crate::components::navigation_and_search::Toolbar`]: Left / Right
+    /// walk between registered items, Home / End jump to endpoints. Tab
+    /// follows GPUI's native tab-stop map — today that walks every
+    /// registered item in registration order before advancing past the
+    /// toolbar; full WAI-ARIA APG roving tabindex (where only the active
+    /// member exposes `tab_index(0)`) is not yet implemented.
     Toolbar,
     /// Image / decorative media.
     Image,

@@ -26,23 +26,40 @@
 //! # Keyboard
 //!
 //! Pass an [`Open`-mode][FocusGroupMode::Open] [`FocusGroup`] via
-//! [`Toolbar::focus_group`] to make the bar a WAI-ARIA toolbar: arrow keys
-//! (Left / Right) walk between registered items without wrapping, Home / End
-//! jump to the endpoints, and Tab exits the group. The caller owns the
-//! group (cheap `Rc<RefCell>` clone) across renders, mints one
-//! [`FocusHandle`][gpui::FocusHandle] per item, calls
-//! [`FocusGroup::set_members`] each render with the current item handles,
-//! and threads each handle through the item builder (e.g.
-//! [`Button::focus_handle`](crate::components::menus_and_actions::Button::focus_handle)).
+//! [`Toolbar::focus_group`] to enable arrow-key navigation between
+//! registered items: Left / Right walk without wrapping (Open mode edges
+//! stay put) and Home / End jump to the endpoints. The toolbar's handler
+//! ignores any keystroke that carries a modifier, so app-level chords
+//! like `Cmd-Right` (end-of-line) and the NavigationSplitView pane-jump
+//! chord bubble past the toolbar untouched.
+//!
+//! **Tab behavior (not yet WAI-ARIA roving tabindex).** Today every
+//! registered toolbar item receives a positive `tab_index` via
+//! [`FocusGroupExt::focus_group`], so Tab walks through every item in
+//! registration order before advancing past the toolbar — it does *not*
+//! leave the toolbar on the first press. Full WAI-ARIA APG toolbar
+//! semantics (roving tabindex: only the active member exposes
+//! `tab_index(0)`, the rest `tab_index(-1)`) is future work; callers who
+//! need that today must implement it at the host.
+//!
+//! The caller owns the group (cheap `Rc<RefCell>` clone) across renders.
+//! Two wiring patterns are supported: (a) call
+//! [`FocusGroupExt::focus_group`] per item — the idempotent
+//! [`FocusGroup::register`] keeps the member list stable across renders
+//! — or (b) call [`FocusGroup::set_members`] each render when the host
+//! owns the handle list out-of-band or membership changes frame-to-frame.
 //! See `examples/gallery/focus_groups.rs` for the reference wiring.
 //!
 //! [`TextField`](crate::components::selection_and_input::TextField) inputs
 //! placed inside a toolbar should **not** be registered as focus-group
-//! members — TextField's own cursor actions (bound via
-//! [`textfield_keybindings()`](crate::textfield_keybindings)) consume
-//! Left / Right before the toolbar's key handler bubbles, so the host
-//! must register those keybindings for TextField cursor movement to keep
-//! working inside a toolbar.
+//! members. The toolbar's arrow-key handler is guarded by
+//! [`FocusGroup::contains_focused`] — a TextField that is not a
+//! registered member falls outside that guard and keeps its native
+//! Left / Right cursor movement. Callers must still register
+//! [`textfield_keybindings()`](crate::textfield_keybindings) on their
+//! window so TextField's own cursor actions continue to dispatch.
+//!
+//! [`FocusGroupExt::focus_group`]: crate::foundations::accessibility::FocusGroupExt::focus_group
 
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
@@ -189,20 +206,20 @@ impl Toolbar {
         self
     }
 
-    /// Attach a caller-owned [`FocusGroup`] so the toolbar exposes WAI-ARIA
-    /// toolbar keyboard semantics. See the module-level `# Keyboard`
-    /// section for the wiring contract.
+    /// Attach a caller-owned [`FocusGroup`] so the toolbar exposes
+    /// arrow-key navigation over its items. See the module-level
+    /// `# Keyboard` section for the wiring contract.
     ///
     /// The group must be in [`FocusGroupMode::Open`] — HIG toolbars do not
-    /// wrap at the edges and Tab must exit the group to the next window
-    /// region. Passing a `Cycle` or `Trap` group will trip a
-    /// `debug_assert` in debug builds.
+    /// wrap arrow navigation at the edges. Passing a `Cycle` or `Trap`
+    /// group panics in both debug and release (silent wrap-around is more
+    /// harmful than a loud failure).
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
-        debug_assert_eq!(
+        assert_eq!(
             group.mode(),
             FocusGroupMode::Open,
-            "Toolbar::focus_group requires an Open-mode FocusGroup (HIG toolbars do not wrap \
-             arrow navigation and Tab must exit the group)",
+            "Toolbar::focus_group requires an Open-mode FocusGroup (Cycle/Trap would wrap \
+             arrow navigation at the toolbar edges, which HIG toolbars explicitly do not do)",
         );
         self.focus_group = Some(group);
         self
@@ -323,15 +340,27 @@ impl RenderOnce for Toolbar {
             );
         }
 
-        // WAI-ARIA toolbar keyboard navigation. Arrow keys walk between
-        // registered `FocusGroup` members without wrapping (`Open` mode),
-        // Home / End jump to endpoints. Guard every branch on
-        // `contains_focused` so the handler only fires when a *registered*
-        // toolbar item holds focus — arbitrary descendants (e.g. a
-        // TextField whose handle is not a group member) keep their native
-        // cursor-movement semantics.
+        // Toolbar arrow-key navigation. Left / Right walk between
+        // registered `FocusGroup` members (Open mode: edges stay put).
+        // Home / End jump to endpoints. Two guards bound the handler:
+        //
+        // (1) Modifier check: any chord (Cmd / Alt / Ctrl / Shift) returns
+        //     early so app-level bindings like the NavigationSplitView
+        //     pane-jump chord (`Cmd-Opt-[` / `Cmd-Opt-]`) and shell
+        //     shortcuts like `Cmd-Right` / `Cmd-End` bubble past the
+        //     toolbar untouched. Without this guard a toolbar nested in
+        //     an NSV pane would steal the pane-jump chord as soon as a
+        //     toolbar item held focus.
+        // (2) `contains_focused` check: the handler only fires when a
+        //     *registered* item holds focus. Arbitrary descendants (a
+        //     TextField whose handle is not a group member, an external
+        //     button) keep their native cursor / activation semantics.
         if let Some(group) = self.focus_group.clone() {
             bar = bar.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let m = &event.keystroke.modifiers;
+                if m.platform || m.alt || m.control || m.shift || m.function {
+                    return;
+                }
                 if !group.contains_focused(window) {
                     return;
                 }
@@ -357,11 +386,17 @@ impl RenderOnce for Toolbar {
             });
         }
 
-        // Attach WAI-ARIA `role="toolbar"` + optional label. Today this is
+        // Attach AX `role="toolbar"` + optional label. Today this is
         // forward-compat scaffolding (GPUI 0.2.2 has no AX tree API — see
-        // `foundations/accessibility/mod.rs`); when the upstream API lands
-        // the single `AccessibleExt::with_accessibility` impl wires every
-        // Toolbar to the AX tree in one place.
+        // `foundations/accessibility/mod.rs`); when the upstream API
+        // lands, the single `AccessibleExt::with_accessibility` impl wires
+        // every Toolbar to the AX tree in one place.
+        //
+        // TODO(AX assertion): once GPUI exposes an AX inspector API, add
+        // a test that asserts this call attaches `role=Toolbar` (and the
+        // optional label) so a refactor that drops the `with_accessibility`
+        // line is caught — today the props struct round-trips in unit
+        // tests but the render-side wiring has no assertion.
         let mut a11y = AccessibilityProps::new().role(AccessibilityRole::Toolbar);
         if let Some(label) = self.accessibility_label {
             a11y = a11y.label(label);
@@ -501,7 +536,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Open-mode FocusGroup")]
-    fn toolbar_focus_group_rejects_non_open_mode_in_debug() {
+    fn toolbar_focus_group_rejects_non_open_mode() {
         use crate::foundations::accessibility::FocusGroup;
         let _ = Toolbar::new("tb").focus_group(FocusGroup::cycle());
     }
@@ -668,6 +703,69 @@ mod interaction_tests {
             assert!(
                 host.untracked.is_focused(window),
                 "left should not move focus from untracked element"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_right_on_tracked_member_does_not_advance(cx: &mut TestAppContext) {
+        // The modifier-guard at the top of the toolbar's on_key_down must
+        // bail on any chord so app-level bindings (end-of-line, window
+        // shortcuts) bubble past. Without the guard, focus would advance
+        // 0 → 1 and `stop_propagation` would eat the chord.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("cmd-right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-right must not advance toolbar focus — chord must bubble"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_alt_right_on_tracked_member_does_not_advance(cx: &mut TestAppContext) {
+        // Specifically guards against the NavigationSplitView pane-jump
+        // collision: a toolbar nested in an NSV pane must let the NSV's
+        // `cmd-alt-[`/`cmd-alt-]` chord bubble past. We use `cmd-alt-right`
+        // (the old NSV chord) plus `cmd-alt-]` (the new chord) — both must
+        // be ignored.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("cmd-alt-right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-alt-right must not advance toolbar focus"
+            );
+        });
+        cx.press("cmd-alt-]");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-alt-] must not advance toolbar focus (pane-jump chord must bubble)"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn shift_left_on_tracked_member_does_not_retreat(cx: &mut TestAppContext) {
+        // Shift+arrows are conventionally used for selection extension;
+        // the toolbar must not consume them.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("shift-left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[1].is_focused(window),
+                "shift-left must not retreat toolbar focus"
             );
         });
     }
