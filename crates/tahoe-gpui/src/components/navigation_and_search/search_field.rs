@@ -46,7 +46,7 @@ use crate::components::selection_and_input::segmented_control::{SegmentItem, Seg
 use crate::components::selection_and_input::text_field::TextField;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{SurfaceContext, glass_surface, resolve_focused};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// A controlled search field with suggestion dropdown per HIG.
@@ -300,7 +300,7 @@ impl SearchField {
 }
 
 impl RenderOnce for SearchField {
-    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
         let has_value = !self.value.is_empty();
@@ -457,6 +457,7 @@ impl RenderOnce for SearchField {
 
         // Glass-styled capsule container with focusable
         let suggestions_id = ElementId::from((self.id.clone(), "suggestions"));
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
         let mut input_surface = glass_surface(input_row, theme, GlassSize::Small)
             .rounded(theme.radius_full)
             .id(self.id.clone())
@@ -468,7 +469,7 @@ impl RenderOnce for SearchField {
         }
 
         // Subtle focus ring: thin accent border instead of heavy box-shadow.
-        if self.focused {
+        if focused {
             input_surface = input_surface.border_2().border_color(theme.accent);
         } else {
             input_surface = input_surface.border_1().border_color(theme.border);
@@ -529,9 +530,7 @@ impl RenderOnce for SearchField {
             .gap(theme.spacing_sm)
             .child(div().flex_1().child(input_surface));
 
-        if self.focused
-            && let Some(on_cancel) = self.on_cancel
-        {
+        if focused && let Some(on_cancel) = self.on_cancel {
             let cancel_id = ElementId::from((self.id.clone(), "cancel"));
             let handler = std::rc::Rc::new(on_cancel);
             capsule_row = capsule_row.child(
@@ -582,7 +581,7 @@ impl RenderOnce for SearchField {
         // Recents appear when focused and the query is empty; suggestions
         // appear when `show_suggestions` is toggled. Both may be combined —
         // the recents section precedes the suggestion list.
-        let show_recents = self.focused && !has_value && !self.recent_searches.is_empty();
+        let show_recents = focused && !has_value && !self.recent_searches.is_empty();
         let show_dropdown = show_recents || (self.show_suggestions && !self.suggestions.is_empty());
 
         if show_dropdown {
@@ -1151,6 +1150,7 @@ mod interaction_tests {
             SearchFieldHarness::new(cx, "Rust", false, None)
         });
 
+        focus_search_field(&host, cx);
         assert_element_exists(cx, SEARCH_CANCEL);
         cx.click_on(SEARCH_CANCEL);
 
