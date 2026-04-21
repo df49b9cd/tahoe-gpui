@@ -78,6 +78,7 @@ mod gallery {
     pub mod toolbars_and_titlebars;
     pub mod tooltips;
     pub mod typography;
+    pub mod web_views;
     pub mod welcome;
     pub mod windows;
 }
@@ -393,6 +394,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Tooltips",
         render: gallery::tooltips::render,
+    },
+    Demo {
+        label: "Web Views",
+        render: gallery::web_views::render,
     },
     Demo {
         label: "Windows",
