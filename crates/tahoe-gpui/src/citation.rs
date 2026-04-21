@@ -3,6 +3,7 @@
 use crate::components::presentation::popover::{Popover, PopoverPlacement};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -377,6 +378,7 @@ pub struct InlineCitation {
     id: ElementId,
     index: usize,
     source: CitationSource,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl InlineCitation {
@@ -385,6 +387,7 @@ impl InlineCitation {
             id: id.into(),
             index,
             source: CitationSource::new(),
+            focus_handle: None,
         }
     }
 
@@ -411,6 +414,15 @@ impl InlineCitation {
         self.source = source;
         self
     }
+
+    /// Attach a [`FocusHandle`] so the citation participates in the host's
+    /// focus graph. When set, the focus ring is derived from
+    /// `handle.is_focused(window)` via `track_focus` + `apply_focus_ring`,
+    /// matching Toggle, Checkbox, Disclosure, etc.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
 }
 
 /// Build the VoiceOver label + role for an inline citation.
@@ -435,10 +447,16 @@ fn citation_a11y(index: usize, title: Option<&str>, has_url: bool) -> (String, A
 }
 
 impl RenderOnce for InlineCitation {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let label = format!("[{}]", self.index);
         let has_url = self.source.url.is_some();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(false);
 
         let (a11y_label, a11y_role) = citation_a11y(
             self.index,
@@ -458,37 +476,45 @@ impl RenderOnce for InlineCitation {
             )
             .with_accessibility(&a11y);
 
-        // Keyboard reachability. When the badge has a URL it acts as a
-        // link — `tab_index(0)` sets both `focusable = true` and
-        // `tab_stop = true` so the auto-generated handle joins the Tab
-        // order (GPUI's `.focusable()` alone leaves `tab_stop = false`,
-        // and the tab-order walker skips non-tab-stops). `focus_visible`
-        // paints the HIG focus ring only when the element was reached via
-        // the keyboard, matching CSS `:focus-visible` semantics — a
-        // deliberate departure from `foundations::materials::apply_focus_ring`
-        // used by `ButtonLike` / `MenuBar`, which show the ring on any
-        // focus (mouse or keyboard). Those controls own a `FocusHandle`;
-        // a stateless `RenderOnce` component can't participate in that
-        // helper without threading a handle through its public builder
-        // API. Keyboard-only rings are also the closer match to macOS
-        // HIG, so aligning `ButtonLike` / `MenuBar` with `:focus-visible`
-        // in a follow-up is the right direction.
         if let Some(url) = self.source.url {
-            let url_for_click = url.clone();
-            let focus_ring = theme.focus_ring_shadows();
-            el = el
-                .cursor_pointer()
-                .tab_index(0)
-                .focus_visible(move |s| s.shadow(focus_ring))
-                .on_click(move |_event, _window, cx| {
-                    cx.open_url(url_for_click.as_ref());
-                })
-                .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                    if crate::foundations::keyboard::is_activation_key(event) {
-                        cx.stop_propagation();
-                        cx.open_url(url.as_ref());
-                    }
-                });
+            if let Some(ref handle) = self.focus_handle {
+                // Host-supplied FocusHandle — use track_focus +
+                // apply_focus_ring, matching Toggle, Checkbox, etc.
+                let url_for_click = url.clone();
+                el = el
+                    .cursor_pointer()
+                    .tab_index(0)
+                    .track_focus(handle)
+                    .on_click(move |_event, _window, cx| {
+                        cx.open_url(url_for_click.as_ref());
+                    })
+                    .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                        if crate::foundations::keyboard::is_activation_key(event) {
+                            cx.stop_propagation();
+                            cx.open_url(url.as_ref());
+                        }
+                    });
+                el = apply_focus_ring(el, theme, focused, &[]);
+            } else {
+                // No FocusHandle — auto-generated handle via tab_index(0).
+                // focus_visible provides :focus-visible semantics (keyboard-
+                // only ring) since we have no handle to query is_focused.
+                let url_for_click = url.clone();
+                let focus_ring = theme.focus_ring_shadows();
+                el = el
+                    .cursor_pointer()
+                    .tab_index(0)
+                    .focus_visible(move |s| s.shadow(focus_ring))
+                    .on_click(move |_event, _window, cx| {
+                        cx.open_url(url_for_click.as_ref());
+                    })
+                    .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                        if crate::foundations::keyboard::is_activation_key(event) {
+                            cx.stop_propagation();
+                            cx.open_url(url.as_ref());
+                        }
+                    });
+            }
         }
 
         el
@@ -595,6 +621,12 @@ mod tests {
             citation.source.title.as_ref().map(|s| s.as_ref()),
             Some("Example")
         );
+    }
+
+    #[test]
+    fn inline_citation_focus_handle_defaults_to_none() {
+        let citation = InlineCitation::new("cite-test", 1);
+        assert!(citation.focus_handle.is_none());
     }
 
     #[test]
