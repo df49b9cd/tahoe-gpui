@@ -322,6 +322,37 @@ impl FocusGroup {
             .any(|h| h.is_focused(window))
     }
 
+    /// Gate a host-owned group + per-child handles behind Full Keyboard
+    /// Access. Returns `Some((group, handles))` only when all of the
+    /// following hold:
+    ///
+    /// 1. `fka_active` is `true` (typically `theme.full_keyboard_access()`).
+    /// 2. `group` is `Some`.
+    /// 3. `handles.len() == expected_len`.
+    /// 4. `expected_len > 0`.
+    ///
+    /// Any other combination returns `None` so callers can skip per-child
+    /// Tab wiring entirely. Rejecting `expected_len == 0` is deliberate:
+    /// an empty container has nothing to register, and a group that
+    /// registers nothing still leaks `Some(_)` into the arrow-nav paths.
+    ///
+    /// Intended as the canonical gate for stateless components that
+    /// expose per-child Tab stops under FKA (chart data points, list
+    /// rows, palette tiles, page-control dots). Callers unwrap the
+    /// returned tuple to drive per-child `.focus_group(group, &handles[i])`
+    /// + per-child focus-ring application.
+    pub fn bind_if_fka(
+        fka_active: bool,
+        group: Option<FocusGroup>,
+        handles: Vec<FocusHandle>,
+        expected_len: usize,
+    ) -> Option<(FocusGroup, Vec<FocusHandle>)> {
+        if !fka_active || expected_len == 0 || handles.len() != expected_len {
+            return None;
+        }
+        group.map(|g| (g, handles))
+    }
+
     /// Hook to call from the group host's `on_key_down`.
     ///
     /// In [`FocusGroupMode::Trap`], intercepts Tab / Shift+Tab, calls
@@ -384,6 +415,30 @@ impl<E: InteractiveElement + Sized> FocusGroupExt for E {}
 mod tests {
     use super::{FocusGroup, FocusGroupMode};
     use core::prelude::v1::test;
+
+    #[test]
+    fn bind_if_fka_returns_none_when_flag_off() {
+        let group = FocusGroup::open();
+        let handles = Vec::new();
+        assert!(FocusGroup::bind_if_fka(false, Some(group), handles, 3).is_none());
+    }
+
+    #[test]
+    fn bind_if_fka_returns_none_when_group_missing() {
+        assert!(FocusGroup::bind_if_fka(true, None, Vec::new(), 0).is_none());
+    }
+
+    #[test]
+    fn bind_if_fka_returns_none_when_expected_zero() {
+        let group = FocusGroup::open();
+        assert!(FocusGroup::bind_if_fka(true, Some(group), Vec::new(), 0).is_none());
+    }
+
+    #[test]
+    fn bind_if_fka_returns_none_when_count_mismatch() {
+        let group = FocusGroup::open();
+        assert!(FocusGroup::bind_if_fka(true, Some(group), Vec::new(), 3).is_none());
+    }
 
     #[test]
     fn focus_group_mode_default_is_open() {
@@ -1098,6 +1153,20 @@ mod interaction_tests {
                         .child("2"),
                 )
         }
+    }
+
+    #[gpui::test]
+    async fn bind_if_fka_returns_some_when_everything_aligns(cx: &mut TestAppContext) {
+        let (host, vcx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Open, cx)
+        });
+        host.update(vcx, |host, _cx| {
+            let bound =
+                FocusGroup::bind_if_fka(true, Some(host.group.clone()), host.handles.to_vec(), 3);
+            let (group, handles) = bound.expect("aligned inputs must bind");
+            assert_eq!(handles.len(), 3);
+            assert_eq!(group.len(), host.group.len());
+        });
     }
 
     #[gpui::test]
