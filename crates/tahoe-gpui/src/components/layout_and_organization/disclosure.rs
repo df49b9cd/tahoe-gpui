@@ -196,6 +196,8 @@ mod tests {
     fn disclosure_defaults() {
         let d = Disclosure::new("test");
         assert!(!d.is_expanded);
+        assert!(!d.focused);
+        assert!(d.focus_handle.is_none());
         assert!(d.on_toggle.is_none());
     }
 
