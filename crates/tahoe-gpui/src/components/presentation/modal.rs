@@ -91,10 +91,11 @@ pub struct Modal {
     /// surrounding struct generics.
     dismiss_emitter: Option<AnyEntity>,
     dismiss_emit_fn: Option<DismissEmitFn>,
-    /// VoiceOver label applied alongside the implicit `Dialog` role. Flows
-    /// through [`AccessibleExt::with_accessibility`] on the content
-    /// surface so that when GPUI exposes an AX tree the announcement lands
-    /// without touching callers. `None` leaves the role unlabelled.
+    /// VoiceOver label applied alongside the implicit `Dialog` role and
+    /// modal flag. Flows through [`AccessibleExt::with_accessibility`] on
+    /// the content surface so that when GPUI exposes an AX tree the
+    /// announcement lands without touching callers. `None` leaves the
+    /// role unlabelled.
     accessibility_label: Option<SharedString>,
 }
 
@@ -246,9 +247,10 @@ impl Modal {
     }
 
     /// Attach a VoiceOver label to the dialog surface. Paired with an
-    /// implicit [`AccessibilityRole::Dialog`] role so VoiceOver announces
-    /// the label followed by "dialog" once GPUI lands an AX tree. No-op
-    /// at runtime today — see [`AccessibleExt::with_accessibility`].
+    /// implicit [`AccessibilityRole::Dialog`] role and a modal flag so
+    /// VoiceOver announces the label followed by "modal dialog" once
+    /// GPUI lands an AX tree. No-op at runtime today — see
+    /// [`AccessibleExt::with_accessibility`].
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
@@ -426,7 +428,9 @@ impl RenderOnce for Modal {
         // Announce the surface as a dialog once GPUI lands an AX tree. The
         // trait is a no-op today — this wires the data so the rollout is a
         // single-file change rather than touching every modal caller.
-        let mut a11y = AccessibilityProps::new().role(AccessibilityRole::Dialog);
+        let mut a11y = AccessibilityProps::new()
+            .role(AccessibilityRole::Dialog)
+            .modal(true);
         if let Some(label) = self.accessibility_label.as_ref() {
             a11y = a11y.label(label.clone());
         }

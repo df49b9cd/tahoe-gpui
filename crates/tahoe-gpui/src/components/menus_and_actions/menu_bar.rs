@@ -47,6 +47,7 @@ use gpui::{
 };
 
 use crate::callback_types::rc_wrap;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
 use crate::foundations::materials::glass_surface;
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
@@ -373,6 +374,7 @@ impl RenderOnce for MenuBar {
                 title = title.bg(theme.hover);
             }
 
+            let a11y_label = menu.title.clone();
             title = title.child(menu.title);
 
             if let Some(ref handler) = on_open {
@@ -386,6 +388,9 @@ impl RenderOnce for MenuBar {
                     }
                 });
             }
+
+            let a11y = AccessibilityProps::menu_bar_item(a11y_label);
+            title = title.with_accessibility(&a11y);
 
             bar = bar.child(title);
 

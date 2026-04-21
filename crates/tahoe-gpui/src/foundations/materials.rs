@@ -129,8 +129,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnimationExt, AnyElement, BoxShadow, Deferred, Div, ElementId, Hsla, Pixels, SharedString,
-    deferred, hsla, px,
+    AnimationExt, AnyElement, BoxShadow, Deferred, Div, ElementId, FocusHandle, Hsla, Pixels,
+    SharedString, Window, deferred, hsla, px,
 };
 
 use crate::foundations::accessibility::{AccessibilityMode, AccessibilityTokens};
@@ -1668,6 +1668,25 @@ where
     })
 }
 
+/// Resolve the effective focused state for a control with an optional
+/// host-supplied [`FocusHandle`].
+///
+/// When `handle` is `Some`, its live focus state (`handle.is_focused(window)`)
+/// wins and `fallback` is ignored — this keeps the focus ring in sync with
+/// the host's focus graph instead of a stale `.focused(bool)` cache. When
+/// `handle` is `None`, `fallback` is returned unchanged so hosts that have
+/// not wired a handle keep their existing `.focused(bool)` behaviour.
+///
+/// Paired with [`apply_focus_ring`]: resolve the bool here, then pass it to
+/// the ring. Centralizing the rule lets callers avoid re-implementing the
+/// `Option::map(is_focused).unwrap_or(fallback)` dance inline.
+pub fn resolve_focused(handle: Option<&FocusHandle>, window: &Window, fallback: bool) -> bool {
+    match handle {
+        Some(h) => h.is_focused(window),
+        None => fallback,
+    }
+}
+
 /// Apply the HIG focus ring to an element, preserving any base shadows.
 ///
 /// When `focused`: sets shadows to `base_shadows` + the two focus-ring layers
@@ -1677,6 +1696,9 @@ where
 /// This is the single entry point for focus ring + shadow composition.
 /// - Non-glass components: `apply_focus_ring(el, theme, focused, &[])`
 /// - Glass components: `apply_focus_ring(el, theme, focused, &theme.glass.shadows(size))`
+///
+/// When the host wires a [`FocusHandle`], resolve the bool via
+/// [`resolve_focused`] so the ring tracks live focus instead of a prop cache.
 pub fn apply_focus_ring<E: gpui::Styled>(
     mut el: E,
     theme: &crate::foundations::theme::TahoeTheme,
@@ -2525,5 +2547,63 @@ mod tests {
             rank(ElevationIndex::ElevatedSurface.standard_material())
                 <= rank(ElevationIndex::ModalSurface.standard_material())
         );
+    }
+}
+
+#[cfg(test)]
+mod resolve_focused_tests {
+    use super::resolve_focused;
+    use crate::test_helpers::helpers::setup_test_window;
+    use gpui::prelude::*;
+    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext, Window, div, px};
+
+    struct Harness {
+        handle: FocusHandle,
+    }
+
+    impl Harness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                handle: cx.focus_handle(),
+            }
+        }
+    }
+
+    impl Render for Harness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .w(px(200.0))
+                .h(px(80.0))
+                .id("harness-root")
+                .track_focus(&self.handle)
+        }
+    }
+
+    #[gpui::test]
+    async fn none_handle_returns_fallback(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| Harness::new(cx));
+        host.update_in(cx, |_host, window, _cx| {
+            assert!(resolve_focused(None, window, true));
+            assert!(!resolve_focused(None, window, false));
+        });
+    }
+
+    #[gpui::test]
+    async fn some_focused_handle_overrides_fallback(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| Harness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            window.focus(&host.handle, cx);
+            assert!(host.handle.is_focused(window));
+            assert!(resolve_focused(Some(&host.handle), window, false));
+        });
+    }
+
+    #[gpui::test]
+    async fn some_unfocused_handle_overrides_true_fallback(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| Harness::new(cx));
+        host.update_in(cx, |host, window, _cx| {
+            assert!(!host.handle.is_focused(window));
+            assert!(!resolve_focused(Some(&host.handle), window, true));
+        });
     }
 }

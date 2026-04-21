@@ -63,8 +63,13 @@ pub enum AccessibilityRole {
     Slider,
     /// Circular range control (knob).
     Dial,
-    /// Menu item inside a menu or pop-up.
+    /// Menu item inside a menu or pop-up. Maps to `NSAccessibilityMenuItemRole`.
     MenuItem,
+    /// Top-level menu bar title (e.g. "File", "Edit"). Maps to
+    /// `NSAccessibilityMenuBarItemRole`, which AppKit treats distinctly from
+    /// `MenuItem` — VoiceOver's menu-bar navigation gestures expect the
+    /// top-level titles to carry the MenuBarItem role rather than MenuItem.
+    MenuBarItem,
     /// Tab in a tab bar.
     Tab,
     /// Checkbox (independent boolean).
@@ -109,12 +114,35 @@ pub struct AccessibilityProps {
     pub role: Option<AccessibilityRole>,
     /// Stateful-control value description (e.g. "75%" for sliders).
     pub value: Option<SharedString>,
+    /// Declares this element as a modal container (WAI-ARIA `aria-modal`
+    /// / NSAccessibility `AXModal`). Pairs with [`AccessibilityRole::Dialog`]
+    /// or [`AccessibilityRole::Alert`] so VoiceOver announces "modal dialog"
+    /// once GPUI lands an AX tree.
+    pub modal: bool,
 }
 
 impl AccessibilityProps {
     /// Builder for an accessibility-labelled element.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Shortcut for a menu row: `role = MenuItem`, `label = label`.
+    /// Covers the ~5 menu-surface call sites that all shared the same
+    /// `new().role(MenuItem).label(...)` triple.
+    pub fn menu_item(label: impl Into<SharedString>) -> Self {
+        Self::new()
+            .role(AccessibilityRole::MenuItem)
+            .label(label.into())
+    }
+
+    /// Shortcut for a menu-bar title: `role = MenuBarItem`, `label = label`.
+    /// Use this for top-level titles in a [`crate::components::menus_and_actions::menu_bar::MenuBar`],
+    /// not for items inside a popup — those take [`AccessibilityProps::menu_item`].
+    pub fn menu_bar_item(label: impl Into<SharedString>) -> Self {
+        Self::new()
+            .role(AccessibilityRole::MenuBarItem)
+            .label(label.into())
     }
 
     /// Set the primary label.
@@ -135,9 +163,15 @@ impl AccessibilityProps {
         self
     }
 
+    /// Mark this element as a modal container.
+    pub fn modal(mut self, modal: bool) -> Self {
+        self.modal = modal;
+        self
+    }
+
     /// Returns true when at least one field carries information.
     pub fn is_some(&self) -> bool {
-        self.label.is_some() || self.role.is_some() || self.value.is_some()
+        self.label.is_some() || self.role.is_some() || self.value.is_some() || self.modal
     }
 }
 
@@ -244,6 +278,44 @@ mod tests {
     #[test]
     fn accessibility_role_default_is_static_text() {
         assert_eq!(AccessibilityRole::default(), AccessibilityRole::StaticText);
+    }
+
+    #[test]
+    fn menu_item_constructor_sets_role_and_label() {
+        let props = AccessibilityProps::menu_item("Copy");
+        assert_eq!(props.role, Some(AccessibilityRole::MenuItem));
+        assert_eq!(props.label.as_ref().map(|s| s.as_ref()), Some("Copy"));
+        assert!(props.value.is_none());
+    }
+
+    #[test]
+    fn menu_bar_item_constructor_distinguishes_from_menu_item() {
+        let bar = AccessibilityProps::menu_bar_item("File");
+        assert_eq!(bar.role, Some(AccessibilityRole::MenuBarItem));
+        assert_eq!(bar.label.as_ref().map(|s| s.as_ref()), Some("File"));
+
+        // Contract: MenuBarItem and MenuItem are NOT aliases — the enum
+        // variants differ so the trait impl that lands with GPUI's AX API
+        // can branch on them to map to AXMenuBarItemRole vs AXMenuItemRole.
+        assert_ne!(bar.role, Some(AccessibilityRole::MenuItem));
+    }
+
+    #[test]
+    fn accessibility_props_modal_defaults_false() {
+        let props = AccessibilityProps::new();
+        assert!(!props.modal);
+    }
+
+    #[test]
+    fn accessibility_props_modal_builder_sets_flag() {
+        let props = AccessibilityProps::new().modal(true);
+        assert!(props.modal);
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_modal_set() {
+        let props = AccessibilityProps::new().modal(true);
+        assert!(props.is_some());
     }
 
     #[test]

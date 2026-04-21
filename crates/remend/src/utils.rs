@@ -1,4 +1,7 @@
 use std::borrow::Cow;
+use std::ops::ControlFlow;
+
+use super::fence::{CodeRegion, FenceRegion, InlineRegion, InlineTerminator, scan_code_regions};
 
 /// Returns `true` if `ch` is a Unicode letter, digit, or underscore.
 /// Matches the TS `isWordChar` / `[\p{L}\p{N}_]`.
@@ -53,230 +56,33 @@ pub fn is_list_marker_line(s: &str) -> bool {
     bytes[i..].iter().all(|&b| matches!(b, b' ' | b'\t'))
 }
 
-/// Counts the length of a consecutive run of the given byte starting at `i`.
-#[inline]
-pub(crate) fn fence_run_length(bytes: &[u8], i: usize, ch: u8) -> usize {
-    let mut len = 0;
-    while i + len < bytes.len() && bytes[i + len] == ch {
-        len += 1;
-    }
-    len
-}
-
-/// Result of a successful fence parse: the fence character, run length, and
-/// byte offsets of the fence run (just past any leading spaces).
-pub(crate) struct FenceHit {
-    pub(crate) ch: u8,
-    pub(crate) len: usize,
-    /// Offset of the first fence char (backtick or tilde), past ≤3 leading spaces.
-    pub(crate) run_start: usize,
-    /// Offset just past the fence run.
-    pub(crate) run_end: usize,
-}
-
-/// Attempts to parse a CommonMark §4.5 code fence at the current logical line
-/// beginning at `line_start`. Skips up to 3 leading spaces (tab = 4, so any
-/// leading tab disqualifies); then requires 3+ consecutive backticks or tildes.
-///
-/// Returns `None` if the line does not open (or close) a fence. This is the
-/// single source of truth for fence detection across `utils.rs`, `ranges.rs`,
-/// and `incomplete_code.rs`.
-#[inline]
-pub(crate) fn parse_fence_at_line_start(bytes: &[u8], line_start: usize) -> Option<FenceHit> {
-    let mut i = line_start;
-    let mut leading = 0usize;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        leading += if bytes[i] == b'\t' { 4 } else { 1 };
-        if leading > 3 {
-            return None;
-        }
-        i += 1;
-    }
-    if i >= bytes.len() {
-        return None;
-    }
-    let ch = bytes[i];
-    if ch != b'`' && ch != b'~' {
-        return None;
-    }
-    let run = fence_run_length(bytes, i, ch);
-    if run < 3 {
-        return None;
-    }
-    Some(FenceHit {
-        ch,
-        len: run,
-        run_start: i,
-        run_end: i + run,
-    })
-}
-
-/// Tracks whether a byte-wise scan is currently inside a fenced code block
-/// (`` ``` `` or `~~~` runs of 3+, per CommonMark §4.5). A single scanner
-/// instance is threaded through a loop and consulted at each line start.
-///
-/// Consolidates the fence-tracking state machine used by the emphasis and
-/// katex counting helpers — previously duplicated across 8 call sites.
-#[derive(Default)]
-pub(crate) struct FenceScanner {
-    in_code_block: bool,
-    opening_fence_char: u8,
-    opening_fence_len: usize,
-}
-
-impl FenceScanner {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Returns `True` if the most recent `consume_fence_at_line_start` call
-    /// left the scanner inside a fenced code block.
-    #[inline]
-    pub fn in_code_block(&self) -> bool {
-        self.in_code_block
-    }
-
-    /// If `line_start` begins a CommonMark fence line (≤3 leading spaces then
-    /// 3+ backticks or tildes), update the fence state and return
-    /// `Some(run_end)` — the position just past the fence run. Returns `None`
-    /// when no fence starts at this line.
-    ///
-    /// A closing fence must use the same character and be at least as long as
-    /// the opening fence: `` ```` `` is not closed by ``` ``` ``, and a
-    /// backtick fence is not closed by a tilde run.
-    #[inline]
-    pub fn consume_fence_at_line_start(
-        &mut self,
-        bytes: &[u8],
-        line_start: usize,
-    ) -> Option<usize> {
-        let hit = parse_fence_at_line_start(bytes, line_start)?;
-        if !self.in_code_block {
-            self.in_code_block = true;
-            self.opening_fence_char = hit.ch;
-            self.opening_fence_len = hit.len;
-        } else if hit.ch == self.opening_fence_char && hit.len >= self.opening_fence_len {
-            self.in_code_block = false;
-            self.opening_fence_char = 0;
-            self.opening_fence_len = 0;
-        }
-        Some(hit.run_end)
-    }
-}
-
-/// Iterates every byte position in `bytes` that is outside a fenced code block,
-/// calling `visitor(byte, i, at_line_start)` for each. The callback receives
-/// the byte value, its index, and whether it sits at a line start (just after
-/// a `\n` or at offset 0).
-///
-/// This eliminates the duplicated FenceScanner + line_start scaffold from
-/// the emphasis-counting helpers in emphasis.rs.
-pub(crate) fn for_each_byte_outside_fence(bytes: &[u8], mut visitor: impl FnMut(u8, usize, bool)) {
-    let len = bytes.len();
-    let mut scanner = FenceScanner::new();
-    let mut i = 0;
-    let mut line_start = 0usize;
-
-    while i < len {
-        if i == line_start
-            && let Some(next) = scanner.consume_fence_at_line_start(bytes, line_start)
-        {
-            i = next;
-            continue;
-        }
-        if scanner.in_code_block() {
-            if bytes[i] == b'\n' {
-                line_start = i + 1;
-            }
-            i += 1;
-            continue;
-        }
-        let at_line_start = i == line_start;
-        visitor(bytes[i], i, at_line_start);
-        if bytes[i] == b'\n' {
-            line_start = i + 1;
-        }
-        i += 1;
-    }
-}
-
 /// Returns `true` if the position is inside a fenced code block (between ``` markers)
 /// or an inline code span (between `` ` `` markers).
 ///
-/// Fenced code blocks are detected per CommonMark §4.5: the opening and closing
-/// fences must start at the beginning of a line with ≤3 leading spaces. A
-/// 3+ backtick or tilde run in the middle of a line is NOT a fence.
+/// Thin adapter over `scan_code_regions` (shared with `ranges.rs` and the
+/// cross-validation reference impls). Regions are emitted in increasing
+/// open-position order, so we break as soon as we see a region whose opener
+/// has already passed `position`.
 pub fn is_inside_code_block(text: &str, position: usize) -> bool {
-    // NOTE: fence open/close transitions are inlined here rather than using
-    // FenceScanner because this function scans 0..position (not the full text)
-    // and must collect inline-code state too. Any change to the fence-matching
-    // logic must be kept in sync with FenceScanner (emphasis.rs), ranges.rs
-    // (compute_code_ranges, compute_complete_inline_code_ranges), and
-    // incomplete_code.rs (has_incomplete_code_fence).
-    let bytes = text.as_bytes();
-    let mut in_code_block = false;
-    let mut opening_fence_char: u8 = 0;
-    let mut opening_fence_len: usize = 0;
-    let mut in_inline_code = false;
-    let mut fence_on_line: Option<FenceHit> = if position > 0 {
-        parse_fence_at_line_start(bytes, 0)
-    } else {
-        None
-    };
-    let mut i = 0;
-
-    while i < position && i < bytes.len() {
-        // Toggle fence state when we reach the first fence char on a fence line.
-        if !in_inline_code
-            && let Some(hit) = fence_on_line.as_ref()
-            && i == hit.run_start
-        {
-            if !in_code_block {
-                in_code_block = true;
-                opening_fence_char = hit.ch;
-                opening_fence_len = hit.len;
-            } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
-                in_code_block = false;
-                opening_fence_char = 0;
-                opening_fence_len = 0;
-            }
-            i = hit.run_end;
-            continue;
+    let len = text.len();
+    let mut inside = false;
+    scan_code_regions(text, |region| {
+        let (open_pos, start, end) = match region {
+            CodeRegion::Fence(f) => (f.open_run_start, f.open_run_start + 1, fence_end(&f, len)),
+            CodeRegion::Inline(s) => (s.open_pos, s.open_pos + 1, inline_end(&s, len)),
+        };
+        if start <= position && position < end {
+            inside = true;
+            return ControlFlow::Break(());
         }
-
-        // Skip escaped backticks.
-        if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'`' {
-            i += 2;
-            continue;
+        if open_pos >= position {
+            // Regions are emitted in opening-position order; no later region
+            // can contain `position`.
+            return ControlFlow::Break(());
         }
-
-        // Mid-line 3+ backtick/tilde runs are inert literals — never a fence
-        // (those are handled at line-start above) and never a valid inline-code
-        // closer for a single-backtick opener, so skip the whole run without
-        // toggling `in_inline_code`.
-        if bytes[i] == b'`' || bytes[i] == b'~' {
-            let run = fence_run_length(bytes, i, bytes[i]);
-            if run >= 3 {
-                i += run;
-                continue;
-            }
-        }
-
-        // Only check for inline code if not in multiline code.
-        if !in_code_block && bytes[i] == b'`' {
-            in_inline_code = !in_inline_code;
-        }
-        if bytes[i] == b'\n' {
-            fence_on_line = parse_fence_at_line_start(bytes, i + 1);
-            // CommonMark inline code spans do not span hard line breaks in this
-            // streaming approximation — reset to keep fence detection honest
-            // after a newline (see issue #50 follow-up).
-            in_inline_code = false;
-        }
-        i += 1;
-    }
-
-    in_inline_code || in_code_block
+        ControlFlow::Continue(())
+    });
+    inside
 }
 
 /// Returns `true` if the position is inside a *complete* inline code span
@@ -287,73 +93,46 @@ pub fn is_inside_code_block(text: &str, position: usize) -> bool {
 /// — this function scans the full text each time (O(n)).
 #[cfg(test)]
 pub(crate) fn is_within_complete_inline_code(text: &str, position: usize) -> bool {
-    // NOTE: fence transitions inlined — see FenceScanner for the canonical
-    // implementation. Changes here must be mirrored in is_inside_code_block,
-    // ranges.rs, and incomplete_code.rs.
-    let bytes = text.as_bytes();
-    let mut in_multiline_code = false;
-    let mut opening_fence_char: u8 = 0;
-    let mut opening_fence_len: usize = 0;
-    let mut in_inline_code = false;
-    let mut inline_code_start: Option<usize> = None;
-    let mut fence_on_line = parse_fence_at_line_start(bytes, 0);
-    let mut i = 0;
-
-    while i < bytes.len() {
-        if !in_inline_code
-            && let Some(hit) = fence_on_line.as_ref()
-            && i == hit.run_start
+    let mut inside = false;
+    scan_code_regions(text, |region| {
+        if let CodeRegion::Inline(s) = region
+            && let InlineTerminator::Closed(close_pos) = s.terminator
         {
-            if !in_multiline_code {
-                in_multiline_code = true;
-                opening_fence_char = hit.ch;
-                opening_fence_len = hit.len;
-            } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
-                in_multiline_code = false;
-                opening_fence_char = 0;
-                opening_fence_len = 0;
+            if s.open_pos < position && position < close_pos {
+                inside = true;
+                return ControlFlow::Break(());
             }
-            i = hit.run_end;
-            continue;
-        }
-
-        if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'`' {
-            i += 2;
-            continue;
-        }
-
-        // Mid-line 3+ runs are inert literals (issue #50 follow-up).
-        if bytes[i] == b'`' || bytes[i] == b'~' {
-            let run = fence_run_length(bytes, i, bytes[i]);
-            if run >= 3 {
-                i += run;
-                continue;
+            if s.open_pos >= position {
+                return ControlFlow::Break(());
             }
         }
+        ControlFlow::Continue(())
+    });
+    inside
+}
 
-        if !in_multiline_code && bytes[i] == b'`' {
-            if in_inline_code {
-                if let Some(start) = inline_code_start
-                    && start < position
-                    && position < i
-                {
-                    return true;
-                }
-                in_inline_code = false;
-                inline_code_start = None;
-            } else {
-                in_inline_code = true;
-                inline_code_start = Some(i);
-            }
-        }
-        if bytes[i] == b'\n' {
-            fence_on_line = parse_fence_at_line_start(bytes, i + 1);
-            in_inline_code = false;
-        }
-        i += 1;
+/// Exclusive end boundary of a fenced code region matching the historical
+/// `is_inside_code_block` semantics: the first byte of the closing fence run
+/// is still "inside"; unterminated fences extend to `len + 1` so queries at
+/// `position == len` agree with the per-position scan.
+#[inline]
+pub(crate) fn fence_end(region: &FenceRegion, len: usize) -> usize {
+    if region.closed {
+        region.close_run_start + 1
+    } else {
+        len + 1
     }
+}
 
-    false
+/// Exclusive end boundary of an inline code region matching the historical
+/// `is_inside_code_block` semantics: the closing backtick (or terminating
+/// newline) is still "inside"; EOF-unterminated spans extend to `len + 1`.
+#[inline]
+pub(crate) fn inline_end(region: &InlineRegion, len: usize) -> usize {
+    match region.terminator {
+        InlineTerminator::Closed(pos) | InlineTerminator::Newline(pos) => pos + 1,
+        InlineTerminator::Eof => len + 1,
+    }
 }
 
 /// Returns `true` if the backtick at `pos` is part of a run of 3+ backticks.
@@ -499,7 +278,12 @@ pub(crate) fn is_plausible_tag_remainder(remainder: &[u8]) -> bool {
 }
 
 /// Returns `true` if `position` is inside an HTML tag (between `<` and `>`).
-pub fn is_within_html_tag(text: &str, position: usize) -> bool {
+///
+/// Production callers should use `CodeBlockRanges::is_within_html_tag` for
+/// O(log n) lookups. This O(n) per-query helper is retained as the reference
+/// implementation that `compute_html_tag_ranges` cross-validates against.
+#[cfg(test)]
+pub(crate) fn is_within_html_tag(text: &str, position: usize) -> bool {
     let bytes = text.as_bytes();
 
     let mut i = position.saturating_sub(1);
@@ -565,60 +349,6 @@ pub fn is_horizontal_rule(text: &str, marker_index: usize, marker: u8) -> bool {
     marker_count >= 3 && !has_other
 }
 
-/// Finds the matching opening bracket `[` for a closing bracket at `close_index`,
-/// handling nested brackets.
-pub fn find_matching_opening_bracket(
-    text: &str,
-    close_index: usize,
-    ranges: &super::ranges::CodeBlockRanges,
-) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let mut depth: i32 = 1;
-    let mut i = close_index;
-    while i > 0 {
-        i -= 1;
-        match bytes[i] {
-            b']' | b'[' if ranges.is_inside_code(i) => continue,
-            b']' => depth += 1,
-            b'[' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Finds the matching closing bracket `]` for an opening bracket at `open_index`,
-/// handling nested brackets.
-pub fn find_matching_closing_bracket(
-    text: &str,
-    open_index: usize,
-    ranges: &super::ranges::CodeBlockRanges,
-) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let mut depth: i32 = 1;
-    let mut i = open_index + 1;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'[' | b']' if ranges.is_inside_code(i) => {}
-            b'[' => depth += 1,
-            b']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
 /// Walks backwards through `text` looking for the last occurrence of `delimiter`
 /// (a byte sequence like `b"**"`, `b"~~"`, `b"__"`) followed by trailing content
 /// that does not contain the delimiter's first byte.
@@ -676,11 +406,9 @@ pub(crate) fn cow_append<'a>(text: &str, suffix: &str) -> Cow<'a, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::ranges::CodeBlockRanges;
     use super::{
-        FenceScanner, count_single_backticks, find_matching_closing_bracket,
-        find_matching_opening_bracket, find_trailing_delimiter, is_empty_or_markers,
-        is_horizontal_rule, is_inside_code_block, is_within_html_tag, is_within_link_or_image_url,
+        count_single_backticks, find_trailing_delimiter, is_empty_or_markers, is_horizontal_rule,
+        is_inside_code_block, is_within_html_tag, is_within_link_or_image_url,
         is_within_math_block, is_word_char,
     };
 
@@ -738,46 +466,6 @@ mod tests {
         assert!(!is_within_math_block("$x+y$z", 6));
         assert!(is_within_math_block("$$x+y", 3));
         assert!(!is_within_math_block("\\$x", 2));
-    }
-
-    fn ranges(text: &str) -> CodeBlockRanges {
-        CodeBlockRanges::new(text)
-    }
-
-    #[test]
-    fn test_find_matching_brackets() {
-        let r = ranges("[hello]");
-        assert_eq!(find_matching_opening_bracket("[hello]", 6, &r), Some(0));
-        assert_eq!(find_matching_closing_bracket("[hello]", 0, &r), Some(6));
-        let r = ranges("a[b[c]]");
-        assert_eq!(find_matching_opening_bracket("a[b[c]]", 6, &r), Some(1));
-        let r = ranges("hello]");
-        assert_eq!(find_matching_opening_bracket("hello]", 5, &r), None);
-    }
-
-    #[test]
-    fn test_brackets_skip_inline_code() {
-        // ] inside inline code should not count as a bracket.
-        // [`code]text`] — the ] at position 6 is inside `code]text`, so the [ at 0
-        // should match the ] at the end.
-        let text = "[`code]text`]";
-        let r = ranges(text);
-        // Closing ] is at position 12. Find matching [ — should be position 0.
-        assert_eq!(find_matching_opening_bracket(text, 12, &r), Some(0));
-        // Opening [ at 0 should match closing ] at 12, skipping the ] at 6.
-        assert_eq!(find_matching_closing_bracket(text, 0, &r), Some(12));
-
-        // Multiple ] inside inline code.
-        let text = "[`a]]b`]";
-        let r = ranges(text);
-        assert_eq!(find_matching_closing_bracket(text, 0, &r), Some(7));
-
-        // [ inside inline code should not count.
-        let text = "`[text` ](url";
-        let r = ranges(text);
-        // ]( is at position 8. Find matching [ — the [ at position 1 is inside code,
-        // so no match should be found.
-        assert_eq!(find_matching_opening_bracket(text, 8, &r), None);
     }
 
     #[test]
@@ -852,94 +540,6 @@ mod tests {
     }
 
     #[test]
-    fn fence_scanner_consumes_backtick_fence() {
-        let mut scanner = FenceScanner::new();
-        let bytes = b"```rust\ncode\n```";
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 0), Some(3));
-        assert!(scanner.in_code_block());
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 13), Some(16));
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_consumes_tilde_fence() {
-        let mut scanner = FenceScanner::new();
-        let bytes = b"~~~\nx\n~~~";
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 0), Some(3));
-        assert!(scanner.in_code_block());
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 6), Some(9));
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_ignores_short_runs() {
-        let mut scanner = FenceScanner::new();
-        assert_eq!(scanner.consume_fence_at_line_start(b"`x`", 0), None);
-        assert_eq!(scanner.consume_fence_at_line_start(b"``x``", 0), None);
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_ignores_non_fence_bytes() {
-        let mut scanner = FenceScanner::new();
-        assert_eq!(scanner.consume_fence_at_line_start(b"abc", 0), None);
-        assert_eq!(scanner.consume_fence_at_line_start(b"", 0), None);
-    }
-
-    #[test]
-    fn fence_scanner_rejects_prose_line_with_mid_line_run() {
-        // A prose line that happens to contain a mid-line ``` run must NOT be
-        // treated as a fence line when the scanner is invoked at its actual
-        // line start (offset 0). The mid-line run at offset 6 is irrelevant —
-        // `consume_fence_at_line_start` only inspects the byte at/after the
-        // leading spaces of `line_start`.
-        let mut scanner = FenceScanner::new();
-        assert_eq!(
-            scanner.consume_fence_at_line_start(b"hello ```\ncode", 0),
-            None
-        );
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_accepts_indented_fence() {
-        // 3 leading spaces are allowed by CommonMark §4.5.
-        let mut scanner = FenceScanner::new();
-        assert_eq!(
-            scanner.consume_fence_at_line_start(b"   ```\nx", 0),
-            Some(6)
-        );
-        assert!(scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_rejects_four_space_indent() {
-        // 4+ leading spaces is an indented code block, not a fence.
-        let mut scanner = FenceScanner::new();
-        assert_eq!(scanner.consume_fence_at_line_start(b"    ```\nx", 0), None);
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_rejects_leading_tab() {
-        // A tab counts as 4 columns; no fence can open after a leading tab.
-        let mut scanner = FenceScanner::new();
-        assert_eq!(scanner.consume_fence_at_line_start(b"\t```\nx", 0), None);
-        assert!(!scanner.in_code_block());
-    }
-
-    #[test]
-    fn fence_scanner_backtick_not_closed_by_tilde() {
-        // CommonMark §4.5: closing fence char must match opening.
-        let mut scanner = FenceScanner::new();
-        let bytes = b"```\ncode\n~~~\nmore";
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 0), Some(3));
-        assert!(scanner.in_code_block());
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 9), Some(12));
-        assert!(scanner.in_code_block()); // tilde run did NOT close the backtick fence
-    }
-
-    #[test]
     fn is_inside_code_block_rejects_mid_line_backtick_run() {
         // Issue #50: mid-line ``` is not a fence.
         assert!(!is_inside_code_block("hello ```\ncode", 12));
@@ -957,20 +557,5 @@ mod tests {
         // the fence opened at position 0. Position 12 (inside "after") IS
         // therefore inside an unclosed fenced code block.
         assert!(is_inside_code_block("```code```after", 12));
-    }
-
-    #[test]
-    fn fence_scanner_short_closer_does_not_close_long_opener() {
-        // 4-backtick opener cannot be closed by 3 backticks (CommonMark rule).
-        let mut scanner = FenceScanner::new();
-        let bytes = b"````\nx\n```\ny\n````";
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 0), Some(4));
-        assert!(scanner.in_code_block());
-        // The 3-backtick run at line_start=7 does NOT close the 4-backtick fence.
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 7), Some(10));
-        assert!(scanner.in_code_block());
-        // The 4-backtick run at line_start=13 closes it.
-        assert_eq!(scanner.consume_fence_at_line_start(bytes, 13), Some(17));
-        assert!(!scanner.in_code_block());
     }
 }

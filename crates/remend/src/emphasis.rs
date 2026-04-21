@@ -1,25 +1,31 @@
 use std::borrow::Cow;
 
+use super::fence::{FenceScanner, fence_run_length, for_each_byte_outside_fence};
 use super::ranges::CodeBlockRanges;
 use super::utils::{
-    FenceScanner, cow_append, fence_run_length, find_trailing_delimiter,
-    for_each_byte_outside_fence, is_empty_or_markers, is_escaped, is_horizontal_rule,
-    is_list_marker_line, is_within_html_tag, is_within_link_or_image_url, is_within_math_block,
-    is_word_char,
+    cow_append, find_trailing_delimiter, is_empty_or_markers, is_escaped, is_horizontal_rule,
+    is_list_marker_line, is_word_char,
 };
 
 // ---------------------------------------------------------------------------
 // Asterisk skip logic
 // ---------------------------------------------------------------------------
 
-fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8, has_dollar: bool) -> bool {
+fn should_skip_asterisk(
+    text: &str,
+    index: usize,
+    prev: u8,
+    next: u8,
+    has_dollar: bool,
+    ranges: &CodeBlockRanges,
+) -> bool {
     // Skip if escaped.
     if is_escaped(text.as_bytes(), index) {
         return true;
     }
 
     // Skip if within math block.
-    if has_dollar && is_within_math_block(text, index) {
+    if has_dollar && ranges.is_within_math(index) {
         return true;
     }
 
@@ -67,9 +73,15 @@ fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8, has_dollar
     false
 }
 
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn count_single_asterisks(text: &str) -> usize {
+    count_single_asterisks_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
 /// Counts single asterisks that are not part of `**`/`***`, not escaped,
 /// not list markers, not word-internal, and not inside fenced code blocks.
-pub fn count_single_asterisks(text: &str) -> usize {
+pub(crate) fn count_single_asterisks_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
     let has_dollar = text.contains('$');
@@ -79,7 +91,7 @@ pub fn count_single_asterisks(text: &str) -> usize {
         if byte == b'*' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
-            if !should_skip_asterisk(text, i, prev, next, has_dollar) {
+            if !should_skip_asterisk(text, i, prev, next, has_dollar, ranges) {
                 count += 1;
             }
         }
@@ -91,17 +103,24 @@ pub fn count_single_asterisks(text: &str) -> usize {
 // Underscore skip logic
 // ---------------------------------------------------------------------------
 
-fn should_skip_underscore(text: &str, index: usize, prev: u8, next: u8, has_dollar: bool) -> bool {
+fn should_skip_underscore(
+    text: &str,
+    index: usize,
+    prev: u8,
+    next: u8,
+    has_dollar: bool,
+    ranges: &CodeBlockRanges,
+) -> bool {
     if is_escaped(text.as_bytes(), index) {
         return true;
     }
-    if has_dollar && is_within_math_block(text, index) {
+    if has_dollar && ranges.is_within_math(index) {
         return true;
     }
-    if is_within_link_or_image_url(text, index) {
+    if ranges.is_within_link_url(index) {
         return true;
     }
-    if is_within_html_tag(text, index) {
+    if ranges.is_within_html_tag(index) {
         return true;
     }
     // Skip if part of __.
@@ -122,7 +141,13 @@ fn should_skip_underscore(text: &str, index: usize, prev: u8, next: u8, has_doll
     false
 }
 
-pub fn count_single_underscores(text: &str) -> usize {
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
+fn count_single_underscores(text: &str) -> usize {
+    count_single_underscores_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+pub(crate) fn count_single_underscores_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
     let has_dollar = text.contains('$');
@@ -132,7 +157,7 @@ pub fn count_single_underscores(text: &str) -> usize {
         if byte == b'_' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
-            if !should_skip_underscore(text, i, prev, next, has_dollar) {
+            if !should_skip_underscore(text, i, prev, next, has_dollar, ranges) {
                 count += 1;
             }
         }
@@ -363,7 +388,16 @@ fn should_skip_italic_completion(text: &str, content: &str, marker_index: usize)
 // Find first single marker index
 // ---------------------------------------------------------------------------
 
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
 fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
+    find_first_single_asterisk_index_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+fn find_first_single_asterisk_index_with_ranges(
+    text: &str,
+    ranges: &CodeBlockRanges,
+) -> Option<usize> {
     let bytes = text.as_bytes();
     let len = bytes.len();
     let has_dollar = text.contains('$');
@@ -399,7 +433,7 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
                 i += 1;
                 continue;
             }
-            if has_dollar && is_within_math_block(text, i) {
+            if has_dollar && ranges.is_within_math(i) {
                 i += 1;
                 continue;
             }
@@ -435,7 +469,16 @@ fn find_first_single_asterisk_index(text: &str) -> Option<usize> {
     None
 }
 
+/// Test-only convenience wrapper that builds `CodeBlockRanges` on the fly.
+#[cfg(test)]
 fn find_first_single_underscore_index(text: &str) -> Option<usize> {
+    find_first_single_underscore_index_with_ranges(text, &CodeBlockRanges::new(text))
+}
+
+fn find_first_single_underscore_index_with_ranges(
+    text: &str,
+    ranges: &CodeBlockRanges,
+) -> Option<usize> {
     let bytes = text.as_bytes();
     let len = bytes.len();
     let has_dollar = text.contains('$');
@@ -470,11 +513,11 @@ fn find_first_single_underscore_index(text: &str) -> Option<usize> {
                 i += 1;
                 continue;
             }
-            if has_dollar && is_within_math_block(text, i) {
+            if has_dollar && ranges.is_within_math(i) {
                 i += 1;
                 continue;
             }
-            if is_within_link_or_image_url(text, i) {
+            if ranges.is_within_link_url(i) {
                 i += 1;
                 continue;
             }
@@ -622,7 +665,7 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
-    let Some(first_idx) = find_first_single_asterisk_index(text) else {
+    let Some(first_idx) = find_first_single_asterisk_index_with_ranges(text, ranges) else {
         return Cow::Borrowed(text);
     };
 
@@ -635,7 +678,7 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
-    let count = count_single_asterisks(text);
+    let count = count_single_asterisks_with_ranges(text, ranges);
     if count % 2 == 1 {
         return cow_append(text, "*");
     }
@@ -659,7 +702,7 @@ pub(crate) fn handle_italic_underscore_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
-    let Some(first_idx) = find_first_single_underscore_index(text) else {
+    let Some(first_idx) = find_first_single_underscore_index_with_ranges(text, ranges) else {
         return Cow::Borrowed(text);
     };
 
@@ -672,7 +715,7 @@ pub(crate) fn handle_italic_underscore_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
-    let count = count_single_underscores(text);
+    let count = count_single_underscores_with_ranges(text, ranges);
     if count % 2 == 1 {
         // Check if we need to insert `_` before trailing `**` for proper nesting.
         if let Some(result) = handle_trailing_asterisks_for_underscore(text) {
@@ -698,7 +741,8 @@ fn handle_trailing_asterisks_for_underscore(text: &str) -> Option<String> {
     }
 
     let first_double = without.find("**")?;
-    let underscore_idx = find_first_single_underscore_index(without)?;
+    let without_ranges = CodeBlockRanges::new(without);
+    let underscore_idx = find_first_single_underscore_index_with_ranges(without, &without_ranges)?;
 
     if first_double < underscore_idx {
         let mut result = String::with_capacity(text.len() + 1);
@@ -766,7 +810,7 @@ pub(crate) fn handle_bold_italic_with_ranges<'a>(
     if triples % 2 == 1 {
         // If both ** and * are already balanced, don't add ***.
         let double_pairs = count_double_asterisks(text);
-        let single_count = count_single_asterisks(text);
+        let single_count = count_single_asterisks_with_ranges(text, ranges);
         if double_pairs.is_multiple_of(2) && single_count.is_multiple_of(2) {
             return Cow::Borrowed(text);
         }
