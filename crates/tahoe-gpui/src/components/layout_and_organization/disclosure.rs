@@ -41,8 +41,8 @@ pub struct Disclosure {
     is_expanded: bool,
     focused: bool,
     /// Optional host-supplied focus handle. Finding 18 in the Zed
-    /// cross-reference audit — when set, the focus-ring visibility comes
-    /// from `handle.is_focused(window)` and the element threads
+    /// cross-reference audit — when set, the focus-ring visibility
+    /// comes from `handle.is_focused(window)` and the element threads
     /// `track_focus(&handle)`; otherwise uses the explicit
     /// [`focused`](Self::focused) bool.
     focus_handle: Option<FocusHandle>,
@@ -65,15 +65,17 @@ impl Disclosure {
         self
     }
 
-    /// Marks the triangle as keyboard-focused so a visible focus ring is rendered.
+    /// Marks the triangle as keyboard-focused so a visible focus ring is
+    /// rendered. Ignored when a [`focus_handle`](Self::focus_handle) is
+    /// attached — the handle's live state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
     }
 
     /// Attach a [`FocusHandle`] so the disclosure participates in the
-    /// host's focus graph. When set, the focus-ring is derived from
-    /// `handle.is_focused(window)` and the element threads
+    /// host's focus graph. When set, the focus-ring visibility comes
+    /// from `handle.is_focused(window)` and the element threads
     /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
     /// scoped to the handle fire correctly. Finding 18 in the Zed
     /// cross-reference audit.
@@ -200,12 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn focused_builder_sets_flag() {
-        let d = Disclosure::new("test").focused(true);
-        assert!(d.focused);
-    }
-
-    #[test]
     fn disclosure_expanded_builder() {
         let d = Disclosure::new("test").expanded(true);
         assert!(d.is_expanded);
@@ -230,6 +226,24 @@ mod tests {
             .on_toggle(|_, _, _| {});
         assert!(d.is_expanded);
         assert!(d.on_toggle.is_some());
+    }
+
+    #[test]
+    fn disclosure_focused_default_is_false() {
+        let d = Disclosure::new("test");
+        assert!(!d.focused);
+    }
+
+    #[test]
+    fn disclosure_focused_builder() {
+        let d = Disclosure::new("test").focused(true);
+        assert!(d.focused);
+    }
+
+    #[test]
+    fn disclosure_focus_handle_default_is_none() {
+        let d = Disclosure::new("test");
+        assert!(d.focus_handle.is_none());
     }
 
     #[test]
