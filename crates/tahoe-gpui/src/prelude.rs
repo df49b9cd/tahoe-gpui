@@ -31,8 +31,8 @@ pub use crate::foundations::theme::{
 // ── Components > Content ───────────────────────────────────────────────────
 
 pub use crate::components::content::{
-    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelVariant,
-    TextView,
+    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelLevel,
+    LabelVariant, TextView,
 };
 
 // ── Components > Layout and organization ───────────────────────────────────

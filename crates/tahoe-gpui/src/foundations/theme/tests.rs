@@ -1414,7 +1414,9 @@ fn leading_style_tight_reduces() {
     let standard = TextStyle::Body.attrs();
     let tight = standard.with_leading(LeadingStyle::Tight);
     assert!(f32::from(tight.leading) < f32::from(standard.leading));
-    assert!((f32::from(standard.leading) - f32::from(tight.leading) - 2.0).abs() < f32::EPSILON);
+    // Proportional 0.85x: Body leading 16pt -> 13.6pt
+    let expected = f32::from(standard.leading) * 0.85;
+    assert!((f32::from(tight.leading) - expected).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -1422,7 +1424,9 @@ fn leading_style_loose_increases() {
     let standard = TextStyle::Body.attrs();
     let loose = standard.with_leading(LeadingStyle::Loose);
     assert!(f32::from(loose.leading) > f32::from(standard.leading));
-    assert!((f32::from(loose.leading) - f32::from(standard.leading) - 2.0).abs() < f32::EPSILON);
+    // Proportional 1.15x: Body leading 16pt -> 18.4pt
+    let expected = f32::from(standard.leading) * 1.15;
+    assert!((f32::from(loose.leading) - expected).abs() < f32::EPSILON);
 }
 
 #[test]
