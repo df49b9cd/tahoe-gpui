@@ -17,7 +17,10 @@
 //! alongside it by the parent.
 
 use gpui::prelude::*;
-use gpui::{App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div, px};
+use gpui::{
+    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
+    px,
+};
 
 use std::rc::Rc;
 
@@ -62,6 +65,10 @@ pub struct PopupButton {
     is_open: bool,
     disabled: bool,
     focused: bool,
+    /// Optional focus handle; when set, the popup tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`PopupButton::focused`].
+    focus_handle: Option<FocusHandle>,
     compact: bool,
     highlighted_index: Option<usize>,
     on_change: OnSharedStringRefChange,
@@ -79,6 +86,7 @@ impl PopupButton {
             is_open: false,
             disabled: false,
             focused: false,
+            focus_handle: None,
             compact: false,
             highlighted_index: None,
             on_change: None,
@@ -126,6 +134,14 @@ impl PopupButton {
         self
     }
 
+    /// Wire the pop-up into GPUI's focus graph. When set, the focus ring
+    /// renders based on `handle.is_focused(window)` — takes precedence
+    /// over [`PopupButton::focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
+
     /// Set the handler called when the user selects an option.
     pub fn on_change(
         mut self,
@@ -158,8 +174,14 @@ impl PopupButton {
 }
 
 impl RenderOnce for PopupButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // Resolve the display label: selected item's label, or first item, or empty.
         let trigger_label: SharedString = self
@@ -210,11 +232,14 @@ impl RenderOnce for PopupButton {
             .px(theme.spacing_md);
 
         if !disabled {
-            trigger = trigger.cursor_pointer();
+            trigger = trigger.cursor_pointer().focusable();
+            if let Some(handle) = self.focus_handle.as_ref() {
+                trigger = trigger.track_focus(handle);
+            }
         }
 
         // Glass-styled trigger surface.
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
 
         if disabled {
             trigger = trigger.opacity(0.5).cursor_default();
@@ -472,6 +497,12 @@ mod tests {
     fn popup_button_compact_builder_sets_flag() {
         let pb = PopupButton::new("test").compact(true);
         assert!(pb.compact);
+    }
+
+    #[test]
+    fn popup_button_focus_handle_none_by_default() {
+        let pb = PopupButton::new("test");
+        assert!(pb.focus_handle.is_none());
     }
 
     #[test]

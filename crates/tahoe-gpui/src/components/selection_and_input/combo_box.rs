@@ -11,7 +11,10 @@ use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
-use gpui::{App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div, px};
+use gpui::{
+    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
+    px,
+};
 use std::rc::Rc;
 
 /// A combo box component: text input with filterable dropdown.
@@ -36,6 +39,7 @@ pub struct ComboBox {
     placeholder: SharedString,
     highlighted_index: Option<usize>,
     focused: bool,
+    focus_handle: Option<FocusHandle>,
     disabled: bool,
     on_toggle: OnToggle,
     on_select: OnSharedStringRefChange,
@@ -55,6 +59,7 @@ impl ComboBox {
             placeholder: SharedString::from("Search..."),
             highlighted_index: None,
             focused: false,
+            focus_handle: None,
             disabled: false,
             on_toggle: None,
             on_select: None,
@@ -103,8 +108,19 @@ impl ComboBox {
         self
     }
 
+    /// Set the focus ring manually. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the combo box participates in GPUI's
+    /// focus graph. When present, the focus ring is driven by
+    /// `handle.is_focused(window)` and the trigger threads `track_focus`.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -169,8 +185,17 @@ impl ComboBox {
 }
 
 impl RenderOnce for ComboBox {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        // FocusHandle (when supplied) drives the ring reactively via
+        // GPUI's focus graph; falls back to the manual `focused: bool`
+        // flag otherwise. Mirrors the `ButtonLike` pattern.
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         let text_color = if self.value.is_empty() {
             theme.text_muted
@@ -261,11 +286,14 @@ impl RenderOnce for ComboBox {
             .px(theme.spacing_md);
 
         if !disabled {
-            trigger = trigger.cursor_pointer();
+            trigger = trigger.cursor_pointer().focusable();
+            if let Some(handle) = self.focus_handle.as_ref() {
+                trigger = trigger.track_focus(handle);
+            }
         }
 
         // Glass-styled trigger surface (matches TextField / Picker styling).
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
 
         if disabled {
             trigger = trigger.opacity(0.5).cursor_default();
@@ -618,6 +646,12 @@ mod tests {
     fn combo_box_focused_false_by_default() {
         let cb = ComboBox::new("test");
         assert!(!cb.focused);
+    }
+
+    #[test]
+    fn combo_box_focus_handle_none_by_default() {
+        let cb = ComboBox::new("test");
+        assert!(cb.focus_handle.is_none());
     }
 
     #[test]

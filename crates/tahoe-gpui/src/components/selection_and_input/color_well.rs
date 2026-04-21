@@ -8,8 +8,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, Hsla, KeyDownEvent, MouseDownEvent, Rgba, SharedString, Window, deferred, div,
-    hsla, px,
+    App, ElementId, FocusHandle, Hsla, KeyDownEvent, MouseDownEvent, Rgba, SharedString, Window,
+    deferred, div, hsla, px,
 };
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
@@ -128,6 +128,9 @@ pub struct ColorWell {
     highlighted_index: Option<usize>,
     /// Whether this color well is keyboard-focused.
     focused: bool,
+    /// Optional focus handle; when present, drives the focus ring
+    /// reactively from GPUI's focus graph (overrides `focused`).
+    focus_handle: Option<FocusHandle>,
 }
 
 impl ColorWell {
@@ -149,6 +152,7 @@ impl ColorWell {
             on_hex_commit: None,
             highlighted_index: None,
             focused: false,
+            focus_handle: None,
         }
     }
 
@@ -234,8 +238,19 @@ impl ColorWell {
     }
 
     /// Marks this color well as keyboard-focused, showing a visible focus ring.
+    ///
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is supplied — the
+    /// handle's reactive state takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the color well participates in GPUI's
+    /// focus graph. When present, the focus ring is driven by
+    /// `handle.is_focused(window)` and the trigger threads `track_focus`.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -337,8 +352,16 @@ fn hsla_to_hsb(color: Hsla) -> (u32, u32, u32) {
 }
 
 impl RenderOnce for ColorWell {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        // FocusHandle (when supplied) drives the ring reactively; falls
+        // back to the manual `focused: bool` flag otherwise.
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         let on_toggle = rc_wrap(self.on_toggle);
         let on_change = rc_wrap(self.on_change);
@@ -364,7 +387,11 @@ impl RenderOnce for ColorWell {
             .items_center()
             .justify_center()
             .flex_shrink_0()
-            .cursor_pointer();
+            .cursor_pointer()
+            .focusable();
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
 
         trigger = match style {
             ColorWellStyle::Compact => trigger
@@ -388,7 +415,7 @@ impl RenderOnce for ColorWell {
         trigger = apply_focus_ring(
             trigger,
             theme,
-            self.focused,
+            focused,
             theme.glass.shadows(GlassSize::Small),
         );
         trigger = apply_high_contrast_border(trigger, theme);
@@ -964,6 +991,12 @@ mod tests {
     fn color_well_focused_builder() {
         let cw = ColorWell::new("test").focused(true);
         assert!(cw.focused);
+    }
+
+    #[test]
+    fn color_well_focus_handle_none_by_default() {
+        let cw = ColorWell::new("test");
+        assert!(cw.focus_handle.is_none());
     }
 
     #[test]

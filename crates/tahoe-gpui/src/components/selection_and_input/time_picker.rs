@@ -6,8 +6,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, FontWeight, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    App, ElementId, FocusHandle, FontWeight, KeyDownEvent, MouseDownEvent, SharedString, Window,
+    deferred, div, px,
 };
 
 use crate::callback_types::{OnTimeChange, OnToggle, rc_wrap};
@@ -108,6 +108,9 @@ pub struct TimePicker {
     on_toggle: OnToggle,
     /// Whether this time picker trigger is keyboard-focused.
     focused: bool,
+    /// Optional focus handle; when present, drives the focus ring
+    /// reactively from GPUI's focus graph (overrides `focused`).
+    focus_handle: Option<FocusHandle>,
     /// Which column is keyboard-focused: 0 = hour, 1 = minute, 2 = AM/PM.
     highlighted_column: u8,
     /// Which row within the highlighted column is highlighted.
@@ -134,6 +137,7 @@ impl TimePicker {
             on_change: None,
             on_toggle: None,
             focused: false,
+            focus_handle: None,
             highlighted_column: 0,
             highlighted_row: None,
             minute_granularity: 5,
@@ -196,8 +200,20 @@ impl TimePicker {
     }
 
     /// Marks this time picker as keyboard-focused, showing a visible focus ring.
+    ///
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is supplied — the
+    /// handle's reactive state takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the time picker participates in GPUI's
+    /// focus graph. When present, the focus ring is driven by
+    /// `handle.is_focused(window)` and the Compact trigger / Wheel wrapper
+    /// threads `track_focus`.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -321,8 +337,16 @@ fn resolve_selection_with_granularity(
 }
 
 impl RenderOnce for TimePicker {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        // FocusHandle (when supplied) drives the ring reactively; falls
+        // back to the manual `focused: bool` flag otherwise.
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         let style = self.style;
 
@@ -371,9 +395,13 @@ impl RenderOnce for TimePicker {
             .flex()
             .items_center()
             .px(theme.spacing_md)
-            .cursor_pointer();
+            .focusable();
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
+        trigger = trigger.cursor_pointer();
 
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
 
         trigger = trigger
             .hover(|style| style.cursor_pointer())
@@ -426,11 +454,17 @@ impl RenderOnce for TimePicker {
                 self.highlighted_row,
                 self.minute_granularity,
                 theme,
-                self.focused,
+                focused,
                 on_change.clone(),
                 on_highlight.clone(),
             );
-            return div().child(wheel).into_any_element();
+            // Wheel has no Compact trigger — hang the focusable surface on
+            // the outer wrapper so keyboard focus lights the ring.
+            let mut root = div().id(self.id.clone()).focusable().child(wheel);
+            if let Some(handle) = self.focus_handle.as_ref() {
+                root = root.track_focus(handle);
+            }
+            return root.into_any_element();
         }
 
         // ── StepperField variant: trigger + ± stepper buttons ──────────────
@@ -1222,6 +1256,12 @@ mod tests {
     fn timepicker_focused_builder() {
         let tp = TimePicker::new("test").focused(true);
         assert!(tp.focused);
+    }
+
+    #[test]
+    fn timepicker_focus_handle_none_by_default() {
+        let tp = TimePicker::new("test");
+        assert!(tp.focus_handle.is_none());
     }
 
     #[test]

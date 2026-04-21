@@ -21,7 +21,7 @@
 //! fallback menu.
 
 use gpui::prelude::*;
-use gpui::{App, ElementId, SharedString, Window, div};
+use gpui::{App, ElementId, FocusHandle, SharedString, Window, div};
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::menus_and_actions::pulldown_button::{
@@ -72,6 +72,11 @@ pub struct ShareButton {
     is_open: bool,
     disabled: bool,
     focused: bool,
+    /// Optional focus handle forwarded to the underlying [`Button`] or
+    /// [`PulldownButton`]. When set, the focus ring renders based on
+    /// `handle.is_focused(window)` — takes precedence over
+    /// [`ShareButton::focused`].
+    focus_handle: Option<FocusHandle>,
     on_toggle: crate::callback_types::OnToggle,
     /// When `true`, render as an icon-only toolbar button (no "Share"
     /// label next to the glyph). HIG toolbar share-button pattern.
@@ -86,6 +91,7 @@ impl ShareButton {
             is_open: false,
             disabled: false,
             focused: false,
+            focus_handle: None,
             on_toggle: None,
             icon_only: false,
         }
@@ -113,6 +119,16 @@ impl ShareButton {
 
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the share button into GPUI's focus graph. When set, the
+    /// focus ring renders based on `handle.is_focused(window)` — takes
+    /// precedence over [`ShareButton::focused`]. The handle is forwarded
+    /// to the underlying [`Button`] (no services) or [`PulldownButton`]
+    /// (services present).
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -148,6 +164,9 @@ impl RenderOnce for ShareButton {
                 })
                 .disabled(self.disabled)
                 .focused(self.focused);
+            if let Some(handle) = self.focus_handle.as_ref() {
+                btn = btn.focus_handle(handle);
+            }
             if self.icon_only {
                 btn = btn.tooltip("Share");
             } else {
@@ -181,6 +200,9 @@ impl RenderOnce for ShareButton {
             .open(self.is_open)
             .disabled(self.disabled)
             .focused(self.focused);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            pb = pb.focus_handle(handle);
+        }
         for item in items {
             pb = pb.item(item);
         }
@@ -229,5 +251,11 @@ mod tests {
     fn icon_only_builder_sets_flag() {
         let btn = ShareButton::new("share").icon_only(true);
         assert!(btn.icon_only);
+    }
+
+    #[test]
+    fn share_button_focus_handle_none_by_default() {
+        let btn = ShareButton::new("share");
+        assert!(btn.focus_handle.is_none());
     }
 }

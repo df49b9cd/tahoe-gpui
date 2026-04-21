@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window,
+    deferred, div, px,
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
@@ -139,6 +139,10 @@ pub struct PulldownButton {
     is_open: bool,
     disabled: bool,
     focused: bool,
+    /// Optional focus handle; when set, the pull-down tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`PulldownButton::focused`].
+    focus_handle: Option<FocusHandle>,
     compact: bool,
     borderless: bool,
     highlighted_index: Option<usize>,
@@ -157,6 +161,7 @@ impl PulldownButton {
             is_open: false,
             disabled: false,
             focused: false,
+            focus_handle: None,
             compact: false,
             borderless: false,
             highlighted_index: None,
@@ -227,6 +232,14 @@ impl PulldownButton {
         self
     }
 
+    /// Wire the pull-down into GPUI's focus graph. When set, the focus
+    /// ring renders based on `handle.is_focused(window)` — takes
+    /// precedence over [`PulldownButton::focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
+
     /// Set the handler called when the dropdown opens or closes.
     pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_toggle = Some(Box::new(handler));
@@ -235,8 +248,14 @@ impl PulldownButton {
 }
 
 impl RenderOnce for PulldownButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // Wrap on_toggle in Rc for sharing across closures.
         let on_toggle = rc_wrap(self.on_toggle);
@@ -277,13 +296,15 @@ impl RenderOnce for PulldownButton {
             .px(theme.spacing_md);
 
         if !disabled {
-            trigger = trigger.cursor_pointer();
+            trigger = trigger.cursor_pointer().focusable();
+            if let Some(handle) = self.focus_handle.as_ref() {
+                trigger = trigger.track_focus(handle);
+            }
         }
 
         // Glass-styled trigger surface (suppressed when `borderless`).
         if !borderless {
-            trigger =
-                apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+            trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
         }
 
         if disabled {
@@ -611,6 +632,12 @@ mod tests {
         assert!(pb.compact);
         assert!(pb.borderless);
         assert_eq!(pb.highlighted_index, Some(2));
+    }
+
+    #[test]
+    fn pulldown_button_focus_handle_none_by_default() {
+        let pb = PulldownButton::new("test", "Menu");
+        assert!(pb.focus_handle.is_none());
     }
 
     #[test]
