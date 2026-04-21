@@ -7,8 +7,6 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/image-views>
 
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color;
 use crate::foundations::icons::{Icon, IconName};
@@ -215,14 +213,36 @@ const MONOGRAM_PALETTE: [Hsla; 7] = [
 
 /// Deterministic background color for initials-based avatars.
 ///
-/// Hashes the fallback text and picks from a fixed 7-hue palette so
-/// the same name always produces the same color within a single
-/// compiled binary — matching Apple Contacts / Messages convention.
+/// Uses FNV-1a to hash the fallback text and pick from a fixed 7-hue
+/// palette so the same name always produces the same color across
+/// compilations and Rust versions — matching Apple Contacts / Messages
+/// convention.
 fn monogram_color(fallback: &str) -> Hsla {
-    let mut hasher = DefaultHasher::new();
-    fallback.hash(&mut hasher);
-    let index = (hasher.finish() as usize) % MONOGRAM_PALETTE.len();
+    let hash = fnv1a(fallback.as_bytes());
+    let index = (hash as usize) % MONOGRAM_PALETTE.len();
     MONOGRAM_PALETTE[index]
+}
+
+/// FNV-1a (64-bit) — simple, stable hash for deterministic color assignment.
+fn fnv1a(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Normalized display text for the avatar monogram.
+///
+/// Returns "?" when `raw` is empty or whitespace-only so the circle
+/// always shows a visible glyph.
+fn display_fallback(raw: &str) -> SharedString {
+    if raw.trim().is_empty() {
+        "?".into()
+    } else {
+        raw.to_owned().into()
+    }
 }
 
 impl RenderOnce for Avatar {
@@ -238,26 +258,26 @@ impl RenderOnce for Avatar {
         let font_size = canonical.initials_text_style().attrs().size;
         let glass = &theme.glass;
 
-        // Pick background: explicit > monogram palette (no-image) > glass material
+        // Pick background: explicit > monogram (non-empty fallback) > glass material.
+        // Using monogram even when an image_url is set ensures the circle has
+        // a colored background if the image fails to load.
         let bg = self.bg_color.unwrap_or_else(|| {
-            if self.image_url.is_none() {
-                monogram_color(self.fallback.as_ref())
-            } else {
+            if self.fallback.trim().is_empty() {
                 glass.accessible_bg(GlassSize::Small, theme.accessibility_mode)
+            } else {
+                monogram_color(self.fallback.as_ref())
             }
         });
 
-        // Use "?" when fallback is empty or whitespace-only
-        let display_fallback: SharedString = if self.fallback.trim().is_empty() {
-            "?".into()
-        } else {
-            self.fallback.clone()
-        };
+        let display = display_fallback(self.fallback.as_ref());
 
-        let a11y_label: SharedString = self
-            .accessibility_label
-            .clone()
-            .unwrap_or_else(|| display_fallback.clone());
+        let a11y_label: SharedString = self.accessibility_label.clone().unwrap_or_else(|| {
+            if display.as_ref() == "?" {
+                "Unknown user".into()
+            } else {
+                display.clone()
+            }
+        });
         let a11y_props = AccessibilityProps::new()
             .label(a11y_label)
             .role(AccessibilityRole::Image);
@@ -286,7 +306,7 @@ impl RenderOnce for Avatar {
                     .object_fit(ObjectFit::Cover),
             )
         } else {
-            circle.child(display_fallback)
+            circle.child(display)
         };
 
         // Wrapper carries the accessibility props and (optionally) the
@@ -301,9 +321,9 @@ impl RenderOnce for Avatar {
             let dwc_icon = if theme.accessibility_mode.differentiate_without_color() {
                 let icon_name = match status {
                     AvatarStatus::Online => IconName::Check,
-                    AvatarStatus::Away => IconName::CircleFilled,
+                    AvatarStatus::Away => IconName::CircleOutline,
                     AvatarStatus::Busy => IconName::Minus,
-                    AvatarStatus::Offline => IconName::X,
+                    AvatarStatus::Offline => IconName::XmarkCircleFill,
                 };
                 let icon_size = (f32::from(dot_size) * 0.6).max(6.0);
                 let icon_color = color::text_on_background(dot_bg);
@@ -378,8 +398,10 @@ fn status_dot_size(avatar_diameter: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use crate::components::content::avatar::{
-        Avatar, AvatarSize, AvatarStatus, MONOGRAM_PALETTE, monogram_color, status_dot_size,
+        Avatar, AvatarSize, AvatarStatus, MONOGRAM_PALETTE, display_fallback, monogram_color,
+        status_dot_size,
     };
+    use crate::foundations::color;
     use crate::foundations::theme::TextStyle;
     use core::prelude::v1::test;
     use gpui::{hsla, px};
@@ -505,6 +527,9 @@ mod tests {
 
     #[test]
     fn monogram_color_differentiates_names() {
+        // Best-effort check — collisions are acceptable (two users may share
+        // a color). "Alice" and "Bob" happen to differ with the current
+        // palette size and hash; update or remove if palette changes.
         let alice = monogram_color("Alice");
         let bob = monogram_color("Bob");
         assert_ne!(alice, bob);
@@ -520,15 +545,35 @@ mod tests {
     }
 
     #[test]
-    fn empty_fallback_is_stored_as_given() {
-        // The builder stores the original; render() swaps to "?".
-        let avatar = Avatar::new("");
-        assert_eq!(avatar.fallback.as_ref(), "");
+    fn display_fallback_empty_becomes_question_mark() {
+        assert_eq!(display_fallback("").as_ref(), "?");
     }
 
     #[test]
-    fn whitespace_only_fallback_is_stored_as_given() {
-        let avatar = Avatar::new("   ");
-        assert_eq!(avatar.fallback.as_ref(), "   ");
+    fn display_fallback_whitespace_becomes_question_mark() {
+        assert_eq!(display_fallback("   ").as_ref(), "?");
+    }
+
+    #[test]
+    fn display_fallback_non_empty_passes_through() {
+        assert_eq!(display_fallback("AB").as_ref(), "AB");
+    }
+
+    #[test]
+    fn builder_stores_original_fallback() {
+        assert_eq!(Avatar::new("").fallback.as_ref(), "");
+        assert_eq!(Avatar::new("   ").fallback.as_ref(), "   ");
+    }
+
+    #[test]
+    fn monogram_palette_has_sufficient_contrast() {
+        // WCAG AA for large text / non-text elements: ≥ 3.0:1.
+        for &bg in &MONOGRAM_PALETTE {
+            let fg = color::text_on_background(bg);
+            assert!(
+                color::meets_contrast(fg, bg, 3.0),
+                "palette entry has insufficient contrast with auto-selected text color"
+            );
+        }
     }
 }
