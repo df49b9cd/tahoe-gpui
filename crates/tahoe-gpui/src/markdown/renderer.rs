@@ -1007,6 +1007,27 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .child(render_inlines(content, ctx))
                 .into_any_element()
         }
+        MarkdownBlock::FootnoteDefinition { label, content } => {
+            let ax_props = AccessibilityProps::new()
+                .role(AccessibilityRole::Group)
+                .label(SharedString::from(format!("Footnote {label}")));
+            div()
+                .flex()
+                .flex_col()
+                .gap(ctx.theme.spacing_xs)
+                .pl(ctx.theme.spacing_md)
+                .border_l_2()
+                .border_color(ctx.theme.text_muted.opacity(0.3))
+                .with_accessibility(&ax_props)
+                .child(
+                    div()
+                        .text_style(TextStyle::Footnote, ctx.theme)
+                        .text_color(ctx.theme.text_muted)
+                        .child(format!("[^{label}]:")),
+                )
+                .children(content.iter().map(|b| render_block_at_depth(b, ctx, depth)))
+                .into_any_element()
+        }
     }
 }
 
@@ -1046,6 +1067,8 @@ fn has_complex_inlines(inlines: &[InlineContent]) -> bool {
         | InlineContent::Italic(inner)
         | InlineContent::Strikethrough(inner)
         | InlineContent::Link { content: inner, .. } => has_complex_inlines(inner),
+        // FootnoteReference intentionally flat-only — rendered as muted
+        // semibold text, no interactive element needed.
         _ => false,
     })
 }
@@ -1314,6 +1337,16 @@ fn flatten_inlines_to_runs(
                 citation_style.font_weight = FontWeight::SEMIBOLD;
                 let marker = format!("[{n}]");
                 out.push(&marker, &citation_style);
+            }
+            InlineContent::FootnoteReference(label) => {
+                // Muted (not accent) so the marker is visually distinct from
+                // regular text but does not imply clickability — unlike
+                // Citation which uses accent_color for its interactive popover.
+                let mut fn_style = current.clone();
+                fn_style.color = styles.muted_color;
+                fn_style.font_weight = FontWeight::SEMIBOLD;
+                let marker = format!("[^{label}]");
+                out.push(&marker, &fn_style);
             }
             InlineContent::Image { alt, .. } => {
                 if !alt.is_empty() {
@@ -1691,6 +1724,40 @@ mod tests {
             alt: "missing".into(),
         }];
         assert!(!has_complex_inlines(&inlines));
+    }
+
+    #[test]
+    fn footnote_reference_stays_in_flat_path() {
+        // FootnoteReference renders as muted semibold text — no interactive
+        // element needed, so it should not force the mixed-element path.
+        let inlines = vec![
+            InlineContent::Text("see ".into()),
+            InlineContent::FootnoteReference("1".into()),
+        ];
+        assert!(!has_complex_inlines(&inlines));
+    }
+
+    #[test]
+    fn footnote_reference_flat_run_uses_muted_semibold() {
+        let inlines = vec![InlineContent::FootnoteReference("note".into())];
+        let styles = test_styles();
+        let base = styles.base.clone();
+        let mut out = InlineRuns::new();
+        flatten_inlines_to_runs(
+            &inlines,
+            &styles,
+            &MarkdownSecurity::default(),
+            false,
+            &base,
+            &mut out,
+        );
+
+        assert_eq!(out.text, "[^note]");
+        assert_eq!(out.runs.len(), 1);
+        let run = &out.runs[0];
+        assert_eq!(run.len, 7); // "[^note]".len()
+        assert_eq!(run.font.weight, FontWeight::SEMIBOLD);
+        assert_eq!(run.color, styles.muted_color);
     }
 
     #[test]
