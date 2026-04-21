@@ -114,6 +114,29 @@ pub fn render(
         .child(option_row(0, "Option 1 — first"))
         .child(option_row(1, "Option 2 — middle"))
         .child(option_row(2, "Option 3 — last"))
+        // Illustration of the "disabled members must be deregistered"
+        // contract: this row renders as a dimmed option but is deliberately
+        // NOT tracked on a focus handle nor added to `set_members`. Arrow
+        // keys skip it entirely — which is the host-side pattern for
+        // disabling a member. `FocusGroup` has no enabled/disabled bit of
+        // its own; omission from the group is the API.
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(theme.spacing_sm)
+                .px(theme.spacing_md)
+                .py(theme.spacing_sm)
+                .bg(theme.surface)
+                .rounded(theme.radius_md)
+                .opacity(0.45)
+                .child(
+                    div()
+                        .text_style(TextStyle::Body, theme)
+                        .text_color(theme.text_muted)
+                        .child("Option 4 — disabled (omitted from set_members)"),
+                ),
+        )
         .child(div().h(theme.spacing_sm))
         .child(
             div()

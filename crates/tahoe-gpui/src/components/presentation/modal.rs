@@ -4,14 +4,16 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/modality>
 
-use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
+};
 use crate::foundations::layout::{MODAL_MAX_HEIGHT, MODAL_WIDTH};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter, FocusHandle,
-    KeyDownEvent, MouseDownEvent, Pixels, Window, div, px,
+    KeyDownEvent, MouseDownEvent, Pixels, SharedString, Window, div, px,
 };
 
 /// Scope of the modal blocking behavior per HIG `#modality`.
@@ -89,9 +91,26 @@ pub struct Modal {
     /// surrounding struct generics.
     dismiss_emitter: Option<AnyEntity>,
     dismiss_emit_fn: Option<DismissEmitFn>,
+    /// VoiceOver label applied alongside the implicit `Dialog` role. Flows
+    /// through [`AccessibleExt::with_accessibility`] on the content
+    /// surface so that when GPUI exposes an AX tree the announcement lands
+    /// without touching callers. `None` leaves the role unlabelled.
+    accessibility_label: Option<SharedString>,
 }
 
 impl Modal {
+    /// Construct a modal with empty state. The modal is closed until
+    /// [`Modal::open`] is called with `true`.
+    ///
+    /// # Empty focus group on construction
+    ///
+    /// A fresh modal has a [`FocusGroupMode::Trap`] `FocusGroup` with zero
+    /// members. Tab / Shift+Tab inside an empty-group modal are swallowed
+    /// by design — letting them escape would violate the WAI-ARIA dialog
+    /// pattern. The outer focus handle still receives initial focus so
+    /// Escape / Cmd-. dismiss continue to work, but keyboard users cannot
+    /// advance focus until the host registers interactive children via
+    /// [`Modal::focus_cycle`] or [`Modal::focus_group`].
     pub fn new(id: impl Into<ElementId>, content: impl IntoElement) -> Self {
         Self {
             id: id.into(),
@@ -106,6 +125,7 @@ impl Modal {
             level: ModalLevel::default(),
             dismiss_emitter: None,
             dismiss_emit_fn: None,
+            accessibility_label: None,
         }
     }
 
@@ -166,6 +186,11 @@ impl Modal {
     /// shared group is discarded and replaced with the handles passed here.
     /// Callers that already manage a [`FocusGroup`] should use
     /// [`Modal::focus_group`] instead.
+    ///
+    /// Passing an empty `Vec` is equivalent to not calling this at all — the
+    /// modal's Tab trap remains active but Tab is swallowed without advancing
+    /// focus. See [`Modal::new`] for why that is the correct WAI-ARIA
+    /// dialog-pattern behavior.
     pub fn focus_cycle(mut self, handles: Vec<FocusHandle>) -> Self {
         self.focus_group = FocusGroup::trap();
         for handle in &handles {
@@ -195,6 +220,10 @@ impl Modal {
     /// advancing focus, stranding keyboard users — so this is a runtime
     /// `assert!` rather than a `debug_assert!`, firing in release as well.
     ///
+    /// An empty but Trap-mode group is accepted: Tab is swallowed without
+    /// advancing focus. See [`Modal::new`] for why that is the correct
+    /// WAI-ARIA dialog-pattern behavior.
+    ///
     /// [`FocusGroupExt`]: crate::foundations::accessibility::FocusGroupExt
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
         assert_eq!(
@@ -213,6 +242,15 @@ impl Modal {
     /// the modal so the user returns to the same position on dismiss.
     pub fn restore_focus_to(mut self, handle: FocusHandle) -> Self {
         self.restore_focus_to = Some(handle);
+        self
+    }
+
+    /// Attach a VoiceOver label to the dialog surface. Paired with an
+    /// implicit [`AccessibilityRole::Dialog`] role so VoiceOver announces
+    /// the label followed by "dialog" once GPUI lands an AX tree. No-op
+    /// at runtime today — see [`AccessibleExt::with_accessibility`].
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
         self
     }
 
@@ -385,13 +423,25 @@ impl RenderOnce for Modal {
 
         content_div = content_div.track_focus(&focus_handle);
 
+        // Announce the surface as a dialog once GPUI lands an AX tree. The
+        // trait is a no-op today — this wires the data so the rollout is a
+        // single-file change rather than touching every modal caller.
+        let mut a11y = AccessibilityProps::new().role(AccessibilityRole::Dialog);
+        if let Some(label) = self.accessibility_label.as_ref() {
+            a11y = a11y.label(label.clone());
+        }
+        content_div = content_div.with_accessibility(&a11y);
+
         // Key handler: Escape / Cmd-. dismiss per HIG `#modality`; Tab /
         // Shift+Tab routed through the modal's Trap-mode `FocusGroup`
         // (`handle_key_down` consumes the event and wraps through the
         // registered handles). When the group is empty we still swallow
         // Tab so focus cannot escape the modal surface — the "no-op trap"
         // required by the WAI-ARIA dialog pattern when no child is
-        // focusable.
+        // focusable. Home / End jump to the first / last registered
+        // member — only when a group member is currently focused, so
+        // text inputs that aren't group members keep their native
+        // start-of-line / end-of-line behavior.
         let dismiss_for_keys = on_dismiss_rc.clone();
         let focus_group = self.focus_group.clone();
         content_div = content_div.on_key_down(move |event: &KeyDownEvent, window, cx| {
@@ -403,19 +453,30 @@ impl RenderOnce for Modal {
                 }
                 return;
             }
-            if event.keystroke.key.as_str() == "tab" {
-                // In Trap mode with members, `handle_key_down` wraps focus
-                // and reports `true`. If it returns `false` — either because
-                // the group has no members, or because the group is not in
-                // Trap mode — we still swallow Tab so focus cannot escape
-                // the modal surface. Hosts that want Tab to actually
-                // advance focus must register at least one member via
-                // `Modal::focus_cycle` or `Modal::focus_group`; swallowing
-                // an empty group's Tab is the WAI-ARIA "no-op trap"
-                // required when no child is focusable.
-                if !focus_group.handle_key_down(event, window, cx) {
+            match event.keystroke.key.as_str() {
+                "tab" => {
+                    // In Trap mode with members, `handle_key_down` wraps focus
+                    // and reports `true`. If it returns `false` — either because
+                    // the group has no members, or because the group is not in
+                    // Trap mode — we still swallow Tab so focus cannot escape
+                    // the modal surface. Hosts that want Tab to actually
+                    // advance focus must register at least one member via
+                    // `Modal::focus_cycle` or `Modal::focus_group`; swallowing
+                    // an empty group's Tab is the WAI-ARIA "no-op trap"
+                    // required when no child is focusable.
+                    if !focus_group.handle_key_down(event, window, cx) {
+                        cx.stop_propagation();
+                    }
+                }
+                "home" if focus_group.contains_focused(window) => {
+                    focus_group.focus_first(window, cx);
                     cx.stop_propagation();
                 }
+                "end" if focus_group.contains_focused(window) => {
+                    focus_group.focus_last(window, cx);
+                    cx.stop_propagation();
+                }
+                _ => {}
             }
         });
 
@@ -511,6 +572,21 @@ mod tests {
     fn modal_level_builder() {
         let modal = Modal::new("test", gpui::div()).level(super::ModalLevel::App);
         assert_eq!(modal.level, super::ModalLevel::App);
+    }
+
+    #[test]
+    fn modal_accessibility_label_default_is_none() {
+        let modal = Modal::new("test", gpui::div());
+        assert!(modal.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn modal_accessibility_label_builder_sets_field() {
+        let modal = Modal::new("test", gpui::div()).accessibility_label("Confirm deletion");
+        assert_eq!(
+            modal.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("Confirm deletion")
+        );
     }
 }
 
@@ -664,6 +740,44 @@ mod interaction_tests {
             assert!(
                 host.first.is_focused(window),
                 "third Tab wraps back to first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn home_jumps_to_first_group_member(cx: &mut TestAppContext) {
+        // Consistency with the Cycle gallery (Home → first, End → last).
+        // Only fires when a group member is currently focused, so text
+        // inputs outside the group retain their native Home behavior.
+        let (host, cx) = setup_test_window(cx, |_window, cx| TabCycleHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.second.focus(window, cx);
+            assert!(
+                host.second.is_focused(window),
+                "precondition: second focused"
+            );
+        });
+        cx.press("home");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Home lands on the first member"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn end_jumps_to_last_group_member(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| TabCycleHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.first.focus(window, cx);
+            assert!(host.first.is_focused(window), "precondition: first focused");
+        });
+        cx.press("end");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.second.is_focused(window),
+                "End lands on the last member"
             );
         });
     }

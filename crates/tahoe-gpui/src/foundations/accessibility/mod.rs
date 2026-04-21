@@ -27,12 +27,12 @@
 //! half of the HIG accessibility story that doesn't depend on the missing AX API.
 
 pub mod focus_group;
-pub mod modes;
+pub mod mode;
 pub mod tokens;
 pub mod voiceover;
 
 pub use focus_group::{FocusGroup, FocusGroupExt, FocusGroupMode};
-pub use modes::AccessibilityMode;
+pub use mode::AccessibilityMode;
 pub use tokens::{
     AccessibilityTokens, apply_high_contrast_border, effective_duration,
     reduce_motion_substitute_ms,

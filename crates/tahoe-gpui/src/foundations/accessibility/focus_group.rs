@@ -170,6 +170,15 @@ impl FocusGroup {
     /// contract, its [`tab_index`](InteractiveElement::tab_index) when wired
     /// through [`FocusGroupExt::focus_group`]. Callers relying on a specific
     /// visual tab order must register in that order.
+    ///
+    /// # Complexity
+    ///
+    /// O(n) per call due to the idempotency scan. `FocusHandle == FocusHandle`
+    /// is a `FocusId` integer compare (GPUI interns handles by id), so the
+    /// per-element cost is a handful of instructions. Realistic groups are
+    /// <= 50 members (modal dialogs, radio groups, tab bars) — this is
+    /// well inside the range where a linear scan is faster than a hash
+    /// set's per-render allocation.
     pub fn register(&self, handle: &FocusHandle) -> usize {
         let mut inner = self.inner.borrow_mut();
         if let Some(idx) = inner.handles.iter().position(|h| h == handle) {
@@ -199,6 +208,12 @@ impl FocusGroup {
     /// wins), mirroring [`register`](Self::register)'s idempotency so
     /// `len()` and tab-index semantics stay consistent between the two
     /// entry points.
+    ///
+    /// # Complexity
+    ///
+    /// O(n²) in the input length due to the dedup scan; see
+    /// [`register`](Self::register) for why the linear scan is the
+    /// right trade-off at realistic group sizes.
     pub fn set_members<'a>(&self, handles: impl IntoIterator<Item = &'a FocusHandle>) {
         let mut inner = self.inner.borrow_mut();
         inner.handles.clear();
@@ -239,6 +254,18 @@ impl FocusGroup {
         self.advance(window, cx, /* forward */ false);
     }
 
+    /// Advance focus inside the group by one step.
+    ///
+    /// # Snapshot semantics
+    ///
+    /// The target member is picked under a single borrow of `inner`. If
+    /// the group is mutated between the target being chosen and GPUI
+    /// actually dispatching focus (e.g. a notification callback fires
+    /// `clear` / `set_members` reentrantly), focus still lands on the
+    /// handle that was selected at call start — by design, so a keystroke
+    /// never lands on a "half-applied" membership. Callers that need to
+    /// observe the new membership must issue a second navigation after
+    /// the mutation.
     fn advance(&self, window: &mut Window, cx: &mut App, forward: bool) {
         // Compute the target handle under a single short borrow — no full
         // Vec clone per keystroke. `is_focused(window)` touches `Window`,
@@ -302,6 +329,17 @@ impl FocusGroup {
     /// wrap-around. Returns `true` when the event was consumed. In `Open` /
     /// `Cycle` modes this is a no-op (`false`) so GPUI's native TabStopMap
     /// continues to drive Tab traversal.
+    ///
+    /// # Empty Trap group
+    ///
+    /// When the group is in Trap mode with zero members, Tab is still
+    /// consumed — `stop_propagation` fires, the `focus_previous` /
+    /// `focus_next` calls are harmless no-ops, and the return value stays
+    /// `true`. This is deliberate: a Trap that lets Tab escape while the
+    /// group is momentarily empty (e.g. during a re-render that clears
+    /// then repopulates members) would violate the WAI-ARIA dialog
+    /// pattern. Hosts that want Tab to actually advance focus must keep
+    /// at least one member registered for the duration of the trap.
     pub fn handle_key_down(&self, event: &KeyDownEvent, window: &mut Window, cx: &mut App) -> bool {
         if event.keystroke.key.as_str() != "tab" {
             return false;
@@ -851,6 +889,127 @@ mod interaction_tests {
                 host.group.register(&host.handles[0]),
                 2,
                 "previously-registered handle is gone and re-registers fresh"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn set_members_with_empty_iterator_clears(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update(cx, |host, _cx| {
+            assert_eq!(host.group.len(), 3, "precondition: three pre-registered");
+            host.group
+                .set_members(std::iter::empty::<&gpui::FocusHandle>());
+            assert_eq!(
+                host.group.len(),
+                0,
+                "set_members with empty iterator drops every registration"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_next_advances_through_middle_without_wrap(cx: &mut TestAppContext) {
+        // Pins the common interior path: 3 members, focus starts at 0, Next
+        // lands on 1, Next again lands on 2. No wrap math involved — this is
+        // the path the wrap/edge tests do not exercise.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+            host.group.focus_next(window, cx);
+            assert!(
+                host.handles[1].is_focused(window),
+                "first→middle advance lands on index 1"
+            );
+            host.group.focus_next(window, cx);
+            assert!(
+                host.handles[2].is_focused(window),
+                "middle→last advance lands on index 2"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_previous_retreats_through_middle_without_wrap(cx: &mut TestAppContext) {
+        // Mirror of the forward middle-path test.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.handles[2].focus(window, cx);
+            host.group.focus_previous(window, cx);
+            assert!(
+                host.handles[1].is_focused(window),
+                "last→middle retreat lands on index 1"
+            );
+            host.group.focus_previous(window, cx);
+            assert!(
+                host.handles[0].is_focused(window),
+                "middle→first retreat lands on index 0"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn handle_key_down_empty_trap_still_swallows_tab(cx: &mut TestAppContext) {
+        // Direct coverage of the empty-Trap contract (separate from the
+        // end-to-end Modal test). A Trap group with zero members must still
+        // consume Tab and return `true` — letting Tab escape during a
+        // momentary re-render clear would violate the WAI-ARIA dialog
+        // pattern.
+        use gpui::{KeyDownEvent, Keystroke, Modifiers};
+
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Trap, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.group.clear();
+            assert!(host.group.is_empty(), "precondition: group emptied");
+            let event = KeyDownEvent {
+                keystroke: Keystroke {
+                    modifiers: Modifiers::default(),
+                    key: "tab".into(),
+                    key_char: None,
+                },
+                is_held: false,
+                prefer_character_input: false,
+            };
+            assert!(
+                host.group.handle_key_down(&event, window, cx),
+                "empty Trap group consumes Tab (returns true)"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn disabled_member_pattern_skips_deregistered(cx: &mut TestAppContext) {
+        // FocusGroup has no enabled/disabled state; the contract is that hosts
+        // deregister disabled members so programmatic navigation can't land
+        // on an inert element. This test pins the host-side pattern: drop
+        // the middle handle via `set_members`, then verify focus_next / _previous
+        // skip it entirely.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            // Host disables handles[1] — pattern: re-register without it.
+            host.group.set_members([&host.handles[0], &host.handles[2]]);
+            assert_eq!(host.group.len(), 2, "middle member is deregistered");
+
+            host.handles[0].focus(window, cx);
+            host.group.focus_next(window, cx);
+            assert!(
+                host.handles[2].is_focused(window),
+                "focus_next skips the deregistered middle handle and lands on last"
+            );
+            host.group.focus_previous(window, cx);
+            assert!(
+                host.handles[0].is_focused(window),
+                "focus_previous wraps back to first without visiting the disabled handle"
             );
         });
     }
