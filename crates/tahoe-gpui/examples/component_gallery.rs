@@ -36,6 +36,7 @@ mod gallery {
     pub mod forms;
     pub mod gauges;
     pub mod hover_cards;
+    pub mod image_views;
     pub mod image_wells;
     pub mod labels;
     pub mod liquid_glass;
@@ -240,6 +241,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Hover Cards",
         render: gallery::hover_cards::render,
+    },
+    Demo {
+        label: "Image Views",
+        render: gallery::image_views::render,
     },
     Demo {
         label: "Image Wells",
