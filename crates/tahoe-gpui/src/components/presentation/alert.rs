@@ -27,6 +27,7 @@ use gpui::{
 use crate::callback_types::OnMutCallback;
 use crate::components::menus_and_actions::button::{Button, ButtonVariant};
 use crate::components::selection_and_input::checkbox::{Checkbox, CheckboxState};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::Icon;
 use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
 use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
@@ -147,6 +148,12 @@ pub struct Alert {
     /// Callback when the Help button is clicked (macOS). The Help button
     /// renders only when this handler is set.
     on_help: Option<HelpClick>,
+    /// VoiceOver label applied alongside the implicit `Alert` role and
+    /// modal flag. Flows through [`AccessibleExt::with_accessibility`]
+    /// on the content surface so that when GPUI exposes an AX tree the
+    /// announcement lands without touching callers. `None` falls back
+    /// to the alert's `title` so VoiceOver always identifies the surface.
+    accessibility_label: Option<SharedString>,
 }
 
 impl Alert {
@@ -167,6 +174,7 @@ impl Alert {
             suppression_checked: false,
             on_suppression_change: None,
             on_help: None,
+            accessibility_label: None,
         }
     }
 
@@ -261,8 +269,25 @@ impl Alert {
         self
     }
 
+    /// Attach a VoiceOver label to the alert surface. Paired with an
+    /// implicit [`AccessibilityRole::Alert`] role and a modal flag so
+    /// VoiceOver announces the label followed by "modal alert" once GPUI
+    /// lands an AX tree. When unset, the alert's `title` is used as the
+    /// label so the surface is always identified. No-op at runtime
+    /// today — see [`AccessibleExt::with_accessibility`].
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
+        self
+    }
+
     fn resolved_platform(&self, theme: &TahoeTheme) -> Platform {
         self.platform.unwrap_or(theme.platform)
+    }
+
+    fn resolved_accessibility_label(&self) -> SharedString {
+        self.accessibility_label
+            .clone()
+            .unwrap_or_else(|| self.title.clone())
     }
 }
 
@@ -290,6 +315,11 @@ impl RenderOnce for Alert {
             (platform, width, is_macos, title_style)
         };
         let _ = platform; // retained for future per-platform branching
+
+        // Resolve the VoiceOver label up-front — subsequent `self` field
+        // moves (focus_handle, on_dismiss) would block borrowing `&self`
+        // for `resolved_accessibility_label()`.
+        let accessibility_label = self.resolved_accessibility_label();
 
         // Mint a default focus handle if the parent didn't provide one, then
         // request focus so Escape works immediately without parent boilerplate.
@@ -327,6 +357,17 @@ impl RenderOnce for Alert {
         content_div = content_div
             .track_focus(&focus_handle)
             .debug_selector(|| "alert-content".into());
+
+        // Announce the surface as a modal alert once GPUI lands an AX tree.
+        // The trait is a no-op today — this wires the data so the rollout
+        // is a single-file change rather than touching every alert caller.
+        // Label defaults to the alert's title so VoiceOver users never hit
+        // an unidentified "modal alert" announcement (resolved above).
+        let a11y = AccessibilityProps::new()
+            .role(AccessibilityRole::Alert)
+            .modal(true)
+            .label(accessibility_label);
+        content_div = content_div.with_accessibility(&a11y);
 
         // Dismiss on click outside the content.
         if let Some(ref handler) = on_dismiss_rc {
@@ -618,6 +659,7 @@ mod tests {
         assert!(!alert.suppression_checked);
         assert!(alert.on_suppression_change.is_none());
         assert!(alert.on_help.is_none());
+        assert!(alert.accessibility_label.is_none());
     }
 
     #[test]
@@ -718,6 +760,36 @@ mod tests {
     fn alert_builder_on_help() {
         let alert = Alert::new("a", "T").on_help(|_, _| {});
         assert!(alert.on_help.is_some());
+    }
+
+    #[test]
+    fn alert_accessibility_label_builder_sets_field() {
+        let alert = Alert::new("a", "T").accessibility_label("Confirm deletion");
+        assert_eq!(
+            alert.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("Confirm deletion")
+        );
+    }
+
+    #[test]
+    fn alert_accessibility_label_resolves_to_title_when_unset() {
+        // Documented contract: when accessibility_label is None, the
+        // alert's title is used so VoiceOver always identifies the
+        // surface rather than reading just "modal alert".
+        let alert = Alert::new("a", "Confirm deletion");
+        assert_eq!(
+            alert.resolved_accessibility_label().as_ref(),
+            "Confirm deletion"
+        );
+    }
+
+    #[test]
+    fn alert_accessibility_label_resolution_prefers_explicit_label() {
+        let alert = Alert::new("a", "Title").accessibility_label("Custom label");
+        assert_eq!(
+            alert.resolved_accessibility_label().as_ref(),
+            "Custom label"
+        );
     }
 
     #[test]
