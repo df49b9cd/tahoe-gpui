@@ -76,9 +76,16 @@ pub enum AccessibilityRole {
     Checkbox,
     /// Radio button (exclusive choice).
     RadioButton,
-    /// Alert dialog.
+    /// Simple alert announcement (WAI-ARIA `role="alert"`). Use for
+    /// non-interactive notifications that VoiceOver auto-announces without
+    /// requiring user response. For interactive alerts with action buttons
+    /// or text inputs, use [`AlertDialog`](AccessibilityRole::AlertDialog).
     Alert,
-    /// Modal dialog.
+    /// Interactive alert dialog requiring user response (WAI-ARIA
+    /// `role="alertdialog"`). VoiceOver does NOT auto-announce this role —
+    /// the component manages focus explicitly.
+    AlertDialog,
+    /// Modal dialog (WAI-ARIA `role="dialog"`).
     Dialog,
     /// Progress indicator.
     ProgressIndicator,
@@ -133,9 +140,9 @@ pub struct AccessibilityProps {
     /// Total items in the group (WAI-ARIA `aria-setsize`).
     pub setsize: Option<usize>,
     /// Declares this element as a modal container (WAI-ARIA `aria-modal`
-    /// / NSAccessibility `AXModal`). Pairs with [`AccessibilityRole::Dialog`]
-    /// or [`AccessibilityRole::Alert`] so VoiceOver announces "modal dialog"
-    /// once GPUI lands an AX tree.
+    /// / NSAccessibility `AXModal`). Pairs with [`AccessibilityRole::Dialog`],
+    /// [`AccessibilityRole::AlertDialog`], or [`AccessibilityRole::Alert`] so
+    /// VoiceOver announces "modal dialog" once GPUI lands an AX tree.
     pub modal: bool,
 }
 
@@ -376,6 +383,27 @@ mod tests {
             .invisible()
             .with_accessibility(&props);
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn accessibility_role_alert_dialog_is_distinct() {
+        assert_ne!(AccessibilityRole::AlertDialog, AccessibilityRole::Alert);
+        assert_ne!(AccessibilityRole::AlertDialog, AccessibilityRole::Dialog);
+    }
+
+    #[test]
+    fn accessibility_props_alert_dialog_roundtrip() {
+        let props = AccessibilityProps::new()
+            .role(AccessibilityRole::AlertDialog)
+            .modal(true)
+            .label("Delete item?");
+        assert_eq!(props.role, Some(AccessibilityRole::AlertDialog));
+        assert!(props.modal);
+        assert_eq!(
+            props.label.as_ref().map(|s| s.as_ref()),
+            Some("Delete item?")
+        );
+        assert!(props.is_some());
     }
 
     #[test]
