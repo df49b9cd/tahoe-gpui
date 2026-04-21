@@ -73,7 +73,7 @@ pub struct Stepper {
     /// Tab stop.
     btn_focus_group: Option<FocusGroup>,
     /// Host-owned per-button focus handles. Expected to hold exactly 2
-    /// handles: handles[0] = minus, handles[1] = plus.
+    /// handles: handles\[0\] = minus, handles\[1\] = plus.
     btn_focus_handles: Vec<FocusHandle>,
     /// When true, incrementing past `max` wraps around to `min` (and
     /// vice versa) instead of clamping. Matches HIG NSStepper's `wraps`
@@ -162,7 +162,7 @@ impl Stepper {
     }
 
     /// Per-button [`FocusHandle`]s. Expected to hold exactly 2 handles:
-    /// handles[0] = minus, handles[1] = plus. Host-owned because
+    /// handles\[0\] = minus, handles\[1\] = plus. Host-owned because
     /// `Stepper` is stateless `RenderOnce`.
     pub fn btn_focus_handles(mut self, handles: Vec<FocusHandle>) -> Self {
         self.btn_focus_handles = handles;
