@@ -41,7 +41,7 @@ struct FocusGroupInner {
 
 /// Ordered collection of [`FocusHandle`]s forming a logical focus cluster.
 ///
-/// Cheap to clone — the backing storage is an [`Rc`](std::rc::Rc), shared by
+/// Cheap to clone — the backing storage is an [`Rc`], shared by
 /// all clones. Intended to live on the parent entity (or as a stateless
 /// value passed by reference) and be populated by children during render.
 ///
