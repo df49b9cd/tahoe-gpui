@@ -454,19 +454,17 @@ impl RenderOnce for Modal {
                 return;
             }
             match event.keystroke.key.as_str() {
-                "tab" => {
-                    // In Trap mode with members, `handle_key_down` wraps focus
-                    // and reports `true`. If it returns `false` — either because
-                    // the group has no members, or because the group is not in
-                    // Trap mode — we still swallow Tab so focus cannot escape
-                    // the modal surface. Hosts that want Tab to actually
-                    // advance focus must register at least one member via
-                    // `Modal::focus_cycle` or `Modal::focus_group`; swallowing
-                    // an empty group's Tab is the WAI-ARIA "no-op trap"
-                    // required when no child is focusable.
-                    if !focus_group.handle_key_down(event, window, cx) {
-                        cx.stop_propagation();
-                    }
+                // In Trap mode with members, `handle_key_down` wraps focus
+                // and reports `true`. If it returns `false` — either because
+                // the group has no members, or because the group is not in
+                // Trap mode — we still swallow Tab so focus cannot escape
+                // the modal surface. Hosts that want Tab to actually
+                // advance focus must register at least one member via
+                // `Modal::focus_cycle` or `Modal::focus_group`; swallowing
+                // an empty group's Tab is the WAI-ARIA "no-op trap"
+                // required when no child is focusable.
+                "tab" if !focus_group.handle_key_down(event, window, cx) => {
+                    cx.stop_propagation();
                 }
                 "home" if focus_group.contains_focused(window) => {
                     focus_group.focus_first(window, cx);
