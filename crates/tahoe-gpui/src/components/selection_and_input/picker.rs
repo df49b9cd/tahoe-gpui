@@ -187,7 +187,10 @@ impl Picker {
         self
     }
 
-    /// Marks this picker as keyboard-focused, showing a visible focus ring.
+    /// Marks this picker as keyboard-focused, showing a visible focus
+    /// ring. Ignored when a [`focus_handle`](Self::focus_handle) is
+    /// supplied — the handle's reactive state
+    /// (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -262,13 +265,13 @@ impl RenderOnce for Picker {
             // the other variants.
             debug_assert!(
                 !self.focused,
-                "Picker::focused is ignored on PickerVariant::Segmented — \
+                "Picker::focused is ignored on PickerStyle::Segmented — \
                  construct a SegmentedControl directly with \
                  `.focus_handle(...)` to render a focus ring",
             );
             debug_assert!(
                 self.focus_handle.is_none(),
-                "Picker::focus_handle is ignored on PickerVariant::Segmented — \
+                "Picker::focus_handle is ignored on PickerStyle::Segmented — \
                  construct a SegmentedControl directly with \
                  `.focus_handle(...)` to render a focus ring",
             );
@@ -539,14 +542,18 @@ impl RenderOnce for Picker {
             const TILES_PER_ROW: usize = 10;
             const TILE_SIZE: f32 = 32.0;
 
+            // Only make the grid a Tab stop when a focus handle is
+            // supplied. The Palette variant has no arrow-key navigation
+            // of its own (unlike Radio / Wheel), so an unconditional
+            // `.focusable()` would create a dead Tab stop for hosts that
+            // never asked for focus wiring.
             let mut grid = div()
                 .id(self.id.clone())
-                .focusable()
                 .flex()
                 .flex_col()
                 .gap(theme.spacing_xs);
             if let Some(handle) = self.focus_handle.as_ref() {
-                grid = grid.track_focus(handle);
+                grid = grid.focusable().track_focus(handle);
             }
 
             for chunk in items_flat.chunks(TILES_PER_ROW) {
@@ -1002,6 +1009,18 @@ mod tests {
     fn picker_focus_handle_none_by_default() {
         let p = Picker::new("test");
         assert!(p.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn picker_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let p = Picker::new("test").focus_handle(&handle);
+            assert!(
+                p.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

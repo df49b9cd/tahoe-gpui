@@ -283,13 +283,18 @@ impl RenderOnce for ComboBox {
             .min_h(px(theme.target_size()))
             .flex()
             .items_center()
-            .px(theme.spacing_md);
+            .px(theme.spacing_md)
+            .focusable();
 
+        // `track_focus` is unconditional on handle presence — a caller
+        // who supplied a handle expects it wired even when `disabled` is
+        // flipped transiently. Only interactivity (`cursor_pointer`,
+        // `on_click`, `on_key_down`) is gated on `!disabled`.
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
         if !disabled {
-            trigger = trigger.cursor_pointer().focusable();
-            if let Some(handle) = self.focus_handle.as_ref() {
-                trigger = trigger.track_focus(handle);
-            }
+            trigger = trigger.cursor_pointer();
         }
 
         // Glass-styled trigger surface (matches TextField / Picker styling).
@@ -652,6 +657,18 @@ mod tests {
     fn combo_box_focus_handle_none_by_default() {
         let cb = ComboBox::new("test");
         assert!(cb.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn combo_box_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let cb = ComboBox::new("test").focus_handle(&handle);
+            assert!(
+                cb.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

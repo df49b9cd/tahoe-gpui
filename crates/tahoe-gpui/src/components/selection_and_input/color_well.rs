@@ -999,6 +999,18 @@ mod tests {
         assert!(cw.focus_handle.is_none());
     }
 
+    #[gpui::test]
+    async fn color_well_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let cw = ColorWell::new("test").focus_handle(&handle);
+            assert!(
+                cw.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
+    }
+
     #[test]
     fn color_well_highlighted_index_builder() {
         let cw = ColorWell::new("test").highlighted_index(Some(5));

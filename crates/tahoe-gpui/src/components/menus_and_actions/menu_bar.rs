@@ -198,6 +198,9 @@ impl MenuBar {
         self
     }
 
+    /// Set the explicit `focused` flag. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -574,6 +577,18 @@ mod tests {
     fn menu_bar_focus_handle_none_by_default() {
         let bar = MenuBar::new("test");
         assert!(bar.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn menu_bar_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let bar = MenuBar::new("test").focus_handle(&handle);
+            assert!(
+                bar.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

@@ -117,6 +117,9 @@ impl ShareButton {
         self
     }
 
+    /// Set the explicit `focused` flag. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -257,5 +260,17 @@ mod tests {
     fn share_button_focus_handle_none_by_default() {
         let btn = ShareButton::new("share");
         assert!(btn.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn share_button_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let btn = ShareButton::new("share").focus_handle(&handle);
+            assert!(
+                btn.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 }

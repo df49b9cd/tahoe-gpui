@@ -128,7 +128,9 @@ impl PopupButton {
         self
     }
 
-    /// Set the focused state for rendering a focus ring.
+    /// Set the focused state for rendering a focus ring. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -229,13 +231,18 @@ impl RenderOnce for PopupButton {
             .min_h(px(theme.target_size()))
             .flex()
             .items_center()
-            .px(theme.spacing_md);
+            .px(theme.spacing_md)
+            .focusable();
 
+        // `track_focus` is unconditional on handle presence — a caller
+        // who supplied a handle expects it wired even when `disabled` is
+        // flipped transiently. Only interactivity (`cursor_pointer`,
+        // `on_click`, `on_key_down`) is gated on `!disabled`.
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
         if !disabled {
-            trigger = trigger.cursor_pointer().focusable();
-            if let Some(handle) = self.focus_handle.as_ref() {
-                trigger = trigger.track_focus(handle);
-            }
+            trigger = trigger.cursor_pointer();
         }
 
         // Glass-styled trigger surface.
@@ -503,6 +510,18 @@ mod tests {
     fn popup_button_focus_handle_none_by_default() {
         let pb = PopupButton::new("test");
         assert!(pb.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn popup_button_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let pb = PopupButton::new("test").focus_handle(&handle);
+            assert!(
+                pb.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]
