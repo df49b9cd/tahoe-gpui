@@ -12,7 +12,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::layout::LayoutDirection;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle};
 use gpui::prelude::*;
 use gpui::{App, Hsla, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img, px};
@@ -170,20 +169,55 @@ fn status_color(status: AvatarStatus, theme: &TahoeTheme) -> Hsla {
 
 /// Apple-style monogram palette — saturated hues at medium lightness.
 const MONOGRAM_PALETTE: [Hsla; 7] = [
-    Hsla { h: 215.0 / 360.0, s: 0.70, l: 0.50, a: 1.0 }, // blue
-    Hsla { h: 145.0 / 360.0, s: 0.65, l: 0.42, a: 1.0 }, // green
-    Hsla { h: 30.0 / 360.0, s: 0.85, l: 0.55, a: 1.0 },  // orange
-    Hsla { h: 280.0 / 360.0, s: 0.60, l: 0.50, a: 1.0 }, // purple
-    Hsla { h: 340.0 / 360.0, s: 0.70, l: 0.55, a: 1.0 }, // pink
-    Hsla { h: 185.0 / 360.0, s: 0.65, l: 0.42, a: 1.0 }, // teal
-    Hsla { h: 0.0 / 360.0, s: 0.70, l: 0.50, a: 1.0 },   // red
+    Hsla {
+        h: 215.0 / 360.0,
+        s: 0.70,
+        l: 0.50,
+        a: 1.0,
+    }, // blue
+    Hsla {
+        h: 145.0 / 360.0,
+        s: 0.65,
+        l: 0.42,
+        a: 1.0,
+    }, // green
+    Hsla {
+        h: 30.0 / 360.0,
+        s: 0.85,
+        l: 0.55,
+        a: 1.0,
+    }, // orange
+    Hsla {
+        h: 280.0 / 360.0,
+        s: 0.60,
+        l: 0.50,
+        a: 1.0,
+    }, // purple
+    Hsla {
+        h: 340.0 / 360.0,
+        s: 0.70,
+        l: 0.55,
+        a: 1.0,
+    }, // pink
+    Hsla {
+        h: 185.0 / 360.0,
+        s: 0.65,
+        l: 0.42,
+        a: 1.0,
+    }, // teal
+    Hsla {
+        h: 0.0 / 360.0,
+        s: 0.70,
+        l: 0.50,
+        a: 1.0,
+    }, // red
 ];
 
 /// Deterministic background color for initials-based avatars.
 ///
 /// Hashes the fallback text and picks from a fixed 7-hue palette so
-/// the same name always produces the same color — matching Apple
-/// Contacts / Messages convention.
+/// the same name always produces the same color within a single
+/// compiled binary — matching Apple Contacts / Messages convention.
 fn monogram_color(fallback: &str) -> Hsla {
     let mut hasher = DefaultHasher::new();
     fallback.hash(&mut hasher);
@@ -223,7 +257,7 @@ impl RenderOnce for Avatar {
         let a11y_label: SharedString = self
             .accessibility_label
             .clone()
-            .unwrap_or_else(|| self.fallback.clone());
+            .unwrap_or_else(|| display_fallback.clone());
         let a11y_props = AccessibilityProps::new()
             .label(a11y_label)
             .role(AccessibilityRole::Image);
@@ -278,12 +312,10 @@ impl RenderOnce for Avatar {
                 None
             };
 
-            let is_rtl = theme.layout_direction == LayoutDirection::RightToLeft;
             let mut status_dot = div()
                 .absolute()
                 .bottom_0()
-                .when(is_rtl, |el| el.left_0())
-                .when(!is_rtl, |el| el.right_0())
+                .right_0()
                 .size(dot_size)
                 .rounded(theme.radius_full)
                 .bg(dot_bg)
