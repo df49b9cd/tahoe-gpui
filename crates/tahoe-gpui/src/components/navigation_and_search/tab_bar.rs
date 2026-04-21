@@ -22,6 +22,7 @@
 
 use crate::callback_types::{OnSharedStringChange, rc_wrap};
 use crate::components::content::badge::BadgeVariant;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{SurfaceContext, apply_focus_ring, apply_high_contrast_border};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
@@ -63,6 +64,14 @@ pub struct TabItem {
     /// Optional notification badge drawn at the trailing edge of the tab.
     /// HIG v2 recommends badges on tabs to indicate critical information.
     pub badge: Option<BadgeVariant>,
+    /// Optional per-tab focus handle. When every [`TabItem`] in a [`TabBar`]
+    /// carries one, the bar switches to the WAI-ARIA tablist focus model:
+    /// each tab is individually focusable, Enter/Space activate the focused
+    /// tab, and arrow-key navigation moves focus in lock-step with the
+    /// active-tab change. Callers mint the handles via
+    /// `cx.focus_handle()` and persist them across renders in their entity
+    /// state.
+    pub focus_handle: Option<FocusHandle>,
 }
 
 impl TabItem {
@@ -77,6 +86,7 @@ impl TabItem {
             body: body.into_any_element(),
             closable: false,
             badge: None,
+            focus_handle: None,
         }
     }
 
@@ -95,17 +105,62 @@ impl TabItem {
         self.badge = Some(badge);
         self
     }
+
+    /// Attach a [`FocusHandle`] so this individual tab participates in the
+    /// host's focus graph. When every [`TabItem`] in the [`TabBar`] carries
+    /// a handle, the bar follows the WAI-ARIA tablist pattern: Enter/Space
+    /// activate the focused tab, and arrow-key navigation moves focus in
+    /// lock-step with the active-tab change. Mixing tabs with and without
+    /// handles falls back to the legacy bar-level focus model.
+    ///
+    /// # Example
+    ///
+    /// Store handles on entity state and reuse them across renders —
+    /// minting a fresh handle inside `render()` destroys focus tracking
+    /// every frame:
+    ///
+    /// ```ignore
+    /// struct MyView {
+    ///     active: SharedString,
+    ///     tab_handles: [FocusHandle; 3],
+    /// }
+    ///
+    /// impl MyView {
+    ///     fn new(cx: &mut Context<Self>) -> Self {
+    ///         Self {
+    ///             active: "home".into(),
+    ///             tab_handles: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl Render for MyView {
+    ///     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    ///         TabBar::new("tabs").items(vec![
+    ///             TabItem::new("home", "Home", "…").focus_handle(&self.tab_handles[0]),
+    ///             TabItem::new("docs", "Docs", "…").focus_handle(&self.tab_handles[1]),
+    ///             TabItem::new("help", "Help", "…").focus_handle(&self.tab_handles[2]),
+    ///         ])
+    ///     }
+    /// }
+    /// ```
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
+    }
 }
 
 /// Compute the new tab index for a keyboard navigation action.
 ///
-/// Handles: Left/Right (wrapping), Home/End, ⌃Tab (next, wrapping),
-/// ⌃⇧Tab (previous, wrapping), and ⌘1..=⌘9 (jump to Nth tab).
+/// Handles: Left/Right (wrapping; swapped when `rtl`), Home/End, ⌃Tab
+/// (next, wrapping), ⌃⇧Tab (previous, wrapping), and ⌘1..=⌘9 (jump to
+/// Nth tab). Mirrors `SegmentedControl`'s RTL arrow-swap.
 pub(super) fn navigate_tab(
     key: &str,
     modifiers_platform: bool,
     modifiers_control: bool,
     modifiers_shift: bool,
+    rtl: bool,
     active_tab: &SharedString,
     tab_ids: &[SharedString],
 ) -> Option<usize> {
@@ -133,7 +188,16 @@ pub(super) fn navigate_tab(
         });
     }
 
-    match key {
+    // Visual-leading motion: under RTL the leading edge is on the right,
+    // so physical Right means "previous" and Left means "next". Home/End
+    // stay absolute.
+    let logical_key = match key {
+        "left" if rtl => "right",
+        "right" if rtl => "left",
+        other => other,
+    };
+
+    match logical_key {
         "left" => Some(if current == 0 { count - 1 } else { current - 1 }),
         "right" => Some((current + 1) % count),
         "home" => Some(0),
@@ -151,8 +215,20 @@ type OnCloseTab = Option<Box<dyn Fn(SharedString, &mut Window, &mut App) + 'stat
 ///
 /// ## Keyboard Navigation
 ///
-/// When focused: Left/Right (wrapping), Home/End, ⌃Tab / ⌃⇧Tab for
-/// next/previous, ⌘1..⌘9 to jump to a specific tab.
+/// When focused: Left/Right (wrapping; swapped under RTL), Home/End,
+/// ⌃Tab / ⌃⇧Tab for next/previous, ⌘1..⌘9 to jump to a specific tab.
+///
+/// ### Per-tab (WAI-ARIA tablist) focus mode
+///
+/// When every [`TabItem`] supplies a [`FocusHandle`] via
+/// [`TabItem::focus_handle`], the bar switches to the WAI-ARIA tablist
+/// focus model: each tab is individually focusable, Enter/Space activate
+/// the focused tab, and arrow-key navigation moves focus in lock-step
+/// with the active-tab change ("selection follows focus"). The bar
+/// container itself drops out of the document Tab sequence so Tab/Shift-
+/// Tab cross the widget at a single roving-tabindex stop (the active
+/// tab), matching ARIA Authoring Practices. Mixing tabs with and without
+/// handles falls back to the legacy bar-level focus model.
 #[derive(IntoElement)]
 pub struct TabBar {
     id: ElementId,
@@ -255,8 +331,17 @@ impl RenderOnce for TabBar {
 
         // Collect tab IDs before consuming items (needed for keyboard nav)
         let tab_ids: Vec<SharedString> = self.items.iter().map(|item| item.id.clone()).collect();
+        // Per-tab focus handles: enters WAI-ARIA tablist mode iff every
+        // `TabItem` supplied one. `Option<Vec<_>>::collect` returns
+        // `Some(v)` iff every element was `Some`.
+        let per_tab_handles: Option<Vec<FocusHandle>> = self
+            .items
+            .iter()
+            .map(|item| item.focus_handle.clone())
+            .collect();
         let active_for_keys = self.active_tab.clone();
         let style = self.style;
+        let rtl = theme.is_rtl();
 
         let mut tab_headers = Vec::new();
         let mut active_body: Option<AnyElement> = None;
@@ -270,6 +355,19 @@ impl RenderOnce for TabBar {
             if is_active {
                 active_body = Some(item.body);
             }
+
+            // WAI-ARIA tab role + aria-selected equivalent. `TabItem::label`
+            // is `AnyElement` so no VoiceOver label is attached here — the
+            // host supplies it via the label element itself. Currently a
+            // structural no-op (GPUI has no AX tree API); see
+            // `foundations::accessibility::voiceover` for the upstream wait.
+            let ax = AccessibilityProps::new()
+                .role(AccessibilityRole::Tab)
+                .value(if is_active {
+                    SharedString::from("selected")
+                } else {
+                    SharedString::from("unselected")
+                });
 
             let tab_id = item.id.clone();
             let tab_selector = format!("tab-bar-{selector_id}-tab-{idx}");
@@ -353,19 +451,74 @@ impl RenderOnce for TabBar {
 
             if let Some(ref handler) = on_change {
                 let click_handler = handler.clone();
-                let click_id = tab_id;
+                let click_id = tab_id.clone();
+                // In per-tab mode, clicks must also move keyboard focus to
+                // the clicked tab so a subsequent arrow-key press reads
+                // from the correct origin (belt-and-suspenders for GPUI's
+                // auto-focus on `.focusable()` elements).
+                let click_focus = per_tab_handles.as_ref().map(|h| h[idx].clone());
                 tab = tab.on_click(move |_event, window, cx| {
+                    if let Some(ref h) = click_focus {
+                        h.focus(window, cx);
+                    }
                     click_handler(click_id.clone(), window, cx);
                 });
             }
 
+            // WAI-ARIA tablist per-tab focus: each tab is individually
+            // focusable and handles Enter/Space activation. Follows the
+            // `focusable()` + `track_focus()` + `on_key_down(is_activation_key)`
+            // shape used by `ButtonLike::apply_to` and `SidebarItem`;
+            // `on_change` takes `SharedString` rather than `&ClickEvent`,
+            // so no synthetic event is synthesized. Only activation keys
+            // stop propagation — arrows / Home / End / ⌃Tab / ⌘-digit must
+            // bubble to the bar-level handler at the end of this method.
+            if let Some(handles) = per_tab_handles.as_ref() {
+                let handle = &handles[idx];
+                let tab_focused = handle.is_focused(window);
+                tab = tab.focusable().track_focus(handle);
+
+                // Focus ring must be distinguishable from the active-tab
+                // selection indicator (WCAG 2.4.7 Focus Visible). Match
+                // bar-level treatment: flat for document tabs, glass
+                // shadow slice for segmented/floating.
+                tab = match style {
+                    TabBarStyle::Document => apply_focus_ring(tab, theme, tab_focused, &[]),
+                    TabBarStyle::Segmented | TabBarStyle::Floating => apply_focus_ring(
+                        tab,
+                        theme,
+                        tab_focused,
+                        theme.glass.shadows(GlassSize::Small),
+                    ),
+                };
+
+                if let Some(ref handler) = on_change {
+                    let key_handler = handler.clone();
+                    let key_id = tab_id;
+                    tab = tab.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                        if crate::foundations::keyboard::is_activation_key(event) {
+                            cx.stop_propagation();
+                            key_handler(key_id.clone(), window, cx);
+                        }
+                    });
+                }
+            }
+
+            tab = tab.with_accessibility(&ax);
             tab_headers.push(tab);
         }
 
+        // Bar is a Tab-sequence stop only in legacy (non-per-tab) keyboard
+        // mode — WAI-ARIA roving tabindex requires per-tab mode to expose
+        // a single stop (the active tab), not N+1 (bar + every tab). The
+        // bar-level `on_key_down` below still fires in per-tab mode via
+        // event bubbling from the focused tab, so non-activation keys
+        // (arrows, Home / End, ⌃Tab, ⌘-digit) continue to route here.
+        let bar_focusable = per_tab_handles.is_none() || self.focus_handle.is_some();
         let mut tab_bar = div()
             .id(self.id)
             .debug_selector(move || tab_bar_selector.clone())
-            .focusable()
+            .when(bar_focusable, |el| el.focusable())
             .flex()
             .children(tab_headers);
 
@@ -377,15 +530,24 @@ impl RenderOnce for TabBar {
         if let Some(ref handler) = on_change {
             let key_handler = handler.clone();
             let key_tab_ids = tab_ids;
+            // When per-tab focus mode is active, arrow-nav must move focus
+            // in lock-step with the active-tab change so Enter/Space on
+            // the newly-focused tab re-confirms (rather than reverts) the
+            // selection — the ARIA "selection follows focus" pattern.
+            let nav_handles = per_tab_handles;
             tab_bar = tab_bar.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 if let Some(new_index) = navigate_tab(
                     event.keystroke.key.as_str(),
                     event.keystroke.modifiers.platform,
                     event.keystroke.modifiers.control,
                     event.keystroke.modifiers.shift,
+                    rtl,
                     &active_for_keys,
                     &key_tab_ids,
                 ) {
+                    if let Some(ref handles) = nav_handles {
+                        handles[new_index].focus(window, cx);
+                    }
                     key_handler(key_tab_ids[new_index].clone(), window, cx);
                 }
             });
@@ -512,11 +674,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("left", false, false, false, &"a".into(), &ids),
+            navigate_tab("left", false, false, false, false, &"a".into(), &ids),
             Some(2)
         );
         assert_eq!(
-            navigate_tab("left", false, false, false, &"b".into(), &ids),
+            navigate_tab("left", false, false, false, false, &"b".into(), &ids),
             Some(0)
         );
     }
@@ -526,11 +688,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("right", false, false, false, &"c".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("right", false, false, false, &"a".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"a".into(), &ids),
             Some(1)
         );
     }
@@ -540,11 +702,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("home", false, false, false, &"c".into(), &ids),
+            navigate_tab("home", false, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("end", false, false, false, &"a".into(), &ids),
+            navigate_tab("end", false, false, false, false, &"a".into(), &ids),
             Some(2)
         );
     }
@@ -554,7 +716,7 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec![];
         assert_eq!(
-            navigate_tab("right", false, false, false, &"a".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"a".into(), &ids),
             None
         );
     }
@@ -564,7 +726,7 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into()];
         assert_eq!(
-            navigate_tab("space", false, false, false, &"a".into(), &ids),
+            navigate_tab("space", false, false, false, false, &"a".into(), &ids),
             None
         );
     }
@@ -574,11 +736,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("tab", false, true, false, &"a".into(), &ids),
+            navigate_tab("tab", false, true, false, false, &"a".into(), &ids),
             Some(1)
         );
         assert_eq!(
-            navigate_tab("tab", false, true, false, &"c".into(), &ids),
+            navigate_tab("tab", false, true, false, false, &"c".into(), &ids),
             Some(0)
         );
     }
@@ -588,11 +750,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("tab", false, true, true, &"a".into(), &ids),
+            navigate_tab("tab", false, true, true, false, &"a".into(), &ids),
             Some(2)
         );
         assert_eq!(
-            navigate_tab("tab", false, true, true, &"b".into(), &ids),
+            navigate_tab("tab", false, true, true, false, &"b".into(), &ids),
             Some(0)
         );
     }
@@ -602,16 +764,54 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("1", true, false, false, &"c".into(), &ids),
+            navigate_tab("1", true, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("2", true, false, false, &"a".into(), &ids),
+            navigate_tab("2", true, false, false, false, &"a".into(), &ids),
             Some(1)
         );
         // Digit beyond tab count clamps to last.
         assert_eq!(
-            navigate_tab("9", true, false, false, &"a".into(), &ids),
+            navigate_tab("9", true, false, false, false, &"a".into(), &ids),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn navigate_rtl_swaps_left_right() {
+        use super::navigate_tab;
+        let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
+        // In RTL, physical Right moves to the previous tab (visual-leading)
+        // and Left moves to the next. Home/End stay absolute.
+        assert_eq!(
+            navigate_tab("right", false, false, false, true, &"b".into(), &ids),
+            Some(0),
+            "RTL Right should decrement"
+        );
+        assert_eq!(
+            navigate_tab("left", false, false, false, true, &"b".into(), &ids),
+            Some(2),
+            "RTL Left should increment"
+        );
+        // Wrapping still works under RTL.
+        assert_eq!(
+            navigate_tab("right", false, false, false, true, &"a".into(), &ids),
+            Some(2),
+            "RTL Right wraps from first to last"
+        );
+        assert_eq!(
+            navigate_tab("left", false, false, false, true, &"c".into(), &ids),
+            Some(0),
+            "RTL Left wraps from last to first"
+        );
+        // Home/End unchanged under RTL.
+        assert_eq!(
+            navigate_tab("home", false, false, false, true, &"c".into(), &ids),
+            Some(0)
+        );
+        assert_eq!(
+            navigate_tab("end", false, false, false, true, &"a".into(), &ids),
             Some(2)
         );
     }
@@ -620,7 +820,7 @@ mod tests {
 #[cfg(test)]
 mod interaction_tests {
     use gpui::prelude::*;
-    use gpui::{Context, IntoElement, Render, SharedString, TestAppContext, div};
+    use gpui::{Context, FocusHandle, IntoElement, Render, SharedString, TestAppContext, div};
 
     use super::{TabBar, TabItem};
     use crate::test_helpers::helpers::{
@@ -639,6 +839,19 @@ mod interaction_tests {
         changes: Vec<SharedString>,
         closed: Vec<SharedString>,
         closable: bool,
+        /// When `Some`, the bar renders in WAI-ARIA tablist mode with per-tab
+        /// focus handles. When `None`, falls back to the legacy bar-level
+        /// focus model.
+        tab_handles: Option<[FocusHandle; 3]>,
+        /// When true and `tab_handles` is `Some`, the middle tab's handle
+        /// is dropped at render time — simulating the mixed-mode contract
+        /// where the bar falls back to legacy keyboard mode because not
+        /// every item has a handle.
+        mixed_mode: bool,
+        /// Host-supplied bar focus handle. Required for legacy-mode tests
+        /// that need a real focused element to route key events into —
+        /// without it, `cx.press(...)` hits a default sink after a click.
+        bar_handle: Option<FocusHandle>,
     }
 
     impl TabBarHarness {
@@ -648,35 +861,61 @@ mod interaction_tests {
                 changes: Vec::new(),
                 closed: Vec::new(),
                 closable: false,
+                tab_handles: None,
+                mixed_mode: false,
+                bar_handle: None,
+            }
+        }
+
+        fn new_with_handles(cx: &mut Context<Self>, active: impl Into<SharedString>) -> Self {
+            Self {
+                active: active.into(),
+                changes: Vec::new(),
+                closed: Vec::new(),
+                closable: false,
+                tab_handles: Some([cx.focus_handle(), cx.focus_handle(), cx.focus_handle()]),
+                mixed_mode: false,
+                bar_handle: None,
             }
         }
     }
 
-    fn items(closable: bool) -> Vec<TabItem> {
-        vec![
-            TabItem::new(
-                "home",
-                "Home",
-                div()
-                    .debug_selector(|| PANEL_HOME.into())
-                    .child("Home body"),
-            ),
-            TabItem::new(
-                "settings",
-                "Settings",
-                div()
-                    .debug_selector(|| PANEL_SETTINGS.into())
-                    .child("Settings body"),
-            )
-            .closable(closable),
-            TabItem::new(
-                "profile",
-                "Profile",
-                div()
-                    .debug_selector(|| PANEL_PROFILE.into())
-                    .child("Profile body"),
-            ),
-        ]
+    fn items(closable: bool, handles: Option<&[FocusHandle; 3]>, mixed_mode: bool) -> Vec<TabItem> {
+        let mut home = TabItem::new(
+            "home",
+            "Home",
+            div()
+                .debug_selector(|| PANEL_HOME.into())
+                .child("Home body"),
+        );
+        let mut settings = TabItem::new(
+            "settings",
+            "Settings",
+            div()
+                .debug_selector(|| PANEL_SETTINGS.into())
+                .child("Settings body"),
+        )
+        .closable(closable);
+        let mut profile = TabItem::new(
+            "profile",
+            "Profile",
+            div()
+                .debug_selector(|| PANEL_PROFILE.into())
+                .child("Profile body"),
+        );
+
+        if let Some(handles) = handles {
+            home = home.focus_handle(&handles[0]);
+            // Dropping the middle handle triggers the mixed-mode fallback:
+            // `Option::<Vec<_>>::collect` on `item.focus_handle` yields
+            // `None`, which puts the bar back in legacy keyboard mode.
+            if !mixed_mode {
+                settings = settings.focus_handle(&handles[1]);
+            }
+            profile = profile.focus_handle(&handles[2]);
+        }
+
+        vec![home, settings, profile]
     }
 
     impl Render for TabBarHarness {
@@ -687,8 +926,12 @@ mod interaction_tests {
         ) -> impl IntoElement {
             let entity = cx.entity().clone();
             let close_entity = cx.entity().clone();
-            TabBar::new("tabs")
-                .items(items(self.closable))
+            let mut bar = TabBar::new("tabs")
+                .items(items(
+                    self.closable,
+                    self.tab_handles.as_ref(),
+                    self.mixed_mode,
+                ))
                 .active(self.active.clone())
                 .on_change(move |tab, _window, cx| {
                     entity.update(cx, |this, cx| {
@@ -702,7 +945,11 @@ mod interaction_tests {
                         this.closed.push(tab.clone());
                         cx.notify();
                     });
-                })
+                });
+            if let Some(ref h) = self.bar_handle {
+                bar = bar.focus_handle(h);
+            }
+            bar
         }
     }
 
@@ -795,6 +1042,269 @@ mod interaction_tests {
             assert_eq!(
                 host.closed.last().map(SharedString::as_ref),
                 Some("settings")
+            );
+        });
+    }
+
+    // ── WAI-ARIA tablist per-tab focus mode ──────────────────────────
+
+    #[gpui::test]
+    async fn enter_activates_focused_tab(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[1].focus(window, cx);
+        });
+        cx.press("enter");
+
+        host.update_in(cx, |host, _window, _cx| {
+            assert_eq!(host.active.as_ref(), "settings");
+            assert_eq!(
+                host.changes.last().map(SharedString::as_ref),
+                Some("settings")
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn space_activates_focused_tab(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[2].focus(window, cx);
+        });
+        cx.press("space");
+
+        host.update_in(cx, |host, _window, _cx| {
+            assert_eq!(host.active.as_ref(), "profile");
+            assert_eq!(
+                host.changes.last().map(SharedString::as_ref),
+                Some("profile")
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_right_moves_focus_to_next_tab(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[0].focus(window, cx);
+        });
+        cx.press("right");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "settings");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[1].is_focused(window),
+                "expected settings tab to receive focus after arrow-right"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_left_wraps_focus(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[0].focus(window, cx);
+        });
+        cx.press("left");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "profile");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[2].is_focused(window),
+                "expected profile tab to receive focus after arrow-left wraparound"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn home_end_move_focus(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "settings")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[1].focus(window, cx);
+        });
+        cx.press("home");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "home");
+            assert!(host.tab_handles.as_ref().unwrap()[0].is_focused(window));
+        });
+
+        cx.press("end");
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "profile");
+            assert!(host.tab_handles.as_ref().unwrap()[2].is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    async fn backward_compat_enter_without_handles_is_noop(cx: &mut TestAppContext) {
+        // Without per-tab handles, Enter/Space do not activate a tab —
+        // only clicks and the bar-level arrow/Home/End handler fire
+        // `on_change`. Regression guard so future edits don't accidentally
+        // wire per-tab activation to the bar-level focus.
+        //
+        // Bar handle is required here: without it, `cx.press(...)` after a
+        // click lands on a default sink rather than the bar's
+        // `on_key_down`, and the test would pass trivially (events routing
+        // nowhere) rather than proving `navigate_tab` returns `None` for
+        // Enter/Space.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            let mut harness = TabBarHarness::new(cx, "home");
+            harness.bar_handle = Some(cx.focus_handle());
+            harness
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.bar_handle.as_ref().unwrap().focus(window, cx);
+        });
+
+        cx.press("enter");
+        cx.press("space");
+
+        host.update_in(cx, |host, _window, _cx| {
+            assert!(
+                host.changes.is_empty(),
+                "Enter/Space must not fire on_change when per-tab handles are absent"
+            );
+            assert_eq!(host.active.as_ref(), "home");
+        });
+    }
+
+    // ── Mixed-mode fallback (pre-tab-focus regression guard) ─────────
+
+    #[gpui::test]
+    async fn mixed_handles_fall_back_to_bar_level(cx: &mut TestAppContext) {
+        // Contract: the bar switches to per-tab WAI-ARIA mode *only when
+        // every* `TabItem` carries a handle. If any handle is missing,
+        // the bar reverts to legacy bar-level keyboard mode — Enter/Space
+        // no longer activate a focused tab, and arrows still advance the
+        // selection via the bar handler.
+        //
+        // Regression guard for `Option::<Vec<_>>::collect` vs e.g.
+        // `any()` — the former is the contract, the latter would flip
+        // "iff every" to "iff any" silently.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            let mut harness = TabBarHarness::new_with_handles(cx, "home");
+            harness.mixed_mode = true;
+            harness.bar_handle = Some(cx.focus_handle());
+            harness
+        });
+
+        // Focus one of the two attached handles. In legacy mode, its
+        // Enter/Space don't fire on_change because the per-tab handler
+        // was never wired.
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[0].focus(window, cx);
+        });
+        cx.press("enter");
+        cx.press("space");
+
+        host.update_in(cx, |host, _window, _cx| {
+            assert!(
+                host.changes.is_empty(),
+                "mixed mode must not wire per-tab Enter/Space activation"
+            );
+        });
+
+        // Arrows still advance via the bar-level handler: focus the bar
+        // handle, press Right, and the active tab must move.
+        host.update_in(cx, |host, window, cx| {
+            host.bar_handle.as_ref().unwrap().focus(window, cx);
+        });
+        cx.press("right");
+        host.update_in(cx, |host, _window, _cx| {
+            assert_eq!(host.active.as_ref(), "settings");
+            assert_eq!(
+                host.changes.last().map(SharedString::as_ref),
+                Some("settings")
+            );
+        });
+    }
+
+    // ── Click focus-sync + Ctrl-Tab / Cmd-digit focus-sync ───────────
+
+    #[gpui::test]
+    async fn clicking_tab_in_per_tab_mode_moves_focus(cx: &mut TestAppContext) {
+        // Explicit guard that the per-tab on_click handler calls
+        // `handle.focus(...)` — not just on_change. A regression here
+        // would leave keyboard focus stuck on a previously-focused
+        // element after the user clicks a different tab.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        cx.click_on(TAB_SETTINGS);
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "settings");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[1].is_focused(window),
+                "click must move focus to the clicked tab in per-tab mode"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn ctrl_tab_moves_focus_in_per_tab_mode(cx: &mut TestAppContext) {
+        // `handles[new_index].focus(...)` fires for every `navigate_tab`
+        // `Some` return — not only arrow / Home / End. A future edit that
+        // narrows focus-sync to the arrow branch would silently regress
+        // Ctrl-Tab's focus-sync guarantee.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[0].focus(window, cx);
+        });
+        cx.press("ctrl-tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "settings");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[1].is_focused(window),
+                "Ctrl-Tab must move focus to the next tab in per-tab mode"
+            );
+        });
+
+        cx.press("ctrl-shift-tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "home");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[0].is_focused(window),
+                "Ctrl-Shift-Tab must move focus to the previous tab"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_digit_moves_focus_in_per_tab_mode(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabBarHarness::new_with_handles(cx, "home")
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.tab_handles.as_ref().unwrap()[0].focus(window, cx);
+        });
+        cx.press("cmd-3");
+        host.update_in(cx, |host, window, _cx| {
+            assert_eq!(host.active.as_ref(), "profile");
+            assert!(
+                host.tab_handles.as_ref().unwrap()[2].is_focused(window),
+                "Cmd-3 must move focus to the third tab"
             );
         });
     }
