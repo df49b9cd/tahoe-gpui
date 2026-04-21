@@ -514,7 +514,7 @@ impl SidebarItem {
 
     /// Attach a [`FocusHandle`] so the sidebar item participates in the
     /// host's focus graph. Takes precedence over [`focused`](Self::focused)
-    /// per [`resolve_focused`](crate::foundations::materials::resolve_focused).
+    /// per [`resolve_focused`].
     ///
     /// Each item must own its own handle — do not share a handle across
     /// multiple `SidebarItem`s, and do not reuse the enclosing `List`'s

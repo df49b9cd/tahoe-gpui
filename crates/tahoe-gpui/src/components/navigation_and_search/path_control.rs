@@ -169,7 +169,7 @@ impl PathControl {
 
     /// Attach a [`FocusHandle`] so the path control participates in the
     /// host's focus graph. Takes precedence over [`focused`](Self::focused)
-    /// per [`resolve_focused`](crate::foundations::materials::resolve_focused).
+    /// per [`resolve_focused`].
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self

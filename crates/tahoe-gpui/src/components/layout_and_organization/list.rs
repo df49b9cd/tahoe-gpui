@@ -202,9 +202,9 @@ impl List {
 
     /// Attach a [`FocusHandle`] so the list participates in the host's
     /// focus graph. Takes precedence over [`focused`](Self::focused) per
-    /// [`resolve_focused`](crate::foundations::materials::resolve_focused).
-    /// For [`ListStyle::Sidebar`], when the handle is focused the
-    /// currently selected row receives the keyboard-focus outline.
+    /// [`resolve_focused`]. For [`ListStyle::Sidebar`], when the handle
+    /// is focused the currently selected row receives the keyboard-focus
+    /// outline.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self

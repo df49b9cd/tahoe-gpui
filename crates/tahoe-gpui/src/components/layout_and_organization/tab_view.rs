@@ -132,9 +132,8 @@ impl TabView {
 
     /// Attach a [`FocusHandle`] so the tab view participates in the host's
     /// focus graph. Takes precedence over [`focused`](Self::focused) per
-    /// [`resolve_focused`](crate::foundations::materials::resolve_focused),
-    /// keeping the ring in sync with Tab navigation instead of a stale
-    /// `.focused(bool)` cache.
+    /// [`resolve_focused`], keeping the ring in sync with Tab navigation
+    /// instead of a stale `.focused(bool)` cache.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self

@@ -144,9 +144,9 @@ pub struct CollectionView {
     selected_index: Option<usize>,
     focused: bool,
     /// Optional host-supplied focus handle. Precedence rules live on
-    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
-    /// when set, the focus-ring derives from `handle.is_focused(window)`
-    /// and the root element threads `track_focus(&handle)`.
+    /// [`resolve_focused`]: when set, the focus-ring derives from
+    /// `handle.is_focused(window)` and the root element threads
+    /// `track_focus(&handle)`.
     focus_handle: Option<FocusHandle>,
     on_select: OnSelect,
 }
@@ -236,7 +236,7 @@ impl CollectionView {
 
     /// Attach a [`FocusHandle`] so the collection view participates in
     /// the host's focus graph. Takes precedence over [`focused`](Self::focused)
-    /// per [`resolve_focused`](crate::foundations::materials::resolve_focused).
+    /// per [`resolve_focused`].
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
         self
