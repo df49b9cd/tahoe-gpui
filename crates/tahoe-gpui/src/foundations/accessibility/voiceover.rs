@@ -84,6 +84,17 @@ pub enum AccessibilityRole {
     ProgressIndicator,
     /// Group of related controls with an accessibility label.
     Group,
+    /// Toolbar — horizontal bar of related actions. Matches WAI-ARIA
+    /// `role="toolbar"` and NSAccessibilityRole `.toolbar`.
+    ///
+    /// Keyboard semantics implemented by
+    /// [`crate::components::navigation_and_search::Toolbar`]: Left / Right
+    /// walk between registered items, Home / End jump to endpoints. Tab
+    /// follows GPUI's native tab-stop map — today that walks every
+    /// registered item in registration order before advancing past the
+    /// toolbar; full WAI-ARIA APG roving tabindex (where only the active
+    /// member exposes `tab_index(0)`) is not yet implemented.
+    Toolbar,
     /// Image / decorative media.
     Image,
     /// Heading at the given depth. Carries the level so VoiceOver's
@@ -266,6 +277,10 @@ mod tests {
         let with_role = AccessibilityProps::new().role(AccessibilityRole::Button);
         assert!(with_role.is_some());
         assert_eq!(with_role.role, Some(AccessibilityRole::Button));
+
+        let with_toolbar = AccessibilityProps::new().role(AccessibilityRole::Toolbar);
+        assert!(with_toolbar.is_some());
+        assert_eq!(with_toolbar.role, Some(AccessibilityRole::Toolbar));
 
         let with_value = AccessibilityProps::new().value("50 percent");
         assert!(with_value.is_some());
