@@ -2,7 +2,7 @@
 //!
 //! Ported from Streamdown's `incomplete-code-utils.ts`.
 
-use crate::utils::FenceScanner;
+use crate::fence::FenceScanner;
 
 /// Returns `true` if the markdown text has an unclosed code fence.
 ///

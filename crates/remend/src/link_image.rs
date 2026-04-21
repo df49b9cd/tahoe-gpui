@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
+use super::bracket::{find_matching_closing_bracket, find_matching_opening_bracket};
 use super::options::LinkMode;
 use super::ranges::CodeBlockRanges;
-use super::utils::{
-    find_matching_closing_bracket, find_matching_opening_bracket, is_list_marker_line,
-};
+use super::utils::is_list_marker_line;
 
 /// Handles incomplete URLs in links/images: `[text](partial-url`.
 fn handle_incomplete_url<'a>(
@@ -126,14 +125,19 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
                 // Check if it's a full link `[text](url)` — but only if `)` is
                 // on the same line (links cannot span lines per CommonMark).
                 if close_idx + 1 < bytes.len() && bytes[close_idx + 1] == b'(' {
-                    let after_paren = &text[close_idx + 2..];
+                    // Skip a leading CR/LF so a URL placed on a subsequent line
+                    // (chunk boundary splitting `](` from the URL) is still
+                    // recognized — must mirror handle_incomplete_url exactly.
+                    let raw = &text[close_idx + 2..];
+                    let skipped = raw.len() - raw.trim_start_matches(['\r', '\n']).len();
+                    let after_paren = &raw[skipped..];
                     let line_end = after_paren
                         .bytes()
                         .position(|b| matches!(b, b'\n' | b'\r'))
                         .unwrap_or(after_paren.len());
                     if let Some(url_end) = after_paren[..line_end].find(')') {
                         // Skip past this complete link.
-                        j = close_idx + 2 + url_end + 1;
+                        j = close_idx + 2 + skipped + url_end + 1;
                         continue;
                     }
                     // ) is not on the same line — the link is incomplete per CommonMark.
@@ -483,6 +487,25 @@ mod tests {
         assert_eq!(
             h_text_only("[a](url\nmore) [b](ok) [incomplete").as_ref(),
             "a](url\nmore) [b](ok) [incomplete"
+        );
+    }
+
+    #[test]
+    fn find_first_incomplete_bracket_skips_leading_newline_before_url() {
+        // The first link `[a](\nURL)` is complete (chunk boundary split `](` from
+        // the URL); find_first_incomplete_bracket must skip past it and strip
+        // only the unmatched `[b` — not the preceding complete `[a]`.
+        assert_eq!(
+            h_text_only("[a](\nhttp://example.com) [b").as_ref(),
+            "[a](\nhttp://example.com) b"
+        );
+    }
+
+    #[test]
+    fn find_first_incomplete_bracket_skips_leading_crlf_before_url() {
+        assert_eq!(
+            h_text_only("[a](\r\nhttp://example.com) [b").as_ref(),
+            "[a](\r\nhttp://example.com) b"
         );
     }
 }

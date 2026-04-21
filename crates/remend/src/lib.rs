@@ -9,6 +9,8 @@
 //! and closing unterminated formatting markers so content renders correctly
 //! during token-by-token streaming.
 
+mod bracket;
+mod fence;
 mod options;
 mod ranges;
 mod utils;
