@@ -1620,6 +1620,20 @@ fn idempotency_seeds_pipeline() {
                 o.inline_katex = true;
             }),
         ),
+        (
+            "$$`\n\\",
+            only(|o| {
+                o.inline_code = true;
+                o.katex = true;
+            }),
+        ),
+        (
+            "$$`\na\\",
+            only(|o| {
+                o.inline_code = true;
+                o.katex = true;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {

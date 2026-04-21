@@ -10,6 +10,29 @@ fn is_inside_incomplete_code_block(text: &str) -> bool {
     crate::incomplete_code::has_incomplete_code_fence(text)
 }
 
+/// Returns `true` if the backtick at `backtick_pos` is inside an unclosed
+/// `$$` block-level KaTeX region. Scans up to `backtick_pos`, toggling a
+/// boolean for each unescaped `$$` run.
+fn is_inside_unclosed_dollar_block(text: &str, backtick_pos: usize) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    let mut in_block = false;
+
+    while i < backtick_pos {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'$' {
+            in_block = !in_block;
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    in_block
+}
+
 /// Handles inline triple backticks on a single line (not a fence).
 /// E.g. `` ```code`` `` → `` ```code``` ``.
 fn handle_inline_triple_backticks(text: &str) -> Option<Cow<'_, str>> {
@@ -44,13 +67,7 @@ pub fn handle(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
 
-    // Look for incomplete inline code: odd number of single backticks.
-    // First, check if there's even a backtick.
-    if !text.contains('`') {
-        return Cow::Borrowed(text);
-    }
-
-    // Find the last single backtick and check content after it.
+    // Find the last single backtick early so we can check $...$ context.
     let bytes = text.as_bytes();
     let mut last_backtick = None;
     let mut i = bytes.len();
@@ -76,13 +93,23 @@ pub fn handle(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
 
+    // Don't close backticks inside an unclosed $$ block (KaTeX).
+    if let Some(pos) = last_backtick
+        && is_inside_unclosed_dollar_block(text, pos)
+    {
+        return Cow::Borrowed(text);
+    }
+
     // Check if content after the opening backtick is meaningful.
     if let Some(pos) = last_backtick {
         let content = &text[pos + 1..];
         if content.is_empty()
-            || content
-                .bytes()
-                .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'_' | b'~' | b'*' | b'`' | b'$'))
+            || content.bytes().all(|b| {
+                matches!(
+                    b,
+                    b' ' | b'\t' | b'\n' | b'_' | b'~' | b'*' | b'`' | b'$' | b'\\'
+                )
+            })
         {
             return Cow::Borrowed(text);
         }
@@ -139,5 +166,17 @@ mod tests {
         let once = handle("`\\").into_owned();
         let twice = handle(&once).into_owned();
         assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn does_not_complete_inside_unclosed_dollar_block() {
+        // Backtick after opening $$ should not be completed.
+        assert!(matches!(handle("$$`code"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn completes_after_closed_dollar_block() {
+        // Backtick after closed $$ should still be completed.
+        assert_eq!(handle("$$x$$`code").as_ref(), "$$x$$`code`");
     }
 }
