@@ -18,6 +18,9 @@ use gpui::{
 
 use crate::callback_types::OnMutCallback;
 use crate::components::layout_and_organization::separator::Separator;
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
+};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, SPACING_4};
@@ -904,6 +907,12 @@ fn render_rows(
                 // label color. Not interactive, so no hit region — the
                 // click event handler in `Render` already skips this
                 // variant via `activate_item`'s `Item(..)` match.
+                // a11y: expose as Heading(3) with the original (mixed-case)
+                // label so VoiceOver announces the group boundary even
+                // though the visual row is skipped by keyboard navigation.
+                let a11y = AccessibilityProps::new()
+                    .role(AccessibilityRole::Heading(HeadingLevel::new_clamped(3)))
+                    .label(label.clone());
                 children.push(
                     div()
                         .w_full()
@@ -912,6 +921,7 @@ fn render_rows(
                         .px(t.spacing_sm)
                         .text_color(t.dim_secondary_label)
                         .child(SharedString::from(label.to_uppercase()))
+                        .with_accessibility(&a11y)
                         .into_any_element(),
                 );
             }
@@ -1010,6 +1020,12 @@ fn render_rows(
                     ));
                 }
 
+                let mut a11y = AccessibilityProps::menu_item(item.label.clone());
+                if item.checked {
+                    a11y = a11y.value("On");
+                }
+                row = row.with_accessibility(&a11y);
+
                 children.push(row.into_any_element());
             }
             ContextMenuEntry::Submenu { label, icon, .. } => {
@@ -1096,6 +1112,9 @@ fn render_rows(
                         }
                     }));
                 }
+
+                let a11y = AccessibilityProps::menu_item(label.clone());
+                row = row.with_accessibility(&a11y);
 
                 children.push(row.into_any_element());
             }
