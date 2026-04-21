@@ -510,13 +510,15 @@ impl RenderOnce for Picker {
                             "Selected"
                         } else {
                             "Unselected"
-                        }),
+                        })
+                        .posinset(idx + 1)
+                        .setsize(item_count),
                 );
                 list = list.child(row);
             }
 
             list = apply_focus_ring(list, theme, focused, &[]);
-            let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
+            let mut group_props = AccessibilityProps::new().role(AccessibilityRole::RadioGroup);
             if let Some(label) = self.accessibility_label {
                 group_props = group_props.label(label);
             }
