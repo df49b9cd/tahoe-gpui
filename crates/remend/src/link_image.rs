@@ -89,10 +89,10 @@ fn handle_incomplete_text<'a>(
         let before = &text[..start];
 
         if is_image {
-            return Some(Cow::Owned(before.trim_end().to_owned()));
+            return Some(strip_image_and_recurse(before, link_mode));
         }
 
-        return Some(make_incomplete_link(text, open_index, link_mode, ranges));
+        return Some(make_incomplete_link(text, link_mode));
     }
 
     // Check if the closing bracket actually matches (accounting for nesting).
@@ -100,11 +100,73 @@ fn handle_incomplete_text<'a>(
     if closing.is_none() {
         let before = &text[..start];
         if is_image {
-            return Some(Cow::Owned(before.trim_end().to_owned()));
+            return Some(strip_image_and_recurse(before, link_mode));
         }
-        return Some(make_incomplete_link(text, open_index, link_mode, ranges));
+        return Some(make_incomplete_link(text, link_mode));
     }
 
+    None
+}
+
+/// After stripping an incomplete image, tail-trim the prefix so any remaining
+/// incomplete `[` (now newly trailing) is handled in the same pass. Without
+/// this, pass 1 would leave an unmatched `[` that pass 2 would then complete,
+/// breaking idempotency.
+fn strip_image_and_recurse<'a>(before: &str, link_mode: LinkMode) -> Cow<'a, str> {
+    let mut current = before.trim_end().to_owned();
+    loop {
+        let trimmed = current.trim_end();
+        if trimmed.len() < current.len() {
+            current.truncate(trimmed.len());
+        }
+        let r = CodeBlockRanges::new(&current);
+        let Some(pos) = find_last_incomplete_bracket(&current, &r) else {
+            break;
+        };
+        if !current[..pos].ends_with('!') {
+            return make_incomplete_link(&current, link_mode);
+        }
+        current = current[..pos - 1].to_owned();
+    }
+    Cow::Owned(current)
+}
+
+/// Scans backward through `text` for the last incomplete `[` -- one that has
+/// no closing `]`, or whose `](` has no same-line `)`. Skips code regions,
+/// images, and task-list markers. Returns the byte index of the incomplete `[`,
+/// or `None` if every bracket is matched.
+fn find_last_incomplete_bracket(text: &str, ranges: &CodeBlockRanges) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut j = bytes.len();
+    while j > 0 {
+        j -= 1;
+        if bytes[j] == b'['
+            && !ranges.is_inside_code(j)
+            && !text[..j].ends_with('!')
+            && !is_task_list_marker_start(text, j)
+        {
+            let after = &text[j + 1..];
+            if !after.contains(']') {
+                return Some(j);
+            }
+            if let Some(close_idx) = find_matching_closing_bracket(text, j, ranges) {
+                if close_idx + 1 < bytes.len() && bytes[close_idx + 1] == b'(' {
+                    let raw = &text[close_idx + 2..];
+                    let skipped = raw.len() - raw.trim_start_matches(['\r', '\n']).len();
+                    let after_paren = &raw[skipped..];
+                    let line_end = after_paren
+                        .bytes()
+                        .position(|b| matches!(b, b'\n' | b'\r'))
+                        .unwrap_or(after_paren.len());
+                    if !after_paren[..line_end].contains(')') {
+                        return Some(j);
+                    }
+                }
+            } else {
+                return Some(j);
+            }
+        }
+    }
     None
 }
 
@@ -122,12 +184,12 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
             }
             // Check if this `[` has a matching `]`.
             if let Some(close_idx) = find_matching_closing_bracket(text, j, ranges) {
-                // Check if it's a full link `[text](url)` — but only if `)` is
+                // Check if it's a full link `[text](url)` -- but only if `)` is
                 // on the same line (links cannot span lines per CommonMark).
                 if close_idx + 1 < bytes.len() && bytes[close_idx + 1] == b'(' {
                     // Skip a leading CR/LF so a URL placed on a subsequent line
                     // (chunk boundary splitting `](` from the URL) is still
-                    // recognized — must mirror handle_incomplete_url exactly.
+                    // recognized -- must mirror handle_incomplete_url exactly.
                     let raw = &text[close_idx + 2..];
                     let skipped = raw.len() - raw.trim_start_matches(['\r', '\n']).len();
                     let after_paren = &raw[skipped..];
@@ -140,7 +202,7 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
                         j = close_idx + 2 + skipped + url_end + 1;
                         continue;
                     }
-                    // ) is not on the same line — the link is incomplete per CommonMark.
+                    // ) is not on the same line -- the link is incomplete per CommonMark.
                     return j;
                 }
                 j = close_idx + 1;
@@ -157,25 +219,38 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
 }
 
 /// Creates the appropriate incomplete link output based on link mode.
-fn make_incomplete_link<'a>(
-    text: &str,
-    open_index: usize,
-    link_mode: LinkMode,
-    ranges: &CodeBlockRanges,
-) -> Cow<'a, str> {
+fn make_incomplete_link<'a>(text: &str, link_mode: LinkMode) -> Cow<'a, str> {
     match link_mode {
         LinkMode::TextOnly => {
-            // Find the first incomplete `[` (scanning forward) and strip just that bracket.
-            let first_incomplete = find_first_incomplete_bracket(text, open_index, ranges);
-            let mut result = String::with_capacity(text.len());
-            result.push_str(&text[..first_incomplete]);
-            result.push_str(&text[first_incomplete + 1..]);
-            Cow::Owned(result)
+            // Iteratively strip incomplete brackets until none remain.
+            // This avoids multi-pass instability where each pass strips one bracket.
+            let mut current = text.to_string();
+            loop {
+                let r = CodeBlockRanges::new(&current);
+                let Some(pos) = find_last_incomplete_bracket(&current, &r) else {
+                    break;
+                };
+                let first = find_first_incomplete_bracket(&current, pos, &r);
+                current.remove(first);
+            }
+            // Stripping can expose a lone trailing space (e.g. ``[ [` ->
+            // `` `). The top-level `remend()` applies the same rule before
+            // any handler runs, so match it here to stay idempotent in one pass.
+            if current.ends_with(' ') && !current.ends_with("  ") {
+                current.pop();
+            }
+            Cow::Owned(current)
         }
         LinkMode::Protocol => {
-            let mut result = String::with_capacity(text.len() + 32);
+            const MARKER: &str = "](streamdown:incomplete-link)";
+            // Don't re-append: the only unmatched `[` is a prefix to an
+            // already-completed link, and appending would break idempotency.
+            if text.ends_with(MARKER) {
+                return Cow::Owned(text.to_owned());
+            }
+            let mut result = String::with_capacity(text.len() + MARKER.len());
             result.push_str(text);
-            result.push_str("](streamdown:incomplete-link)");
+            result.push_str(MARKER);
             Cow::Owned(result)
         }
     }
@@ -231,7 +306,7 @@ pub(crate) fn handle_with_ranges<'a>(
 
     let bytes = text.as_bytes();
 
-    // Phase 1: Look for `](` pattern — incomplete URL.
+    // Phase 1: Look for `](` pattern -- incomplete URL.
     if let Some(pos) = text.rfind("](")
         && !ranges.is_inside_code(pos)
     {
@@ -461,13 +536,13 @@ mod tests {
 
     #[test]
     fn inline_code_closing_bracket_doesnt_false_match() {
-        // `](` outside code but `[` inside code — not a link.
+        // `](` outside code but `[` inside code -- not a link.
         assert!(matches!(h("`[text` ](url"), Cow::Borrowed(_)));
     }
 
     #[test]
     fn close_paren_on_next_line_does_not_complete_link() {
-        // `)` on line 2 must not close the URL — the link is incomplete.
+        // `)` on line 2 must not close the URL -- the link is incomplete.
         assert_eq!(
             h("[a](url\nother)").as_ref(),
             "[a](streamdown:incomplete-link)"
@@ -481,12 +556,11 @@ mod tests {
 
     #[test]
     fn find_first_incomplete_bracket_multiline_url() {
-        // [a](url\nmore) is incomplete (no same-line ')'), so
-        // find_first_incomplete_bracket should return position 0 — the
-        // first `[` is stripped, leaving the rest of the text intact.
+        // [a](url\nmore) is incomplete (no same-line ')'), and [incomplete
+        // has no closing ]. Both are stripped in one pass for idempotency.
         assert_eq!(
             h_text_only("[a](url\nmore) [b](ok) [incomplete").as_ref(),
-            "a](url\nmore) [b](ok) [incomplete"
+            "a](url\nmore) [b](ok) incomplete"
         );
     }
 
@@ -494,7 +568,7 @@ mod tests {
     fn find_first_incomplete_bracket_skips_leading_newline_before_url() {
         // The first link `[a](\nURL)` is complete (chunk boundary split `](` from
         // the URL); find_first_incomplete_bracket must skip past it and strip
-        // only the unmatched `[b` — not the preceding complete `[a]`.
+        // only the unmatched `[b` -- not the preceding complete `[a]`.
         assert_eq!(
             h_text_only("[a](\nhttp://example.com) [b").as_ref(),
             "[a](\nhttp://example.com) b"

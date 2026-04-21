@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::utils::{count_single_backticks, cow_append};
+use super::utils::{count_single_backticks, cow_append, ends_with_odd_backslashes};
 
 /// Returns `true` if the text is inside an incomplete fenced code block.
 ///
@@ -90,6 +90,9 @@ pub fn handle(text: &str) -> Cow<'_, str> {
 
     let count = count_single_backticks(text);
     if count % 2 == 1 {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         return cow_append(text, "`");
     }
 
@@ -124,5 +127,17 @@ mod tests {
     #[test]
     fn escaped_backtick() {
         assert!(matches!(handle("\\`code"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn leaves_trailing_backslash() {
+        assert!(matches!(handle("`\\"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn idempotent_with_trailing_backslash() {
+        let once = handle("`\\").into_owned();
+        let twice = handle(&once).into_owned();
+        assert_eq!(twice, once);
     }
 }

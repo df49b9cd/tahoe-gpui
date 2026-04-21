@@ -1306,9 +1306,10 @@ fn text_only_link_with_preceding_complete_link() {
 #[test]
 fn text_only_nested_brackets() {
     let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    // Both [outer and [inner are incomplete — all stripped in one pass for idempotency.
     assert_eq!(
         remend("Text [outer [inner", &opts).as_ref(),
-        "Text outer [inner"
+        "Text outer inner"
     );
 }
 
@@ -1531,16 +1532,112 @@ impl RemendHandler for Recorder {
     }
 }
 
-/// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`). Stays
-/// active as a plain `#[test]` so removing `#[ignore]` once #144 is fixed
-/// reactivates the guard without needing the proptest to run.
+/// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`).
 #[test]
-#[ignore = "blocked on issue #144 — italic-asterisk handler re-opens on second pass"]
 fn idempotency_regression_0144() {
     let opts = RemendOptions::default();
     let once = remend("*0\t", &opts).into_owned();
     let twice = remend(&once, &opts).into_owned();
     assert_eq!(twice, once);
+}
+
+/// Pipeline-level idempotency tripwires for each proptest regression seed.
+/// These exercise the full remend() pipeline (not individual handlers).
+#[test]
+fn idempotency_seeds_pipeline() {
+    fn only(f: impl FnOnce(&mut RemendOptions)) -> RemendOptions {
+        let mut o = RemendOptions {
+            bold: false,
+            italic: false,
+            bold_italic: false,
+            inline_code: false,
+            strikethrough: false,
+            links: false,
+            images: false,
+            katex: false,
+            inline_katex: false,
+            setext_headings: false,
+            html_tags: false,
+            single_tilde: false,
+            comparison_operators: false,
+            link_mode: LinkMode::Protocol,
+            handlers: Vec::new(),
+        };
+        f(&mut o);
+        o
+    }
+
+    let seeds: &[(&str, RemendOptions)] = &[
+        (
+            "_$",
+            only(|o| {
+                o.italic = true;
+                o.inline_katex = true;
+            }),
+        ),
+        (
+            "[[",
+            only(|o| {
+                o.links = true;
+            }),
+        ),
+        (
+            "`\\",
+            only(|o| {
+                o.inline_code = true;
+            }),
+        ),
+        (
+            "*\\",
+            only(|o| {
+                o.italic = true;
+            }),
+        ),
+        (
+            "_*>0",
+            only(|o| {
+                o.italic = true;
+            }),
+        ),
+        (
+            "``[ [",
+            only(|o| {
+                o.links = true;
+                o.link_mode = LinkMode::TextOnly;
+            }),
+        ),
+        (
+            "$**",
+            only(|o| {
+                o.bold = true;
+                o.inline_katex = true;
+            }),
+        ),
+    ];
+
+    for (input, opts) in seeds {
+        let once = remend(input, opts).into_owned();
+        let twice = remend(&once, opts).into_owned();
+        assert_eq!(
+            twice, once,
+            "idempotency violated for seed {input:?} with opts {opts:?}"
+        );
+    }
+}
+
+/// Deterministic coverage for known-risky prefix + trailing-backslash combos.
+#[test]
+fn idempotency_trailing_backslash_combos() {
+    let inputs = ["**\\", "~~\\", "$*\\", "$$\\", "***\\"];
+    let opts = RemendOptions::default();
+    for input in inputs {
+        let once = remend(input, &opts).into_owned();
+        let twice = remend(&once, &opts).into_owned();
+        assert_eq!(
+            twice, once,
+            "idempotency violated for trailing-backslash input {input:?}"
+        );
+    }
 }
 
 proptest! {
@@ -1569,9 +1666,8 @@ proptest! {
 
     // Idempotency stress test across every option combination. Collapsed from
     // four near-duplicates; the direct regression test above is the canonical
-    // tripwire. Stays #[ignore]d until #144 is fixed.
+    // tripwire.
     #[test]
-    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
     fn fuzz_idempotent_all_option_combinations(
         s in markdown_soup(),
         flags in arbitrary_options(),

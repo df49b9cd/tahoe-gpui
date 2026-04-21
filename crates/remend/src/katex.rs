@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::ranges::CodeBlockRanges;
-use super::utils::cow_append;
+use super::utils::{cow_append, ends_with_odd_backslashes};
 
 /// What the dollar-scanner sees at each non-escaped, non-code-block position.
 enum DollarToken {
@@ -100,8 +100,16 @@ pub(crate) fn handle_block_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
+    // Don't append into an unclosed code span (see handle_inline_with_ranges).
+    if ranges.is_inside_code(text.len()) {
+        return Cow::Borrowed(text);
+    }
+
     // If text already ends with a single $ (but not $$), just add one more.
     if text.ends_with('$') && !text.ends_with("$$") {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         return cow_append(text, "$");
     }
 
@@ -114,6 +122,9 @@ pub(crate) fn handle_block_with_ranges<'a>(
         }
     }
 
+    if ends_with_odd_backslashes(text) {
+        return Cow::Borrowed(text);
+    }
     cow_append(text, "$$")
 }
 
@@ -129,10 +140,22 @@ pub(crate) fn handle_inline_with_ranges<'a>(
     ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
     let count = count_single_dollars_with_ranges(text, ranges);
-    if count % 2 == 1 {
-        return cow_append(text, "$");
+    if count.is_multiple_of(2) {
+        return Cow::Borrowed(text);
     }
-    Cow::Borrowed(text)
+    // Don't merge into an existing `$` (creating `$$` that block katex
+    // would then try to close).
+    if text.ends_with('$') {
+        return Cow::Borrowed(text);
+    }
+    // Don't append into an unclosed code span.
+    if ranges.is_inside_code(text.len()) {
+        return Cow::Borrowed(text);
+    }
+    if ends_with_odd_backslashes(text) {
+        return Cow::Borrowed(text);
+    }
+    cow_append(text, "$")
 }
 
 #[cfg(test)]
@@ -251,5 +274,28 @@ mod tests {
     #[test]
     fn skips_escaped_dollar_dollar_in_search() {
         assert_eq!(handle_block("\\$$x$$y").as_ref(), "\\$$x$$y$$");
+    }
+
+    #[test]
+    fn inline_katex_leaves_unclosed_backtick_alone() {
+        assert!(matches!(handle_inline("$`"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn inline_katex_idempotent_with_unclosed_backtick() {
+        let once = handle_inline("$`").into_owned();
+        let twice = handle_inline(&once).into_owned();
+        assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn block_katex_leaves_unclosed_backtick_alone() {
+        assert!(matches!(handle_block("$$`"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn inline_katex_does_not_merge_with_trailing_dollar() {
+        assert!(matches!(handle_inline("_$"), Cow::Borrowed(_)));
+        assert!(matches!(handle_inline("$"), Cow::Borrowed(_)));
     }
 }

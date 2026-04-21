@@ -18,6 +18,9 @@ pub struct CodeBlockRanges {
     complete_inline_code_ranges: Vec<std::ops::Range<usize>>,
     /// Sorted, non-overlapping byte ranges inside math blocks ($..$ or $$..$$).
     math_ranges: Vec<std::ops::Range<usize>>,
+    /// Sorted, non-overlapping byte ranges inside *complete* math spans (both
+    /// opening and closing `$`/`$$` present). Unterminated math is excluded.
+    complete_math_ranges: Vec<std::ops::Range<usize>>,
     /// Sorted, non-overlapping byte ranges inside the URL portion of a link/image
     /// `](url)` whose `)` is on the same line.
     link_url_ranges: Vec<std::ops::Range<usize>>,
@@ -31,12 +34,14 @@ impl CodeBlockRanges {
         let code_ranges = Self::compute_code_ranges(text);
         let complete_inline_code_ranges = Self::compute_complete_inline_code_ranges(text);
         let math_ranges = Self::compute_math_ranges(text);
+        let complete_math_ranges = Self::compute_complete_math_ranges(text);
         let link_url_ranges = Self::compute_link_url_ranges(text);
         let html_tag_ranges = Self::compute_html_tag_ranges(text);
         Self {
             code_ranges,
             complete_inline_code_ranges,
             math_ranges,
+            complete_math_ranges,
             link_url_ranges,
             html_tag_ranges,
         }
@@ -62,6 +67,15 @@ impl CodeBlockRanges {
     /// Equivalent to `utils::is_within_math_block(text, position)` but O(log n).
     pub fn is_within_math(&self, position: usize) -> bool {
         Self::position_in_ranges(&self.math_ranges, position)
+    }
+
+    /// Returns true if the position is inside a *complete* math span (both
+    /// opening and closing `$`/`$$` present). Unlike `is_within_math`, this
+    /// returns `false` for positions after an unclosed `$` — emphasis counters
+    /// rely on this so a lone dollar sign doesn't swallow their own trailing
+    /// completion markers across passes.
+    pub fn is_within_complete_math(&self, position: usize) -> bool {
+        Self::position_in_ranges(&self.complete_math_ranges, position)
     }
 
     /// Returns true if the position is inside a link/image URL `](url)` whose
@@ -213,6 +227,53 @@ impl CodeBlockRanges {
         // code/inline-code trailing-range convention.
         if (in_block_math || in_inline_math) && math_start <= len {
             ranges.push(math_start..len + 1);
+        }
+
+        ranges
+    }
+
+    /// Like `compute_math_ranges` but only emits ranges for math spans that
+    /// actually close. Unterminated math at EOF produces no range — emphasis
+    /// counters rely on this so a lone dollar sign doesn't swallow their
+    /// trailing completion markers across passes. Boundary rules otherwise
+    /// match `compute_math_ranges` (see its doc comment for worked examples).
+    fn compute_complete_math_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut ranges = Vec::new();
+        let mut in_inline_math = false;
+        let mut in_block_math = false;
+        let mut math_start: usize = 0;
+        let mut i = 0;
+
+        while i < len {
+            if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'$' {
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'$' {
+                if i + 1 < len && bytes[i + 1] == b'$' {
+                    if in_block_math {
+                        ranges.push(math_start..i + 1);
+                        in_block_math = false;
+                    } else {
+                        in_block_math = true;
+                        math_start = i + 1;
+                    }
+                    i += 2;
+                    in_inline_math = false;
+                    continue;
+                } else if !in_block_math {
+                    if in_inline_math {
+                        ranges.push(math_start..i + 1);
+                        in_inline_math = false;
+                    } else {
+                        in_inline_math = true;
+                        math_start = i + 1;
+                    }
+                }
+            }
+            i += 1;
         }
 
         ranges

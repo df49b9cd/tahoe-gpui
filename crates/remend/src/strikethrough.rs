@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::emphasis::find_trailing_strikethrough;
 use super::ranges::CodeBlockRanges;
-use super::utils::{cow_append, is_empty_or_markers};
+use super::utils::{cow_append, ends_with_odd_backslashes, is_empty_or_markers};
 
 /// Counts `~~` pairs in the text.
 fn count_double_tildes(text: &str) -> usize {
@@ -58,12 +58,16 @@ pub(crate) fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) ->
         }
         if ranges.is_inside_code(marker_index)
             || ranges.is_within_complete_inline_code(marker_index)
+            || ranges.is_within_complete_math(marker_index)
         {
             return Cow::Borrowed(text);
         }
 
         let pairs = count_double_tildes(text);
         if pairs % 2 == 1 {
+            if ends_with_odd_backslashes(text) {
+                return Cow::Borrowed(text);
+            }
             return cow_append(text, "~~");
         }
     } else {
@@ -71,9 +75,13 @@ pub(crate) fn handle_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRanges) ->
         if let Some(marker_index) = find_half_complete_tilde(text)
             && !ranges.is_inside_code(marker_index)
             && !ranges.is_within_complete_inline_code(marker_index)
+            && !ranges.is_within_complete_math(marker_index)
         {
             let pairs = count_double_tildes(text);
             if pairs % 2 == 1 {
+                if ends_with_odd_backslashes(text) {
+                    return Cow::Borrowed(text);
+                }
                 return cow_append(text, "~");
             }
         }
@@ -110,5 +118,17 @@ mod tests {
     #[test]
     fn inside_code_block() {
         assert!(matches!(handle("```\n~~strike\n```"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn leaves_trailing_backslash() {
+        assert!(matches!(handle("~~\\"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn idempotent_with_trailing_backslash() {
+        let once = handle("~~\\").into_owned();
+        let twice = handle(&once).into_owned();
+        assert_eq!(twice, once);
     }
 }
