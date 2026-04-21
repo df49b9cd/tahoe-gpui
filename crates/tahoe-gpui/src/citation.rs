@@ -464,7 +464,15 @@ impl RenderOnce for InlineCitation {
         // order (GPUI's `.focusable()` alone leaves `tab_stop = false`,
         // and the tab-order walker skips non-tab-stops). `focus_visible`
         // paints the HIG focus ring only when the element was reached via
-        // the keyboard, matching CSS `:focus-visible` semantics.
+        // the keyboard, matching CSS `:focus-visible` semantics — a
+        // deliberate departure from `foundations::materials::apply_focus_ring`
+        // used by `ButtonLike` / `MenuBar`, which show the ring on any
+        // focus (mouse or keyboard). Those controls own a `FocusHandle`;
+        // a stateless `RenderOnce` component can't participate in that
+        // helper without threading a handle through its public builder
+        // API. Keyboard-only rings are also the closer match to macOS
+        // HIG, so aligning `ButtonLike` / `MenuBar` with `:focus-visible`
+        // in a follow-up is the right direction.
         if let Some(url) = self.source.url {
             let url_for_click = url.clone();
             let focus_ring = theme.focus_ring_shadows();
