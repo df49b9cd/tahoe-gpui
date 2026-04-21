@@ -6,6 +6,7 @@
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::components::selection_and_input::segmented_control::{SegmentItem, SegmentedControl};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
@@ -116,6 +117,7 @@ pub struct Picker {
     highlighted_index: Option<usize>,
     /// Visual style. Defaults to [`PickerStyle::Menu`].
     style: PickerStyle,
+    accessibility_label: Option<SharedString>,
 }
 
 impl Picker {
@@ -133,6 +135,7 @@ impl Picker {
             focused: false,
             highlighted_index: None,
             style: PickerStyle::Menu,
+            accessibility_label: None,
         }
     }
 
@@ -165,6 +168,22 @@ impl Picker {
 
     pub fn open(mut self, open: bool) -> Self {
         self.is_open = open;
+        self
+    }
+
+    /// Accessibility label for the picker's outer container, read as a
+    /// VoiceOver landmark (e.g. "Theme", "Size").
+    ///
+    /// Consumed by every style: attached as the `Group` label on
+    /// Radio/Menu/Inline/Wheel/Palette containers, and forwarded to
+    /// [`SegmentedControl::accessibility_label`] for the Segmented style.
+    ///
+    /// Attached through [`AccessibleExt::with_accessibility`], which is
+    /// a structural no-op today because GPUI v0.231.1-pre has no public
+    /// `accessibility_label` API. When that upstream API lands, this
+    /// label lights up for VoiceOver without per-caller changes.
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
         self
     }
 
@@ -248,6 +267,9 @@ impl RenderOnce for Picker {
             let mut control = SegmentedControl::new(self.id.clone())
                 .items(segments)
                 .selected(selected_idx);
+            if let Some(label) = self.accessibility_label {
+                control = control.accessibility_label(label);
+            }
             if let Some(handler) = on_change {
                 control = control.on_change(move |idx, window, cx| {
                     if let Some(value) = values.get(idx) {
@@ -272,6 +294,14 @@ impl RenderOnce for Picker {
                 items_flat.iter().map(|i| i.value.clone()).collect();
             let highlighted_index = self.highlighted_index;
             let selected_value = self.selected.clone();
+            // VoiceOver `value` for the group: the display label of the
+            // currently-selected item (mapped from `selected.value` →
+            // matching `item.label`). Sampled before `items_flat` is
+            // consumed by the render loop below.
+            let selected_label: Option<SharedString> = items_flat
+                .iter()
+                .find(|i| selected_value.as_ref() == Some(&i.value))
+                .map(|i| i.label.clone());
             let on_change = rc_wrap(self.on_change);
             let on_highlight = self.on_highlight.map(Rc::new);
 
@@ -331,6 +361,7 @@ impl RenderOnce for Picker {
                 let is_highlighted = highlighted_index == Some(idx);
                 let click_change = on_change.clone();
                 let item_value = item.value.clone();
+                let item_label = item.label.clone();
 
                 // Radio glyph: outer 14pt border, inner 6pt accent fill
                 // when selected. Kept as nested divs so we don't depend
@@ -380,10 +411,28 @@ impl RenderOnce for Picker {
                         h(&item_value, window, cx);
                     }
                 });
+                row = row.with_accessibility(
+                    &AccessibilityProps::new()
+                        .role(AccessibilityRole::RadioButton)
+                        .label(item_label)
+                        .value(if is_selected {
+                            "Selected"
+                        } else {
+                            "Unselected"
+                        }),
+                );
                 list = list.child(row);
             }
 
             list = apply_focus_ring(list, theme, self.focused, &[]);
+            let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
+            if let Some(label) = self.accessibility_label {
+                group_props = group_props.label(label);
+            }
+            if let Some(value) = selected_label {
+                group_props = group_props.value(value);
+            }
+            list = list.with_accessibility(&group_props);
             return list.into_any_element();
         }
 
@@ -401,6 +450,11 @@ impl RenderOnce for Picker {
             let selected_idx = selected_value
                 .as_ref()
                 .and_then(|s| items_flat.iter().position(|i| &i.value == s));
+            // VoiceOver `value` for the group: display label of the
+            // currently-selected item. Sampled before `items_flat` is
+            // consumed by the render loop below.
+            let selected_label: Option<SharedString> =
+                selected_idx.and_then(|idx| items_flat.get(idx).map(|i| i.label.clone()));
             let item_values: Vec<SharedString> =
                 items_flat.iter().map(|i| i.value.clone()).collect();
             let on_change = rc_wrap(self.on_change);
@@ -489,6 +543,14 @@ impl RenderOnce for Picker {
             }
 
             wheel = apply_focus_ring(wheel, theme, self.focused, &[]);
+            let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
+            if let Some(label) = self.accessibility_label {
+                group_props = group_props.label(label);
+            }
+            if let Some(value) = selected_label {
+                group_props = group_props.value(value);
+            }
+            wheel = wheel.with_accessibility(&group_props);
             return wheel.into_any_element();
         }
 
@@ -502,6 +564,15 @@ impl RenderOnce for Picker {
             };
             let on_change = rc_wrap(self.on_change);
             let selected_value = self.selected.clone();
+            // VoiceOver `value` for the group: display label of the
+            // currently-selected tile. `items_flat.chunks(...)` only
+            // borrows, so this lookup can happen after the render loop,
+            // but computing it up front keeps the scan adjacent to
+            // `selected_value` for clarity.
+            let selected_label: Option<SharedString> = items_flat
+                .iter()
+                .find(|i| selected_value.as_ref() == Some(&i.value))
+                .map(|i| i.label.clone());
 
             const TILES_PER_ROW: usize = 10;
             const TILE_SIZE: f32 = 32.0;
@@ -570,6 +641,14 @@ impl RenderOnce for Picker {
             }
 
             grid = apply_focus_ring(grid, theme, self.focused, &[]);
+            let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
+            if let Some(label) = self.accessibility_label {
+                group_props = group_props.label(label);
+            }
+            if let Some(value) = selected_label {
+                group_props = group_props.value(value);
+            }
+            grid = grid.with_accessibility(&group_props);
             return grid.into_any_element();
         }
 
@@ -596,12 +675,17 @@ impl RenderOnce for Picker {
             flat_items = self.items;
         }
 
-        // Resolve the display label for the trigger button.
-        let trigger_label: SharedString = self
+        // Resolve the display label for the trigger button and the
+        // group's VoiceOver `value` in one lookup. `selected_label` is
+        // `None` when nothing is selected (so the group announces its
+        // `label` alone); the trigger falls back to `placeholder`.
+        let selected_label: Option<SharedString> = self
             .selected
             .as_ref()
             .and_then(|sel| flat_items.iter().find(|i| &i.value == sel))
-            .map(|item| item.label.clone())
+            .map(|item| item.label.clone());
+        let trigger_label: SharedString = selected_label
+            .clone()
             .unwrap_or_else(|| self.placeholder.clone());
 
         let trigger_text_color = if self.selected.is_some() {
@@ -814,6 +898,7 @@ impl RenderOnce for Picker {
                 let on_change = on_change.clone();
                 let on_toggle = on_toggle.clone();
                 let item_value = item.value.clone();
+                let item_label = item.label.clone();
 
                 let text_color = if is_selected {
                     theme.accent
@@ -867,6 +952,16 @@ impl RenderOnce for Picker {
                     }
                 });
 
+                // MenuItem: role + label only. Selection state is carried
+                // by the group's `value` (the selected item's label) and,
+                // in the future, a native AX `selected` trait — mirroring
+                // how AppKit announces `NSMenuItem`. Matching Checkbox's
+                // per-row `Checked/Unchecked/Mixed` would double-announce.
+                let row_props = AccessibilityProps::new()
+                    .role(AccessibilityRole::MenuItem)
+                    .label(item_label);
+                row = row.with_accessibility(&row_props);
+
                 list = list.child(row);
             }
 
@@ -878,6 +973,18 @@ impl RenderOnce for Picker {
                 container = container.child(deferred(list).with_priority(1));
             }
         }
+
+        // Group-level VoiceOver landmark for Menu + Inline styles. The
+        // outer container wraps the trigger (and dropdown, when open), so
+        // the label reads before VoiceOver descends into either child.
+        let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
+        if let Some(label) = self.accessibility_label {
+            group_props = group_props.label(label);
+        }
+        if let Some(value) = selected_label {
+            group_props = group_props.value(value);
+        }
+        container = container.with_accessibility(&group_props);
 
         container.into_any_element()
     }
@@ -1012,5 +1119,44 @@ mod tests {
     fn picker_item_icon_builder() {
         let item = PickerItem::new("Label", "v").icon(IconName::CircleFilled);
         assert!(item.icon.is_some());
+    }
+
+    #[test]
+    fn picker_accessibility_label_default_is_none() {
+        let p = Picker::new("t");
+        assert!(p.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn picker_accessibility_label_builder() {
+        let p = Picker::new("t").accessibility_label("Theme");
+        assert_eq!(
+            p.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("Theme"),
+        );
+    }
+
+    #[test]
+    fn picker_accessibility_label_survives_all_styles() {
+        // The builder lives on `Picker` (shared by every style). This
+        // test pins the contract that setting it for any style keeps the
+        // label on the struct — render() then forwards it to the
+        // style-specific container / SegmentedControl.
+        for style in [
+            PickerStyle::Menu,
+            PickerStyle::Inline,
+            PickerStyle::Segmented,
+            PickerStyle::Radio,
+            PickerStyle::Wheel,
+            PickerStyle::Palette,
+        ] {
+            let p = Picker::new("t").style(style).accessibility_label("Size");
+            assert_eq!(p.style, style);
+            assert_eq!(
+                p.accessibility_label.as_ref().map(|s| s.as_ref()),
+                Some("Size"),
+                "label dropped for style {style:?}",
+            );
+        }
     }
 }
