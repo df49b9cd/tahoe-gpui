@@ -52,7 +52,6 @@ pub fn effective_duration(theme: &TahoeTheme, base_ms: u64) -> u64 {
 /// Returns an animation duration in milliseconds that substitutes a short
 /// cross-fade for the caller's original animation when Reduce Motion is on.
 ///
-/// Finding 22 in the Zed cross-reference audit:
 /// HIG Motion says "replace large, dramatic transitions with subtle
 /// cross-fades." Zeroing the duration — which is what
 /// [`effective_duration`] does — produces an instant snap instead of the

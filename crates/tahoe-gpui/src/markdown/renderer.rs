@@ -67,7 +67,9 @@ use super::selectable_text::SelectableText;
 use super::selection::MarkdownSelection;
 use super::settings::StreamSettings;
 use crate::citation::{CitationPopover, CitationSource, InlineCitation};
-use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
+};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::{SPACING_4, SPACING_8};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
@@ -784,7 +786,9 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
             // on once GPUI exposes an AX tree. `with_accessibility` is a
             // no-op today (see foundations/accessibility.rs) so this is
             // data-in-place rather than a visible behaviour change.
-            let ax_props = AccessibilityProps::new().role(AccessibilityRole::Heading(*level));
+            let ax_props = AccessibilityProps::new().role(AccessibilityRole::Heading(
+                HeadingLevel::new_clamped(*level),
+            ));
             let base = div()
                 .text_style_emphasized(ts, ctx.theme)
                 .text_color(ctx.theme.text)

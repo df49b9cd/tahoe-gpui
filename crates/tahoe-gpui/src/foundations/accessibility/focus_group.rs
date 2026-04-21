@@ -11,9 +11,9 @@ use gpui::{App, FocusHandle, InteractiveElement, KeyDownEvent, Window};
 ///   navigation (`focus_next` / `focus_previous`). Intended as the
 ///   *focus-movement* substrate for arrow-key clusters — segmented
 ///   controls, tab bars, and the focus half of an APG radio group. Tab
-///   is left to GPUI's native [`TabStopMap`](https://docs.rs/gpui) so
-///   the surrounding document order stays walkable — this means Tab
-///   does **not** wrap at the group's edges. Only the programmatic
+///   is left to GPUI's native tab-stop map so the surrounding document
+///   order stays walkable — this means Tab does **not** wrap at the
+///   group's edges. Only the programmatic
 ///   `focus_next` / `focus_previous` entry points honor Cycle's wrap
 ///   contract; host-bound keys (typically arrow keys) are the intended
 ///   driver. Selection-follows-focus (as APG's radio-group pattern
@@ -190,22 +190,33 @@ impl FocusGroup {
     /// a single borrow. Use from the render path when member identity
     /// (not just count) changes frame-to-frame — avoids accidentally
     /// leaving stale handles from a prior frame.
+    ///
+    /// Duplicates in the input iterator are dropped (first occurrence
+    /// wins), mirroring [`register`](Self::register)'s idempotency so
+    /// `len()` and tab-index semantics stay consistent between the two
+    /// entry points.
     pub fn set_members<'a>(&self, handles: impl IntoIterator<Item = &'a FocusHandle>) {
         let mut inner = self.inner.borrow_mut();
         inner.handles.clear();
-        inner.handles.extend(handles.into_iter().cloned());
+        for handle in handles {
+            if !inner.handles.iter().any(|existing| existing == handle) {
+                inner.handles.push(handle.clone());
+            }
+        }
     }
 
     /// Focus the first registered member. No-op when the group is empty.
     pub fn focus_first(&self, window: &mut Window, cx: &mut App) {
-        if let Some(handle) = self.inner.borrow().handles.first().cloned() {
+        let handle = self.inner.borrow().handles.first().cloned();
+        if let Some(handle) = handle {
             handle.focus(window, cx);
         }
     }
 
     /// Focus the last registered member. No-op when the group is empty.
     pub fn focus_last(&self, window: &mut Window, cx: &mut App) {
-        if let Some(handle) = self.inner.borrow().handles.last().cloned() {
+        let handle = self.inner.borrow().handles.last().cloned();
+        if let Some(handle) = handle {
             handle.focus(window, cx);
         }
     }
@@ -225,50 +236,52 @@ impl FocusGroup {
     }
 
     fn advance(&self, window: &mut Window, cx: &mut App, forward: bool) {
-        let next_handle = {
+        // Snapshot the member handles and mode under a short borrow, then
+        // release it before calling `is_focused` / `focus`. Those helpers
+        // are pure today but live in GPUI's focus machinery — a future
+        // release that notifies reentrantly would otherwise panic on the
+        // RefCell.
+        let (handles, wrap) = {
             let inner = self.inner.borrow();
-            let len = inner.handles.len();
-            if len == 0 {
+            if inner.handles.is_empty() {
                 return;
             }
-            let current = inner.handles.iter().position(|h| h.is_focused(window));
             let wrap = matches!(inner.mode, FocusGroupMode::Cycle | FocusGroupMode::Trap);
-            let next = match current {
-                Some(idx) if forward => {
-                    if idx + 1 < len {
-                        Some(idx + 1)
-                    } else if wrap {
-                        Some(0)
-                    } else {
-                        None
-                    }
-                }
-                Some(idx) => {
-                    if idx > 0 {
-                        Some(idx - 1)
-                    } else if wrap {
-                        Some(len - 1)
-                    } else {
-                        None
-                    }
-                }
-                None if forward => Some(0),
-                None => Some(len - 1),
-            };
-            next.map(|i| inner.handles[i].clone())
+            (inner.handles.clone(), wrap)
         };
-        if let Some(handle) = next_handle {
-            handle.focus(window, cx);
+        let len = handles.len();
+        let current = handles.iter().position(|h| h.is_focused(window));
+        let next = match current {
+            Some(idx) if forward => {
+                if idx + 1 < len {
+                    Some(idx + 1)
+                } else if wrap {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+            Some(idx) => {
+                if idx > 0 {
+                    Some(idx - 1)
+                } else if wrap {
+                    Some(len - 1)
+                } else {
+                    None
+                }
+            }
+            None if forward => Some(0),
+            None => Some(len - 1),
+        };
+        if let Some(i) = next {
+            handles[i].focus(window, cx);
         }
     }
 
     /// True when any registered member currently holds focus.
     pub fn contains_focused(&self, window: &Window) -> bool {
-        self.inner
-            .borrow()
-            .handles
-            .iter()
-            .any(|h| h.is_focused(window))
+        let handles = self.inner.borrow().handles.clone();
+        handles.iter().any(|h| h.is_focused(window))
     }
 
     /// Hook to call from the group host's `on_key_down`.

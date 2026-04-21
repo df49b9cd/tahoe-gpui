@@ -6,6 +6,45 @@
 
 use gpui::SharedString;
 
+/// Heading depth constrained to the HTML / HIG range `1..=6`.
+///
+/// Wraps a `u8` so `AccessibilityRole::Heading` cannot carry an
+/// out-of-range value that would mislead VoiceOver's heading-level
+/// navigation. Construct via [`HeadingLevel::new`] (fallible) or
+/// [`HeadingLevel::new_clamped`] (infallible, saturates to `1..=6`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HeadingLevel(u8);
+
+impl HeadingLevel {
+    /// Returns `Some(level)` when `level` is in `1..=6`, `None` otherwise.
+    pub const fn new(level: u8) -> Option<Self> {
+        if level >= 1 && level <= 6 {
+            Some(Self(level))
+        } else {
+            None
+        }
+    }
+
+    /// Clamps `level` into the valid `1..=6` range. Use at the boundary
+    /// from an external source (e.g. markdown parser output) where a
+    /// saturating conversion is preferable to propagating an error.
+    pub const fn new_clamped(level: u8) -> Self {
+        let clamped = if level < 1 {
+            1
+        } else if level > 6 {
+            6
+        } else {
+            level
+        };
+        Self(clamped)
+    }
+
+    /// The wrapped depth (always in `1..=6`).
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 /// Semantic role of an accessibility-labelled element — mirrors the subset of
 /// `NSAccessibilityRole` / UIAccessibilityTraits that the crate's components
 /// expose. Used by [`AccessibilityProps::role`].
@@ -42,17 +81,12 @@ pub enum AccessibilityRole {
     Group,
     /// Image / decorative media.
     Image,
-    /// Heading at the given level (1–6). Carries the level so
-    /// VoiceOver's "next heading" and "headings at level N" gestures can
-    /// land on the right rung of the document outline when GPUI exposes
-    /// an AX tree. Consumers that pattern-match this role should treat
-    /// the payload as the HTML / HIG h-level.
-    ///
-    /// **Invariant**: the inner value must be in `1..=6`. Values outside
-    /// this range will mislead VoiceOver's heading-level navigation.
-    /// Construct via `AccessibilityRole::Heading(level)` only with
-    /// levels produced by the markdown parser (which guarantees 1–6).
-    Heading(u8),
+    /// Heading at the given depth. Carries the level so VoiceOver's
+    /// "next heading" and "headings at level N" gestures can land on the
+    /// right rung of the document outline when GPUI exposes an AX tree.
+    /// Consumers that pattern-match this role should treat the payload
+    /// as the HTML / HIG h-level.
+    Heading(HeadingLevel),
 }
 
 /// Accessibility metadata for a single element.
@@ -162,8 +196,29 @@ fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+    use super::{AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel};
     use core::prelude::v1::test;
+
+    #[test]
+    fn heading_level_new_accepts_1_through_6() {
+        for level in 1u8..=6 {
+            assert_eq!(HeadingLevel::new(level).map(|h| h.get()), Some(level));
+        }
+    }
+
+    #[test]
+    fn heading_level_new_rejects_out_of_range() {
+        assert_eq!(HeadingLevel::new(0), None);
+        assert_eq!(HeadingLevel::new(7), None);
+        assert_eq!(HeadingLevel::new(99), None);
+    }
+
+    #[test]
+    fn heading_level_new_clamped_saturates() {
+        assert_eq!(HeadingLevel::new_clamped(0).get(), 1);
+        assert_eq!(HeadingLevel::new_clamped(7).get(), 6);
+        assert_eq!(HeadingLevel::new_clamped(3).get(), 3);
+    }
 
     #[test]
     fn accessibility_props_is_some_tracks_fields() {

@@ -37,6 +37,14 @@ pub fn render(
     // grows every frame.
     state.focus_group.set_members(&state.focus_group_handles);
 
+    // Focus the first member on the first render so arrow keys move focus
+    // from the first interaction rather than waiting for the user to Tab
+    // in. The latch prevents the next render from stealing focus back.
+    if !state.focus_group_initial_focused {
+        state.focus_group.focus_first(window, cx);
+        state.focus_group_initial_focused = true;
+    }
+
     let group = state.focus_group.clone();
     let handles = state.focus_group_handles.clone();
 
@@ -93,10 +101,12 @@ pub fn render(
                 .child(
                     "A FocusGroup bundles FocusHandles into a single focus-graph \
                      cluster. Three modes are available: Open (no edge behavior, \
-                     default), Cycle (wrap at edges for arrow-key nav), and Trap \
-                     (swallow Tab so focus cannot escape — used by Modal). \
+                     default), Cycle (wrap at edges for arrow-key nav — this demo), \
+                     and Trap (swallow Tab so focus cannot escape — used by Modal). \
                      Use Up/Down arrows to cycle through the rows; Home/End jump \
-                     to the first/last.",
+                     to the first/last. Tab falls through to GPUI's native \
+                     tab-order in Cycle mode; use Trap (Modal) if focus must not \
+                     escape the group.",
                 ),
         )
         .child(div().h(theme.spacing_sm))

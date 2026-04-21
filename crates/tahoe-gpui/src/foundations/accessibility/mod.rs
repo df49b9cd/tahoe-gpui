@@ -37,4 +37,4 @@ pub use tokens::{
     AccessibilityTokens, apply_focus_ring, apply_high_contrast_border, effective_duration,
     reduce_motion_substitute_ms,
 };
-pub use voiceover::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+pub use voiceover::{AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel};

@@ -45,7 +45,7 @@ type DismissEmitFn = std::rc::Rc<dyn Fn(&AnyEntity, &mut Window, &mut App) + 'st
 /// The parent manages `is_open` state and provides an `on_dismiss` callback.
 /// Uses GPUI's `overlay()` for rendering above other content.
 ///
-/// # Event-emitter pattern (Finding 5 in the Zed cross-reference audit)
+/// # Event-emitter pattern
 ///
 /// Zed's `Modal` emits [`DismissEvent`] via `EventEmitter` so parents
 /// subscribe reactively with `cx.subscribe(&modal, Self::on_dismiss)`
@@ -86,7 +86,7 @@ pub struct Modal {
     /// Type-erased handle to an `Entity<T>` where `T: EventEmitter<DismissEvent>`.
     /// Paired with `dismiss_emit_fn` so the render path can dispatch
     /// `cx.emit(DismissEvent)` through the erased entity without the
-    /// surrounding struct generics. Finding 5 in the Zed cross-reference audit.
+    /// surrounding struct generics.
     dismiss_emitter: Option<AnyEntity>,
     dismiss_emit_fn: Option<DismissEmitFn>,
 }
@@ -170,13 +170,12 @@ impl Modal {
     /// FocusGroup (e.g. for arrow-key navigation inside the modal's
     /// content) and wants the same group to drive the Tab trap.
     ///
-    /// The group **must** be in [`FocusGroupMode::Trap`] mode. When it
-    /// is not, the modal's Tab handler still swallows Tab (to prevent
-    /// focus escaping) but does not advance focus — keyboard users get
-    /// stranded on whatever element they landed on. A `debug_assert!`
-    /// fires in debug builds to catch this early.
+    /// The group **must** be in [`FocusGroupMode::Trap`] mode. Open /
+    /// Cycle groups make the modal's Tab handler swallow Tab without
+    /// advancing focus, stranding keyboard users — so this is a runtime
+    /// `assert!` rather than a `debug_assert!`, firing in release as well.
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
-        debug_assert_eq!(
+        assert_eq!(
             group.mode(),
             FocusGroupMode::Trap,
             "Modal::focus_group requires a Trap-mode FocusGroup; other \
@@ -202,7 +201,7 @@ impl Modal {
     ///
     /// The entity must implement `EventEmitter<DismissEvent>`. Any existing
     /// [`Modal::on_dismiss`] callback still fires — the emitter is
-    /// additive, not a replacement. Finding 5 in the Zed cross-reference audit.
+    /// additive, not a replacement.
     ///
     /// ```ignore
     /// struct MySheet;
@@ -250,15 +249,20 @@ impl RenderOnce for Modal {
         // registered focusable children (via `focus_cycle` / `focus_group`),
         // land initial focus on the first member per the WAI-ARIA dialog
         // pattern; otherwise focus the outer container so Tab still reaches
-        // the modal's key handler. Once a child in the group takes focus we
-        // leave it alone — otherwise the next render would steal focus back
-        // to the container and break the cycle.
+        // the modal's key handler.
+        //
+        // `contains_focused` (not `is_focused`) gates the initial-focus path
+        // so that non-member descendants — e.g. a `TextField` child that
+        // auto-focuses itself on mount — are not stolen from on the next
+        // render. Since Modal is a `RenderOnce` builder, render() fires on
+        // every parent update; narrowing to `is_focused` would reseat focus
+        // to the first group member on every frame until a member happens
+        // to be focused.
         let focus_handle = self
             .focus_handle
             .clone()
             .unwrap_or_else(|| cx.focus_handle());
-        let any_modal_focus =
-            focus_handle.is_focused(window) || self.focus_group.contains_focused(window);
+        let any_modal_focus = focus_handle.contains_focused(window, cx);
         if !any_modal_focus {
             if self.focus_group.is_empty() {
                 focus_handle.focus(window, cx);
@@ -284,10 +288,9 @@ impl RenderOnce for Modal {
 
         // Wrap the caller's on_dismiss so every dismissal path (backdrop
         // click, Escape) restores focus to `restore_focus_to` AND emits
-        // `DismissEvent` on the caller's subscribed entity (Finding 5)
-        // before invoking the closure handler. The Rc shape lets the
-        // wrapped callback be shared between the two dismissal entry
-        // points.
+        // `DismissEvent` on the caller's subscribed entity before invoking
+        // the closure handler. The Rc shape lets the wrapped callback be
+        // shared between the two dismissal entry points.
         type DismissFn = dyn Fn(&mut Window, &mut App) + 'static;
         let restore = self.restore_focus_to.clone();
         let dismiss_emitter = self.dismiss_emitter.clone();
@@ -300,8 +303,8 @@ impl RenderOnce for Modal {
                     if let Some(handle) = restore.as_ref() {
                         handle.focus(window, cx);
                     }
-                    // Event-emitter path (Finding 5): subscribers wired
-                    // via `cx.subscribe` receive DismissEvent here.
+                    // Event-emitter path: subscribers wired via
+                    // `cx.subscribe` receive DismissEvent here.
                     if let (Some(emitter), Some(emit_fn)) =
                         (dismiss_emitter.as_ref(), dismiss_emit_fn.as_ref())
                     {
@@ -367,9 +370,15 @@ impl RenderOnce for Modal {
                 return;
             }
             if event.keystroke.key.as_str() == "tab" {
-                // In Trap mode with members, this wraps focus; with no
-                // members it still stops propagation so the dialog pattern
-                // is preserved.
+                // In Trap mode with members, `handle_key_down` wraps focus
+                // and reports `true`. If it returns `false` — either because
+                // the group has no members, or because the group is not in
+                // Trap mode — we still swallow Tab so focus cannot escape
+                // the modal surface. Hosts that want Tab to actually
+                // advance focus must register at least one member via
+                // `Modal::focus_cycle` or `Modal::focus_group`; swallowing
+                // an empty group's Tab is the WAI-ARIA "no-op trap"
+                // required when no child is focusable.
                 if !focus_group.handle_key_down(event, window, cx) {
                     cx.stop_propagation();
                 }
@@ -748,8 +757,8 @@ mod interaction_tests {
         assert_element_absent(cx, MODAL_CONTENT);
     }
 
-    // Harness verifying Finding 5 — Modal emits DismissEvent on the
-    // subscribed entity alongside the `on_dismiss` callback.
+    // Harness verifying the event-emitter path — Modal emits DismissEvent
+    // on the subscribed entity alongside the `on_dismiss` callback.
     struct DismissEmitterEntity {
         events: usize,
     }

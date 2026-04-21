@@ -473,6 +473,10 @@ pub struct ComponentGallery {
     /// `FocusGroup`'s `focus_next` / `focus_previous` wraps around.
     pub focus_group_handles: [FocusHandle; 3],
     pub focus_group: FocusGroup,
+    /// Latch for the Focus Groups demo: flipped to `true` after the first
+    /// render focuses the first member, so arrow keys move focus from the
+    /// first interaction rather than waiting for the user to Tab in.
+    pub focus_group_initial_focused: bool,
 }
 
 impl ComponentGallery {
@@ -595,6 +599,7 @@ impl ComponentGallery {
             panel_open: false,
             focus_group_handles: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             focus_group: FocusGroup::cycle(),
+            focus_group_initial_focused: false,
             token_field: {
                 let entity = cx.new(|cx| {
                     let mut tf = TokenField::new(cx);
