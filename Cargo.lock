@@ -5377,6 +5377,7 @@ dependencies = [
  "image",
  "itoa",
  "mermaid-rs-renderer",
+ "objc2",
  "proptest 1.11.0",
  "pulldown-cmark",
  "remend",

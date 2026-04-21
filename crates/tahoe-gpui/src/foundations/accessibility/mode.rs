@@ -117,6 +117,26 @@ impl std::ops::BitXorAssign for AccessibilityMode {
     }
 }
 
+impl std::ops::Not for AccessibilityMode {
+    type Output = Self;
+    fn not(self) -> Self {
+        Self(!self.0)
+    }
+}
+
+impl std::ops::BitAnd for AccessibilityMode {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        Self(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitAndAssign for AccessibilityMode {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::AccessibilityMode;

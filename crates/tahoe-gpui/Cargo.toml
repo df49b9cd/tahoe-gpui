@@ -85,6 +85,10 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 cpal = { version = "0.17", optional = true }
 image = { workspace = true, optional = true }
 
+# Platform-specific (macOS accessibility detection)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+
 [dev-dependencies]
 proptest = { workspace = true }
 gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["test-support"] }

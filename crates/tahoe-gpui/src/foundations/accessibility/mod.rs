@@ -28,11 +28,13 @@
 
 pub mod focus_group;
 pub mod mode;
+pub mod platform;
 pub mod tokens;
 pub mod voiceover;
 
 pub use focus_group::{FocusGroup, FocusGroupExt, FocusGroupMode};
 pub use mode::AccessibilityMode;
+pub use platform::detect_system_accessibility_mode;
 pub use tokens::{
     AccessibilityTokens, apply_high_contrast_border, effective_duration,
     reduce_motion_substitute_ms,
