@@ -22,7 +22,7 @@ use gpui::{App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, d
 use std::rc::Rc;
 
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
-use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
@@ -439,9 +439,7 @@ impl RenderOnce for PopupButton {
                     }
                 });
 
-                let a11y = AccessibilityProps::new()
-                    .role(AccessibilityRole::MenuItem)
-                    .label(item_label);
+                let a11y = AccessibilityProps::menu_item(item_label);
                 row = row.with_accessibility(&a11y);
 
                 list = list.child(row);

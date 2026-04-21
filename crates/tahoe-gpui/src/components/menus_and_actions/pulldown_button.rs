@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
-use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
@@ -563,9 +563,7 @@ impl RenderOnce for PulldownButton {
                     });
                 }
 
-                let a11y = AccessibilityProps::new()
-                    .role(AccessibilityRole::MenuItem)
-                    .label(action_label);
+                let a11y = AccessibilityProps::menu_item(action_label);
                 row = row.with_accessibility(&a11y);
 
                 list = list.child(row);
