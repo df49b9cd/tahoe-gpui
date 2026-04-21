@@ -116,6 +116,11 @@ pub struct Picker {
     on_toggle: OnToggle,
     on_highlight: OnHighlight,
     focused: bool,
+    /// Optional focus handle; when set, the picker tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`Picker::focused`]. Ignored on [`PickerStyle::Segmented`] — use
+    /// [`super::SegmentedControl::focus_handle`] directly in that case.
+    focus_handle: Option<FocusHandle>,
     highlighted_index: Option<usize>,
     /// Visual style. Defaults to [`PickerStyle::Menu`].
     style: PickerStyle,
@@ -143,6 +148,7 @@ impl Picker {
             on_toggle: None,
             on_highlight: None,
             focused: false,
+            focus_handle: None,
             highlighted_index: None,
             style: PickerStyle::Menu,
             accessibility_label: None,
@@ -212,9 +218,21 @@ impl Picker {
         self
     }
 
-    /// Marks this picker as keyboard-focused, showing a visible focus ring.
+    /// Marks this picker as keyboard-focused, showing a visible focus
+    /// ring. Ignored when a [`focus_handle`](Self::focus_handle) is
+    /// supplied — the handle's reactive state
+    /// (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the picker into GPUI's focus graph. When set, the focus ring
+    /// renders based on `handle.is_focused(window)` — takes precedence
+    /// over [`Picker::focused`]. Ignored on [`PickerStyle::Segmented`];
+    /// build a [`super::SegmentedControl`] directly instead.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -285,6 +303,12 @@ impl RenderOnce for Picker {
         let theme = cx.theme();
         let style = self.style;
 
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
+
         // Segmented style: render as `SegmentedControl` directly. Picker's
         // job in this mode is essentially index-to-value translation, so
         // we reuse the canonical HIG control rather than duplicating its
@@ -318,7 +342,13 @@ impl RenderOnce for Picker {
             // the other variants.
             debug_assert!(
                 !self.focused,
-                "Picker::focused is ignored on PickerVariant::Segmented — \
+                "Picker::focused is ignored on PickerStyle::Segmented — \
+                 construct a SegmentedControl directly with \
+                 `.focus_handle(...)` to render a focus ring",
+            );
+            debug_assert!(
+                self.focus_handle.is_none(),
+                "Picker::focus_handle is ignored on PickerStyle::Segmented — \
                  construct a SegmentedControl directly with \
                  `.focus_handle(...)` to render a focus ring",
             );
@@ -370,6 +400,9 @@ impl RenderOnce for Picker {
                 .flex_col()
                 .w_full()
                 .gap(theme.spacing_xs);
+            if let Some(handle) = self.focus_handle.as_ref() {
+                list = list.track_focus(handle);
+            }
 
             // Keyboard: Up/Down move focus, Space/Enter pick.
             let key_change = on_change.clone();
@@ -482,7 +515,7 @@ impl RenderOnce for Picker {
                 list = list.child(row);
             }
 
-            list = apply_focus_ring(list, theme, self.focused, &[]);
+            list = apply_focus_ring(list, theme, focused, &[]);
             let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
             if let Some(label) = self.accessibility_label {
                 group_props = group_props.label(label);
@@ -530,6 +563,9 @@ impl RenderOnce for Picker {
                 .w_full()
                 .h(wheel_h)
                 .overflow_hidden();
+            if let Some(handle) = self.focus_handle.as_ref() {
+                wheel = wheel.track_focus(handle);
+            }
             wheel = wheel.bg(theme
                 .glass
                 .accessible_bg(GlassSize::Small, theme.accessibility_mode));
@@ -600,7 +636,7 @@ impl RenderOnce for Picker {
                 wheel = wheel.child(row);
             }
 
-            wheel = apply_focus_ring(wheel, theme, self.focused, &[]);
+            wheel = apply_focus_ring(wheel, theme, focused, &[]);
             let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
             if let Some(label) = self.accessibility_label {
                 group_props = group_props.label(label);
@@ -646,11 +682,19 @@ impl RenderOnce for Picker {
                 items_flat.len(),
             );
 
+            // Only make the grid a Tab stop when a focus handle is
+            // supplied. The Palette variant has no arrow-key navigation
+            // of its own (unlike Radio / Wheel), so an unconditional
+            // `.focusable()` would create a dead Tab stop for hosts that
+            // never asked for focus wiring.
             let mut grid = div()
                 .id(self.id.clone())
                 .flex()
                 .flex_col()
                 .gap(theme.spacing_xs);
+            if let Some(handle) = self.focus_handle.as_ref() {
+                grid = grid.focusable().track_focus(handle);
+            }
 
             let mut global_idx = 0usize;
             let total_tiles = items_flat.len();
@@ -780,7 +824,7 @@ impl RenderOnce for Picker {
                 grid = grid.child(row);
             }
 
-            grid = apply_focus_ring(grid, theme, self.focused, &[]);
+            grid = apply_focus_ring(grid, theme, focused, &[]);
             let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
             if let Some(label) = self.accessibility_label {
                 group_props = group_props.label(label);
@@ -872,10 +916,14 @@ impl RenderOnce for Picker {
             .flex()
             .items_center()
             .px(theme.spacing_md)
-            .cursor_pointer();
+            .cursor_pointer()
+            .focusable();
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
 
         // Glass-styled trigger surface.
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
 
         trigger = trigger
             .hover(|style| style.cursor_pointer())
@@ -1205,6 +1253,24 @@ mod tests {
     fn picker_focused_builder() {
         let p = Picker::new("test").focused(true);
         assert!(p.focused);
+    }
+
+    #[test]
+    fn picker_focus_handle_none_by_default() {
+        let p = Picker::new("test");
+        assert!(p.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn picker_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let p = Picker::new("test").focus_handle(&handle);
+            assert!(
+                p.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

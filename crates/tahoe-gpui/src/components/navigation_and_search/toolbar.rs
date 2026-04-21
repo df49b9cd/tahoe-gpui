@@ -22,12 +22,53 @@
 //!   default, for in-content bars) and [`ToolbarStyle::Floating`] — the
 //!   macOS 26 Tahoe Liquid Glass pill hovering above content used in
 //!   Safari, Finder, and the new System Settings.
+//!
+//! # Keyboard
+//!
+//! Pass an [`Open`-mode][FocusGroupMode::Open] [`FocusGroup`] via
+//! [`Toolbar::focus_group`] to enable arrow-key navigation between
+//! registered items: Left / Right walk without wrapping (Open mode edges
+//! stay put) and Home / End jump to the endpoints. The toolbar's handler
+//! ignores any keystroke that carries a modifier, so app-level chords
+//! like `Cmd-Right` (end-of-line) and the NavigationSplitView pane-jump
+//! chord bubble past the toolbar untouched.
+//!
+//! **Tab behavior (not yet WAI-ARIA roving tabindex).** Today every
+//! registered toolbar item receives a positive `tab_index` via
+//! [`FocusGroupExt::focus_group`], so Tab walks through every item in
+//! registration order before advancing past the toolbar — it does *not*
+//! leave the toolbar on the first press. Full WAI-ARIA APG toolbar
+//! semantics (roving tabindex: only the active member exposes
+//! `tab_index(0)`, the rest `tab_index(-1)`) is future work; callers who
+//! need that today must implement it at the host.
+//!
+//! The caller owns the group (cheap `Rc<RefCell>` clone) across renders.
+//! Two wiring patterns are supported: (a) call
+//! [`FocusGroupExt::focus_group`] per item — the idempotent
+//! [`FocusGroup::register`] keeps the member list stable across renders
+//! — or (b) call [`FocusGroup::set_members`] each render when the host
+//! owns the handle list out-of-band or membership changes frame-to-frame.
+//! See `examples/gallery/focus_groups.rs` for the reference wiring.
+//!
+//! [`TextField`](crate::components::selection_and_input::TextField) inputs
+//! placed inside a toolbar should **not** be registered as focus-group
+//! members. The toolbar's arrow-key handler is guarded by
+//! [`FocusGroup::contains_focused`] — a TextField that is not a
+//! registered member falls outside that guard and keeps its native
+//! Left / Right cursor movement. Callers must still register
+//! [`textfield_keybindings()`](crate::textfield_keybindings) on their
+//! window so TextField's own cursor actions continue to dispatch.
+//!
+//! [`FocusGroupExt::focus_group`]: crate::foundations::accessibility::FocusGroupExt::focus_group
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, FontWeight, SharedString, Window, div, px};
+use gpui::{AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::callback_types::OnMutCallback;
 use crate::components::menus_and_actions::pulldown_button::{PulldownButton, PulldownItem};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
+};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{SurfaceContext, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
@@ -79,6 +120,8 @@ pub struct Toolbar {
     style: ToolbarStyle,
     customizable: bool,
     on_customize: OnMutCallback,
+    focus_group: Option<FocusGroup>,
+    accessibility_label: Option<SharedString>,
 }
 
 impl Toolbar {
@@ -95,6 +138,8 @@ impl Toolbar {
             style: ToolbarStyle::Inline,
             customizable: false,
             on_customize: None,
+            focus_group: None,
+            accessibility_label: None,
         }
     }
 
@@ -158,6 +203,34 @@ impl Toolbar {
     /// customization (typically via right-click on the bar background).
     pub fn on_customize(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_customize = Some(Box::new(handler));
+        self
+    }
+
+    /// Attach a caller-owned [`FocusGroup`] so the toolbar exposes
+    /// arrow-key navigation over its items. See the module-level
+    /// `# Keyboard` section for the wiring contract.
+    ///
+    /// The group must be in [`FocusGroupMode::Open`] — HIG toolbars do not
+    /// wrap arrow navigation at the edges. Passing a `Cycle` or `Trap`
+    /// group panics in both debug and release (silent wrap-around is more
+    /// harmful than a loud failure).
+    pub fn focus_group(mut self, group: FocusGroup) -> Self {
+        assert_eq!(
+            group.mode(),
+            FocusGroupMode::Open,
+            "Toolbar::focus_group requires an Open-mode FocusGroup (Cycle/Trap would wrap \
+             arrow navigation at the toolbar edges, which HIG toolbars explicitly do not do)",
+        );
+        self.focus_group = Some(group);
+        self
+    }
+
+    /// Set the accessibility label announced when assistive tech enters
+    /// the toolbar (e.g. "Documents toolbar"). Paired with the implicit
+    /// [`AccessibilityRole::Toolbar`] role the component attaches in
+    /// [`render`](RenderOnce::render).
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
         self
     }
 }
@@ -267,7 +340,68 @@ impl RenderOnce for Toolbar {
             );
         }
 
-        bar
+        // Toolbar arrow-key navigation. Left / Right walk between
+        // registered `FocusGroup` members (Open mode: edges stay put).
+        // Home / End jump to endpoints. Two guards bound the handler:
+        //
+        // (1) Modifier check: any chord (Cmd / Alt / Ctrl / Shift) returns
+        //     early so app-level bindings like the NavigationSplitView
+        //     pane-jump chord (`Cmd-Opt-[` / `Cmd-Opt-]`) and shell
+        //     shortcuts like `Cmd-Right` / `Cmd-End` bubble past the
+        //     toolbar untouched. Without this guard a toolbar nested in
+        //     an NSV pane would steal the pane-jump chord as soon as a
+        //     toolbar item held focus.
+        // (2) `contains_focused` check: the handler only fires when a
+        //     *registered* item holds focus. Arbitrary descendants (a
+        //     TextField whose handle is not a group member, an external
+        //     button) keep their native cursor / activation semantics.
+        if let Some(group) = self.focus_group.clone() {
+            bar = bar.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let m = &event.keystroke.modifiers;
+                if m.platform || m.alt || m.control || m.shift || m.function {
+                    return;
+                }
+                if !group.contains_focused(window) {
+                    return;
+                }
+                match event.keystroke.key.as_str() {
+                    "left" => {
+                        group.focus_previous(window, cx);
+                        cx.stop_propagation();
+                    }
+                    "right" => {
+                        group.focus_next(window, cx);
+                        cx.stop_propagation();
+                    }
+                    "home" => {
+                        group.focus_first(window, cx);
+                        cx.stop_propagation();
+                    }
+                    "end" => {
+                        group.focus_last(window, cx);
+                        cx.stop_propagation();
+                    }
+                    _ => {}
+                }
+            });
+        }
+
+        // Attach AX `role="toolbar"` + optional label. Today this is
+        // forward-compat scaffolding (GPUI 0.2.2 has no AX tree API — see
+        // `foundations/accessibility/mod.rs`); when the upstream API
+        // lands, the single `AccessibleExt::with_accessibility` impl wires
+        // every Toolbar to the AX tree in one place.
+        //
+        // TODO(AX assertion): once GPUI exposes an AX inspector API, add
+        // a test that asserts this call attaches `role=Toolbar` (and the
+        // optional label) so a refactor that drops the `with_accessibility`
+        // line is caught — today the props struct round-trips in unit
+        // tests but the render-side wiring has no assertion.
+        let mut a11y = AccessibilityProps::new().role(AccessibilityRole::Toolbar);
+        if let Some(label) = self.accessibility_label {
+            a11y = a11y.label(label);
+        }
+        bar.with_accessibility(&a11y)
     }
 }
 
@@ -290,6 +424,8 @@ mod tests {
         assert!(tb.overflow.is_empty());
         assert_eq!(tb.style, ToolbarStyle::Inline);
         assert!(!tb.customizable);
+        assert!(tb.focus_group.is_none());
+        assert!(tb.accessibility_label.is_none());
     }
 
     #[test]
@@ -378,5 +514,259 @@ mod tests {
     #[test]
     fn toolbar_style_default_is_inline() {
         assert_eq!(ToolbarStyle::default(), ToolbarStyle::Inline);
+    }
+
+    #[test]
+    fn toolbar_focus_group_builder_stores_group() {
+        use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
+        let group = FocusGroup::open();
+        let tb = Toolbar::new("tb").focus_group(group);
+        let stored = tb.focus_group.expect("focus_group should be stored");
+        assert_eq!(stored.mode(), FocusGroupMode::Open);
+    }
+
+    #[test]
+    fn toolbar_accessibility_label_builder_stores_label() {
+        let tb = Toolbar::new("tb").accessibility_label("Documents toolbar");
+        assert_eq!(
+            tb.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("Documents toolbar")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Open-mode FocusGroup")]
+    fn toolbar_focus_group_rejects_non_open_mode() {
+        use crate::foundations::accessibility::FocusGroup;
+        let _ = Toolbar::new("tb").focus_group(FocusGroup::cycle());
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext, div};
+
+    use super::Toolbar;
+    use crate::foundations::accessibility::{FocusGroup, FocusGroupExt};
+    use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
+
+    /// Harness that mints three focus handles tracked inside a caller-owned
+    /// `FocusGroup`, plus one untracked handle used to verify the
+    /// `contains_focused` guard. The render method wires everything through a
+    /// `Toolbar` so GPUI's focus system is live during tests.
+    struct ToolbarHarness {
+        handles: [FocusHandle; 3],
+        untracked: FocusHandle,
+        group: FocusGroup,
+    }
+
+    impl ToolbarHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                handles: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+                untracked: cx.focus_handle(),
+                group: FocusGroup::open(),
+            }
+        }
+    }
+
+    impl Render for ToolbarHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let group = self.group.clone();
+            Toolbar::new("tb")
+                .focus_group(group)
+                .leading(
+                    div()
+                        .id("item-0")
+                        .focus_group(&self.group, &self.handles[0])
+                        .child("First"),
+                )
+                .leading(
+                    div()
+                        .id("item-1")
+                        .focus_group(&self.group, &self.handles[1])
+                        .child("Second"),
+                )
+                .leading(
+                    div()
+                        .id("untracked")
+                        .track_focus(&self.untracked)
+                        .child("Untracked"),
+                )
+                .trailing(
+                    div()
+                        .id("item-2")
+                        .focus_group(&self.group, &self.handles[2])
+                        .child("Third"),
+                )
+        }
+    }
+
+    #[gpui::test]
+    async fn right_advances_through_members(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[1].is_focused(window), "right from 0 → 1");
+        });
+        cx.press("right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[2].is_focused(window), "right from 1 → 2");
+        });
+    }
+
+    #[gpui::test]
+    async fn right_stops_at_last_in_open_mode(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[2].focus(window, cx);
+        });
+        cx.press("right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[2].is_focused(window),
+                "Open: right past last stays on last"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn left_retreats_through_members(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[2].focus(window, cx);
+        });
+        cx.press("left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[1].is_focused(window), "left from 2 → 1");
+        });
+        cx.press("left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[0].is_focused(window), "left from 1 → 0");
+        });
+    }
+
+    #[gpui::test]
+    async fn left_stops_at_first_in_open_mode(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "Open: left past first stays on first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn home_and_end_jump_to_endpoints(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("home");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[0].is_focused(window), "home → first");
+        });
+        cx.press("end");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.handles[2].is_focused(window), "end → last");
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_keys_noop_when_untracked_element_focused(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.untracked.focus(window, cx);
+        });
+        cx.press("right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.untracked.is_focused(window),
+                "right should not move focus from untracked element"
+            );
+        });
+        cx.press("left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.untracked.is_focused(window),
+                "left should not move focus from untracked element"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_right_on_tracked_member_does_not_advance(cx: &mut TestAppContext) {
+        // The modifier-guard at the top of the toolbar's on_key_down must
+        // bail on any chord so app-level bindings (end-of-line, window
+        // shortcuts) bubble past. Without the guard, focus would advance
+        // 0 → 1 and `stop_propagation` would eat the chord.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("cmd-right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-right must not advance toolbar focus — chord must bubble"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn cmd_alt_right_on_tracked_member_does_not_advance(cx: &mut TestAppContext) {
+        // Specifically guards against the NavigationSplitView pane-jump
+        // collision: a toolbar nested in an NSV pane must let the NSV's
+        // `cmd-alt-[`/`cmd-alt-]` chord bubble past. We use `cmd-alt-right`
+        // (the old NSV chord) plus `cmd-alt-]` (the new chord) — both must
+        // be ignored.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("cmd-alt-right");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-alt-right must not advance toolbar focus"
+            );
+        });
+        cx.press("cmd-alt-]");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "cmd-alt-] must not advance toolbar focus (pane-jump chord must bubble)"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn shift_left_on_tracked_member_does_not_retreat(cx: &mut TestAppContext) {
+        // Shift+arrows are conventionally used for selection extension;
+        // the toolbar must not consume them.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ToolbarHarness::new(cx));
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("shift-left");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[1].is_focused(window),
+                "shift-left must not retreat toolbar focus"
+            );
+        });
     }
 }

@@ -17,7 +17,10 @@
 //! alongside it by the parent.
 
 use gpui::prelude::*;
-use gpui::{App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div, px};
+use gpui::{
+    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
+    px,
+};
 
 use std::rc::Rc;
 
@@ -63,6 +66,10 @@ pub struct PopupButton {
     is_open: bool,
     disabled: bool,
     focused: bool,
+    /// Optional focus handle; when set, the popup tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`PopupButton::focused`].
+    focus_handle: Option<FocusHandle>,
     compact: bool,
     highlighted_index: Option<usize>,
     on_change: OnSharedStringRefChange,
@@ -80,6 +87,7 @@ impl PopupButton {
             is_open: false,
             disabled: false,
             focused: false,
+            focus_handle: None,
             compact: false,
             highlighted_index: None,
             on_change: None,
@@ -121,9 +129,19 @@ impl PopupButton {
         self
     }
 
-    /// Set the focused state for rendering a focus ring.
+    /// Set the focused state for rendering a focus ring. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the pop-up into GPUI's focus graph. When set, the focus ring
+    /// renders based on `handle.is_focused(window)` — takes precedence
+    /// over [`PopupButton::focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -159,8 +177,14 @@ impl PopupButton {
 }
 
 impl RenderOnce for PopupButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // Resolve the display label: selected item's label, or first item, or empty.
         let trigger_label: SharedString = self
@@ -208,14 +232,22 @@ impl RenderOnce for PopupButton {
             .min_h(px(theme.target_size()))
             .flex()
             .items_center()
-            .px(theme.spacing_md);
+            .px(theme.spacing_md)
+            .focusable();
 
+        // `track_focus` is unconditional on handle presence — a caller
+        // who supplied a handle expects it wired even when `disabled` is
+        // flipped transiently. Only interactivity (`cursor_pointer`,
+        // `on_click`, `on_key_down`) is gated on `!disabled`.
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
         if !disabled {
             trigger = trigger.cursor_pointer();
         }
 
         // Glass-styled trigger surface.
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
 
         if disabled {
             trigger = trigger.opacity(0.5).cursor_default();
@@ -477,6 +509,24 @@ mod tests {
     fn popup_button_compact_builder_sets_flag() {
         let pb = PopupButton::new("test").compact(true);
         assert!(pb.compact);
+    }
+
+    #[test]
+    fn popup_button_focus_handle_none_by_default() {
+        let pb = PopupButton::new("test");
+        assert!(pb.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn popup_button_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let pb = PopupButton::new("test").focus_handle(&handle);
+            assert!(
+                pb.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

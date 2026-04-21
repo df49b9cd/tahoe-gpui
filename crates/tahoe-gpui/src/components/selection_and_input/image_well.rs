@@ -19,8 +19,8 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    App, ClipboardItem, DragMoveEvent, ElementId, ExternalPaths, KeyDownEvent, ObjectFit, Pixels,
-    SharedString, SharedUri, Window, div, hsla, img, px,
+    App, ClipboardItem, DragMoveEvent, ElementId, ExternalPaths, FocusHandle, KeyDownEvent,
+    ObjectFit, Pixels, SharedString, SharedUri, Window, div, hsla, img, px,
 };
 
 use crate::callback_types::{OnMutCallback, OnStringChange};
@@ -119,6 +119,10 @@ pub struct ImageWell {
     placeholder: Option<SharedString>,
     size: Option<Pixels>,
     focused: bool,
+    /// Optional focus handle; when set, the well tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`ImageWell::focused`].
+    focus_handle: Option<FocusHandle>,
     drop_highlight: bool,
     accessibility_label: Option<SharedString>,
     on_click: OnMutCallback,
@@ -138,6 +142,7 @@ impl ImageWell {
             placeholder: None,
             size: None,
             focused: false,
+            focus_handle: None,
             drop_highlight: false,
             accessibility_label: None,
             on_click: None,
@@ -180,9 +185,33 @@ impl ImageWell {
     }
 
     /// Mark the well as keyboard-focused. Callers own focus state — the
-    /// well draws the focus ring when this is `true`.
+    /// well draws the focus ring when this is `true`. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the well into GPUI's focus graph. When set, the focus ring
+    /// renders based on `handle.is_focused(window)`, taking precedence
+    /// over the manual [`ImageWell::focused`] flag.
+    ///
+    /// # Precedence
+    ///
+    /// If both `focus_handle(...)` and `focused(true)` are set, the
+    /// handle wins — `handle.is_focused(window)` drives the ring and
+    /// the manual flag is ignored. Set only one.
+    ///
+    /// # Interactivity requirement
+    ///
+    /// The well is only wired into the focus graph when it is
+    /// interactive (`on_click` or `on_drop` is set). Supplying a focus
+    /// handle on a non-interactive well is a programmer error — the
+    /// handle would never be reached. A `debug_assert!` catches this
+    /// in debug builds; release builds silently drop the handle.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -257,8 +286,14 @@ impl ImageWell {
 }
 
 impl RenderOnce for ImageWell {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         let well_size = self.size.unwrap_or(DEFAULT_SIZE);
         // Floor the well size at the platform's default control height when
@@ -278,6 +313,17 @@ impl RenderOnce for ImageWell {
         // When on_click is set the well acts as a control (glass is appropriate).
         // When on_click is None it's display-only content (standard surface).
         let is_interactive = self.on_click.is_some() || self.on_drop.is_some();
+
+        // A focus handle on a non-interactive well is dead wiring: the
+        // `.focusable()` + `track_focus` call below runs only inside
+        // `is_interactive`, so the supplied handle would never be
+        // reached. Catch this misuse early in debug builds — release
+        // builds silently drop the handle rather than crashing.
+        debug_assert!(
+            self.focus_handle.is_none() || is_interactive,
+            "ImageWell::focus_handle requires an interactive well — \
+             set `on_click(..)` or `on_drop(..)` or drop the handle"
+        );
 
         let a11y_label: SharedString = self.accessibility_label.clone().unwrap_or_else(|| {
             if has_image {
@@ -370,7 +416,10 @@ impl RenderOnce for ImageWell {
 
         if is_interactive {
             well = well.focusable();
-            well = apply_focus_ring(well, theme, self.focused, &[]);
+            if let Some(handle) = self.focus_handle.as_ref() {
+                well = well.track_focus(handle);
+            }
+            well = apply_focus_ring(well, theme, focused, &[]);
             well = well.cursor_pointer();
         }
 
@@ -549,6 +598,24 @@ mod tests {
     fn image_well_focused_builder() {
         let iw = ImageWell::new("test").focused(true);
         assert!(iw.focused);
+    }
+
+    #[test]
+    fn image_well_focus_handle_none_by_default() {
+        let iw = ImageWell::new("test");
+        assert!(iw.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn image_well_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let iw = ImageWell::new("test").focus_handle(&handle);
+            assert!(
+                iw.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]

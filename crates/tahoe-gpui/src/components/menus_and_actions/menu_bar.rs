@@ -136,6 +136,10 @@ pub struct MenuBar {
     highlighted_index: usize,
     on_open: Option<OnMenuOpen>,
     focused: bool,
+    /// Optional focus handle; when set, the bar tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`MenuBar::focused`].
+    focus_handle: Option<FocusHandle>,
 }
 
 impl MenuBar {
@@ -147,6 +151,7 @@ impl MenuBar {
             highlighted_index: 0,
             on_open: None,
             focused: false,
+            focus_handle: None,
         }
     }
 
@@ -194,8 +199,19 @@ impl MenuBar {
         self
     }
 
+    /// Set the explicit `focused` flag. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the menu bar into GPUI's focus graph. When set, the focus
+    /// ring renders based on `handle.is_focused(window)` — takes
+    /// precedence over [`MenuBar::focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -266,10 +282,16 @@ pub enum MenuBarWarning {
 }
 
 impl RenderOnce for MenuBar {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let on_open = rc_wrap(self.on_open);
         let highlighted = self.highlighted_index;
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // Pre-compute title offsets so the open-menu dropdown anchors under
         // the activating title instead of flush-left. Fixes #142 finding
@@ -285,6 +307,10 @@ impl RenderOnce for MenuBar {
             .items_center()
             .w_full()
             .overflow_hidden();
+
+        if let Some(handle) = self.focus_handle.as_ref() {
+            bar = bar.track_focus(handle);
+        }
 
         // Keyboard navigation
         if let Some(ref handler) = on_open {
@@ -315,7 +341,7 @@ impl RenderOnce for MenuBar {
         {
             let glass = &theme.glass;
             bar = bar.bg(glass.accessible_bg(GlassSize::Small, theme.accessibility_mode));
-            bar = apply_focus_ring(bar, theme, self.focused, glass.shadows(GlassSize::Small));
+            bar = apply_focus_ring(bar, theme, focused, glass.shadows(GlassSize::Small));
             bar = apply_high_contrast_border(bar, theme);
         }
 
@@ -479,6 +505,7 @@ impl Render for MenuBarController {
             .menus(menus)
             .open_menu(self.open_menu)
             .highlighted_index(self.highlighted_index)
+            .focus_handle(&self.focus_handle)
             .on_open(move |idx: Option<usize>, _window, cx| {
                 weak.update(cx, |this, cx| {
                     this.open_menu = idx;
@@ -549,6 +576,24 @@ mod tests {
     fn focused_builder() {
         let bar = MenuBar::new("test").focused(true);
         assert!(bar.focused);
+    }
+
+    #[test]
+    fn menu_bar_focus_handle_none_by_default() {
+        let bar = MenuBar::new("test");
+        assert!(bar.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn menu_bar_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let bar = MenuBar::new("test").focus_handle(&handle);
+            assert!(
+                bar.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]
