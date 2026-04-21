@@ -588,8 +588,7 @@ impl TahoeTheme {
 
             semantic,
 
-            accessibility_mode: crate::foundations::accessibility::detect_system_accessibility_mode(
-            ),
+            accessibility_mode: AccessibilityMode::DEFAULT,
 
             layout_direction: LayoutDirection::LeftToRight,
             first_weekday: 0,
@@ -1587,6 +1586,14 @@ impl TahoeTheme {
     /// accent colour. Use this when the host can read the user's macOS
     /// accent preference (e.g. via AppKit FFI) — the accent persists across
     /// light/dark switches.
+    ///
+    /// **Accessibility:** Reads the current macOS accessibility settings
+    /// (Full Keyboard Access, Reduce Motion, etc.) when the theme is
+    /// installed and on each appearance change. Accessibility settings are
+    /// *not* live-updated between appearance changes. Hosts that need
+    /// immediate response to accessibility setting changes should observe
+    /// `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification` and
+    /// re-call this method.
     pub fn install_with_system_appearance_and_accent(
         window: &mut Window,
         cx: &mut App,
@@ -1621,10 +1628,7 @@ impl TahoeTheme {
         window: &mut Window,
         cx: &mut App,
     ) -> gpui::Subscription {
-        Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
-        window.observe_window_appearance(|window, cx| {
-            Self::for_appearance_glass(window.appearance()).apply_in_window(window, cx);
-        })
+        Self::install_glass_with_system_appearance_and_accent(window, cx, AccentColor::default())
     }
 
     /// Like [`Self::install_glass_with_system_appearance`] but accepts an
@@ -1633,6 +1637,14 @@ impl TahoeTheme {
     /// across light/dark switches and propagates through the glass theme's
     /// accent-derived tokens (`accent`, `ring`, `focus_ring_color`,
     /// `glass.accent_tint`, `text_on_accent`).
+    ///
+    /// **Accessibility:** Reads the current macOS accessibility settings
+    /// when the theme is installed and on each appearance change.
+    /// Accessibility settings are *not* live-updated between appearance
+    /// changes. Hosts that need immediate response to accessibility
+    /// setting changes should observe
+    /// `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification` and
+    /// re-call this method.
     pub fn install_glass_with_system_appearance_and_accent(
         window: &mut Window,
         cx: &mut App,

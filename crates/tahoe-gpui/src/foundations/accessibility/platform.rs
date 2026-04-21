@@ -10,7 +10,7 @@
 //! is constructed) to seed [`TahoeTheme::accessibility_mode`] with the user's
 //! current system preferences. For live updates, the host should observe
 //! `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification` and call
-//! [`TahoeTheme::refresh_accessibility`].
+//! `TahoeTheme::refresh_accessibility`.
 
 use super::AccessibilityMode;
 
@@ -83,6 +83,16 @@ fn detect_platform() -> AccessibilityMode {
         if differentiate {
             mode |= AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR;
         }
+
+        let bold_text: bool = msg_send![workspace, isAccessibilityDisplayShouldBoldText];
+        if bold_text {
+            mode |= AccessibilityMode::BOLD_TEXT;
+        }
+
+        // NOTE: PREFER_CROSS_FADE_TRANSITIONS has no dedicated NSWorkspace
+        // property on macOS. The closest system signal is Reduce Motion
+        // (already detected above). When a future macOS API becomes available
+        // this slot should query it.
     }
 
     mode
@@ -95,20 +105,36 @@ fn detect_platform() -> AccessibilityMode {
 
 #[cfg(test)]
 mod tests {
-    use super::detect_system_accessibility_mode;
+    use super::{AccessibilityMode, detect_system_accessibility_mode};
     use core::prelude::v1::test;
 
     #[test]
     fn detect_system_returns_valid_mode() {
-        // Cannot assert specific flag values because the test machine's
-        // accessibility settings are unknown. Verifies the function runs
-        // without panic on all platforms (including test runners where
-        // AppKit may not be loaded).
+        // Verifies the function runs without panic on all platforms and
+        // returns no unknown flag bits.
         let mode = detect_system_accessibility_mode();
-        let _ = mode.full_keyboard_access();
-        let _ = mode.reduce_motion();
-        let _ = mode.increase_contrast();
-        let _ = mode.reduce_transparency();
-        let _ = mode.differentiate_without_color();
+
+        let all_flags = AccessibilityMode::REDUCE_TRANSPARENCY
+            | AccessibilityMode::INCREASE_CONTRAST
+            | AccessibilityMode::REDUCE_MOTION
+            | AccessibilityMode::BOLD_TEXT
+            | AccessibilityMode::FULL_KEYBOARD_ACCESS
+            | AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR
+            | AccessibilityMode::PREFER_CROSS_FADE_TRANSITIONS;
+
+        assert_eq!(
+            mode & !all_flags,
+            AccessibilityMode::DEFAULT,
+            "detect_system_accessibility_mode returned unknown bits"
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn detect_system_returns_default_on_non_macos() {
+        assert_eq!(
+            detect_system_accessibility_mode(),
+            AccessibilityMode::DEFAULT
+        );
     }
 }

@@ -585,6 +585,9 @@ fn motion_tokens_positive() {
 
 #[test]
 fn accessibility_mode_default() {
+    // Static constructors return DEFAULT accessibility mode.
+    // System-detected mode is set by the install_* methods and _with_a11y
+    // constructors, not by the plain dark()/light()/liquid_glass() paths.
     assert_eq!(
         TahoeTheme::dark().accessibility_mode,
         AccessibilityMode::DEFAULT
