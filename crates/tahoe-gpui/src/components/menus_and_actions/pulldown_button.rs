@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window,
+    deferred, div, px,
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
@@ -140,6 +140,10 @@ pub struct PulldownButton {
     is_open: bool,
     disabled: bool,
     focused: bool,
+    /// Optional focus handle; when set, the pull-down tracks GPUI's focus
+    /// graph and lights the ring reactively. Takes precedence over
+    /// [`PulldownButton::focused`].
+    focus_handle: Option<FocusHandle>,
     compact: bool,
     borderless: bool,
     highlighted_index: Option<usize>,
@@ -158,6 +162,7 @@ impl PulldownButton {
             is_open: false,
             disabled: false,
             focused: false,
+            focus_handle: None,
             compact: false,
             borderless: false,
             highlighted_index: None,
@@ -222,9 +227,19 @@ impl PulldownButton {
         self
     }
 
-    /// Set the focused state for rendering a focus ring.
+    /// Set the focused state for rendering a focus ring. Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is supplied — the handle's
+    /// reactive state (`handle.is_focused(window)`) takes precedence.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Wire the pull-down into GPUI's focus graph. When set, the focus
+    /// ring renders based on `handle.is_focused(window)` — takes
+    /// precedence over [`PulldownButton::focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -236,8 +251,14 @@ impl PulldownButton {
 }
 
 impl RenderOnce for PulldownButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // Wrap on_toggle in Rc for sharing across closures.
         let on_toggle = rc_wrap(self.on_toggle);
@@ -275,16 +296,23 @@ impl RenderOnce for PulldownButton {
             .min_h(px(theme.target_size()))
             .flex()
             .items_center()
-            .px(theme.spacing_md);
+            .px(theme.spacing_md)
+            .focusable();
 
+        // `track_focus` is unconditional on handle presence — a caller
+        // who supplied a handle expects it wired even when `disabled` is
+        // flipped transiently. Only interactivity (`cursor_pointer`,
+        // `on_click`, `on_key_down`) is gated on `!disabled`.
+        if let Some(handle) = self.focus_handle.as_ref() {
+            trigger = trigger.track_focus(handle);
+        }
         if !disabled {
             trigger = trigger.cursor_pointer();
         }
 
         // Glass-styled trigger surface (suppressed when `borderless`).
         if !borderless {
-            trigger =
-                apply_standard_control_styling(trigger, theme, GlassSize::Small, self.focused);
+            trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
         }
 
         if disabled {
@@ -616,6 +644,24 @@ mod tests {
         assert!(pb.compact);
         assert!(pb.borderless);
         assert_eq!(pb.highlighted_index, Some(2));
+    }
+
+    #[test]
+    fn pulldown_button_focus_handle_none_by_default() {
+        let pb = PulldownButton::new("test", "Menu");
+        assert!(pb.focus_handle.is_none());
+    }
+
+    #[gpui::test]
+    async fn pulldown_button_focus_handle_builder_stores_handle(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let handle = cx.focus_handle();
+            let pb = PulldownButton::new("test", "Menu").focus_handle(&handle);
+            assert!(
+                pb.focus_handle.is_some(),
+                "focus_handle(..) must round-trip into the field"
+            );
+        });
     }
 
     #[test]
