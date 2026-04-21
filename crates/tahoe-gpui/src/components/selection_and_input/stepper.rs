@@ -4,8 +4,11 @@ use gpui::prelude::*;
 use gpui::{App, ElementId, FocusHandle, KeyDownEvent, Window, div, px};
 
 use crate::callback_types::{OnF64Change, rc_wrap};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
+};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::apply_standard_control_styling;
+use crate::foundations::materials::{apply_focus_ring, apply_standard_control_styling};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 
 /// A compact +/- stepper control per Human Interface Guidelines.
@@ -64,6 +67,14 @@ pub struct Stepper {
     /// handle through `track_focus` so host keyboard navigation stays
     /// coherent with the shared focus graph.
     focus_handle: Option<FocusHandle>,
+    /// Host-owned focus group for per-button Tab stops under macOS
+    /// Full Keyboard Access. When paired with [`btn_focus_handles`](Self::btn_focus_handles)
+    /// and the active theme reports FKA, each button becomes its own
+    /// Tab stop.
+    btn_focus_group: Option<FocusGroup>,
+    /// Host-owned per-button focus handles. Expected to hold exactly 2
+    /// handles: handles\[0\] = minus, handles\[1\] = plus.
+    btn_focus_handles: Vec<FocusHandle>,
     /// When true, incrementing past `max` wraps around to `min` (and
     /// vice versa) instead of clamping. Matches HIG NSStepper's `wraps`
     /// property.
@@ -82,6 +93,8 @@ impl Stepper {
             disabled: false,
             focused: false,
             focus_handle: None,
+            btn_focus_group: None,
+            btn_focus_handles: Vec::new(),
             wraps: false,
             on_change: None,
         }
@@ -138,72 +151,114 @@ impl Stepper {
         self
     }
 
+    /// Attach a host-owned [`FocusGroup`] for per-button arrow-nav
+    /// and Tab-reachability under macOS Full Keyboard Access. When
+    /// paired with [`btn_focus_handles`](Self::btn_focus_handles) and
+    /// the active theme reports FKA, each button becomes its own Tab
+    /// stop.
+    pub fn btn_focus_group(mut self, group: FocusGroup) -> Self {
+        self.btn_focus_group = Some(group);
+        self
+    }
+
+    /// Per-button [`FocusHandle`]s. Expected to hold exactly 2 handles:
+    /// handles\[0\] = minus, handles\[1\] = plus. Host-owned because
+    /// `Stepper` is stateless `RenderOnce`.
+    pub fn btn_focus_handles(mut self, handles: Vec<FocusHandle>) -> Self {
+        self.btn_focus_handles = handles;
+        self
+    }
+
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
 
     /// Clamp `v` to the [min, max] range.
+    #[cfg(test)]
     fn clamp(&self, v: f64) -> f64 {
         v.clamp(self.min, self.max)
     }
 
-    /// Apply `delta` to `value`, wrapping around the range if `self.wraps`
+    /// Apply `delta` to `value`, wrapping around the range if `wraps`
     /// is set and clamping otherwise. The shared step path avoids drift
     /// from repeated float math at the edges.
-    fn apply_delta(&self, delta: f64) -> f64 {
-        let raw = self.value + delta;
-        if self.wraps {
-            let range = self.max - self.min;
+    fn apply_delta(value: f64, min: f64, max: f64, wraps: bool, delta: f64) -> f64 {
+        let raw = value + delta;
+        if wraps {
+            let range = max - min;
             if range <= 0.0 {
-                return self.clamp(raw);
+                return raw.clamp(min, max);
             }
             // Wrap around using modulo. Inclusive of both endpoints: going
             // past `max` lands on `min` (not on `min + step`).
-            if raw > self.max {
-                self.min + ((raw - self.max - f64::EPSILON).rem_euclid(range))
-            } else if raw < self.min {
-                self.max - ((self.min - raw - f64::EPSILON).rem_euclid(range))
+            if raw > max {
+                min + ((raw - max - f64::EPSILON).rem_euclid(range))
+            } else if raw < min {
+                max - ((min - raw - f64::EPSILON).rem_euclid(range))
             } else {
                 raw
             }
         } else {
-            self.clamp(raw)
+            raw.clamp(min, max)
         }
     }
 }
 
 impl RenderOnce for Stepper {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let Self {
+            id,
+            value,
+            min,
+            max,
+            step,
+            disabled,
+            focused: explicit_focused,
+            focus_handle,
+            btn_focus_group,
+            btn_focus_handles,
+            wraps,
+            on_change,
+        } = self;
+
         let theme = cx.theme();
+        // FKA: per-button focus when the host supplies a group + exactly 2 handles.
+        let fka_buttons = FocusGroup::bind_if_fka(
+            theme.full_keyboard_access(),
+            btn_focus_group,
+            btn_focus_handles,
+            2,
+        );
         // When the host supplies a focus handle, derive the focus-ring from it;
-        // otherwise use the explicit bool.
-        let focused = self
-            .focus_handle
+        // otherwise use the explicit bool. Suppress the capsule ring when FKA
+        // per-button handles are active — the per-button rings are the correct
+        // indicator.
+        let focused = focus_handle
             .as_ref()
             .map(|h| h.is_focused(window))
-            .unwrap_or(self.focused);
+            .unwrap_or(explicit_focused);
+        let capsule_focused = if fka_buttons.is_some() {
+            false
+        } else {
+            focused
+        };
 
         // In wrap mode the edges remain active — HIG NSStepper with
         // `wraps=true` lets `+` from `max` hop to `min`.
-        let at_min = !self.wraps && self.value <= self.min;
-        let at_max = !self.wraps && self.value >= self.max;
+        let at_min = !wraps && value <= min;
+        let at_max = !wraps && value >= max;
 
-        let decremented = self.apply_delta(-self.step);
-        let incremented = self.apply_delta(self.step);
-        // HIG macOS: "consider supporting Shift-click to change the value
-        // quickly" — apply 10× the step for Shift-modified clicks.
-        let shift_decremented = self.apply_delta(-self.step * 10.0);
-        let shift_incremented = self.apply_delta(self.step * 10.0);
-        let selector_id = self.id.to_string();
+        let apply = Self::apply_delta;
+        let decremented = apply(value, min, max, wraps, -step);
+        let incremented = apply(value, min, max, wraps, step);
+        let shift_decremented = apply(value, min, max, wraps, -step * 10.0);
+        let shift_incremented = apply(value, min, max, wraps, step * 10.0);
+        let selector_id = id.to_string();
         let minus_selector = format!("stepper-{selector_id}-minus");
         let plus_selector = format!("stepper-{selector_id}-plus");
 
-        let handler_rc = if !self.disabled {
-            rc_wrap(self.on_change)
-        } else {
-            None
-        };
+        let handler_rc = if !disabled { rc_wrap(on_change) } else { None };
 
         let btn_size = theme.target_size();
         let icon_size = theme.icon_size_inline;
@@ -213,7 +268,7 @@ impl RenderOnce for Stepper {
 
         // ── Minus button ────────────────────────────────────────────────
         let mut minus_btn = div()
-            .id(ElementId::from((self.id.clone(), "minus")))
+            .id(ElementId::from((id.clone(), "minus")))
             .debug_selector(move || minus_selector.clone())
             .min_w(px(btn_size))
             .h(px(btn_size))
@@ -227,7 +282,7 @@ impl RenderOnce for Stepper {
                     .color(theme.text_muted),
             );
 
-        if self.disabled || at_min {
+        if disabled || at_min {
             minus_btn = minus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
             let h_click = handler.clone();
@@ -244,9 +299,56 @@ impl RenderOnce for Stepper {
                     });
         }
 
+        // FKA: per-button focus + keyboard activation for minus.
+        if let Some((ref group, ref handles)) = fka_buttons {
+            let handle = &handles[0];
+            let is_btn_focused = handle.is_focused(window);
+            let nav_group = group.clone();
+            let nav_handler = handler_rc.clone();
+            minus_btn = minus_btn.focus_group(group, handle);
+            minus_btn = minus_btn.with_accessibility(
+                &AccessibilityProps::new()
+                    .role(AccessibilityRole::Button)
+                    .label("Decrement"),
+            );
+            minus_btn = apply_focus_ring(minus_btn, theme, is_btn_focused, &[]);
+            minus_btn = minus_btn.on_key_down(move |ev: &KeyDownEvent, window, cx| {
+                match ev.keystroke.key.as_str() {
+                    "up" | "right" => {
+                        nav_group.focus_next(window, cx);
+                        cx.stop_propagation();
+                    }
+                    "down" | "left" => {
+                        nav_group.focus_previous(window, cx);
+                        cx.stop_propagation();
+                    }
+                    _ => {
+                        if crate::foundations::keyboard::is_activation_key(ev) {
+                            if !disabled
+                                && !at_min
+                                && let Some(ref h) = nav_handler
+                            {
+                                let shift = ev.keystroke.modifiers.shift;
+                                h(
+                                    if shift {
+                                        shift_decremented
+                                    } else {
+                                        decremented
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            }
+                            cx.stop_propagation();
+                        }
+                    }
+                }
+            });
+        }
+
         // ── Plus button ─────────────────────────────────────────────────
         let mut plus_btn = div()
-            .id(ElementId::from((self.id.clone(), "plus")))
+            .id(ElementId::from((id.clone(), "plus")))
             .debug_selector(move || plus_selector.clone())
             .min_w(px(btn_size))
             .h(px(btn_size))
@@ -260,7 +362,7 @@ impl RenderOnce for Stepper {
                     .color(theme.text_muted),
             );
 
-        if self.disabled || at_max {
+        if disabled || at_max {
             plus_btn = plus_btn.opacity(0.4);
         } else if let Some(ref handler) = handler_rc {
             let h_click = handler.clone();
@@ -275,6 +377,53 @@ impl RenderOnce for Stepper {
                         };
                         h_click(next, window, cx);
                     });
+        }
+
+        // FKA: per-button focus + keyboard activation for plus.
+        if let Some((ref group, ref handles)) = fka_buttons {
+            let handle = &handles[1];
+            let is_btn_focused = handle.is_focused(window);
+            let nav_group = group.clone();
+            let nav_handler = handler_rc.clone();
+            plus_btn = plus_btn.focus_group(group, handle);
+            plus_btn = plus_btn.with_accessibility(
+                &AccessibilityProps::new()
+                    .role(AccessibilityRole::Button)
+                    .label("Increment"),
+            );
+            plus_btn = apply_focus_ring(plus_btn, theme, is_btn_focused, &[]);
+            plus_btn = plus_btn.on_key_down(move |ev: &KeyDownEvent, window, cx| {
+                match ev.keystroke.key.as_str() {
+                    "up" | "right" => {
+                        nav_group.focus_next(window, cx);
+                        cx.stop_propagation();
+                    }
+                    "down" | "left" => {
+                        nav_group.focus_previous(window, cx);
+                        cx.stop_propagation();
+                    }
+                    _ => {
+                        if crate::foundations::keyboard::is_activation_key(ev) {
+                            if !disabled
+                                && !at_max
+                                && let Some(ref h) = nav_handler
+                            {
+                                let shift = ev.keystroke.modifiers.shift;
+                                h(
+                                    if shift {
+                                        shift_incremented
+                                    } else {
+                                        incremented
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            }
+                            cx.stop_propagation();
+                        }
+                    }
+                }
+            });
         }
 
         // ── Vertical divider (centered, partial height per HIG) ──
@@ -294,64 +443,74 @@ impl RenderOnce for Stepper {
             .child(divider)
             .child(plus_btn);
 
-        let mut container = apply_standard_control_styling(row, theme, GlassSize::Small, focused)
-            .rounded(capsule_radius)
-            .id(self.id.clone())
-            .focusable();
+        let mut container =
+            apply_standard_control_styling(row, theme, GlassSize::Small, capsule_focused)
+                .rounded(capsule_radius)
+                .overflow_hidden()
+                .id(id);
 
-        if let Some(handle) = self.focus_handle.as_ref() {
+        // Only make the container a Tab stop in single-tab-stop mode.
+        // FKA per-button handles provide individual Tab stops instead.
+        if fka_buttons.is_none() {
+            container = container.focusable();
+        }
+
+        if let Some(handle) = focus_handle.as_ref() {
             container = container.track_focus(handle);
         }
 
-        if self.disabled {
+        if disabled {
             container = container.opacity(0.5);
-        } else if let Some(handler) = handler_rc {
-            container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                // HIG macOS: Shift-arrow bumps by 10× the step, mirroring
-                // the Shift-click behaviour already wired on the +/- buttons.
-                let shift = event.keystroke.modifiers.shift;
-                match event.keystroke.key.as_str() {
-                    "up" | "right" => {
-                        handler(
-                            if shift {
-                                shift_incremented
-                            } else {
-                                incremented
-                            },
-                            window,
-                            cx,
-                        );
+        } else if fka_buttons.is_none() {
+            // Single-tab-stop mode (no FKA per-button handles).
+            if let Some(handler) = handler_rc {
+                container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    // HIG macOS: Shift-arrow bumps by 10× the step, mirroring
+                    // the Shift-click behaviour already wired on the +/- buttons.
+                    let shift = event.keystroke.modifiers.shift;
+                    match event.keystroke.key.as_str() {
+                        "up" | "right" => {
+                            handler(
+                                if shift {
+                                    shift_incremented
+                                } else {
+                                    incremented
+                                },
+                                window,
+                                cx,
+                            );
+                        }
+                        "down" | "left" => {
+                            handler(
+                                if shift {
+                                    shift_decremented
+                                } else {
+                                    decremented
+                                },
+                                window,
+                                cx,
+                            );
+                        }
+                        // Space/Enter activate the stepper (increment). The
+                        // single-tab-stop design means there is no natural "which
+                        // button" answer — incrementing matches the leading `+`
+                        // visual and common convention.
+                        _ if crate::foundations::keyboard::is_activation_key(event) => {
+                            cx.stop_propagation();
+                            handler(
+                                if shift {
+                                    shift_incremented
+                                } else {
+                                    incremented
+                                },
+                                window,
+                                cx,
+                            );
+                        }
+                        _ => {}
                     }
-                    "down" | "left" => {
-                        handler(
-                            if shift {
-                                shift_decremented
-                            } else {
-                                decremented
-                            },
-                            window,
-                            cx,
-                        );
-                    }
-                    // Space/Enter activate the stepper (increment). The
-                    // single-tab-stop design means there is no natural "which
-                    // button" answer — incrementing matches the leading `+`
-                    // visual and common convention.
-                    _ if crate::foundations::keyboard::is_activation_key(event) => {
-                        cx.stop_propagation();
-                        handler(
-                            if shift {
-                                shift_incremented
-                            } else {
-                                incremented
-                            },
-                            window,
-                            cx,
-                        );
-                    }
-                    _ => {}
-                }
-            });
+                });
+            }
         }
 
         container
@@ -435,6 +594,13 @@ mod tests {
             SELF_SRC.contains("TODO: HIG press-and-hold auto-repeat"),
             "auto-repeat TODO doc missing from stepper.rs"
         );
+    }
+
+    #[test]
+    fn stepper_btn_focus_fields_default_empty() {
+        let s = Stepper::new("test");
+        assert!(s.btn_focus_group.is_none());
+        assert!(s.btn_focus_handles.is_empty());
     }
 }
 
@@ -549,6 +715,418 @@ mod interaction_tests {
             // clamped to max 10.0.
             assert!((host.value - 10.0).abs() < f64::EPSILON);
             assert_eq!(host.changes, vec![6.0, 10.0]);
+        });
+    }
+}
+
+#[cfg(test)]
+mod fka_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext};
+
+    use super::Stepper;
+    use crate::foundations::accessibility::{AccessibilityMode, FocusGroup};
+    use crate::foundations::theme::TahoeTheme;
+    use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
+    use core::prelude::v1::test;
+
+    struct StepperFkaHarness {
+        handles: Vec<FocusHandle>,
+        group: FocusGroup,
+        value: f64,
+        changes: Vec<f64>,
+    }
+
+    impl StepperFkaHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                handles: vec![cx.focus_handle(), cx.focus_handle()],
+                group: FocusGroup::cycle(),
+                value: 5.0,
+                changes: Vec::new(),
+            }
+        }
+    }
+
+    impl Render for StepperFkaHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let entity = cx.entity().clone();
+            Stepper::new("fka-stepper")
+                .value(self.value)
+                .min(0.0)
+                .max(10.0)
+                .step(1.0)
+                .btn_focus_group(self.group.clone())
+                .btn_focus_handles(self.handles.clone())
+                .on_change(move |value, _window, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.value = value;
+                        this.changes.push(value);
+                        cx.notify();
+                    });
+                })
+        }
+    }
+
+    fn setup_fka_window<V: Render + 'static>(
+        cx: &mut TestAppContext,
+        build: impl FnOnce(&mut gpui::Window, &mut gpui::Context<V>) -> V,
+    ) -> (gpui::Entity<V>, &mut gpui::VisualTestContext) {
+        crate::test_helpers::helpers::register_test_keybindings(cx);
+        cx.add_window_view(|window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            build(window, cx)
+        })
+    }
+
+    #[gpui::test]
+    async fn fka_off_does_not_register_btn_handles(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+        host.update(cx, |host, _cx| {
+            assert!(
+                host.group.is_empty(),
+                "FKA off: group should stay empty after render"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_registers_both_btn_handles(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+        host.update(cx, |host, _cx| {
+            assert_eq!(
+                host.group.len(),
+                2,
+                "FKA on: both buttons should be registered"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_handles_order_minus_then_plus(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+        host.update(cx, |host, _cx| {
+            assert_eq!(
+                host.group.register(&host.handles[0]),
+                0,
+                "minus handle at index 0"
+            );
+            assert_eq!(
+                host.group.register(&host.handles[1]),
+                1,
+                "plus handle at index 1"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_mismatched_handle_count_skips_registration(cx: &mut TestAppContext) {
+        struct MismatchHarness {
+            group: FocusGroup,
+            handle: FocusHandle,
+        }
+
+        impl Render for MismatchHarness {
+            fn render(
+                &mut self,
+                _window: &mut gpui::Window,
+                _cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                Stepper::new("mismatch-stepper")
+                    .value(5.0)
+                    .min(0.0)
+                    .max(10.0)
+                    .btn_focus_group(self.group.clone())
+                    .btn_focus_handles(vec![self.handle.clone()]) // 1 handle, expects 2
+            }
+        }
+
+        let (host, cx) = setup_fka_window(cx, |_window, cx| MismatchHarness {
+            group: FocusGroup::cycle(),
+            handle: cx.focus_handle(),
+        });
+        host.update(cx, |host, _cx| {
+            assert!(
+                host.group.is_empty(),
+                "mismatched count: group should stay empty"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_activation_on_minus_decrements(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+
+        // Focus the minus button and press Enter.
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!((host.value - 4.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![4.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_activation_on_plus_increments(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+
+        // Focus the plus button and press Enter.
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!((host.value - 6.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![6.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_shift_activation_on_minus_applies_10x(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("shift-enter");
+        host.update_in(cx, |host, _window, _cx| {
+            // 5.0 - 10×1.0 = -5.0, clamped to 0.0
+            assert!((host.value - 0.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![0.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_arrow_navigates_between_buttons(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+
+        // Focus minus, press down → should move to plus.
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("down");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[1].is_focused(window),
+                "down from minus should focus plus"
+            );
+        });
+
+        // Press up → should move back to minus.
+        cx.press("up");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.handles[0].is_focused(window),
+                "up from plus should focus minus"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_shift_activation_on_plus_applies_10x(cx: &mut TestAppContext) {
+        let (host, cx) = setup_fka_window(cx, |_window, cx| StepperFkaHarness::new(cx));
+
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("shift-enter");
+        host.update_in(cx, |host, _window, _cx| {
+            // 5.0 + 10×1.0 = 15.0, clamped to 10.0
+            assert!((host.value - 10.0).abs() < f64::EPSILON);
+            assert_eq!(host.changes, vec![10.0]);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_activation_at_boundary_is_noop(cx: &mut TestAppContext) {
+        struct BoundaryHarness {
+            handles: Vec<FocusHandle>,
+            group: FocusGroup,
+            value: f64,
+            changes: Vec<f64>,
+        }
+
+        impl BoundaryHarness {
+            fn new(cx: &mut Context<Self>) -> Self {
+                Self {
+                    handles: vec![cx.focus_handle(), cx.focus_handle()],
+                    group: FocusGroup::cycle(),
+                    value: 0.0,
+                    changes: Vec::new(),
+                }
+            }
+        }
+
+        impl Render for BoundaryHarness {
+            fn render(
+                &mut self,
+                _window: &mut gpui::Window,
+                cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                let entity = cx.entity().clone();
+                Stepper::new("boundary-stepper")
+                    .value(self.value)
+                    .min(0.0)
+                    .max(10.0)
+                    .step(1.0)
+                    .btn_focus_group(self.group.clone())
+                    .btn_focus_handles(self.handles.clone())
+                    .on_change(move |value, _window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.value = value;
+                            this.changes.push(value);
+                            cx.notify();
+                        });
+                    })
+            }
+        }
+
+        let (host, cx) = setup_fka_window(cx, |_window, cx| BoundaryHarness::new(cx));
+
+        // Minus button at min boundary — activation should be suppressed.
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+        });
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!(
+                host.changes.is_empty(),
+                "activation at min boundary should not fire on_change"
+            );
+            assert!((host.value - 0.0).abs() < f64::EPSILON);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_disabled_activation_is_noop(cx: &mut TestAppContext) {
+        struct DisabledHarness {
+            handles: Vec<FocusHandle>,
+            group: FocusGroup,
+            value: f64,
+            changes: Vec<f64>,
+        }
+
+        impl DisabledHarness {
+            fn new(cx: &mut Context<Self>) -> Self {
+                Self {
+                    handles: vec![cx.focus_handle(), cx.focus_handle()],
+                    group: FocusGroup::cycle(),
+                    value: 5.0,
+                    changes: Vec::new(),
+                }
+            }
+        }
+
+        impl Render for DisabledHarness {
+            fn render(
+                &mut self,
+                _window: &mut gpui::Window,
+                cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                let entity = cx.entity().clone();
+                Stepper::new("disabled-stepper")
+                    .value(self.value)
+                    .min(0.0)
+                    .max(10.0)
+                    .step(1.0)
+                    .disabled(true)
+                    .btn_focus_group(self.group.clone())
+                    .btn_focus_handles(self.handles.clone())
+                    .on_change(move |value, _window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.value = value;
+                            this.changes.push(value);
+                            cx.notify();
+                        });
+                    })
+            }
+        }
+
+        let (host, cx) = setup_fka_window(cx, |_window, cx| DisabledHarness::new(cx));
+
+        // Plus button on disabled stepper — activation should be suppressed.
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            assert!(
+                host.changes.is_empty(),
+                "activation on disabled stepper should not fire on_change"
+            );
+            assert!((host.value - 5.0).abs() < f64::EPSILON);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_wraps_mode_activation_wraps_at_max(cx: &mut TestAppContext) {
+        struct WrapsHarness {
+            handles: Vec<FocusHandle>,
+            group: FocusGroup,
+            value: f64,
+            changes: Vec<f64>,
+        }
+
+        impl WrapsHarness {
+            fn new(cx: &mut Context<Self>) -> Self {
+                Self {
+                    handles: vec![cx.focus_handle(), cx.focus_handle()],
+                    group: FocusGroup::cycle(),
+                    value: 10.0,
+                    changes: Vec::new(),
+                }
+            }
+        }
+
+        impl Render for WrapsHarness {
+            fn render(
+                &mut self,
+                _window: &mut gpui::Window,
+                cx: &mut Context<Self>,
+            ) -> impl IntoElement {
+                let entity = cx.entity().clone();
+                Stepper::new("wraps-stepper")
+                    .value(self.value)
+                    .min(0.0)
+                    .max(10.0)
+                    .step(1.0)
+                    .wraps(true)
+                    .btn_focus_group(self.group.clone())
+                    .btn_focus_handles(self.handles.clone())
+                    .on_change(move |value, _window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.value = value;
+                            this.changes.push(value);
+                            cx.notify();
+                        });
+                    })
+            }
+        }
+
+        let (host, cx) = setup_fka_window(cx, |_window, cx| WrapsHarness::new(cx));
+
+        // Plus button at max with wraps=true → wraps via modulo to ≈ 1.0
+        // (min + (step - EPSILON).rem_euclid(range)).
+        host.update_in(cx, |host, window, cx| {
+            host.handles[1].focus(window, cx);
+        });
+        cx.press("enter");
+        host.update_in(cx, |host, _window, _cx| {
+            let expected = 0.0 + (1.0 - f64::EPSILON).rem_euclid(10.0);
+            assert!(
+                (host.value - expected).abs() < 1e-10,
+                "wraps mode: plus at max should wrap, got {}",
+                host.value
+            );
+            assert_eq!(host.changes.len(), 1);
         });
     }
 }
