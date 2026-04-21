@@ -697,7 +697,7 @@ impl TahoeTheme {
             toggle_track_width: px(36.0),
             toggle_track_height: px(20.0),
             menu_inset: px(6.0),
-            avatar_size: px(28.0),
+            avatar_size: px(32.0),
             icon_size: px(16.0),
             shimmer_duration_ms: 2000,
             shimmer_spread: 2.0,

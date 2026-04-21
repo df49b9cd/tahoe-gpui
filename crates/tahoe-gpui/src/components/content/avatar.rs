@@ -7,8 +7,12 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/image-views>
 
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::color;
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::LayoutDirection;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle};
 use gpui::prelude::*;
 use gpui::{App, Hsla, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img, px};
@@ -164,6 +168,29 @@ fn status_color(status: AvatarStatus, theme: &TahoeTheme) -> Hsla {
     }
 }
 
+/// Apple-style monogram palette — saturated hues at medium lightness.
+const MONOGRAM_PALETTE: [Hsla; 7] = [
+    Hsla { h: 215.0 / 360.0, s: 0.70, l: 0.50, a: 1.0 }, // blue
+    Hsla { h: 145.0 / 360.0, s: 0.65, l: 0.42, a: 1.0 }, // green
+    Hsla { h: 30.0 / 360.0, s: 0.85, l: 0.55, a: 1.0 },  // orange
+    Hsla { h: 280.0 / 360.0, s: 0.60, l: 0.50, a: 1.0 }, // purple
+    Hsla { h: 340.0 / 360.0, s: 0.70, l: 0.55, a: 1.0 }, // pink
+    Hsla { h: 185.0 / 360.0, s: 0.65, l: 0.42, a: 1.0 }, // teal
+    Hsla { h: 0.0 / 360.0, s: 0.70, l: 0.50, a: 1.0 },   // red
+];
+
+/// Deterministic background color for initials-based avatars.
+///
+/// Hashes the fallback text and picks from a fixed 7-hue palette so
+/// the same name always produces the same color — matching Apple
+/// Contacts / Messages convention.
+fn monogram_color(fallback: &str) -> Hsla {
+    let mut hasher = DefaultHasher::new();
+    fallback.hash(&mut hasher);
+    let index = (hasher.finish() as usize) % MONOGRAM_PALETTE.len();
+    MONOGRAM_PALETTE[index]
+}
+
 impl RenderOnce for Avatar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -176,9 +203,22 @@ impl RenderOnce for Avatar {
             .unwrap_or_else(|| AvatarSize::for_diameter(f32::from(size)));
         let font_size = canonical.initials_text_style().attrs().size;
         let glass = &theme.glass;
-        let bg = self
-            .bg_color
-            .unwrap_or_else(|| glass.accessible_bg(GlassSize::Small, theme.accessibility_mode));
+
+        // Pick background: explicit > monogram palette (no-image) > glass material
+        let bg = self.bg_color.unwrap_or_else(|| {
+            if self.image_url.is_none() {
+                monogram_color(self.fallback.as_ref())
+            } else {
+                glass.accessible_bg(GlassSize::Small, theme.accessibility_mode)
+            }
+        });
+
+        // Use "?" when fallback is empty or whitespace-only
+        let display_fallback: SharedString = if self.fallback.trim().is_empty() {
+            "?".into()
+        } else {
+            self.fallback.clone()
+        };
 
         let a11y_label: SharedString = self
             .accessibility_label
@@ -188,6 +228,8 @@ impl RenderOnce for Avatar {
             .label(a11y_label)
             .role(AccessibilityRole::Image);
 
+        let text_color = color::text_on_background(bg);
+
         let mut circle = div()
             .size(size)
             .rounded(theme.radius_full)
@@ -196,7 +238,7 @@ impl RenderOnce for Avatar {
             .justify_center()
             .overflow_hidden()
             .text_size(font_size)
-            .text_color(theme.text)
+            .text_color(text_color)
             .bg(bg)
             .shadow(glass.shadows(GlassSize::Small).to_vec());
 
@@ -210,7 +252,7 @@ impl RenderOnce for Avatar {
                     .object_fit(ObjectFit::Cover),
             )
         } else {
-            circle.child(self.fallback)
+            circle.child(display_fallback)
         };
 
         // Wrapper carries the accessibility props and (optionally) the
@@ -222,24 +264,26 @@ impl RenderOnce for Avatar {
             let ring_color = theme.surface;
 
             // DWC shape cue: overlay a tiny icon so state is not color-only.
-            // Online=Check, Away=Minus (moon unavailable), Busy=Minus, Offline=XmarkCircleFill
             let dwc_icon = if theme.accessibility_mode.differentiate_without_color() {
                 let icon_name = match status {
                     AvatarStatus::Online => IconName::Check,
-                    AvatarStatus::Away | AvatarStatus::Busy => IconName::Minus,
-                    AvatarStatus::Offline => IconName::XmarkCircleFill,
+                    AvatarStatus::Away => IconName::CircleFilled,
+                    AvatarStatus::Busy => IconName::Minus,
+                    AvatarStatus::Offline => IconName::X,
                 };
                 let icon_size = (f32::from(dot_size) * 0.6).max(6.0);
-                let icon_color = crate::foundations::color::text_on_background(dot_bg);
+                let icon_color = color::text_on_background(dot_bg);
                 Some(Icon::new(icon_name).size(px(icon_size)).color(icon_color))
             } else {
                 None
             };
 
+            let is_rtl = theme.layout_direction == LayoutDirection::RightToLeft;
             let mut status_dot = div()
                 .absolute()
-                .right_0()
                 .bottom_0()
+                .when(is_rtl, |el| el.left_0())
+                .when(!is_rtl, |el| el.right_0())
                 .size(dot_size)
                 .rounded(theme.radius_full)
                 .bg(dot_bg)
@@ -301,7 +345,9 @@ fn status_dot_size(avatar_diameter: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::components::content::avatar::{Avatar, AvatarSize, AvatarStatus, status_dot_size};
+    use crate::components::content::avatar::{
+        Avatar, AvatarSize, AvatarStatus, MONOGRAM_PALETTE, monogram_color, status_dot_size,
+    };
     use crate::foundations::theme::TextStyle;
     use core::prelude::v1::test;
     use gpui::{hsla, px};
@@ -416,5 +462,41 @@ mod tests {
         assert!((status_dot_size(40.0) - 10.0).abs() < f32::EPSILON);
         // 96pt avatar -> 24pt dot.
         assert!((status_dot_size(96.0) - 24.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn monogram_color_is_deterministic() {
+        let a = monogram_color("Alice");
+        let b = monogram_color("Alice");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn monogram_color_differentiates_names() {
+        let alice = monogram_color("Alice");
+        let bob = monogram_color("Bob");
+        assert_ne!(alice, bob);
+    }
+
+    #[test]
+    fn monogram_color_uses_palette() {
+        let c = monogram_color("Test User");
+        assert!(
+            MONOGRAM_PALETTE.contains(&c),
+            "monogram_color must return a palette entry"
+        );
+    }
+
+    #[test]
+    fn empty_fallback_is_stored_as_given() {
+        // The builder stores the original; render() swaps to "?".
+        let avatar = Avatar::new("");
+        assert_eq!(avatar.fallback.as_ref(), "");
+    }
+
+    #[test]
+    fn whitespace_only_fallback_is_stored_as_given() {
+        let avatar = Avatar::new("   ");
+        assert_eq!(avatar.fallback.as_ref(), "   ");
     }
 }
