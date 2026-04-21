@@ -3,7 +3,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div};
 
-use tahoe_gpui::components::selection_and_input::picker::{Picker, PickerItem};
+use tahoe_gpui::components::selection_and_input::picker::{Picker, PickerItem, PickerStyle};
 use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
@@ -18,6 +18,7 @@ pub fn render(
     let entity = cx.entity().clone();
     let picker_selected = state.picker_selected.clone();
     let picker_open = state.picker_open;
+    let picker_radio_selected = state.picker_radio_selected.clone();
 
     let status_text = match &picker_selected {
         Some(v) => format!("Selected: {v}"),
@@ -93,7 +94,31 @@ pub fn render(
                             PickerItem::new("Large", "lg"),
                         ])
                         .placeholder("Choose a size"),
-                ),
+                )
+                .child(
+                    div()
+                        .text_style(TextStyle::Title3, theme)
+                        .text_color(theme.text)
+                        .child("Radio style"),
+                )
+                .child({
+                    let entity_radio = entity.clone();
+                    Picker::new("pk-radio")
+                        .style(PickerStyle::Radio)
+                        .accessibility_label("Theme")
+                        .items(vec![
+                            PickerItem::new("System", "system"),
+                            PickerItem::new("Light", "light"),
+                            PickerItem::new("Dark", "dark"),
+                        ])
+                        .selected(picker_radio_selected)
+                        .on_change(move |value, _window, cx| {
+                            entity_radio.update(cx, |this, cx| {
+                                this.picker_radio_selected = Some(value.clone());
+                                cx.notify();
+                            });
+                        })
+                }),
         )
         .into_any_element()
 }
