@@ -1568,13 +1568,51 @@ fn idempotency_seeds_pipeline() {
     }
 
     let seeds: &[(&str, RemendOptions)] = &[
-        ("_$", only(|o| { o.italic = true; o.inline_katex = true; })),
-        ("[[", only(|o| { o.links = true; })),
-        ("`\\", only(|o| { o.inline_code = true; })),
-        ("*\\", only(|o| { o.italic = true; })),
-        ("_*>0", only(|o| { o.italic = true; })),
-        ("``[ [", only(|o| { o.links = true; o.link_mode = LinkMode::TextOnly; })),
-        ("$**", only(|o| { o.bold = true; o.inline_katex = true; })),
+        (
+            "_$",
+            only(|o| {
+                o.italic = true;
+                o.inline_katex = true;
+            }),
+        ),
+        (
+            "[[",
+            only(|o| {
+                o.links = true;
+            }),
+        ),
+        (
+            "`\\",
+            only(|o| {
+                o.inline_code = true;
+            }),
+        ),
+        (
+            "*\\",
+            only(|o| {
+                o.italic = true;
+            }),
+        ),
+        (
+            "_*>0",
+            only(|o| {
+                o.italic = true;
+            }),
+        ),
+        (
+            "``[ [",
+            only(|o| {
+                o.links = true;
+                o.link_mode = LinkMode::TextOnly;
+            }),
+        ),
+        (
+            "$**",
+            only(|o| {
+                o.bold = true;
+                o.inline_katex = true;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {
