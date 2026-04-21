@@ -545,7 +545,8 @@ mod interaction_tests {
         cx.click_on(STEPPER_PLUS);
         cx.press("shift-enter");
         host.update_in(cx, |host, _window, _cx| {
-            // 5.0 + 10×1.0 = 15.0, but clamped to max 10.0
+            // After the click, value=6; Shift+Enter bumps by 10× step → 16,
+            // clamped to max 10.0.
             assert!((host.value - 10.0).abs() < f64::EPSILON);
             assert_eq!(host.changes, vec![6.0, 10.0]);
         });
