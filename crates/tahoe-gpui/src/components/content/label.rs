@@ -125,7 +125,11 @@ impl RenderOnce for Label {
             LabelVariant::FormLabel | LabelVariant::SectionHeader => theme.text_muted,
             LabelVariant::Plain => theme.text,
         });
-        let line_height = base_attrs.leading;
+
+        // Scale text size and leading through Dynamic Type.
+        let scale = theme.effective_font_scale_factor();
+        let text_size = base_attrs.size * scale;
+        let line_height = base_attrs.leading * scale;
 
         // Render text with per-variant transforms. For `SectionHeader` we
         // uppercase the string — GPUI's `text-transform` support is not
@@ -139,7 +143,8 @@ impl RenderOnce for Label {
             .flex()
             .items_center()
             .gap(theme.spacing_xs)
-            .text_size(base_attrs.size)
+            .font_family(theme.font_sans.clone())
+            .text_size(text_size)
             .font_weight(weight)
             .text_color(text_color)
             .line_height(DefiniteLength::from(line_height));
@@ -250,5 +255,44 @@ mod tests {
         assert!(label.text_style.is_none());
         // The render-time resolution verifies this in full; we assert the
         // builder does not spuriously set the style.
+    }
+
+    #[test]
+    fn dynamic_type_scales_size_and_leading_proportionally() {
+        use crate::foundations::theme::TahoeTheme;
+
+        for (scale, label) in [(0.5, "50%"), (1.0, "100%"), (1.5, "150%"), (2.0, "200%")] {
+            let mut theme = TahoeTheme::dark();
+            theme.font_scale_factor = scale;
+
+            let attrs = TextStyle::Body.attrs();
+            let effective_scale = theme.effective_font_scale_factor();
+
+            let scaled_size = f32::from(attrs.size) * effective_scale;
+            let scaled_leading = f32::from(attrs.leading) * effective_scale;
+
+            // Both dimensions must be scaled by exactly the same factor so the
+            // size-to-leading ratio is preserved across Dynamic Type sizes.
+            let ratio = scaled_leading / scaled_size;
+            let baseline_ratio = f32::from(attrs.leading) / f32::from(attrs.size);
+            assert!(
+                (ratio - baseline_ratio).abs() < f32::EPSILON,
+                "{label}: size-to-leading ratio changed after scaling (ratio={ratio}, baseline={baseline_ratio})",
+            );
+
+            // The unscaled values should differ from the scaled ones when scale ≠ 1.
+            if effective_scale != 1.0 {
+                assert_ne!(
+                    scaled_size,
+                    f32::from(attrs.size),
+                    "{label}: scaled size should differ from base"
+                );
+                assert_ne!(
+                    scaled_leading,
+                    f32::from(attrs.leading),
+                    "{label}: scaled leading should differ from base"
+                );
+            }
+        }
     }
 }
