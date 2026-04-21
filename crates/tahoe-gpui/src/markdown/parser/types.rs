@@ -91,6 +91,11 @@ pub enum MarkdownBlock {
         checked: bool,
         content: Vec<InlineContent>,
     },
+    /// A GFM footnote definition (e.g. `[^1]: Explanation text.`).
+    FootnoteDefinition {
+        label: String,
+        content: Vec<MarkdownBlock>,
+    },
 }
 
 /// Inline content within a paragraph or heading.
@@ -107,6 +112,9 @@ pub enum InlineContent {
     },
     /// An inline citation reference, e.g. `[1]`. The number is 1-based.
     Citation(usize),
+    /// A GFM footnote reference, e.g. `[^1]`. The label is the identifier
+    /// between the carets (e.g., `"1"` for `[^1]`, `"note"` for `[^note]`).
+    FootnoteReference(String),
     /// An inline image.
     Image {
         url: String,

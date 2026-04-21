@@ -1007,6 +1007,21 @@ pub fn render_block_at_depth(block: &MarkdownBlock, ctx: &RenderCtx, depth: usiz
                 .child(render_inlines(content, ctx))
                 .into_any_element()
         }
+        MarkdownBlock::FootnoteDefinition { label, content } => div()
+            .flex()
+            .flex_col()
+            .gap(ctx.theme.spacing_xs)
+            .pl(ctx.theme.spacing_md)
+            .border_l_2()
+            .border_color(ctx.theme.text_muted.opacity(0.3))
+            .child(
+                div()
+                    .text_style(TextStyle::Footnote, ctx.theme)
+                    .text_color(ctx.theme.text_muted)
+                    .child(format!("[^{label}]:")),
+            )
+            .children(content.iter().map(|b| render_block_at_depth(b, ctx, depth)))
+            .into_any_element(),
     }
 }
 
@@ -1314,6 +1329,13 @@ fn flatten_inlines_to_runs(
                 citation_style.font_weight = FontWeight::SEMIBOLD;
                 let marker = format!("[{n}]");
                 out.push(&marker, &citation_style);
+            }
+            InlineContent::FootnoteReference(label) => {
+                let mut fn_style = current.clone();
+                fn_style.color = styles.accent_color;
+                fn_style.font_weight = FontWeight::SEMIBOLD;
+                let marker = format!("[^{label}]");
+                out.push(&marker, &fn_style);
             }
             InlineContent::Image { alt, .. } => {
                 if !alt.is_empty() {

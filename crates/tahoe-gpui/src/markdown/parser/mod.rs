@@ -462,6 +462,37 @@ impl IncrementalMarkdownParser {
                 )])),
                 start + 1,
             ),
+            Event::Start(Tag::FootnoteDefinition(label)) => {
+                let label_str = label.to_string();
+                let mut inner_blocks = Vec::new();
+                let mut idx = start + 1;
+                while idx < events.len() {
+                    match &events[idx] {
+                        Event::End(TagEnd::FootnoteDefinition) => {
+                            idx += 1;
+                            break;
+                        }
+                        _ => {
+                            let (block, next) = self.parse_block(events, idx);
+                            if let Some(b) = block {
+                                inner_blocks.push(b);
+                            }
+                            if next <= idx {
+                                idx += 1;
+                            } else {
+                                idx = next;
+                            }
+                        }
+                    }
+                }
+                (
+                    Some(MarkdownBlock::FootnoteDefinition {
+                        label: label_str,
+                        content: inner_blocks,
+                    }),
+                    idx,
+                )
+            }
             _ => (None, start + 1),
         }
     }
@@ -578,6 +609,11 @@ impl IncrementalMarkdownParser {
                     text_buf.push_str(html);
                     idx += 1;
                 }
+                Event::FootnoteReference(label) => {
+                    flush_text(&mut text_buf, &mut inlines);
+                    inlines.push(InlineContent::FootnoteReference(label.to_string()));
+                    idx += 1;
+                }
                 _ => {
                     flush_text(&mut text_buf, &mut inlines);
                     idx += 1;
@@ -617,6 +653,7 @@ fn inline_plain_text(inlines: &[InlineContent]) -> String {
                 InlineContent::Image { alt, .. } => out.push_str(alt),
                 InlineContent::SoftBreak | InlineContent::HardBreak => out.push(' '),
                 InlineContent::Citation(_)
+                | InlineContent::FootnoteReference(_)
                 | InlineContent::InlineMath(_)
                 | InlineContent::TaskMarker(_) => out.push(' '),
             }

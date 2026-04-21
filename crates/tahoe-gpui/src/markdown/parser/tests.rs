@@ -988,3 +988,140 @@ fn parse_mixed_html_and_markdown() {
         other => panic!("expected paragraph, got {:?}", other),
     }
 }
+
+// --- GFM Footnote tests (issue #216) ---
+
+#[test]
+fn parse_footnote_reference() {
+    let blocks = parse("See[^1] for details\n\n[^1]: The explanation");
+    match &blocks[0] {
+        MarkdownBlock::Paragraph(inlines) => {
+            assert!(
+                inlines.iter().any(|i| matches!(
+                    i,
+                    InlineContent::FootnoteReference(label) if label == "1"
+                )),
+                "expected FootnoteReference(\"1\") in inlines: {:?}",
+                inlines
+            );
+        }
+        other => panic!("expected paragraph, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_footnote_definition() {
+    let blocks = parse("Text with a note.[^1]\n\n[^1]: This is the note.");
+    assert!(
+        blocks.len() >= 2,
+        "expected at least 2 blocks, got: {:?}",
+        blocks
+    );
+    let fn_def = blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::FootnoteDefinition { .. }));
+    assert!(fn_def.is_some(), "expected a FootnoteDefinition block");
+    match fn_def.unwrap() {
+        MarkdownBlock::FootnoteDefinition { label, content } => {
+            assert_eq!(label, "1");
+            assert!(
+                !content.is_empty(),
+                "footnote definition should have content"
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_multiple_footnote_references() {
+    let blocks = parse("First[^1] and second[^2] point\n\n[^1]: A\n[^2]: B");
+    match &blocks[0] {
+        MarkdownBlock::Paragraph(inlines) => {
+            let refs: Vec<_> = inlines
+                .iter()
+                .filter_map(|i| match i {
+                    InlineContent::FootnoteReference(label) => Some(label.clone()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(refs, vec!["1".to_string(), "2".to_string()]);
+        }
+        other => panic!("expected paragraph, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_footnote_named_label() {
+    let blocks = parse("See[^note] here\n\n[^note]: The named note");
+    match &blocks[0] {
+        MarkdownBlock::Paragraph(inlines) => {
+            assert!(
+                inlines.iter().any(|i| matches!(
+                    i,
+                    InlineContent::FootnoteReference(label) if label == "note"
+                )),
+                "expected FootnoteReference(\"note\") in inlines: {:?}",
+                inlines
+            );
+        }
+        other => panic!("expected paragraph, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_footnote_definition_with_bold_content() {
+    let blocks = parse("Referenced[^1]\n\n[^1]: **Bold** text");
+    let fn_def = blocks
+        .iter()
+        .find(|b| matches!(b, MarkdownBlock::FootnoteDefinition { .. }));
+    match fn_def.unwrap() {
+        MarkdownBlock::FootnoteDefinition { content, .. } => {
+            assert!(
+                !content.is_empty(),
+                "footnote definition should have content"
+            );
+            assert!(
+                content
+                    .iter()
+                    .any(|b| matches!(b, MarkdownBlock::Paragraph(_))),
+                "footnote definition should contain a paragraph"
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_footnote_reference_undefined_stays_as_text() {
+    // pulldown-cmark only emits FootnoteReference for defined footnotes.
+    // Undefined references remain as plain text.
+    let blocks = parse("See[^undefined] here");
+    match &blocks[0] {
+        MarkdownBlock::Paragraph(inlines) => {
+            let text: String = inlines
+                .iter()
+                .filter_map(|i| match i {
+                    InlineContent::Text(t) => Some(t.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                text.contains("[^undefined]"),
+                "undefined footnote ref should stay as text, got: {text:?}"
+            );
+        }
+        other => panic!("expected paragraph, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_heading_slug_ignores_footnote_reference() {
+    let blocks = parse("## See[^1] now\n\n[^1]: A note");
+    match &blocks[0] {
+        MarkdownBlock::Heading { anchor_id, .. } => {
+            assert_eq!(anchor_id.as_deref(), Some("see-now"));
+        }
+        other => panic!("expected heading, got {:?}", other),
+    }
+}
