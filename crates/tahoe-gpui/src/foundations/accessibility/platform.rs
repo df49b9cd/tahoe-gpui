@@ -7,7 +7,7 @@
 //! returns [`AccessibilityMode::DEFAULT`].
 //!
 //! Call [`detect_system_accessibility_mode`] once at startup (or when the theme
-//! is constructed) to seed [`TahoeTheme::accessibility_mode`] with the user's
+//! is constructed) to seed `TahoeTheme::accessibility_mode` with the user's
 //! current system preferences. For live updates, the host should observe
 //! `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification` and call
 //! `TahoeTheme::refresh_accessibility`.
