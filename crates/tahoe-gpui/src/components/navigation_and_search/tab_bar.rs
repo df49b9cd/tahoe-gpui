@@ -22,6 +22,7 @@
 
 use crate::callback_types::{OnSharedStringChange, rc_wrap};
 use crate::components::content::badge::BadgeVariant;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{SurfaceContext, apply_focus_ring, apply_high_contrast_border};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
@@ -119,13 +120,15 @@ impl TabItem {
 
 /// Compute the new tab index for a keyboard navigation action.
 ///
-/// Handles: Left/Right (wrapping), Home/End, ⌃Tab (next, wrapping),
-/// ⌃⇧Tab (previous, wrapping), and ⌘1..=⌘9 (jump to Nth tab).
+/// Handles: Left/Right (wrapping; swapped when `rtl`), Home/End, ⌃Tab
+/// (next, wrapping), ⌃⇧Tab (previous, wrapping), and ⌘1..=⌘9 (jump to
+/// Nth tab). Mirrors `SegmentedControl`'s RTL arrow-swap.
 pub(super) fn navigate_tab(
     key: &str,
     modifiers_platform: bool,
     modifiers_control: bool,
     modifiers_shift: bool,
+    rtl: bool,
     active_tab: &SharedString,
     tab_ids: &[SharedString],
 ) -> Option<usize> {
@@ -153,7 +156,16 @@ pub(super) fn navigate_tab(
         });
     }
 
-    match key {
+    // Visual-leading motion: under RTL the leading edge is on the right,
+    // so physical Right means "previous" and Left means "next". Home/End
+    // stay absolute.
+    let logical_key = match key {
+        "left" if rtl => "right",
+        "right" if rtl => "left",
+        other => other,
+    };
+
+    match logical_key {
         "left" => Some(if current == 0 { count - 1 } else { current - 1 }),
         "right" => Some((current + 1) % count),
         "home" => Some(0),
@@ -285,6 +297,7 @@ impl RenderOnce for TabBar {
             .collect();
         let active_for_keys = self.active_tab.clone();
         let style = self.style;
+        let rtl = theme.is_rtl();
 
         let mut tab_headers = Vec::new();
         let mut active_body: Option<AnyElement> = None;
@@ -298,6 +311,19 @@ impl RenderOnce for TabBar {
             if is_active {
                 active_body = Some(item.body);
             }
+
+            // WAI-ARIA tab role + aria-selected equivalent. `TabItem::label`
+            // is `AnyElement` so no VoiceOver label is attached here — the
+            // host supplies it via the label element itself. Currently a
+            // structural no-op (GPUI has no AX tree API); see
+            // `foundations::accessibility::voiceover` for the upstream wait.
+            let ax = AccessibilityProps::new()
+                .role(AccessibilityRole::Tab)
+                .value(if is_active {
+                    SharedString::from("selected")
+                } else {
+                    SharedString::from("unselected")
+                });
 
             let tab_id = item.id.clone();
             let tab_selector = format!("tab-bar-{selector_id}-tab-{idx}");
@@ -408,6 +434,7 @@ impl RenderOnce for TabBar {
                 }
             }
 
+            tab = tab.with_accessibility(&ax);
             tab_headers.push(tab);
         }
 
@@ -437,6 +464,7 @@ impl RenderOnce for TabBar {
                     event.keystroke.modifiers.platform,
                     event.keystroke.modifiers.control,
                     event.keystroke.modifiers.shift,
+                    rtl,
                     &active_for_keys,
                     &key_tab_ids,
                 ) {
@@ -569,11 +597,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("left", false, false, false, &"a".into(), &ids),
+            navigate_tab("left", false, false, false, false, &"a".into(), &ids),
             Some(2)
         );
         assert_eq!(
-            navigate_tab("left", false, false, false, &"b".into(), &ids),
+            navigate_tab("left", false, false, false, false, &"b".into(), &ids),
             Some(0)
         );
     }
@@ -583,11 +611,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("right", false, false, false, &"c".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("right", false, false, false, &"a".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"a".into(), &ids),
             Some(1)
         );
     }
@@ -597,11 +625,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("home", false, false, false, &"c".into(), &ids),
+            navigate_tab("home", false, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("end", false, false, false, &"a".into(), &ids),
+            navigate_tab("end", false, false, false, false, &"a".into(), &ids),
             Some(2)
         );
     }
@@ -611,7 +639,7 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec![];
         assert_eq!(
-            navigate_tab("right", false, false, false, &"a".into(), &ids),
+            navigate_tab("right", false, false, false, false, &"a".into(), &ids),
             None
         );
     }
@@ -621,7 +649,7 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into()];
         assert_eq!(
-            navigate_tab("space", false, false, false, &"a".into(), &ids),
+            navigate_tab("space", false, false, false, false, &"a".into(), &ids),
             None
         );
     }
@@ -631,11 +659,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("tab", false, true, false, &"a".into(), &ids),
+            navigate_tab("tab", false, true, false, false, &"a".into(), &ids),
             Some(1)
         );
         assert_eq!(
-            navigate_tab("tab", false, true, false, &"c".into(), &ids),
+            navigate_tab("tab", false, true, false, false, &"c".into(), &ids),
             Some(0)
         );
     }
@@ -645,11 +673,11 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("tab", false, true, true, &"a".into(), &ids),
+            navigate_tab("tab", false, true, true, false, &"a".into(), &ids),
             Some(2)
         );
         assert_eq!(
-            navigate_tab("tab", false, true, true, &"b".into(), &ids),
+            navigate_tab("tab", false, true, true, false, &"b".into(), &ids),
             Some(0)
         );
     }
@@ -659,16 +687,54 @@ mod tests {
         use super::navigate_tab;
         let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
         assert_eq!(
-            navigate_tab("1", true, false, false, &"c".into(), &ids),
+            navigate_tab("1", true, false, false, false, &"c".into(), &ids),
             Some(0)
         );
         assert_eq!(
-            navigate_tab("2", true, false, false, &"a".into(), &ids),
+            navigate_tab("2", true, false, false, false, &"a".into(), &ids),
             Some(1)
         );
         // Digit beyond tab count clamps to last.
         assert_eq!(
-            navigate_tab("9", true, false, false, &"a".into(), &ids),
+            navigate_tab("9", true, false, false, false, &"a".into(), &ids),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn navigate_rtl_swaps_left_right() {
+        use super::navigate_tab;
+        let ids: Vec<SharedString> = vec!["a".into(), "b".into(), "c".into()];
+        // In RTL, physical Right moves to the previous tab (visual-leading)
+        // and Left moves to the next. Home/End stay absolute.
+        assert_eq!(
+            navigate_tab("right", false, false, false, true, &"b".into(), &ids),
+            Some(0),
+            "RTL Right should decrement"
+        );
+        assert_eq!(
+            navigate_tab("left", false, false, false, true, &"b".into(), &ids),
+            Some(2),
+            "RTL Left should increment"
+        );
+        // Wrapping still works under RTL.
+        assert_eq!(
+            navigate_tab("right", false, false, false, true, &"a".into(), &ids),
+            Some(2),
+            "RTL Right wraps from first to last"
+        );
+        assert_eq!(
+            navigate_tab("left", false, false, false, true, &"c".into(), &ids),
+            Some(0),
+            "RTL Left wraps from last to first"
+        );
+        // Home/End unchanged under RTL.
+        assert_eq!(
+            navigate_tab("home", false, false, false, true, &"c".into(), &ids),
+            Some(0)
+        );
+        assert_eq!(
+            navigate_tab("end", false, false, false, true, &"a".into(), &ids),
             Some(2)
         );
     }
