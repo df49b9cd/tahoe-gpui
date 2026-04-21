@@ -151,9 +151,11 @@ impl Modal {
     /// modal but leave the focus chain stalled — keyboard users would be
     /// stuck on whatever element they landed on.
     ///
-    /// Internally routes handles through a Trap-mode [`FocusGroup`].
-    /// Callers that already manage a [`FocusGroup`] can share it via
-    /// [`Modal::focus_group`].
+    /// Internally allocates a fresh Trap-mode [`FocusGroup`]. Calling this
+    /// after [`Modal::focus_group`] is **last-write-wins**: the caller's
+    /// shared group is discarded and replaced with the handles passed here.
+    /// Callers that already manage a [`FocusGroup`] should use
+    /// [`Modal::focus_group`] instead.
     pub fn focus_cycle(mut self, handles: Vec<FocusHandle>) -> Self {
         self.focus_group = FocusGroup::trap();
         for handle in &handles {
@@ -168,9 +170,20 @@ impl Modal {
     /// FocusGroup (e.g. for arrow-key navigation inside the modal's
     /// content) and wants the same group to drive the Tab trap.
     ///
-    /// The group should be in [`FocusGroupMode::Trap`][crate::foundations::accessibility::FocusGroupMode::Trap]
-    /// mode — other modes will let Tab escape the modal.
+    /// The group **must** be in
+    /// [`FocusGroupMode::Trap`][crate::foundations::accessibility::FocusGroupMode::Trap]
+    /// mode. When it is not, the modal's Tab handler still swallows Tab
+    /// (to prevent focus escaping) but does not advance focus — keyboard
+    /// users get stranded on whatever element they landed on. A
+    /// `debug_assert!` fires in debug builds to catch this early.
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
+        debug_assert_eq!(
+            group.mode(),
+            crate::foundations::accessibility::FocusGroupMode::Trap,
+            "Modal::focus_group requires a Trap-mode FocusGroup; other \
+             modes cause Tab to be swallowed without advancing focus, \
+             stranding keyboard users."
+        );
         self.focus_group = group;
         self
     }
@@ -234,10 +247,13 @@ impl RenderOnce for Modal {
 
         // Focus trap: mint a focus handle if the parent didn't provide one and
         // request focus when the modal opens so subsequent Tab/Shift+Tab events
-        // reach the modal's key handler and can be contained. Once a child
-        // in `focus_cycle` takes focus (via Tab), we leave it alone — otherwise
-        // the next render would steal focus back to the container and break
-        // the cycle.
+        // reach the modal's key handler and can be contained. When the caller
+        // registered focusable children (via `focus_cycle` / `focus_group`),
+        // land initial focus on the first member per the WAI-ARIA dialog
+        // pattern; otherwise focus the outer container so Tab still reaches
+        // the modal's key handler. Once a child in the group takes focus we
+        // leave it alone — otherwise the next render would steal focus back
+        // to the container and break the cycle.
         let focus_handle = self
             .focus_handle
             .clone()
@@ -245,7 +261,11 @@ impl RenderOnce for Modal {
         let any_modal_focus =
             focus_handle.is_focused(window) || self.focus_group.contains_focused(window);
         if !any_modal_focus {
-            focus_handle.focus(window, cx);
+            if self.focus_group.is_empty() {
+                focus_handle.focus(window, cx);
+            } else {
+                self.focus_group.focus_first(window, cx);
+            }
         }
 
         let theme = cx.theme();
@@ -774,6 +794,163 @@ mod interaction_tests {
                 assert_eq!(e.events, 1, "DismissEvent should be emitted exactly once");
             });
             assert!(!host.is_open);
+        });
+    }
+
+    #[gpui::test]
+    async fn tab_in_empty_focus_group_does_not_escape_modal(cx: &mut TestAppContext) {
+        // WAI-ARIA dialog pattern: Tab must not escape a modal even when no
+        // focusable children are registered. The modal's Tab handler
+        // unconditionally calls `stop_propagation()` when the FocusGroup has
+        // nothing to cycle through — we verify here that after a Tab press
+        // the modal stays mounted and focus does not leave its outer
+        // container.
+        let (host, cx) = setup_test_window(cx, |_window, cx| ModalHarness::new(cx));
+        focus_modal(&host, cx);
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.focus_handle.is_focused(window),
+                "precondition: modal outer handle is focused"
+            );
+        });
+
+        cx.press("tab");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.is_open, "Tab must not trigger dismissal");
+            assert!(
+                host.focus_handle.is_focused(window),
+                "Tab with an empty FocusGroup must leave outer focus put"
+            );
+        });
+        assert_element_exists(cx, MODAL_CONTENT);
+    }
+
+    // Harness that hands the modal an externally-owned `FocusGroup` so tests
+    // can observe that registration through the shared handle (via
+    // `FocusGroupExt::focus_group`) is visible on the group the modal stores
+    // — i.e. both clones share inner state. Demonstrates the pattern a host
+    // would use when it already owns a FocusGroup for arrow-key nav.
+    struct SharedGroupHarness {
+        modal_focus: FocusHandle,
+        shared_group: crate::foundations::accessibility::FocusGroup,
+        first: FocusHandle,
+        second: FocusHandle,
+    }
+
+    impl SharedGroupHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                modal_focus: cx.focus_handle(),
+                shared_group: crate::foundations::accessibility::FocusGroup::trap(),
+                first: cx.focus_handle(),
+                second: cx.focus_handle(),
+            }
+        }
+    }
+
+    impl Render for SharedGroupHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            use crate::foundations::accessibility::FocusGroupExt;
+            let body = div()
+                .w(px(160.0))
+                .h(px(80.0))
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .id("shared-first")
+                        .focus_group(&self.shared_group, &self.first)
+                        .child("First"),
+                )
+                .child(
+                    div()
+                        .id("shared-second")
+                        .focus_group(&self.shared_group, &self.second)
+                        .child("Second"),
+                );
+            Modal::new("modal", body)
+                .open(true)
+                .focus_handle(self.modal_focus.clone())
+                .focus_group(self.shared_group.clone())
+                .on_dismiss(|_, _| {})
+        }
+    }
+
+    #[gpui::test]
+    async fn modal_focus_group_override_shares_inner(cx: &mut TestAppContext) {
+        // Registrations through the caller's shared clone of the group must
+        // be visible inside the modal's Tab trap — Rc<RefCell<_>> identity
+        // is what makes caller-managed arrow-key nav and modal Tab traversal
+        // walk the same ordered membership.
+        let (host, cx) = setup_test_window(cx, |_window, cx| SharedGroupHarness::new(cx));
+        // First render through SharedGroupHarness wired both children
+        // through FocusGroupExt::focus_group, so the group should hold
+        // exactly 2 members.
+        host.update(cx, |host, _cx| {
+            assert_eq!(
+                host.shared_group.len(),
+                2,
+                "external handle observes registrations from the render path"
+            );
+        });
+
+        // Tab inside the modal must cycle through the same members.
+        host.update_in(cx, |host, window, cx| {
+            host.modal_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.first.is_focused(window), "Tab lands on shared first");
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.second.is_focused(window), "Tab lands on shared second");
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Tab wraps back to shared first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn modal_focus_cycle_after_focus_group_resets(cx: &mut TestAppContext) {
+        // Last-write-wins contract: calling `focus_cycle` after
+        // `focus_group` replaces the external group with a fresh Trap-mode
+        // group populated only with the passed handles. We exercise the
+        // builder directly (no render) to keep this test independent of
+        // GPUI's focus machinery — the render path is covered by
+        // `modal_focus_group_override_shares_inner`.
+        use crate::foundations::accessibility::FocusGroup;
+        cx.update(|cx| {
+            let handle_a = cx.focus_handle();
+            let handle_b = cx.focus_handle();
+            let external = FocusGroup::trap();
+            external.register(&handle_a);
+
+            let modal = Modal::new("test", div())
+                .focus_group(external.clone())
+                .focus_cycle(vec![handle_b.clone()]);
+
+            // External still holds the original handle; modal's group was
+            // replaced by a fresh one that contains only `handle_b`.
+            assert_eq!(external.len(), 1, "external group is untouched");
+            assert_eq!(modal.focus_group.len(), 1, "modal has a fresh group");
+            // Mutating the external group must not affect the modal's.
+            external.clear();
+            assert_eq!(external.len(), 0);
+            assert_eq!(
+                modal.focus_group.len(),
+                1,
+                "modal's group is a different Rc — unaffected by external.clear()"
+            );
         });
     }
 }

@@ -1,16 +1,22 @@
 //! Focus Groups demo — exercises `FocusGroup` in Cycle mode.
 //!
 //! Three focusable "option" rows are registered with a shared
-//! `FocusGroup::cycle()`. Arrow-down / Arrow-up (or Tab / Shift+Tab via
-//! GPUI's native tab-stop map) cycle focus between them, wrapping at the
-//! edges. This is the pattern host apps should reach for when building
-//! radio groups, segmented pickers, or custom navigation rails — instead
-//! of hand-rolling the wrap math every time.
+//! `FocusGroup::cycle()`. Arrow-up / Arrow-down cycle focus vertically,
+//! wrapping at the edges; Tab / Shift+Tab fall through to GPUI's native
+//! tab-stop map (Cycle mode doesn't trap Tab). This is the pattern host
+//! apps should reach for when building radio groups, segmented pickers,
+//! or custom navigation rails — instead of hand-rolling the wrap math
+//! every time.
+//!
+//! Only the vertical axis is bound in this demo. Host apps laying out a
+//! horizontal row should mirror this and bind `left`/`right` to
+//! `focus_previous`/`focus_next` instead; binding both axes to the same
+//! group is usually a sign that two groups are needed (one per axis).
 
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, KeyDownEvent, Stateful, Window, div, px};
 
-use tahoe_gpui::foundations::accessibility::FocusGroupExt;
+use tahoe_gpui::foundations::accessibility::{FocusGroupExt, apply_focus_ring};
 use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
@@ -33,12 +39,7 @@ pub fn render(
 
     let option_row = |index: usize, label: &str| -> Stateful<gpui::Div> {
         let focused = handles[index].is_focused(window);
-        let bg = if focused {
-            theme.selected_bg
-        } else {
-            theme.surface
-        };
-        div()
+        let row = div()
             .id(("focus-group-option", index))
             .focus_group(&state.focus_group, &handles[index])
             .flex()
@@ -46,14 +47,15 @@ pub fn render(
             .gap(theme.spacing_sm)
             .px(theme.spacing_md)
             .py(theme.spacing_sm)
-            .bg(bg)
+            .bg(theme.surface)
             .rounded(theme.radius_md)
             .child(
                 div()
                     .text_style(TextStyle::Body, theme)
                     .text_color(theme.text)
                     .child(label.to_string()),
-            )
+            );
+        apply_focus_ring(row, theme, focused, &[])
     };
 
     div()
@@ -62,10 +64,14 @@ pub fn render(
         .flex()
         .flex_col()
         .gap(theme.spacing_md)
+        // Vertical-only: the options stack top-to-bottom, so only the
+        // up/down arrow keys drive the group. Home / End jump to the
+        // first / last row. A horizontal variant should swap these
+        // bindings for `left`/`right`.
         .on_key_down(
             move |event: &KeyDownEvent, window, cx| match event.keystroke.key.as_str() {
-                "down" | "right" => group.focus_next(window, cx),
-                "up" | "left" => group.focus_previous(window, cx),
+                "down" => group.focus_next(window, cx),
+                "up" => group.focus_previous(window, cx),
                 "home" => group.focus_first(window, cx),
                 "end" => group.focus_last(window, cx),
                 _ => {}
@@ -86,7 +92,8 @@ pub fn render(
                      cluster. Three modes are available: Open (no edge behavior, \
                      default), Cycle (wrap at edges for arrow-key nav), and Trap \
                      (swallow Tab so focus cannot escape — used by Modal). \
-                     Tab through the rows or use Arrow keys to cycle.",
+                     Use Up/Down arrows to cycle through the rows; Home/End jump \
+                     to the first/last.",
                 ),
         )
         .child(div().h(theme.spacing_sm))
