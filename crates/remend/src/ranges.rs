@@ -1,4 +1,7 @@
-use super::utils::{FenceHit, fence_run_length, parse_fence_at_line_start};
+use std::ops::ControlFlow;
+
+use super::fence::{CodeRegion, InlineTerminator, scan_code_regions};
+use super::utils::is_plausible_tag_remainder;
 
 /// Pre-computed ranges of text that are inside code blocks, inline code spans, or math blocks.
 /// Used to skip these regions in emphasis/katex handlers without redundant O(n) scans.
@@ -15,6 +18,11 @@ pub struct CodeBlockRanges {
     complete_inline_code_ranges: Vec<std::ops::Range<usize>>,
     /// Sorted, non-overlapping byte ranges inside math blocks ($..$ or $$..$$).
     math_ranges: Vec<std::ops::Range<usize>>,
+    /// Sorted, non-overlapping byte ranges inside the URL portion of a link/image
+    /// `](url)` whose `)` is on the same line.
+    link_url_ranges: Vec<std::ops::Range<usize>>,
+    /// Sorted, non-overlapping byte ranges inside a plausible HTML tag opened by `<`.
+    html_tag_ranges: Vec<std::ops::Range<usize>>,
 }
 
 impl CodeBlockRanges {
@@ -23,10 +31,14 @@ impl CodeBlockRanges {
         let code_ranges = Self::compute_code_ranges(text);
         let complete_inline_code_ranges = Self::compute_complete_inline_code_ranges(text);
         let math_ranges = Self::compute_math_ranges(text);
+        let link_url_ranges = Self::compute_link_url_ranges(text);
+        let html_tag_ranges = Self::compute_html_tag_ranges(text);
         Self {
             code_ranges,
             complete_inline_code_ranges,
             math_ranges,
+            link_url_ranges,
+            html_tag_ranges,
         }
     }
 
@@ -52,6 +64,22 @@ impl CodeBlockRanges {
         Self::position_in_ranges(&self.math_ranges, position)
     }
 
+    /// Returns true if the position is inside a link/image URL `](url)` whose
+    /// `)` is on the same line.
+    ///
+    /// Equivalent to `utils::is_within_link_or_image_url(text, position)` but O(log n).
+    pub fn is_within_link_url(&self, position: usize) -> bool {
+        Self::position_in_ranges(&self.link_url_ranges, position)
+    }
+
+    /// Returns true if the position is inside a plausible HTML tag (between `<`
+    /// and the next `>`, `\n`, or EOF).
+    ///
+    /// Equivalent to `utils::is_within_html_tag(text, position)` but O(log n).
+    pub fn is_within_html_tag(&self, position: usize) -> bool {
+        Self::position_in_ranges(&self.html_tag_ranges, position)
+    }
+
     /// Binary search to check if `position` falls inside any of the sorted, non-overlapping ranges.
     fn position_in_ranges(ranges: &[std::ops::Range<usize>], position: usize) -> bool {
         // Binary search: find the last range whose start <= position.
@@ -65,197 +93,56 @@ impl CodeBlockRanges {
 
     /// Compute code ranges (fenced code blocks + inline code).
     ///
-    /// Ports the logic from `utils::is_inside_code_block` but collects ALL ranges
-    /// instead of checking a single position.
-    ///
-    /// The original function scans `while i < position` and checks the toggle state.
-    /// A position is "inside code" if, after scanning everything before it, the
-    /// state is toggled on. This means:
-    /// - For a fence like ``` at position 0, position 0 is NOT inside code (nothing
-    ///   scanned yet), but position 3 (after the fence) IS inside code.
-    /// - For inline code `x`, position of ` is NOT inside, but position of x IS.
-    ///   The closing ` toggles back, so position after closing ` is NOT inside.
-    /// Compute code ranges matching the semantics of `utils::is_inside_code_block`.
-    ///
-    /// The original scans bytes 0..position-1 and checks toggle state. A fence at
-    /// offset j processes all its bytes at once (i jumps past the run). So:
-    /// - Opening fence at j: position j is NOT inside (not yet processed), but j+1 IS.
-    /// - Closing fence at k: position k IS inside (not yet processed), k+1 is NOT.
-    /// - Opening inline `` ` `` at j: j is NOT inside, j+1 IS.
-    /// - Closing inline `` ` `` at k: k IS inside, k+1 is NOT.
-    ///
-    /// Range for each region: [start+1, end+1) where start/end are the first bytes
-    /// of the opening/closing delimiters.
+    /// Thin adapter over `scan_code_regions` — the canonical fence/inline state
+    /// machine lives in `fence.rs`. Boundary conventions (`start + 1` for the
+    /// first delimiter byte, `end + 1` for the first byte of the closer,
+    /// `len + 1` for unterminated regions) keep `is_inside_code(pos)` in
+    /// agreement with `utils::is_inside_code_block(text, pos)` for every
+    /// `pos` in `0..=len`.
     fn compute_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
-        // NOTE: fence transitions inlined — see FenceScanner for the canonical
-        // implementation. Changes here must be mirrored in is_inside_code_block,
-        // is_within_complete_inline_code, and incomplete_code.rs.
-        let bytes = text.as_bytes();
-        let len = bytes.len();
+        let len = text.len();
         let mut ranges = Vec::new();
-        let mut in_code_block = false;
-        let mut opening_fence_char: u8 = 0;
-        let mut opening_fence_len: usize = 0;
-        let mut code_block_start: usize = 0;
-        let mut in_inline_code = false;
-        let mut inline_code_start: usize = 0;
-        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
-        let mut i = 0;
-
-        while i < len {
-            // Toggle fence state when we reach the first fence char on a fence line.
-            if !in_inline_code
-                && let Some(hit) = fence_on_line.as_ref()
-                && i == hit.run_start
-            {
-                if !in_code_block {
-                    in_code_block = true;
-                    opening_fence_char = hit.ch;
-                    opening_fence_len = hit.len;
-                    code_block_start = hit.run_start + 1;
-                    i = hit.run_end;
-                    continue;
-                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
-                    let end = hit.run_start + 1;
-                    if code_block_start <= end {
-                        ranges.push(code_block_start..end);
-                    }
-                    in_code_block = false;
-                    opening_fence_char = 0;
-                    opening_fence_len = 0;
-                    i = hit.run_end;
-                    continue;
+        scan_code_regions(text, |region| {
+            let (start, end) = match region {
+                CodeRegion::Fence(f) => {
+                    let end = if f.closed {
+                        f.close_run_start + 1
+                    } else {
+                        len + 1
+                    };
+                    (f.open_run_start + 1, end)
                 }
-                // Mismatched char or too-short closer — skip run without
-                // changing fence state.
-                i = hit.run_end;
-                continue;
-            }
-
-            // Skip escaped backticks.
-            if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
-                i += 2;
-                continue;
-            }
-
-            // Mid-line 3+ backtick/tilde runs are inert literals — not a fence
-            // and not a valid single-backtick closer (issue #50 follow-up).
-            if bytes[i] == b'`' || bytes[i] == b'~' {
-                let run = fence_run_length(bytes, i, bytes[i]);
-                if run >= 3 {
-                    i += run;
-                    continue;
+                CodeRegion::Inline(s) => {
+                    let end = match s.terminator {
+                        InlineTerminator::Closed(p) | InlineTerminator::Newline(p) => p + 1,
+                        InlineTerminator::Eof => len + 1,
+                    };
+                    (s.open_pos + 1, end)
                 }
+            };
+            if start <= end {
+                ranges.push(start..end);
             }
-
-            // Only check for inline code if not in multiline code.
-            if !in_code_block && bytes[i] == b'`' {
-                if in_inline_code {
-                    // Closing backtick at i: position i is still inside, i+1 is not.
-                    ranges.push(inline_code_start..i + 1);
-                    in_inline_code = false;
-                } else {
-                    in_inline_code = true;
-                    inline_code_start = i + 1; // Position after opening backtick.
-                }
-            }
-            if bytes[i] == b'\n' {
-                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
-                // Close any open inline span at the newline to match
-                // `is_inside_code_block`'s reset (issue #50 follow-up).
-                if in_inline_code {
-                    ranges.push(inline_code_start..i + 1);
-                    in_inline_code = false;
-                }
-            }
-            i += 1;
-        }
-
-        // If still in a code block or inline code at end of text, every position
-        // from the opener through `len` is inside code. Using `len + 1` as the
-        // exclusive end keeps `is_inside_code(len)` in agreement with
-        // `is_inside_code_block(text, len)` for unterminated fences.
-        // See matches_original_is_inside_code_block (uses 0..=len); removing
-        // the +1 breaks agreement at pos == len.
-        if in_code_block && code_block_start <= len {
-            ranges.push(code_block_start..len + 1);
-        } else if in_inline_code && inline_code_start <= len {
-            ranges.push(inline_code_start..len + 1);
-        }
-
+            ControlFlow::Continue(())
+        });
         ranges
     }
 
     /// Compute complete inline code ranges.
     ///
-    /// Ports the logic from `utils::is_within_complete_inline_code`: only includes
-    /// spans where both opening and closing backtick are present.
+    /// Thin adapter over `scan_code_regions` that keeps only inline spans with a
+    /// `Closed` terminator. Range interior is `(open_pos, close_pos)` — both
+    /// delimiters are excluded, matching `utils::is_within_complete_inline_code`.
     fn compute_complete_inline_code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
-        // NOTE: fence transitions inlined — see FenceScanner for the canonical
-        // implementation. Changes here must be mirrored in the other scanners.
-        let bytes = text.as_bytes();
-        let len = bytes.len();
         let mut ranges = Vec::new();
-        let mut in_inline_code = false;
-        let mut in_multiline_code = false;
-        let mut opening_fence_char: u8 = 0;
-        let mut opening_fence_len: usize = 0;
-        let mut inline_code_start: usize = 0;
-        let mut fence_on_line: Option<FenceHit> = parse_fence_at_line_start(bytes, 0);
-        let mut i = 0;
-
-        while i < len {
-            if !in_inline_code
-                && let Some(hit) = fence_on_line.as_ref()
-                && i == hit.run_start
+        scan_code_regions(text, |region| {
+            if let CodeRegion::Inline(s) = region
+                && let InlineTerminator::Closed(close_pos) = s.terminator
             {
-                if !in_multiline_code {
-                    in_multiline_code = true;
-                    opening_fence_char = hit.ch;
-                    opening_fence_len = hit.len;
-                } else if hit.ch == opening_fence_char && hit.len >= opening_fence_len {
-                    in_multiline_code = false;
-                    opening_fence_char = 0;
-                    opening_fence_len = 0;
-                }
-                i = hit.run_end;
-                continue;
+                ranges.push(s.open_pos + 1..close_pos);
             }
-
-            if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'`' {
-                i += 2;
-                continue;
-            }
-
-            // Mid-line 3+ backtick/tilde runs are inert literals (issue #50 follow-up).
-            if bytes[i] == b'`' || bytes[i] == b'~' {
-                let run = fence_run_length(bytes, i, bytes[i]);
-                if run >= 3 {
-                    i += run;
-                    continue;
-                }
-            }
-
-            if !in_multiline_code && bytes[i] == b'`' {
-                if in_inline_code {
-                    ranges.push(inline_code_start + 1..i);
-                    in_inline_code = false;
-                } else {
-                    in_inline_code = true;
-                    inline_code_start = i;
-                }
-            }
-            if bytes[i] == b'\n' {
-                fence_on_line = parse_fence_at_line_start(bytes, i + 1);
-                // Inline spans don't survive newlines in this streaming
-                // approximation; discard the unclosed span without pushing a
-                // range since we only track *complete* spans.
-                in_inline_code = false;
-            }
-            i += 1;
-        }
-
-        // Incomplete inline code spans are NOT included (that's the point).
+            ControlFlow::Continue(())
+        });
         ranges
     }
 
@@ -328,6 +215,97 @@ impl CodeBlockRanges {
             ranges.push(math_start..len + 1);
         }
 
+        ranges
+    }
+
+    /// Compute link/image URL ranges matching `utils::is_within_link_or_image_url`.
+    ///
+    /// A range covers positions strictly inside `](url)` where the `)` is on the
+    /// same line as the `]`. Incomplete URLs (hitting `\n` or EOF before `)`)
+    /// produce no range — matching the original function which returns `false`
+    /// for those positions.
+    ///
+    /// Range boundaries agree with the backward-walk semantics:
+    /// - `(` itself is NOT inside (the backward walk stops at `(` and returns
+    ///   only when preceded by `]`, then forward-walks from `position`).
+    /// - `)` IS inside (backward walk reaches `(`, forward walk sees `)` at
+    ///   `bytes[position]`).
+    ///
+    /// So for `[a](bc)` at offsets 0..=6, the range is `4..7` (covering b, c, `)`).
+    fn compute_link_url_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut ranges = Vec::new();
+        let mut i = 0;
+        while i + 1 < len {
+            if bytes[i] == b']' && bytes[i + 1] == b'(' {
+                let url_start = i + 2;
+                let mut j = url_start;
+                while j < len && bytes[j] != b')' && bytes[j] != b'\n' {
+                    j += 1;
+                }
+                if j < len && bytes[j] == b')' {
+                    ranges.push(url_start..j + 1);
+                    i = j + 1;
+                    continue;
+                }
+                // Incomplete URL — no range, resume scanning past `](`.
+                i = url_start;
+                continue;
+            }
+            i += 1;
+        }
+        ranges
+    }
+
+    /// Compute HTML tag ranges matching `utils::is_within_html_tag`.
+    ///
+    /// A range covers positions inside `<tag...` that look like a plausible
+    /// HTML tag (per CommonMark: `<` not preceded by alphanumeric/underscore,
+    /// then `is_plausible_tag_remainder` over the rest of the text).
+    ///
+    /// Range boundaries mirror the backward-walk semantics:
+    /// - For `<` at position > 0, the `<` itself is NOT inside (the backward
+    ///   walk from that position lands on the preceding byte first).
+    /// - For `<` at position 0, the `<` IS inside: `position.saturating_sub(1)`
+    ///   re-examines `bytes[0]`, which matches the `b'<'` arm and returns the
+    ///   plausibility result.
+    /// - `>` and `\n` ARE inside (the backward walk from `>+1` / `\n+1` lands
+    ///   on `>` / `\n` and returns false, but walking from `>` / `\n` itself
+    ///   continues back to `<`).
+    /// - An unterminated tag extends to `len + 1` so `is_within_html_tag(text, len)`
+    ///   agrees at the EOF position.
+    fn compute_html_tag_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let mut ranges = Vec::new();
+        let mut i = 0;
+        while i < len {
+            if bytes[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            // `<` preceded by an identifier byte is not a tag opener (e.g., `a<b`).
+            if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
+                i += 1;
+                continue;
+            }
+            if !is_plausible_tag_remainder(&bytes[i + 1..]) {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while j < len && bytes[j] != b'>' && bytes[j] != b'\n' {
+                j += 1;
+            }
+            // Include `<` itself only when it sits at offset 0 (saturating_sub quirk
+            // in the original backward walk).
+            let range_start = if i == 0 { 0 } else { i + 1 };
+            let range_end = if j < len { j + 1 } else { len + 1 };
+            ranges.push(range_start..range_end);
+            // Resume past `>` or `\n`; for EOF, the outer loop exits naturally.
+            i = if j < len { j + 1 } else { len };
+        }
         ranges
     }
 }
@@ -544,6 +522,66 @@ mod tests {
                 assert_eq!(
                     actual, expected,
                     "is_within_math mismatch at pos {} in {:?}: expected {}, got {}",
+                    pos, text, expected, actual
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matches_original_is_within_link_or_image_url() {
+        let texts = [
+            "[a](bc)",
+            "[a](bc)d",
+            "text [foo](http://example.com) tail",
+            "prefix [x](url) middle [y](url2) end",
+            "[incomplete](url",
+            "[linebreak](\nurl)",
+            "[cross-line](url\nmore)",
+            "no link here",
+            "nested [[inner](url)]",
+            "[empty]()",
+            "just ](paren?",
+        ];
+        for text in &texts {
+            let ranges = CodeBlockRanges::new(text);
+            for pos in 0..=text.len() {
+                let expected = utils::is_within_link_or_image_url(text, pos);
+                let actual = ranges.is_within_link_url(pos);
+                assert_eq!(
+                    actual, expected,
+                    "is_within_link_url mismatch at pos {} in {:?}: expected {}, got {}",
+                    pos, text, expected, actual
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matches_original_is_within_html_tag() {
+        let texts = [
+            "<a href=\"test\">",
+            "<a href=\"test\">after",
+            "<br/",
+            "<br/>",
+            "plain text",
+            "a<b",
+            "name@<example.com",
+            "<div class=\"x\">body</div>",
+            "<unclosed attr=\"y\"",
+            "<p a>next line\ncontent",
+            "<p a\nx",
+            "<a><br c>",
+            "<a> text <br x>",
+        ];
+        for text in &texts {
+            let ranges = CodeBlockRanges::new(text);
+            for pos in 0..=text.len() {
+                let expected = utils::is_within_html_tag(text, pos);
+                let actual = ranges.is_within_html_tag(pos);
+                assert_eq!(
+                    actual, expected,
+                    "is_within_html_tag mismatch at pos {} in {:?}: expected {}, got {}",
                     pos, text, expected, actual
                 );
             }
