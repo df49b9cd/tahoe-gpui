@@ -76,11 +76,9 @@ pub fn reduce_motion_substitute_ms(theme: &TahoeTheme, base_ms: u64) -> u64 {
     }
 }
 
-pub use super::super::materials::apply_focus_ring;
-
 #[cfg(test)]
 mod tests {
-    use super::reduce_motion_substitute_ms;
+    use super::{effective_duration, reduce_motion_substitute_ms};
     use crate::foundations::accessibility::AccessibilityMode;
     use crate::foundations::theme::TahoeTheme;
     use core::prelude::v1::test;
@@ -98,5 +96,22 @@ mod tests {
         theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
         // Matches REDUCE_MOTION_CROSSFADE in super::super::motion (150 ms).
         assert_eq!(reduce_motion_substitute_ms(&theme, 350), 150);
+    }
+
+    #[test]
+    fn effective_duration_keeps_base_when_flag_off() {
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::DEFAULT;
+        assert_eq!(effective_duration(&theme, 350), 350);
+    }
+
+    #[test]
+    fn effective_duration_returns_zero_when_reduce_motion() {
+        // Distinct from `reduce_motion_substitute_ms`: snaps to 0 rather
+        // than substituting the 150 ms cross-fade. Keep both behaviours
+        // pinned so a future refactor can't silently align them.
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
+        assert_eq!(effective_duration(&theme, 350), 0);
     }
 }

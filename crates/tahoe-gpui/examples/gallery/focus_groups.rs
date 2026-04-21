@@ -19,7 +19,8 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, KeyDownEvent, Stateful, Window, div, px};
 
-use tahoe_gpui::foundations::accessibility::{FocusGroupExt, apply_focus_ring};
+use tahoe_gpui::foundations::accessibility::FocusGroupExt;
+use tahoe_gpui::foundations::materials::apply_focus_ring;
 use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;

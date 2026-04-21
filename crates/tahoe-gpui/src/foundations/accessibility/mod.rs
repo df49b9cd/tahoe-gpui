@@ -34,7 +34,7 @@ pub mod voiceover;
 pub use focus_group::{FocusGroup, FocusGroupExt, FocusGroupMode};
 pub use modes::AccessibilityMode;
 pub use tokens::{
-    AccessibilityTokens, apply_focus_ring, apply_high_contrast_border, effective_duration,
+    AccessibilityTokens, apply_high_contrast_border, effective_duration,
     reduce_motion_substitute_ms,
 };
 pub use voiceover::{AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel};

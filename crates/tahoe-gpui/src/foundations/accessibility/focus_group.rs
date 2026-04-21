@@ -1,5 +1,9 @@
 //! Focus-graph grouping primitive: [`FocusGroup`] + [`FocusGroupExt`].
 
+use std::cell::RefCell;
+use std::fmt;
+use std::rc::Rc;
+
 use gpui::{App, FocusHandle, InteractiveElement, KeyDownEvent, Window};
 
 /// Traversal behavior at the edges of a [`FocusGroup`].
@@ -94,7 +98,7 @@ struct FocusGroupInner {
 /// ```
 #[derive(Clone)]
 pub struct FocusGroup {
-    inner: std::rc::Rc<std::cell::RefCell<FocusGroupInner>>,
+    inner: Rc<RefCell<FocusGroupInner>>,
 }
 
 impl Default for FocusGroup {
@@ -103,8 +107,8 @@ impl Default for FocusGroup {
     }
 }
 
-impl std::fmt::Debug for FocusGroup {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for FocusGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.inner.borrow();
         f.debug_struct("FocusGroup")
             .field("mode", &inner.mode)
@@ -117,7 +121,7 @@ impl FocusGroup {
     /// Construct an empty group with the given traversal [`mode`](FocusGroupMode).
     pub fn new(mode: FocusGroupMode) -> Self {
         Self {
-            inner: std::rc::Rc::new(std::cell::RefCell::new(FocusGroupInner {
+            inner: Rc::new(RefCell::new(FocusGroupInner {
                 handles: Vec::new(),
                 mode,
             })),
@@ -236,52 +240,59 @@ impl FocusGroup {
     }
 
     fn advance(&self, window: &mut Window, cx: &mut App, forward: bool) {
-        // Snapshot the member handles and mode under a short borrow, then
-        // release it before calling `is_focused` / `focus`. Those helpers
-        // are pure today but live in GPUI's focus machinery — a future
-        // release that notifies reentrantly would otherwise panic on the
-        // RefCell.
-        let (handles, wrap) = {
+        // Compute the target handle under a single short borrow — no full
+        // Vec clone per keystroke. `is_focused(window)` touches `Window`,
+        // not `self.inner`, so it's safe under the borrow. The borrow is
+        // dropped before calling `focus()` so GPUI's focus machinery can
+        // dispatch notifications freely.
+        let target = {
             let inner = self.inner.borrow();
             if inner.handles.is_empty() {
                 return;
             }
             let wrap = matches!(inner.mode, FocusGroupMode::Cycle | FocusGroupMode::Trap);
-            (inner.handles.clone(), wrap)
-        };
-        let len = handles.len();
-        let current = handles.iter().position(|h| h.is_focused(window));
-        let next = match current {
-            Some(idx) if forward => {
-                if idx + 1 < len {
-                    Some(idx + 1)
-                } else if wrap {
-                    Some(0)
-                } else {
-                    None
+            let len = inner.handles.len();
+            let current = inner.handles.iter().position(|h| h.is_focused(window));
+            let next = match current {
+                Some(idx) if forward => {
+                    if idx + 1 < len {
+                        Some(idx + 1)
+                    } else if wrap {
+                        Some(0)
+                    } else {
+                        None
+                    }
                 }
-            }
-            Some(idx) => {
-                if idx > 0 {
-                    Some(idx - 1)
-                } else if wrap {
-                    Some(len - 1)
-                } else {
-                    None
+                Some(idx) => {
+                    if idx > 0 {
+                        Some(idx - 1)
+                    } else if wrap {
+                        Some(len - 1)
+                    } else {
+                        None
+                    }
                 }
-            }
-            None if forward => Some(0),
-            None => Some(len - 1),
+                None if forward => Some(0),
+                None => Some(len - 1),
+            };
+            next.map(|i| inner.handles[i].clone())
         };
-        if let Some(i) = next {
-            handles[i].focus(window, cx);
+        if let Some(handle) = target {
+            handle.focus(window, cx);
         }
     }
 
     /// True when any registered member currently holds focus.
     pub fn contains_focused(&self, window: &Window) -> bool {
-        let handles = self.inner.borrow().handles.clone();
-        handles.iter().any(|h| h.is_focused(window))
+        // `is_focused(window)` touches `Window`, not `self.inner`, so the
+        // iteration is safe under the existing borrow. Avoids cloning the
+        // full handles vec on every call — this can fire per frame per
+        // group from render closures.
+        self.inner
+            .borrow()
+            .handles
+            .iter()
+            .any(|h| h.is_focused(window))
     }
 
     /// Hook to call from the group host's `on_key_down`.
@@ -932,6 +943,14 @@ mod interaction_tests {
 
     #[gpui::test]
     async fn focus_group_ext_is_idempotent_across_renders(cx: &mut TestAppContext) {
+        // TODO(tab-index coverage): this test pins only the `FocusGroup::register`
+        // side of `focus_group_ext` (membership and len across renders). The
+        // element-side `.tab_index(index)` wiring — which makes registration
+        // order the visual tab order under GPUI's native TabStopMap — is not
+        // exercised here. A follow-up test that focuses an external element
+        // and advances via GPUI's native tab-stop map would pin that contract;
+        // the existing `Modal` Trap tests route through `handle_key_down`, not
+        // the native map, so they don't cover it either.
         let (host, cx) = setup_test_window(cx, |_window, cx| ExtIdempotencyHarness::new(cx));
         // The first render registered all three handles.
         host.update(cx, |host, _cx| {

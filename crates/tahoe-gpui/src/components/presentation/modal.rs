@@ -151,6 +151,16 @@ impl Modal {
     /// modal but leave the focus chain stalled — keyboard users would be
     /// stuck on whatever element they landed on.
     ///
+    /// # Constraint
+    ///
+    /// Handles MUST be tracked (via `track_focus`) on elements that are
+    /// descendants of the modal's content subtree (i.e. live inside the
+    /// `content` passed to [`Modal::new`]). A handle tracked on a sibling
+    /// element escapes the trap — on-open initial focus lands on the
+    /// external handle and subsequent Tab presses route there. This is a
+    /// documented invariant; violating it will silently break the Tab
+    /// trap.
+    ///
     /// Internally allocates a fresh Trap-mode [`FocusGroup`]. Calling this
     /// after [`Modal::focus_group`] is **last-write-wins**: the caller's
     /// shared group is discarded and replaced with the handles passed here.
@@ -170,10 +180,22 @@ impl Modal {
     /// FocusGroup (e.g. for arrow-key navigation inside the modal's
     /// content) and wants the same group to drive the Tab trap.
     ///
+    /// # Constraint
+    ///
+    /// Group members MUST be tracked (via `track_focus` / [`FocusGroupExt`])
+    /// on elements that are descendants of the modal's content subtree
+    /// (i.e. live inside the `content` passed to [`Modal::new`]). A member
+    /// whose element sits outside the modal escapes the trap — on-open
+    /// initial focus lands on the external member and subsequent Tab
+    /// presses route there. This is a documented invariant; violating it
+    /// will silently break the Tab trap.
+    ///
     /// The group **must** be in [`FocusGroupMode::Trap`] mode. Open /
     /// Cycle groups make the modal's Tab handler swallow Tab without
     /// advancing focus, stranding keyboard users — so this is a runtime
     /// `assert!` rather than a `debug_assert!`, firing in release as well.
+    ///
+    /// [`FocusGroupExt`]: crate::foundations::accessibility::FocusGroupExt
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
         assert_eq!(
             group.mode(),
@@ -243,26 +265,38 @@ impl RenderOnce for Modal {
             return div().into_any_element();
         }
 
-        // Focus trap: mint a focus handle if the parent didn't provide one and
-        // request focus when the modal opens so subsequent Tab/Shift+Tab events
-        // reach the modal's key handler and can be contained. When the caller
-        // registered focusable children (via `focus_cycle` / `focus_group`),
-        // land initial focus on the first member per the WAI-ARIA dialog
-        // pattern; otherwise focus the outer container so Tab still reaches
-        // the modal's key handler.
+        // Focus trap: mint a focus handle if the parent didn't provide one
+        // and request focus when the modal opens so subsequent Tab /
+        // Shift+Tab events reach the modal's key handler and can be
+        // contained. When the caller registered focusable children (via
+        // `focus_cycle` / `focus_group`), land initial focus on the first
+        // member per the WAI-ARIA dialog pattern; otherwise focus the
+        // outer container so Tab still reaches the modal's key handler.
         //
-        // `contains_focused` (not `is_focused`) gates the initial-focus path
-        // so that non-member descendants — e.g. a `TextField` child that
-        // auto-focuses itself on mount — are not stolen from on the next
-        // render. Since Modal is a `RenderOnce` builder, render() fires on
-        // every parent update; narrowing to `is_focused` would reseat focus
-        // to the first group member on every frame until a member happens
-        // to be focused.
+        // The gate combines two checks:
+        //   * `focus_group.contains_focused(window)` walks the registered
+        //     member handles and queries `is_focused` directly — no focus
+        //     tree wiring required, so a pre-focused member (e.g. a
+        //     `TextField` that auto-focused in its constructor) is seen on
+        //     the first render. Closes the race where the old
+        //     `focus_handle.contains_focused` check returned false because
+        //     `track_focus(&focus_handle)` hadn't yet wired the descendant
+        //     relationship.
+        //   * `focus_handle.contains_focused(window, cx)` picks up
+        //     non-member descendants (general focus trap semantics) on
+        //     subsequent renders once the focus tree is wired.
+        //
+        // `contains_focused` (not `is_focused`) prevents re-seating focus
+        // on every frame — Modal is a `RenderOnce` builder, so render()
+        // fires on every parent update; narrowing to `is_focused` would
+        // reseat focus to the first group member on every render until a
+        // member happened to be focused.
         let focus_handle = self
             .focus_handle
             .clone()
             .unwrap_or_else(|| cx.focus_handle());
-        let any_modal_focus = focus_handle.contains_focused(window, cx);
+        let any_modal_focus =
+            self.focus_group.contains_focused(window) || focus_handle.contains_focused(window, cx);
         if !any_modal_focus {
             if self.focus_group.is_empty() {
                 focus_handle.focus(window, cx);
@@ -675,6 +709,68 @@ mod interaction_tests {
             assert!(
                 !host.outer_focus.is_focused(window),
                 "outer container must not steal focus when a member exists"
+            );
+        });
+    }
+
+    // Harness that pre-focuses the first focus-group member BEFORE the
+    // modal's first render, simulating a child (like `TextField`) that
+    // auto-focuses itself in its constructor.
+    struct AutoFocusMemberHarness {
+        outer_focus: FocusHandle,
+        first: FocusHandle,
+        second: FocusHandle,
+    }
+
+    impl AutoFocusMemberHarness {
+        fn new(window: &mut gpui::Window, cx: &mut Context<Self>) -> Self {
+            let first = cx.focus_handle();
+            // Pre-focus before the modal ever renders — this is the race
+            // the initial-focus bootstrap must survive.
+            first.focus(window, cx);
+            Self {
+                outer_focus: cx.focus_handle(),
+                first,
+                second: cx.focus_handle(),
+            }
+        }
+    }
+
+    impl Render for AutoFocusMemberHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let body = div()
+                .w(px(160.0))
+                .h(px(80.0))
+                .flex()
+                .flex_col()
+                .child(div().id("first").track_focus(&self.first).child("First"))
+                .child(div().id("second").track_focus(&self.second).child("Second"));
+            Modal::new("modal", body)
+                .open(true)
+                .focus_handle(self.outer_focus.clone())
+                .focus_cycle(vec![self.first.clone(), self.second.clone()])
+                .on_dismiss(|_, _| {})
+        }
+    }
+
+    #[gpui::test]
+    async fn first_render_does_not_steal_from_auto_focused_member(cx: &mut TestAppContext) {
+        // Regression: if a focus-group member is focused BEFORE the modal's
+        // first render (e.g. a `TextField` that auto-focuses itself in its
+        // constructor), the modal's initial-focus bootstrap must not steal
+        // focus via `focus_first`. The bootstrap is gated by
+        // `focus_handle.contains_focused` which requires `track_focus` to
+        // have wired the handle into the focus tree — hence the bootstrap
+        // runs after `content_div.track_focus(&focus_handle)`.
+        let (host, cx) = setup_test_window(cx, AutoFocusMemberHarness::new);
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "child that auto-focused before first render must retain focus"
             );
         });
     }
