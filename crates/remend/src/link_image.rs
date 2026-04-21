@@ -77,6 +77,8 @@ fn handle_incomplete_text<'a>(
     text: &'a str,
     open_index: usize,
     link_mode: LinkMode,
+    links_enabled: bool,
+    images_enabled: bool,
     ranges: &CodeBlockRanges,
 ) -> Option<Cow<'a, str>> {
     let is_image = text[..open_index].ends_with('!');
@@ -89,7 +91,12 @@ fn handle_incomplete_text<'a>(
         let before = &text[..start];
 
         if is_image {
-            return Some(Cow::Owned(before.trim_end().to_owned()));
+            return Some(strip_image_and_recurse(
+                before,
+                link_mode,
+                links_enabled,
+                images_enabled,
+            ));
         }
 
         return Some(make_incomplete_link(text, open_index, link_mode, ranges));
@@ -100,12 +107,39 @@ fn handle_incomplete_text<'a>(
     if closing.is_none() {
         let before = &text[..start];
         if is_image {
-            return Some(Cow::Owned(before.trim_end().to_owned()));
+            return Some(strip_image_and_recurse(
+                before,
+                link_mode,
+                links_enabled,
+                images_enabled,
+            ));
         }
         return Some(make_incomplete_link(text, open_index, link_mode, ranges));
     }
 
     None
+}
+
+/// After stripping an incomplete image, recursively process the prefix so any
+/// remaining incomplete `[` (now newly trailing) is handled in the same pass.
+/// Without this, pass 1 would leave an unmatched `[` that pass 2 would then
+/// complete, breaking idempotency.
+fn strip_image_and_recurse<'a>(
+    before: &str,
+    link_mode: LinkMode,
+    links_enabled: bool,
+    images_enabled: bool,
+) -> Cow<'a, str> {
+    let stripped = before.trim_end();
+    let fresh_ranges = CodeBlockRanges::new(stripped);
+    let result = handle_with_ranges(
+        stripped,
+        link_mode,
+        links_enabled,
+        images_enabled,
+        &fresh_ranges,
+    );
+    Cow::Owned(result.into_owned())
 }
 
 /// Finds the first incomplete `[` by scanning forward, skipping complete links.
@@ -159,23 +193,79 @@ fn find_first_incomplete_bracket(text: &str, max_pos: usize, ranges: &CodeBlockR
 /// Creates the appropriate incomplete link output based on link mode.
 fn make_incomplete_link<'a>(
     text: &str,
-    open_index: usize,
+    _open_index: usize,
     link_mode: LinkMode,
-    ranges: &CodeBlockRanges,
+    _ranges: &CodeBlockRanges,
 ) -> Cow<'a, str> {
     match link_mode {
         LinkMode::TextOnly => {
-            // Find the first incomplete `[` (scanning forward) and strip just that bracket.
-            let first_incomplete = find_first_incomplete_bracket(text, open_index, ranges);
-            let mut result = String::with_capacity(text.len());
-            result.push_str(&text[..first_incomplete]);
-            result.push_str(&text[first_incomplete + 1..]);
-            Cow::Owned(result)
+            // Iteratively strip incomplete brackets until none remain.
+            // This avoids multi-pass instability where each pass strips one bracket.
+            let mut current = text.to_string();
+            loop {
+                let r = CodeBlockRanges::new(&current);
+                let bytes = current.as_bytes();
+                // Scan backward for any incomplete bracket (mirrors Phase 2 logic).
+                let mut max_pos = None;
+                let mut j = bytes.len();
+                while j > 0 {
+                    j -= 1;
+                    if bytes[j] == b'['
+                        && !r.is_inside_code(j)
+                        && !current[..j].ends_with('!')
+                        && !is_task_list_marker_start(&current, j)
+                    {
+                        let after = &current[j + 1..];
+                        if !after.contains(']') {
+                            max_pos = Some(j);
+                            break;
+                        }
+                        if let Some(close_idx) = find_matching_closing_bracket(&current, j, &r) {
+                            if close_idx + 1 < bytes.len() && bytes[close_idx + 1] == b'(' {
+                                let raw = &current[close_idx + 2..];
+                                let skipped =
+                                    raw.len() - raw.trim_start_matches(['\r', '\n']).len();
+                                let after_paren = &raw[skipped..];
+                                let line_end = after_paren
+                                    .bytes()
+                                    .position(|b| matches!(b, b'\n' | b'\r'))
+                                    .unwrap_or(after_paren.len());
+                                if !after_paren[..line_end].contains(')') {
+                                    max_pos = Some(j);
+                                    break;
+                                }
+                            }
+                        } else {
+                            max_pos = Some(j);
+                            break;
+                        }
+                    }
+                }
+                let Some(pos) = max_pos else { break };
+                let first = find_first_incomplete_bracket(&current, pos, &r);
+                let mut stripped = String::with_capacity(current.len());
+                stripped.push_str(&current[..first]);
+                stripped.push_str(&current[first + 1..]);
+                current = stripped;
+            }
+            // Stripping can expose a lone trailing space (e.g. `\`\`[ [` →
+            // `\`\` `). The top-level `remend()` applies the same rule before
+            // any handler runs, so match it here to stay idempotent in one pass.
+            if current.ends_with(' ') && !current.ends_with("  ") {
+                current.pop();
+            }
+            Cow::Owned(current)
         }
         LinkMode::Protocol => {
-            let mut result = String::with_capacity(text.len() + 32);
+            const MARKER: &str = "](streamdown:incomplete-link)";
+            // Don't re-append: the only unmatched `[` is a prefix to an
+            // already-completed link, and appending would break idempotency.
+            if text.ends_with(MARKER) {
+                return Cow::Owned(text.to_owned());
+            }
+            let mut result = String::with_capacity(text.len() + MARKER.len());
             result.push_str(text);
-            result.push_str("](streamdown:incomplete-link)");
+            result.push_str(MARKER);
             Cow::Owned(result)
         }
     }
@@ -257,7 +347,9 @@ pub(crate) fn handle_with_ranges<'a>(
             if !is_image && is_task_list_marker_start(text, i) {
                 continue;
             }
-            if let Some(result) = handle_incomplete_text(text, i, link_mode, ranges) {
+            if let Some(result) =
+                handle_incomplete_text(text, i, link_mode, links_enabled, images_enabled, ranges)
+            {
                 return result;
             }
         }
@@ -481,12 +573,11 @@ mod tests {
 
     #[test]
     fn find_first_incomplete_bracket_multiline_url() {
-        // [a](url\nmore) is incomplete (no same-line ')'), so
-        // find_first_incomplete_bracket should return position 0 — the
-        // first `[` is stripped, leaving the rest of the text intact.
+        // [a](url\nmore) is incomplete (no same-line ')'), and [incomplete
+        // has no closing ]. Both are stripped in one pass for idempotency.
         assert_eq!(
             h_text_only("[a](url\nmore) [b](ok) [incomplete").as_ref(),
-            "a](url\nmore) [b](ok) [incomplete"
+            "a](url\nmore) [b](ok) incomplete"
         );
     }
 

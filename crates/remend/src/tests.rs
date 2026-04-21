@@ -1306,9 +1306,10 @@ fn text_only_link_with_preceding_complete_link() {
 #[test]
 fn text_only_nested_brackets() {
     let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    // Both [outer and [inner are incomplete — all stripped in one pass for idempotency.
     assert_eq!(
         remend("Text [outer [inner", &opts).as_ref(),
-        "Text outer [inner"
+        "Text outer inner"
     );
 }
 
@@ -1531,11 +1532,8 @@ impl RemendHandler for Recorder {
     }
 }
 
-/// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`). Stays
-/// active as a plain `#[test]` so removing `#[ignore]` once #144 is fixed
-/// reactivates the guard without needing the proptest to run.
+/// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`).
 #[test]
-#[ignore = "blocked on issue #144 — italic-asterisk handler re-opens on second pass"]
 fn idempotency_regression_0144() {
     let opts = RemendOptions::default();
     let once = remend("*0\t", &opts).into_owned();
@@ -1569,9 +1567,8 @@ proptest! {
 
     // Idempotency stress test across every option combination. Collapsed from
     // four near-duplicates; the direct regression test above is the canonical
-    // tripwire. Stays #[ignore]d until #144 is fixed.
+    // tripwire.
     #[test]
-    #[ignore = "blocked on issue #144 — idempotency violation on `*0\\t`"]
     fn fuzz_idempotent_all_option_combinations(
         s in markdown_soup(),
         flags in arbitrary_options(),

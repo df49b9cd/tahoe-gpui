@@ -3,29 +3,17 @@ use std::borrow::Cow;
 use super::fence::{FenceScanner, fence_run_length, for_each_byte_outside_fence};
 use super::ranges::CodeBlockRanges;
 use super::utils::{
-    cow_append, find_trailing_delimiter, is_empty_or_markers, is_escaped, is_horizontal_rule,
-    is_list_marker_line, is_word_char,
+    cow_append, ends_with_odd_backslashes, find_trailing_delimiter, is_empty_or_markers,
+    is_escaped, is_horizontal_rule, is_list_marker_line, is_word_char,
 };
 
 // ---------------------------------------------------------------------------
 // Asterisk skip logic
 // ---------------------------------------------------------------------------
 
-fn should_skip_asterisk(
-    text: &str,
-    index: usize,
-    prev: u8,
-    next: u8,
-    has_dollar: bool,
-    ranges: &CodeBlockRanges,
-) -> bool {
+fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8) -> bool {
     // Skip if escaped.
     if is_escaped(text.as_bytes(), index) {
-        return true;
-    }
-
-    // Skip if within math block.
-    if has_dollar && ranges.is_within_math(index) {
         return true;
     }
 
@@ -63,9 +51,9 @@ fn should_skip_asterisk(
         }
     }
 
-    // Skip if flanked by whitespace on both sides.
+    // Asymmetric: SOF is ws (so `"* foo"` stays a list bullet); EOF is not (so our own trailing `*` remains countable as a closer).
     let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-    let next_ws = next == 0 || matches!(next, b' ' | b'\t' | b'\n');
+    let next_ws = matches!(next, b' ' | b'\t' | b'\n');
     if prev_ws && next_ws {
         return true;
     }
@@ -81,17 +69,16 @@ fn count_single_asterisks(text: &str) -> usize {
 
 /// Counts single asterisks that are not part of `**`/`***`, not escaped,
 /// not list markers, not word-internal, and not inside fenced code blocks.
-pub(crate) fn count_single_asterisks_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
+pub(crate) fn count_single_asterisks_with_ranges(text: &str, _ranges: &CodeBlockRanges) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    let has_dollar = text.contains('$');
     let mut count = 0;
 
     for_each_byte_outside_fence(bytes, |byte, i, _| {
         if byte == b'*' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
-            if !should_skip_asterisk(text, i, prev, next, has_dollar, ranges) {
+            if !should_skip_asterisk(text, i, prev, next) {
                 count += 1;
             }
         }
@@ -108,13 +95,9 @@ fn should_skip_underscore(
     index: usize,
     prev: u8,
     next: u8,
-    has_dollar: bool,
     ranges: &CodeBlockRanges,
 ) -> bool {
     if is_escaped(text.as_bytes(), index) {
-        return true;
-    }
-    if has_dollar && ranges.is_within_math(index) {
         return true;
     }
     if ranges.is_within_link_url(index) {
@@ -150,14 +133,13 @@ fn count_single_underscores(text: &str) -> usize {
 pub(crate) fn count_single_underscores_with_ranges(text: &str, ranges: &CodeBlockRanges) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    let has_dollar = text.contains('$');
     let mut count = 0;
 
     for_each_byte_outside_fence(bytes, |byte, i, _| {
         if byte == b'_' {
             let prev = if i > 0 { bytes[i - 1] } else { 0 };
             let next = if i + 1 < len { bytes[i + 1] } else { 0 };
-            if !should_skip_underscore(text, i, prev, next, has_dollar, ranges) {
+            if !should_skip_underscore(text, i, prev, next, ranges) {
                 count += 1;
             }
         }
@@ -433,14 +415,14 @@ fn find_first_single_asterisk_index_with_ranges(
                 i += 1;
                 continue;
             }
-            if has_dollar && ranges.is_within_math(i) {
+            if has_dollar && ranges.is_within_complete_math(i) {
                 i += 1;
                 continue;
             }
 
-            // Skip if flanked by whitespace on both sides.
+            // Asymmetric: SOF is ws, EOF is not — see should_skip_asterisk.
             let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-            let next_ws = next == 0 || matches!(next, b' ' | b'\t' | b'\n');
+            let next_ws = matches!(next, b' ' | b'\t' | b'\n');
             if prev_ws && next_ws {
                 i += 1;
                 continue;
@@ -513,7 +495,7 @@ fn find_first_single_underscore_index_with_ranges(
                 i += 1;
                 continue;
             }
-            if has_dollar && ranges.is_within_math(i) {
+            if has_dollar && ranges.is_within_complete_math(i) {
                 i += 1;
                 continue;
             }
@@ -565,12 +547,22 @@ pub(crate) fn handle_bold_with_ranges<'a>(text: &'a str, ranges: &CodeBlockRange
         return Cow::Borrowed(text);
     }
 
+    // `**` sitting inside a complete `$...$` / `$$...$$` span is math content,
+    // not emphasis — without this, `$**` becomes `$**$` (inline-katex close)
+    // then `$**$**` on the next pass (bold treats `$` as non-empty content).
+    if ranges.is_within_complete_math(marker_index) {
+        return Cow::Borrowed(text);
+    }
+
     if should_skip_bold_completion(text, content, marker_index) {
         return Cow::Borrowed(text);
     }
 
     let pairs = count_double_asterisks(text);
     if pairs % 2 == 1 {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         // Half-complete: **content* → **content**
         if content.ends_with('*') {
             return cow_append(text, "*");
@@ -597,10 +589,14 @@ pub(crate) fn handle_double_underscore_with_ranges<'a>(
     if let Some((marker_index, content)) = find_trailing_double_underscore(text)
         && !ranges.is_inside_code(marker_index)
         && !ranges.is_within_complete_inline_code(marker_index)
+        && !ranges.is_within_complete_math(marker_index)
         && !should_skip_italic_completion(text, content, marker_index)
     {
         let pairs = count_double_underscores(text);
         if pairs % 2 == 1 {
+            if ends_with_odd_backslashes(text) {
+                return Cow::Borrowed(text);
+            }
             return cow_append(text, "__");
         }
     }
@@ -609,9 +605,13 @@ pub(crate) fn handle_double_underscore_with_ranges<'a>(
     if let Some(pos) = find_half_complete_underscore(text)
         && !ranges.is_inside_code(pos)
         && !ranges.is_within_complete_inline_code(pos)
+        && !ranges.is_within_complete_math(pos)
     {
         let pairs = count_double_underscores(text);
         if pairs % 2 == 1 {
+            if ends_with_odd_backslashes(text) {
+                return Cow::Borrowed(text);
+            }
             return cow_append(text, "_");
         }
     }
@@ -680,6 +680,9 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
 
     let count = count_single_asterisks_with_ranges(text, ranges);
     if count % 2 == 1 {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         return cow_append(text, "*");
     }
 
@@ -717,14 +720,42 @@ pub(crate) fn handle_italic_underscore_with_ranges<'a>(
 
     let count = count_single_underscores_with_ranges(text, ranges);
     if count % 2 == 1 {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         // Check if we need to insert `_` before trailing `**` for proper nesting.
         if let Some(result) = handle_trailing_asterisks_for_underscore(text) {
+            return Cow::Owned(result);
+        }
+        // Same idea for a single trailing `*`: appending `_` after it would
+        // reclassify the `*` as word-internal on the next pass (breaking
+        // idempotency), so insert `_` before the `*` instead.
+        if let Some(result) = handle_trailing_single_asterisk_for_underscore(text) {
             return Cow::Owned(result);
         }
         return insert_closing_underscore(text);
     }
 
     Cow::Borrowed(text)
+}
+
+/// If text ends with a single `*` (not part of `**`/`***`) that is preceded
+/// by a word char, appending `_` at EOF would make the `*` word-internal on
+/// the next pass. Insert `_` before the `*` to preserve its flanking.
+fn handle_trailing_single_asterisk_for_underscore(text: &str) -> Option<String> {
+    if !text.ends_with('*') || text.ends_with("**") {
+        return None;
+    }
+    let before = &text[..text.len() - 1];
+    let prev_char = before.chars().next_back()?;
+    if !is_word_char(prev_char) {
+        return None;
+    }
+    let mut result = String::with_capacity(text.len() + 1);
+    result.push_str(before);
+    result.push('_');
+    result.push('*');
+    Some(result)
 }
 
 /// If text ends with `**` that was added to close an unclosed bold,
@@ -802,6 +833,10 @@ pub(crate) fn handle_bold_italic_with_ranges<'a>(
         return Cow::Borrowed(text);
     }
 
+    if ranges.is_within_complete_math(marker_index) {
+        return Cow::Borrowed(text);
+    }
+
     if is_horizontal_rule(text, marker_index, b'*') {
         return Cow::Borrowed(text);
     }
@@ -812,6 +847,9 @@ pub(crate) fn handle_bold_italic_with_ranges<'a>(
         let double_pairs = count_double_asterisks(text);
         let single_count = count_single_asterisks_with_ranges(text, ranges);
         if double_pairs.is_multiple_of(2) && single_count.is_multiple_of(2) {
+            return Cow::Borrowed(text);
+        }
+        if ends_with_odd_backslashes(text) {
             return Cow::Borrowed(text);
         }
         return cow_append(text, "***");
@@ -939,6 +977,21 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn italic_asterisk_completes_tab_content() {
+        assert_eq!(handle_italic_asterisk("*0\t").as_ref(), "*0\t*");
+    }
+
+    #[test]
+    fn italic_asterisk_idempotent_with_tab() {
+        assert!(matches!(handle_italic_asterisk("*0\t*"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn count_single_asterisks_counts_closer_after_tab() {
+        assert_eq!(count_single_asterisks("*0\t*"), 2);
+    }
+
     // Italic underscore tests
     #[test]
     fn italic_underscore_completes() {
@@ -955,6 +1008,19 @@ mod tests {
             handle_italic_underscore("user_name"),
             Cow::Borrowed(_)
         ));
+    }
+
+    #[test]
+    fn italic_underscore_inserts_before_trailing_single_asterisk() {
+        // Appending `_` after `0*` would make `*` word-internal between `0`
+        // and `_` on the next pass. Insert `_` before the `*` instead.
+        assert_eq!(handle_italic_underscore("_*>0*").as_ref(), "_*>0_*");
+    }
+
+    #[test]
+    fn italic_underscore_trailing_asterisk_with_non_word_prev() {
+        // Trailing `*` preceded by a non-word char stays safe to append after.
+        assert_eq!(handle_italic_underscore("_. *").as_ref(), "_. *_");
     }
 
     // Double underscore tests

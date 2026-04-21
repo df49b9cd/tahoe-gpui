@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::utils::{count_single_backticks, cow_append};
+use super::utils::{count_single_backticks, cow_append, ends_with_odd_backslashes};
 
 /// Returns `true` if the text is inside an incomplete fenced code block.
 ///
@@ -90,6 +90,9 @@ pub fn handle(text: &str) -> Cow<'_, str> {
 
     let count = count_single_backticks(text);
     if count % 2 == 1 {
+        if ends_with_odd_backslashes(text) {
+            return Cow::Borrowed(text);
+        }
         return cow_append(text, "`");
     }
 

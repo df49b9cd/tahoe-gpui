@@ -404,6 +404,14 @@ pub(crate) fn cow_append<'a>(text: &str, suffix: &str) -> Cow<'a, str> {
     Cow::Owned(s)
 }
 
+/// Returns `true` if the text ends with an odd number of backslashes,
+/// meaning the next character appended would be treated as backslash-escaped
+/// on a subsequent pass (breaking idempotency).
+pub(crate) fn ends_with_odd_backslashes(text: &str) -> bool {
+    let count = text.bytes().rev().take_while(|&b| b == b'\\').count();
+    count % 2 == 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
