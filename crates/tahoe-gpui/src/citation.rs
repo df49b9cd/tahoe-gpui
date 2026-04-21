@@ -413,28 +413,39 @@ impl InlineCitation {
     }
 }
 
+/// Build the VoiceOver label + role for an inline citation.
+///
+/// Kept module-private and pure so the a11y contract can be tested
+/// without spinning up a GPUI `TestAppContext`. When a URL is attached
+/// the citation acts as a link and takes the `Button` role; otherwise
+/// it is a static reference marker.
+fn citation_a11y(index: usize, title: Option<&str>, has_url: bool) -> (String, AccessibilityRole) {
+    let label = match (title, has_url) {
+        (Some(title), true) => format!("Citation {index}, open {title}"),
+        (None, true) => format!("Citation {index}, open source URL"),
+        (Some(title), false) => format!("Citation {index}, {title}"),
+        (None, false) => format!("Citation {index}"),
+    };
+    let role = if has_url {
+        AccessibilityRole::Button
+    } else {
+        AccessibilityRole::StaticText
+    };
+    (label, role)
+}
+
 impl RenderOnce for InlineCitation {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let label = format!("[{}]", self.index);
-        let index = self.index;
         let has_url = self.source.url.is_some();
 
-        // VoiceOver label describes the citation as a link when a URL is
-        // attached, otherwise as a static reference marker.
-        let a11y_label = match (&self.source.title, has_url) {
-            (Some(title), true) => format!("Citation {index}, open {title}"),
-            (None, true) => format!("Citation {index}, open source URL"),
-            (Some(title), false) => format!("Citation {index}, {title}"),
-            (None, false) => format!("Citation {index}"),
-        };
-        let a11y = AccessibilityProps::new()
-            .label(a11y_label)
-            .role(if has_url {
-                AccessibilityRole::Button
-            } else {
-                AccessibilityRole::StaticText
-            });
+        let (a11y_label, a11y_role) = citation_a11y(
+            self.index,
+            self.source.title.as_ref().map(|s| s.as_ref()),
+            has_url,
+        );
+        let a11y = AccessibilityProps::new().label(a11y_label).role(a11y_role);
 
         let mut el = div()
             .id(self.id)
@@ -447,14 +458,28 @@ impl RenderOnce for InlineCitation {
             )
             .with_accessibility(&a11y);
 
-        // F12: keyboard reachability. When the badge has a URL, it acts
-        // as a link — make it focusable so Tab navigation can land on it
-        // and activate it with Return / Space, matching the popover form.
+        // Keyboard reachability. When the badge has a URL it acts as a
+        // link — `tab_index(0)` sets both `focusable = true` and
+        // `tab_stop = true` so the auto-generated handle joins the Tab
+        // order (GPUI's `.focusable()` alone leaves `tab_stop = false`,
+        // and the tab-order walker skips non-tab-stops). `focus_visible`
+        // paints the HIG focus ring only when the element was reached via
+        // the keyboard, matching CSS `:focus-visible` semantics — a
+        // deliberate departure from `foundations::materials::apply_focus_ring`
+        // used by `ButtonLike` / `MenuBar`, which show the ring on any
+        // focus (mouse or keyboard). Those controls own a `FocusHandle`;
+        // a stateless `RenderOnce` component can't participate in that
+        // helper without threading a handle through its public builder
+        // API. Keyboard-only rings are also the closer match to macOS
+        // HIG, so aligning `ButtonLike` / `MenuBar` with `:focus-visible`
+        // in a follow-up is the right direction.
         if let Some(url) = self.source.url {
             let url_for_click = url.clone();
+            let focus_ring = theme.focus_ring_shadows();
             el = el
                 .cursor_pointer()
-                .focusable()
+                .tab_index(0)
+                .focus_visible(move |s| s.shadow(focus_ring))
                 .on_click(move |_event, _window, cx| {
                     cx.open_url(url_for_click.as_ref());
                 })
@@ -472,7 +497,7 @@ impl RenderOnce for InlineCitation {
 
 #[cfg(test)]
 mod tests {
-    use super::CitationSource;
+    use super::{AccessibilityRole, CitationSource, InlineCitation, citation_a11y};
     use core::prelude::v1::test;
 
     #[test]
@@ -527,6 +552,49 @@ mod tests {
     fn hostname_empty_url() {
         let source = CitationSource::new().url("");
         assert_eq!(source.hostname(), None);
+    }
+
+    #[test]
+    fn inline_citation_with_url_role_is_button() {
+        let (label, role) = citation_a11y(3, None, true);
+        assert_eq!(label, "Citation 3, open source URL");
+        assert_eq!(role, AccessibilityRole::Button);
+    }
+
+    #[test]
+    fn inline_citation_with_url_and_title_label() {
+        let (label, role) = citation_a11y(5, Some("Rust Book"), true);
+        assert_eq!(label, "Citation 5, open Rust Book");
+        assert_eq!(role, AccessibilityRole::Button);
+    }
+
+    #[test]
+    fn inline_citation_without_url_role_is_static_text() {
+        let (label, role) = citation_a11y(2, None, false);
+        assert_eq!(label, "Citation 2");
+        assert_eq!(role, AccessibilityRole::StaticText);
+    }
+
+    #[test]
+    fn inline_citation_without_url_with_title_label() {
+        let (label, role) = citation_a11y(4, Some("MDN"), false);
+        assert_eq!(label, "Citation 4, MDN");
+        assert_eq!(role, AccessibilityRole::StaticText);
+    }
+
+    #[test]
+    fn inline_citation_builder_carries_url_and_title() {
+        let citation = InlineCitation::new("cite-test", 1)
+            .url("https://example.com")
+            .title("Example");
+        assert_eq!(
+            citation.source.url.as_ref().map(|s| s.as_ref()),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            citation.source.title.as_ref().map(|s| s.as_ref()),
+            Some("Example")
+        );
     }
 
     #[test]

@@ -114,6 +114,11 @@ pub struct AccessibilityProps {
     pub role: Option<AccessibilityRole>,
     /// Stateful-control value description (e.g. "75%" for sliders).
     pub value: Option<SharedString>,
+    /// Declares this element as a modal container (WAI-ARIA `aria-modal`
+    /// / NSAccessibility `AXModal`). Pairs with [`AccessibilityRole::Dialog`]
+    /// or [`AccessibilityRole::Alert`] so VoiceOver announces "modal dialog"
+    /// once GPUI lands an AX tree.
+    pub modal: bool,
 }
 
 impl AccessibilityProps {
@@ -158,9 +163,15 @@ impl AccessibilityProps {
         self
     }
 
+    /// Mark this element as a modal container.
+    pub fn modal(mut self, modal: bool) -> Self {
+        self.modal = modal;
+        self
+    }
+
     /// Returns true when at least one field carries information.
     pub fn is_some(&self) -> bool {
-        self.label.is_some() || self.role.is_some() || self.value.is_some()
+        self.label.is_some() || self.role.is_some() || self.value.is_some() || self.modal
     }
 }
 
@@ -287,6 +298,24 @@ mod tests {
         // variants differ so the trait impl that lands with GPUI's AX API
         // can branch on them to map to AXMenuBarItemRole vs AXMenuItemRole.
         assert_ne!(bar.role, Some(AccessibilityRole::MenuItem));
+    }
+
+    #[test]
+    fn accessibility_props_modal_defaults_false() {
+        let props = AccessibilityProps::new();
+        assert!(!props.modal);
+    }
+
+    #[test]
+    fn accessibility_props_modal_builder_sets_flag() {
+        let props = AccessibilityProps::new().modal(true);
+        assert!(props.modal);
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_modal_set() {
+        let props = AccessibilityProps::new().modal(true);
+        assert!(props.is_some());
     }
 
     #[test]
