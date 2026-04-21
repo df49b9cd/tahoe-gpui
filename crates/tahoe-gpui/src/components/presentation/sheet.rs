@@ -54,7 +54,8 @@ use gpui::{
     Window, div, px,
 };
 
-use crate::callback_types::{OnMutCallback, rc_wrap};
+use crate::callback_types::OnMutCallback;
+use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{backdrop_overlay, glass_surface};
 use crate::foundations::motion::accessible_transition_animation;
@@ -152,6 +153,14 @@ pub struct Sheet {
     content: AnyElement,
     on_dismiss: OnMutCallback,
     focus_handle: Option<FocusHandle>,
+    /// Child focus handles wrapped in a Trap-mode [`FocusGroup`]. Tab /
+    /// Shift+Tab cycle through the registered handles with wrap-around per
+    /// the WAI-ARIA dialog pattern; the group's `handle_key_down` helper
+    /// consumes Tab so focus cannot escape the sheet surface.
+    focus_group: FocusGroup,
+    /// Focus handle to restore when the sheet dismisses. HIG: "Return
+    /// focus to a sensible location after modal dismissal."
+    restore_focus_to: Option<FocusHandle>,
     presentation: Option<SheetPresentation>,
     width: Option<Pixels>,
 }
@@ -166,6 +175,8 @@ impl Sheet {
             content: content.into_any_element(),
             on_dismiss: None,
             focus_handle: None,
+            focus_group: FocusGroup::trap(),
+            restore_focus_to: None,
             presentation: None,
             width: None,
         }
@@ -215,6 +226,60 @@ impl Sheet {
             ..self
         }
     }
+
+    /// Register the focus handles of interactive children in tab order.
+    ///
+    /// When the user presses Tab past the last handle, focus returns to the
+    /// first; Shift+Tab past the first returns to the last. The sheet's
+    /// `on_key_down` handler consumes Tab so focus cannot escape the sheet
+    /// surface even when no children are registered.
+    ///
+    /// # Constraint
+    ///
+    /// Handles MUST be tracked (via `track_focus`) on elements that are
+    /// descendants of the sheet's content subtree. A handle tracked on a
+    /// sibling element escapes the trap — on-open initial focus lands on
+    /// the external handle and subsequent Tab presses route there.
+    ///
+    /// Internally allocates a fresh Trap-mode [`FocusGroup`]. Calling this
+    /// after [`Sheet::focus_group`] is last-write-wins: the caller's shared
+    /// group is discarded and replaced with the handles passed here.
+    /// Callers that already manage a [`FocusGroup`] should use
+    /// [`Sheet::focus_group`] instead.
+    pub fn focus_cycle(mut self, handles: Vec<FocusHandle>) -> Self {
+        self.focus_group = FocusGroup::trap();
+        for handle in &handles {
+            self.focus_group.register(handle);
+        }
+        self
+    }
+
+    /// Attach a caller-managed [`FocusGroup`] driving the sheet's Tab trap.
+    /// Overrides any handles previously supplied via [`Sheet::focus_cycle`].
+    ///
+    /// The group **must** be in [`FocusGroupMode::Trap`] mode. Open / Cycle
+    /// groups make the sheet's Tab handler swallow Tab without advancing
+    /// focus, stranding keyboard users — so this is a runtime `assert!`
+    /// rather than a `debug_assert!`, firing in release as well.
+    pub fn focus_group(mut self, group: FocusGroup) -> Self {
+        assert_eq!(
+            group.mode(),
+            FocusGroupMode::Trap,
+            "Sheet::focus_group requires a Trap-mode FocusGroup; other \
+             modes cause Tab to be swallowed without advancing focus, \
+             stranding keyboard users."
+        );
+        self.focus_group = group;
+        self
+    }
+
+    /// Record the focus handle that should regain focus when the sheet
+    /// dismisses. Call with the currently-focused element *before* opening
+    /// the sheet so the user returns to the same position on dismiss.
+    pub fn restore_focus_to(mut self, handle: FocusHandle) -> Self {
+        self.restore_focus_to = Some(handle);
+        self
+    }
 }
 
 impl RenderOnce for Sheet {
@@ -231,15 +296,43 @@ impl RenderOnce for Sheet {
                 .unwrap_or_else(|| SheetPresentation::for_platform(theme.platform))
         };
 
-        // Auto-focus the panel on open so Escape / Tab reach the key handler
-        // without a prior click. Mirrors Modal & Alert.
-        let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
-        if !focus_handle.is_focused(window) {
-            focus_handle.focus(window, cx);
+        // Initial-focus bootstrap per WAI-ARIA dialog pattern: land on the
+        // first focus-group member when one is registered, otherwise on
+        // the outer handle so Escape / Tab reach the key handler. Mirrors
+        // Modal's two-check logic so a pre-focused member (e.g. an
+        // auto-focused `TextField`) is seen on the first render.
+        let focus_handle = self
+            .focus_handle
+            .clone()
+            .unwrap_or_else(|| cx.focus_handle());
+        let any_sheet_focus =
+            self.focus_group.contains_focused(window) || focus_handle.contains_focused(window, cx);
+        if !any_sheet_focus {
+            if self.focus_group.is_empty() {
+                focus_handle.focus(window, cx);
+            } else {
+                self.focus_group.focus_first(window, cx);
+            }
         }
 
         let theme = cx.theme();
-        let on_dismiss_rc = rc_wrap(self.on_dismiss);
+
+        // Wrap the caller's on_dismiss so every dismissal path (backdrop
+        // click, Escape / Cmd-.) restores focus to `restore_focus_to`
+        // before invoking the inner callback. The Rc shape lets the
+        // wrapped callback be shared between the mouse-down-out and key
+        // handlers.
+        let restore = self.restore_focus_to.clone();
+        let on_dismiss_rc: Option<DismissRc> = self.on_dismiss.map(move |inner| {
+            let wrapped: Box<dyn Fn(&mut Window, &mut App) + 'static> =
+                Box::new(move |window: &mut Window, cx: &mut App| {
+                    if let Some(handle) = restore.as_ref() {
+                        handle.focus(window, cx);
+                    }
+                    inner(window, cx);
+                });
+            std::rc::Rc::new(wrapped)
+        });
 
         match presentation {
             SheetPresentation::BottomDrawer => render_bottom_drawer(
@@ -249,6 +342,7 @@ impl RenderOnce for Sheet {
                 theme,
                 focus_handle,
                 on_dismiss_rc,
+                self.focus_group,
             ),
             SheetPresentation::Cardlike => render_cardlike(
                 self.id,
@@ -257,6 +351,7 @@ impl RenderOnce for Sheet {
                 theme,
                 focus_handle,
                 on_dismiss_rc,
+                self.focus_group,
             ),
         }
     }
@@ -270,6 +365,7 @@ fn render_bottom_drawer(
     theme: &TahoeTheme,
     focus_handle: FocusHandle,
     on_dismiss_rc: Option<DismissRc>,
+    focus_group: FocusGroup,
 ) -> gpui::AnyElement {
     // ── Backdrop ────────────────────────────────────────────────────────
     let backdrop = backdrop_overlay(theme).flex().flex_col().justify_end();
@@ -344,17 +440,34 @@ fn render_bottom_drawer(
         });
     }
 
-    if let Some(ref handler) = on_dismiss_rc {
-        let h = handler.clone();
-        panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            // HIG `#sheets` dismissal shortcuts: Escape and Command-Period.
-            let modifiers = &event.keystroke.modifiers;
-            let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
-            if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
-                h(window, cx);
+    // Key handler: Escape / Cmd-. dismiss per HIG `#sheets`; Tab / Shift+Tab
+    // routed through the sheet's Trap-mode `FocusGroup` (empty-group Tab
+    // still swallowed so focus cannot escape the sheet surface).
+    let dismiss_for_keys = on_dismiss_rc;
+    panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        let modifiers = &event.keystroke.modifiers;
+        let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
+        if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
+            if let Some(handler) = &dismiss_for_keys {
+                handler(window, cx);
             }
-        });
-    }
+            return;
+        }
+        match event.keystroke.key.as_str() {
+            "tab" if !focus_group.handle_key_down(event, window, cx) => {
+                cx.stop_propagation();
+            }
+            "home" if focus_group.contains_focused(window) => {
+                focus_group.focus_first(window, cx);
+                cx.stop_propagation();
+            }
+            "end" if focus_group.contains_focused(window) => {
+                focus_group.focus_last(window, cx);
+                cx.stop_propagation();
+            }
+            _ => {}
+        }
+    });
 
     backdrop.child(panel).into_any_element()
 }
@@ -367,6 +480,7 @@ fn render_cardlike(
     theme: &TahoeTheme,
     focus_handle: FocusHandle,
     on_dismiss_rc: Option<DismissRc>,
+    focus_group: FocusGroup,
 ) -> gpui::AnyElement {
     let backdrop = backdrop_overlay(theme)
         .flex()
@@ -408,17 +522,34 @@ fn render_cardlike(
         });
     }
 
-    if let Some(ref handler) = on_dismiss_rc {
-        let h = handler.clone();
-        panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            // HIG `#sheets` dismissal shortcuts: Escape and Command-Period.
-            let modifiers = &event.keystroke.modifiers;
-            let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
-            if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
-                h(window, cx);
+    // Key handler: Escape / Cmd-. dismiss per HIG `#sheets`; Tab / Shift+Tab
+    // routed through the sheet's Trap-mode `FocusGroup` (empty-group Tab
+    // still swallowed so focus cannot escape the sheet surface).
+    let dismiss_for_keys = on_dismiss_rc;
+    panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        let modifiers = &event.keystroke.modifiers;
+        let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
+        if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
+            if let Some(handler) = &dismiss_for_keys {
+                handler(window, cx);
             }
-        });
-    }
+            return;
+        }
+        match event.keystroke.key.as_str() {
+            "tab" if !focus_group.handle_key_down(event, window, cx) => {
+                cx.stop_propagation();
+            }
+            "home" if focus_group.contains_focused(window) => {
+                focus_group.focus_first(window, cx);
+                cx.stop_propagation();
+            }
+            "end" if focus_group.contains_focused(window) => {
+                focus_group.focus_last(window, cx);
+                cx.stop_propagation();
+            }
+            _ => {}
+        }
+    });
 
     backdrop.child(panel).into_any_element()
 }
@@ -433,6 +564,7 @@ mod tests {
     use crate::components::presentation::sheet::{
         DRAG_INDICATOR_HEIGHT, DRAG_INDICATOR_WIDTH, Sheet, SheetDetent, SheetPresentation,
     };
+    use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
     use crate::foundations::layout::Platform;
 
     #[test]
@@ -536,5 +668,380 @@ mod tests {
             DRAG_INDICATOR_HEIGHT > 0.0,
             "drag indicator height must be positive"
         );
+    }
+
+    #[test]
+    fn sheet_focus_cycle_defaults_to_empty() {
+        let sheet = Sheet::new("s", gpui::div());
+        assert!(sheet.focus_group.is_empty());
+    }
+
+    #[test]
+    fn sheet_focus_group_defaults_to_trap_mode() {
+        let sheet = Sheet::new("s", gpui::div());
+        assert_eq!(sheet.focus_group.mode(), FocusGroupMode::Trap);
+    }
+
+    #[test]
+    #[should_panic(expected = "Sheet::focus_group requires a Trap-mode FocusGroup")]
+    fn sheet_focus_group_rejects_non_trap_mode() {
+        let _ = Sheet::new("s", gpui::div()).focus_group(FocusGroup::cycle());
+    }
+
+    #[test]
+    fn sheet_restore_focus_default_is_none() {
+        let sheet = Sheet::new("s", gpui::div());
+        assert!(sheet.restore_focus_to.is_none());
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{Sheet, SheetPresentation};
+    use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
+
+    // Harness for Tab-cycle behaviour: the sheet registers two focusable
+    // child handles and we verify Tab cycles forward through both, then
+    // wraps back to the first on a third press.
+    struct TabCycleHarness {
+        outer_focus: FocusHandle,
+        first: FocusHandle,
+        second: FocusHandle,
+        presentation: SheetPresentation,
+    }
+
+    impl TabCycleHarness {
+        fn new(cx: &mut Context<Self>, presentation: SheetPresentation) -> Self {
+            Self {
+                outer_focus: cx.focus_handle(),
+                first: cx.focus_handle(),
+                second: cx.focus_handle(),
+                presentation,
+            }
+        }
+    }
+
+    impl Render for TabCycleHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let body = div()
+                .w(px(160.0))
+                .h(px(80.0))
+                .flex()
+                .flex_col()
+                .child(div().id("first").track_focus(&self.first).child("First"))
+                .child(div().id("second").track_focus(&self.second).child("Second"));
+            Sheet::new("sheet", body)
+                .open(true)
+                .presentation(self.presentation)
+                .focus_handle(self.outer_focus.clone())
+                .focus_cycle(vec![self.first.clone(), self.second.clone()])
+                .on_dismiss(|_, _| {})
+        }
+    }
+
+    #[gpui::test]
+    async fn tab_cycles_focus_forward_bottom_drawer(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.first.is_focused(window), "first Tab lands on first");
+        });
+
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.second.is_focused(window), "second Tab lands on second");
+        });
+
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "third Tab wraps back to first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn tab_cycles_focus_forward_cardlike(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::Cardlike)
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.first.is_focused(window), "first Tab lands on first");
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.second.is_focused(window));
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Tab wraps in Cardlike presentation too"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn shift_tab_cycles_focus_backward(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+
+        cx.press("shift-tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.second.is_focused(window),
+                "Shift+Tab with no prior cycle focus lands on last"
+            );
+        });
+
+        cx.press("shift-tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Shift+Tab moves backward to first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn initial_focus_lands_on_first_focus_group_member_bottom_drawer(
+        cx: &mut TestAppContext,
+    ) {
+        // WAI-ARIA dialog pattern: on open, focus the first focusable child.
+        // The harness hands the sheet a populated focus group but never
+        // focuses the outer handle — opening the sheet must land focus on
+        // the first registered member on its own.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "initial render should focus the first focus-group member"
+            );
+            assert!(
+                !host.outer_focus.is_focused(window),
+                "outer container must not steal focus when a member exists"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn initial_focus_lands_on_first_focus_group_member_cardlike(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::Cardlike)
+        });
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.first.is_focused(window));
+            assert!(!host.outer_focus.is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    async fn home_jumps_to_first_group_member(cx: &mut TestAppContext) {
+        // Home lands on the first member only when a group member is
+        // currently focused, so text inputs outside the group retain
+        // their native start-of-line behavior.
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.second.focus(window, cx);
+            assert!(
+                host.second.is_focused(window),
+                "precondition: second focused"
+            );
+        });
+        cx.press("home");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "Home lands on the first member"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn end_jumps_to_last_group_member(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            TabCycleHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.first.focus(window, cx);
+            assert!(host.first.is_focused(window), "precondition: first focused");
+        });
+        cx.press("end");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.second.is_focused(window),
+                "End lands on the last member"
+            );
+        });
+    }
+
+    // Harness with no focus_cycle — verifies the empty-trap contract:
+    // Tab must be swallowed even when no child handles are registered,
+    // so focus cannot escape the sheet surface.
+    struct EmptyTrapHarness {
+        outer_focus: FocusHandle,
+        outside: FocusHandle,
+        presentation: SheetPresentation,
+    }
+
+    impl EmptyTrapHarness {
+        fn new(cx: &mut Context<Self>, presentation: SheetPresentation) -> Self {
+            Self {
+                outer_focus: cx.focus_handle(),
+                outside: cx.focus_handle(),
+                presentation,
+            }
+        }
+    }
+
+    impl Render for EmptyTrapHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div()
+                .child(
+                    div()
+                        .id("outside")
+                        .track_focus(&self.outside)
+                        .child("Outside"),
+                )
+                .child(
+                    Sheet::new("sheet", div().w(px(120.0)).h(px(40.0)).child("Body"))
+                        .open(true)
+                        .presentation(self.presentation)
+                        .focus_handle(self.outer_focus.clone())
+                        .on_dismiss(|_, _| {}),
+                )
+        }
+    }
+
+    #[gpui::test]
+    async fn tab_in_empty_focus_group_does_not_escape_sheet_bottom_drawer(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            EmptyTrapHarness::new(cx, SheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.outer_focus.is_focused(window),
+                "Tab with an empty FocusGroup must leave outer focus put"
+            );
+            assert!(
+                !host.outside.is_focused(window),
+                "Tab must not reach elements outside the sheet"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn tab_in_empty_focus_group_does_not_escape_sheet_cardlike(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            EmptyTrapHarness::new(cx, SheetPresentation::Cardlike)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.outer_focus.is_focused(window));
+            assert!(!host.outside.is_focused(window));
+        });
+    }
+
+    // Harness that wires `restore_focus_to` and lets us observe focus
+    // returning on dismiss. The `previous` handle stands in for the
+    // app-level control that was focused before the sheet opened.
+    struct RestoreFocusHarness {
+        sheet_focus: FocusHandle,
+        previous: FocusHandle,
+        is_open: bool,
+    }
+
+    impl RestoreFocusHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                sheet_focus: cx.focus_handle(),
+                previous: cx.focus_handle(),
+                is_open: true,
+            }
+        }
+    }
+
+    impl Render for RestoreFocusHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let entity = cx.entity().clone();
+            let body = div()
+                .id("prev-anchor")
+                .track_focus(&self.previous)
+                .w(px(160.0))
+                .h(px(80.0))
+                .child("Sheet body");
+            Sheet::new("sheet", body)
+                .open(self.is_open)
+                .focus_handle(self.sheet_focus.clone())
+                .restore_focus_to(self.previous.clone())
+                .on_dismiss(move |_, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.is_open = false;
+                        cx.notify();
+                    });
+                })
+        }
+    }
+
+    #[gpui::test]
+    async fn escape_restores_focus_to_previous_element(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| RestoreFocusHarness::new(cx));
+
+        host.update_in(cx, |host, window, cx| {
+            host.sheet_focus.focus(window, cx);
+            assert!(host.sheet_focus.is_focused(window));
+        });
+        cx.press("escape");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert!(!host.is_open);
+            assert!(
+                host.previous.is_focused(window),
+                "focus should be restored to `previous` after dismiss"
+            );
+        });
     }
 }

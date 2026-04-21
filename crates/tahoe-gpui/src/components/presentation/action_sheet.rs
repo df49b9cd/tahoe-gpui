@@ -27,6 +27,7 @@ use gpui::{App, ClickEvent, ElementId, FocusHandle, KeyDownEvent, SharedString, 
 use std::rc::Rc;
 
 use crate::callback_types::OnMutCallback;
+use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{SurfaceContext, glass_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
@@ -122,6 +123,13 @@ pub struct ActionSheet {
     cancel_text: SharedString,
     on_cancel: OnMutCallback,
     focus_handle: Option<FocusHandle>,
+    /// Child focus handles wrapped in a Trap-mode [`FocusGroup`]. Tab /
+    /// Shift+Tab cycle through the registered handles with wrap-around per
+    /// the WAI-ARIA dialog pattern; the group's `handle_key_down` helper
+    /// consumes Tab so focus cannot escape the action-sheet surface.
+    focus_group: FocusGroup,
+    /// Focus handle to restore when the action sheet dismisses.
+    restore_focus_to: Option<FocusHandle>,
     is_open: bool,
     presentation: Option<ActionSheetPresentation>,
 }
@@ -134,6 +142,8 @@ impl ActionSheet {
             cancel_text: SharedString::from("Cancel"),
             on_cancel: None,
             focus_handle: None,
+            focus_group: FocusGroup::trap(),
+            restore_focus_to: None,
             is_open: false,
             presentation: None,
         }
@@ -157,7 +167,10 @@ impl ActionSheet {
         self
     }
 
-    /// Set a focus handle for keyboard navigation (Escape to cancel).
+    /// Override the focus handle tracked on the action-sheet panel. When
+    /// unset, [`RenderOnce::render`] auto-mints one via `cx.focus_handle()`
+    /// so `focus_cycle`, the Tab trap, and Escape/Cmd-. dismissal work
+    /// standalone.
     pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
         self.focus_handle = Some(handle);
         self
@@ -180,12 +193,78 @@ impl ActionSheet {
         self.presentation = Some(presentation);
         self
     }
+
+    /// Register the focus handles of interactive children in tab order.
+    ///
+    /// When the user presses Tab past the last handle, focus returns to
+    /// the first; Shift+Tab past the first returns to the last. The
+    /// action sheet's `on_key_down` handler consumes Tab so focus cannot
+    /// escape the sheet surface even when no children are registered.
+    ///
+    /// Internally allocates a fresh Trap-mode [`FocusGroup`]. Calling this
+    /// after [`ActionSheet::focus_group`] is last-write-wins.
+    pub fn focus_cycle(mut self, handles: Vec<FocusHandle>) -> Self {
+        self.focus_group = FocusGroup::trap();
+        for handle in &handles {
+            self.focus_group.register(handle);
+        }
+        self
+    }
+
+    /// Attach a caller-managed [`FocusGroup`] driving the action sheet's
+    /// Tab trap. Overrides any handles previously supplied via
+    /// [`ActionSheet::focus_cycle`].
+    ///
+    /// The group **must** be in [`FocusGroupMode::Trap`] mode. Open /
+    /// Cycle groups make the action sheet's Tab handler swallow Tab
+    /// without advancing focus, stranding keyboard users — so this is a
+    /// runtime `assert!` rather than a `debug_assert!`.
+    pub fn focus_group(mut self, group: FocusGroup) -> Self {
+        assert_eq!(
+            group.mode(),
+            FocusGroupMode::Trap,
+            "ActionSheet::focus_group requires a Trap-mode FocusGroup; \
+             other modes cause Tab to be swallowed without advancing \
+             focus, stranding keyboard users."
+        );
+        self.focus_group = group;
+        self
+    }
+
+    /// Record the focus handle that should regain focus when the action
+    /// sheet dismisses. Call with the currently-focused element *before*
+    /// opening the sheet so the user returns to the same position on
+    /// dismiss.
+    pub fn restore_focus_to(mut self, handle: FocusHandle) -> Self {
+        self.restore_focus_to = Some(handle);
+        self
+    }
 }
 
 impl RenderOnce for ActionSheet {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if !self.is_open {
             return div().into_any_element();
+        }
+
+        // Initial-focus bootstrap per WAI-ARIA dialog pattern: land on the
+        // first focus-group member when one is registered, otherwise on
+        // the outer handle so Escape / Tab reach the key handler. Auto-mint
+        // a handle when the caller didn't wire one so `focus_cycle`, the
+        // Tab trap, and Escape all work without requiring `.focus_handle(...)`.
+        // Mirrors Sheet/Modal's two-check logic.
+        let focus_handle = self
+            .focus_handle
+            .clone()
+            .unwrap_or_else(|| cx.focus_handle());
+        let any_sheet_focus =
+            self.focus_group.contains_focused(window) || focus_handle.contains_focused(window, cx);
+        if !any_sheet_focus {
+            if self.focus_group.is_empty() {
+                focus_handle.focus(window, cx);
+            } else {
+                self.focus_group.focus_first(window, cx);
+            }
         }
 
         let theme = cx.theme();
@@ -235,9 +314,19 @@ impl RenderOnce for ActionSheet {
         // Cancel button at bottom with slightly different style.
         let cancel_hover_bg = theme.hover_bg();
 
-        // Wrap on_cancel in Rc so it can be shared between cancel_row click
-        // and the keyboard handler further below.
-        let on_cancel_rc: Option<SharedCancel> = self.on_cancel.map(Rc::from);
+        // Wrap on_cancel so every dismissal path (cancel click, Escape)
+        // first restores focus to `restore_focus_to` before invoking the
+        // inner callback. Shared across the cancel_row click and the
+        // keyboard handler further below via Rc.
+        let restore = self.restore_focus_to.clone();
+        let on_cancel_rc: Option<SharedCancel> = self.on_cancel.map(move |inner| {
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                if let Some(handle) = restore.as_ref() {
+                    handle.focus(window, cx);
+                }
+                inner(window, cx);
+            }) as Rc<dyn Fn(&mut Window, &mut App) + 'static>
+        });
 
         let cancel_row = {
             let mut cancel_row = div()
@@ -270,7 +359,8 @@ impl RenderOnce for ActionSheet {
                 item_rows,
                 cancel_row,
                 on_cancel_rc,
-                self.focus_handle,
+                focus_handle,
+                self.focus_group,
             ),
             ActionSheetPresentation::Centered => render_centered(
                 self.id,
@@ -279,7 +369,8 @@ impl RenderOnce for ActionSheet {
                 item_rows,
                 cancel_row,
                 on_cancel_rc,
-                self.focus_handle,
+                focus_handle,
+                self.focus_group,
             ),
         }
     }
@@ -287,6 +378,12 @@ impl RenderOnce for ActionSheet {
 
 /// iOS/watchOS bottom-drawer chrome — cancel group sits below the item
 /// group with a small gap.
+///
+/// ActionSheet items render as non-focusable click targets, so Home/End
+/// (which jump to first/last focus-group member) are intentionally not
+/// handled — they would have no user-visible effect. Tab is still
+/// swallowed by the Trap-mode [`FocusGroup`] per the WAI-ARIA dialog
+/// pattern so focus cannot escape the sheet surface.
 fn render_bottom_drawer(
     id: ElementId,
     theme: &TahoeTheme,
@@ -294,7 +391,8 @@ fn render_bottom_drawer(
     item_rows: Vec<gpui::Stateful<gpui::Div>>,
     cancel_row: gpui::Stateful<gpui::Div>,
     on_cancel_rc: Option<SharedCancel>,
-    focus_handle: Option<FocusHandle>,
+    focus_handle: FocusHandle,
+    focus_group: FocusGroup,
 ) -> gpui::AnyElement {
     // Cancel container.
     let cancel_group = glass_surface(
@@ -306,25 +404,20 @@ fn render_bottom_drawer(
 
     // Early return when there are no action items.
     if item_rows.is_empty() {
-        let mut cancel_only = div().flex().flex_col().w_full().id(id).child(cancel_group);
+        let cancel_only = div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .id(id)
+            .child(cancel_group)
+            .track_focus(&focus_handle);
 
-        let has_focus = focus_handle.is_some();
-        if let Some(ref handle) = focus_handle {
-            cancel_only = cancel_only.track_focus(handle);
-        }
-
-        if has_focus {
-            let on_cancel = on_cancel_rc;
-            cancel_only = cancel_only.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if crate::foundations::keyboard::is_escape_key(event)
-                    && let Some(handler) = &on_cancel
-                {
-                    handler(window, cx);
-                }
-            });
-        }
-
-        return cancel_only.into_any_element();
+        let on_cancel = on_cancel_rc;
+        return cancel_only
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                handle_key(event, window, cx, &focus_group, &on_cancel);
+            })
+            .into_any_element();
     }
 
     // Item group container (only reached when items exist).
@@ -336,32 +429,47 @@ fn render_bottom_drawer(
     .children(item_rows);
 
     // Overall container stacks item group and cancel group with spacing.
-    let mut container = div()
+    let container = div()
         .flex()
         .flex_col()
         .w_full()
         .gap(theme.spacing_sm)
-        .id(id);
+        .id(id)
+        .child(item_group)
+        .child(cancel_group)
+        .track_focus(&focus_handle);
 
-    container = container.child(item_group).child(cancel_group);
+    let on_cancel = on_cancel_rc;
+    container
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            handle_key(event, window, cx, &focus_group, &on_cancel);
+        })
+        .into_any_element()
+}
 
-    let has_focus = focus_handle.is_some();
-    if let Some(ref handle) = focus_handle {
-        container = container.track_focus(handle);
+/// Shared Escape / Tab handler for both ActionSheet presentations.
+///
+/// Escape routes through `on_cancel` so keyboard dismissal mirrors the
+/// Cancel button. Tab is dispatched through the Trap-mode [`FocusGroup`];
+/// when the group is empty (items are not focusable today) Tab is
+/// swallowed so focus cannot escape the sheet surface per the WAI-ARIA
+/// dialog pattern.
+fn handle_key(
+    event: &KeyDownEvent,
+    window: &mut Window,
+    cx: &mut App,
+    focus_group: &FocusGroup,
+    on_cancel: &Option<SharedCancel>,
+) {
+    if crate::foundations::keyboard::is_escape_key(event) {
+        if let Some(handler) = on_cancel {
+            handler(window, cx);
+        }
+        return;
     }
-
-    if has_focus {
-        let on_cancel = on_cancel_rc;
-        container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event)
-                && let Some(handler) = &on_cancel
-            {
-                handler(window, cx);
-            }
-        });
+    if event.keystroke.key.as_str() == "tab" && !focus_group.handle_key_down(event, window, cx) {
+        cx.stop_propagation();
     }
-
-    container.into_any_element()
 }
 
 /// macOS centered confirmation-dialog chrome. HIG `#action-sheets`:
@@ -376,7 +484,8 @@ fn render_centered(
     item_rows: Vec<gpui::Stateful<gpui::Div>>,
     cancel_row: gpui::Stateful<gpui::Div>,
     on_cancel_rc: Option<SharedCancel>,
-    focus_handle: Option<FocusHandle>,
+    focus_handle: FocusHandle,
+    focus_group: FocusGroup,
 ) -> gpui::AnyElement {
     let mut panel = glass_surface(
         div().w(px(320.0)).overflow_hidden(),
@@ -391,21 +500,12 @@ fn render_centered(
     for row in item_rows {
         panel = panel.child(row);
     }
-    panel = panel.child(cancel_row);
+    panel = panel.child(cancel_row).track_focus(&focus_handle);
 
-    if let Some(ref handle) = focus_handle {
-        panel = panel.track_focus(handle);
-    }
-    if focus_handle.is_some() {
-        let on_cancel = on_cancel_rc;
-        panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            if crate::foundations::keyboard::is_escape_key(event)
-                && let Some(handler) = &on_cancel
-            {
-                handler(window, cx);
-            }
-        });
-    }
+    let on_cancel = on_cancel_rc;
+    panel = panel.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        handle_key(event, window, cx, &focus_group, &on_cancel);
+    });
 
     // Non-modal: transparent full-viewport container, no backdrop, no
     // outside-click dismissal. The sheet coexists with the parent UI.
@@ -422,6 +522,7 @@ fn render_centered(
 #[cfg(test)]
 mod tests {
     use super::{ActionSheet, ActionSheetItem, ActionSheetPresentation, ActionSheetStyle};
+    use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
     use crate::foundations::layout::Platform;
     use core::prelude::v1::test;
 
@@ -501,6 +602,30 @@ mod tests {
     }
 
     #[test]
+    fn action_sheet_focus_cycle_defaults_to_empty() {
+        let sheet = ActionSheet::new("sheet");
+        assert!(sheet.focus_group.is_empty());
+    }
+
+    #[test]
+    fn action_sheet_focus_group_defaults_to_trap_mode() {
+        let sheet = ActionSheet::new("sheet");
+        assert_eq!(sheet.focus_group.mode(), FocusGroupMode::Trap);
+    }
+
+    #[test]
+    #[should_panic(expected = "ActionSheet::focus_group requires a Trap-mode FocusGroup")]
+    fn action_sheet_focus_group_rejects_non_trap_mode() {
+        let _ = ActionSheet::new("sheet").focus_group(FocusGroup::cycle());
+    }
+
+    #[test]
+    fn action_sheet_restore_focus_default_is_none() {
+        let sheet = ActionSheet::new("sheet");
+        assert!(sheet.restore_focus_to.is_none());
+    }
+
+    #[test]
     fn presentation_for_platform_matches_hig() {
         assert_eq!(
             ActionSheetPresentation::for_platform(Platform::MacOS),
@@ -526,7 +651,10 @@ mod interaction_tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext};
+    use gpui::{
+        Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
+        TestAppContext, div,
+    };
 
     use super::{ActionSheet, ActionSheetItem, ActionSheetStyle};
     use crate::test_helpers::helpers::{InteractionExt, setup_test_window};
@@ -621,5 +749,196 @@ mod interaction_tests {
 
         assert!(actions.borrow().is_empty());
         assert_eq!(*cancel_count.borrow(), 2);
+    }
+
+    // Harness verifying the empty-trap contract: ActionSheet items render
+    // as non-focusable divs today, so the Trap FocusGroup is empty by
+    // construction. Tab must still be swallowed to keep focus inside the
+    // sheet per WAI-ARIA dialog pattern.
+    struct EmptyTrapHarness {
+        outer_focus: FocusHandle,
+        outside: FocusHandle,
+        presentation: super::ActionSheetPresentation,
+    }
+
+    impl EmptyTrapHarness {
+        fn new(cx: &mut gpui::Context<Self>, presentation: super::ActionSheetPresentation) -> Self {
+            Self {
+                outer_focus: cx.focus_handle(),
+                outside: cx.focus_handle(),
+                presentation,
+            }
+        }
+    }
+
+    impl Render for EmptyTrapHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            div()
+                .child(
+                    div()
+                        .id("outside")
+                        .track_focus(&self.outside)
+                        .child("Outside"),
+                )
+                .child(
+                    ActionSheet::new("sheet")
+                        .items(vec![
+                            ActionSheetItem::new("Delete"),
+                            ActionSheetItem::new("Share"),
+                        ])
+                        .presentation(self.presentation)
+                        .focus_handle(self.outer_focus.clone())
+                        .on_cancel(|_, _| {})
+                        .open(true),
+                )
+        }
+    }
+
+    #[gpui::test]
+    async fn tab_in_action_sheet_does_not_escape_bottom_drawer(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            EmptyTrapHarness::new(cx, super::ActionSheetPresentation::BottomDrawer)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.outer_focus.is_focused(window),
+                "Tab with an empty FocusGroup must leave outer focus put"
+            );
+            assert!(
+                !host.outside.is_focused(window),
+                "Tab must not reach elements outside the action sheet"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn tab_in_action_sheet_does_not_escape_centered(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            EmptyTrapHarness::new(cx, super::ActionSheetPresentation::Centered)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.outer_focus.focus(window, cx);
+        });
+        cx.press("tab");
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.outer_focus.is_focused(window));
+            assert!(!host.outside.is_focused(window));
+        });
+    }
+
+    // Harness that wires `restore_focus_to` so we can observe focus
+    // returning to the previously-focused element after Escape dismisses
+    // the sheet.
+    struct RestoreFocusHarness {
+        sheet_focus: FocusHandle,
+        previous: FocusHandle,
+        is_open: bool,
+        cancelled: Rc<RefCell<bool>>,
+        presentation: super::ActionSheetPresentation,
+    }
+
+    impl RestoreFocusHarness {
+        fn new(
+            cx: &mut gpui::Context<Self>,
+            cancelled: Rc<RefCell<bool>>,
+            presentation: super::ActionSheetPresentation,
+        ) -> Self {
+            Self {
+                sheet_focus: cx.focus_handle(),
+                previous: cx.focus_handle(),
+                is_open: true,
+                cancelled,
+                presentation,
+            }
+        }
+    }
+
+    impl Render for RestoreFocusHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            let entity = cx.entity().clone();
+            let mut outer = div().child(
+                div()
+                    .id("prev")
+                    .track_focus(&self.previous)
+                    .child("Previous"),
+            );
+            if self.is_open {
+                outer = outer.child(
+                    ActionSheet::new("sheet")
+                        .items(vec![ActionSheetItem::new("Delete")])
+                        .presentation(self.presentation)
+                        .focus_handle(self.sheet_focus.clone())
+                        .restore_focus_to(self.previous.clone())
+                        .on_cancel(move |_, cx| {
+                            entity.update(cx, |this, cx| {
+                                this.is_open = false;
+                                *this.cancelled.borrow_mut() = true;
+                                cx.notify();
+                            });
+                        })
+                        .open(true),
+                );
+            }
+            outer
+        }
+    }
+
+    #[gpui::test]
+    async fn escape_restores_focus_to_previous_element_bottom_drawer(cx: &mut TestAppContext) {
+        let cancelled = Rc::new(RefCell::new(false));
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            RestoreFocusHarness::new(
+                cx,
+                cancelled.clone(),
+                super::ActionSheetPresentation::BottomDrawer,
+            )
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.sheet_focus.focus(window, cx);
+        });
+        cx.press("escape");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.previous.is_focused(window),
+                "focus should be restored to `previous` after Escape"
+            );
+        });
+        assert!(*cancelled.borrow(), "on_cancel should still fire");
+    }
+
+    #[gpui::test]
+    async fn escape_restores_focus_to_previous_element_centered(cx: &mut TestAppContext) {
+        let cancelled = Rc::new(RefCell::new(false));
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            RestoreFocusHarness::new(
+                cx,
+                cancelled.clone(),
+                super::ActionSheetPresentation::Centered,
+            )
+        });
+
+        host.update_in(cx, |host, window, cx| {
+            host.sheet_focus.focus(window, cx);
+        });
+        cx.press("escape");
+
+        host.update_in(cx, |host, window, _cx| {
+            assert!(host.previous.is_focused(window));
+        });
+        assert!(*cancelled.borrow());
     }
 }
