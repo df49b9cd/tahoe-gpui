@@ -1287,6 +1287,22 @@ impl TahoeTheme {
         }
     }
 
+    /// Returns `true` when macOS Full Keyboard Access is active
+    /// (System Settings → Keyboard → Keyboard navigation).
+    ///
+    /// Components that render multiple similar children — list rows, chart
+    /// data points, palette swatches, page-control dots — should expose each
+    /// child as its own Tab stop when this is `true`, so a FKA user can step
+    /// through every interactive surface rather than treating the parent as
+    /// a single Tab stop.
+    ///
+    /// See [`FocusGroup::bind_if_fka`](crate::foundations::accessibility::FocusGroup::bind_if_fka)
+    /// for the canonical gate that pairs this flag with host-owned focus
+    /// handles.
+    pub fn full_keyboard_access(&self) -> bool {
+        self.accessibility_mode.full_keyboard_access()
+    }
+
     /// Returns the sanitized font scale factor used by the type scale at
     /// render time. Mirrors the guard in
     /// [`with_font_scale_factor`](Self::with_font_scale_factor): returns

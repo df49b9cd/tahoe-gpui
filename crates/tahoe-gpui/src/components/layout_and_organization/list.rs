@@ -34,9 +34,11 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 
-use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
+};
 use crate::foundations::color::with_alpha;
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
@@ -141,6 +143,8 @@ pub struct List {
     selected_id: Option<SharedString>,
     on_select: OnSelect,
     focused: bool,
+    row_focus_group: Option<FocusGroup>,
+    row_focus_handles: Vec<FocusHandle>,
 }
 
 impl List {
@@ -152,6 +156,8 @@ impl List {
             selected_id: None,
             on_select: None,
             focused: false,
+            row_focus_group: None,
+            row_focus_handles: Vec::new(),
         }
     }
 
@@ -187,6 +193,31 @@ impl List {
         self.focused = focused;
         self
     }
+
+    /// Attach a host-owned [`FocusGroup`] driving per-row Tab stops under
+    /// macOS Full Keyboard Access. Paired with
+    /// [`List::row_focus_handles`] — the list wires each row to its handle
+    /// only when `theme.full_keyboard_access()` is `true` and the handle
+    /// count matches the row count. Use [`FocusGroup::open`] so Tab still
+    /// exits the list naturally.
+    ///
+    /// When FKA is active the container-level Up/Down/Home/End handler is
+    /// suppressed so keystrokes reach the focused row directly; the
+    /// FocusGroup's programmatic navigation becomes the single source of
+    /// arrow-key movement. When FKA is off the list falls back to the
+    /// single-Tab-stop + container-arrow-nav selection model.
+    pub fn row_focus_group(mut self, group: FocusGroup) -> Self {
+        self.row_focus_group = Some(group);
+        self
+    }
+
+    /// Per-row [`FocusHandle`]s. The list expects one handle per row in
+    /// the order the rows are added (sections flattened). Handles must be
+    /// host-owned (stateless components cannot keep them across renders).
+    pub fn row_focus_handles(mut self, handles: Vec<FocusHandle>) -> Self {
+        self.row_focus_handles = handles;
+        self
+    }
 }
 
 fn render_row(
@@ -197,6 +228,7 @@ fn render_row(
     style: ListStyle,
     theme: &TahoeTheme,
     on_select: &OnSelect,
+    focus: Option<(&FocusGroup, &FocusHandle)>,
 ) -> AnyElement {
     // Selection colour: the Sidebar style tints with `theme.accent` at
     // ~15% alpha (matching the HIG source-list soft-tint selection), so
@@ -290,6 +322,10 @@ fn render_row(
         });
     }
 
+    if let Some((group, handle)) = focus {
+        row_el = row_el.focus_group(group, handle);
+    }
+
     row_el.into_any_element()
 }
 
@@ -300,12 +336,22 @@ impl RenderOnce for List {
         let selected_id = self.selected_id.clone();
         let on_select = self.on_select.clone();
 
-        // Collect row ids for keyboard navigation.
-        let all_ids: Vec<SharedString> = self
-            .sections
-            .iter()
-            .flat_map(|s| s.rows.iter().map(|r| r.id.clone()))
-            .collect();
+        // Count rows once for the FKA gate and the arrow-nav fallback.
+        // Collecting the full `Vec<SharedString>` is only needed when the
+        // fallback is active (no per-row FKA focus AND a select callback
+        // is present), so defer that allocation until after the gate.
+        let total_rows: usize = self.sections.iter().map(|s| s.rows.len()).sum();
+
+        // Per-row focus attachment is only active under macOS Full
+        // Keyboard Access AND when the host has supplied both a group and
+        // one handle per row. Otherwise the single-Tab-stop +
+        // container-level arrow-nav selection model stays in place.
+        let fka_rows = FocusGroup::bind_if_fka(
+            theme.full_keyboard_access(),
+            self.row_focus_group,
+            self.row_focus_handles,
+            total_rows,
+        );
 
         let mut container = div().id(self.id).focusable().flex().flex_col().w_full();
 
@@ -357,6 +403,23 @@ impl RenderOnce for List {
         };
         let mut global_row_index: usize = 0;
 
+        // Container-level arrow-nav (Up/Down/Home/End/Enter/Space) is only
+        // used as a fallback when per-row FKA focus is off. Collect the
+        // flat id list *only* in that case — otherwise every render would
+        // allocate a Vec just to discard it. The sections loop below
+        // consumes `self.sections`, so the collection has to happen here.
+        let arrow_nav_ids: Option<Vec<SharedString>> =
+            if fka_rows.is_none() && total_rows > 0 && on_select.is_some() {
+                Some(
+                    self.sections
+                        .iter()
+                        .flat_map(|s| s.rows.iter().map(|r| r.id.clone()))
+                        .collect(),
+                )
+            } else {
+                None
+            };
+
         for section in self.sections {
             let mut section_el = div().flex().flex_col();
 
@@ -388,6 +451,9 @@ impl RenderOnce for List {
                 let is_last = idx + 1 == rows_len;
                 let is_selected = selected_id.as_ref() == Some(&row.id);
                 let is_focused = focused_id.as_ref() == Some(&row.id);
+                let focus = fka_rows
+                    .as_ref()
+                    .map(|(group, handles)| (group, &handles[global_row_index]));
                 let mut el = render_row(
                     row,
                     is_selected,
@@ -396,6 +462,7 @@ impl RenderOnce for List {
                     style,
                     theme,
                     &on_select,
+                    focus,
                 );
                 global_row_index += 1;
                 // Remove bottom border on the last row of a grouped section
@@ -410,10 +477,14 @@ impl RenderOnce for List {
             container = container.child(section_el);
         }
 
-        if !all_ids.is_empty()
+        // Container-level arrow-nav: only active when FKA is off (the
+        // per-row focus path owns arrow-nav under FKA). `arrow_nav_ids`
+        // is `Some` iff FKA is off AND there's a selection callback AND
+        // at least one row — so if we reach here we know `on_select` is
+        // also `Some`.
+        if let Some(ids) = arrow_nav_ids
             && let Some(cb) = on_select.clone()
         {
-            let ids = all_ids;
             let selected_at_render = selected_id.clone();
             container = container.on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
@@ -451,9 +522,14 @@ impl RenderOnce for List {
 #[cfg(test)]
 mod tests {
     use core::prelude::v1::test;
-    use gpui::div;
+    use gpui::{
+        Context, FocusHandle, IntoElement, ParentElement, Render, TestAppContext, Window, div,
+    };
 
     use super::{List, ListRow, ListSection, ListStyle};
+    use crate::foundations::accessibility::{AccessibilityMode, FocusGroup};
+    use crate::foundations::theme::TahoeTheme;
+    use crate::test_helpers::helpers::setup_test_window;
 
     #[test]
     fn list_style_default_is_plain() {
@@ -533,5 +609,88 @@ mod tests {
         assert_eq!(l.style, ListStyle::Sidebar);
         let l = List::new("l").style(ListStyle::Bordered);
         assert_eq!(l.style, ListStyle::Bordered);
+    }
+
+    // ─── HIG: Full Keyboard Access ───────────────────────────────────
+
+    struct FkaHarness {
+        handles: Vec<FocusHandle>,
+        group: FocusGroup,
+    }
+
+    impl FkaHarness {
+        fn new(cx: &mut Context<Self>) -> Self {
+            Self {
+                handles: (0..3).map(|_| cx.focus_handle()).collect(),
+                group: FocusGroup::open(),
+            }
+        }
+    }
+
+    impl Render for FkaHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            List::new("fka-list")
+                .section(
+                    ListSection::new()
+                        .row(ListRow::new("a", div().child("A")))
+                        .row(ListRow::new("b", div().child("B")))
+                        .row(ListRow::new("c", div().child("C"))),
+                )
+                .row_focus_group(self.group.clone())
+                .row_focus_handles(self.handles.clone())
+                .on_select(|_id, _w, _cx| {})
+        }
+    }
+
+    #[gpui::test]
+    async fn fka_off_does_not_register_row_handles(cx: &mut TestAppContext) {
+        // Default theme has no FKA flag → list ignores the focus cluster.
+        let (host, _cx) = setup_test_window(cx, |_window, cx| FkaHarness::new(cx));
+        host.update(cx, |host, _cx| {
+            assert!(
+                host.group.is_empty(),
+                "FKA off: no rows should be registered"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_registers_one_focus_per_row(cx: &mut TestAppContext) {
+        // Bypass the helper so we can seat a FKA-enabled theme as the
+        // global *before* render runs.
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            FkaHarness::new(cx)
+        });
+        host.update(vcx, |host, _cx| {
+            assert_eq!(
+                host.group.len(),
+                3,
+                "FKA on: every row should be a tab stop"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_without_matching_handle_count_skips_registration(cx: &mut TestAppContext) {
+        // Misconfigured host (too few handles) must not partially register
+        // — otherwise stale tab indices would leak between renders.
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            FkaHarness {
+                group: FocusGroup::open(),
+                handles: vec![cx.focus_handle()], // only 1 for 3 rows
+            }
+        });
+        host.update(vcx, |host, _cx| {
+            assert!(
+                host.group.is_empty(),
+                "handle/row count mismatch: must skip registration"
+            );
+        });
     }
 }

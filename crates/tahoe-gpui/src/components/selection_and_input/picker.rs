@@ -6,6 +6,7 @@
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::components::selection_and_input::segmented_control::{SegmentItem, SegmentedControl};
+use crate::foundations::accessibility::{FocusGroup, FocusGroupExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
@@ -14,8 +15,8 @@ use crate::foundations::materials::{
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, IntoElement, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    App, ElementId, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent, SharedString, Window,
+    deferred, div, px,
 };
 use std::rc::Rc;
 
@@ -116,6 +117,14 @@ pub struct Picker {
     highlighted_index: Option<usize>,
     /// Visual style. Defaults to [`PickerStyle::Menu`].
     style: PickerStyle,
+    /// Host-owned focus group used by the `Palette` style when
+    /// `AccessibilityMode::FULL_KEYBOARD_ACCESS` is active. Ignored by
+    /// the other picker styles.
+    palette_focus_group: Option<FocusGroup>,
+    /// Host-owned per-tile focus handles for the `Palette` style. Expected
+    /// to contain exactly one handle per palette item. Ignored unless the
+    /// active theme reports FKA and the group is also supplied.
+    palette_focus_handles: Vec<FocusHandle>,
 }
 
 impl Picker {
@@ -133,6 +142,8 @@ impl Picker {
             focused: false,
             highlighted_index: None,
             style: PickerStyle::Menu,
+            palette_focus_group: None,
+            palette_focus_handles: Vec::new(),
         }
     }
 
@@ -201,10 +212,56 @@ impl Picker {
         self.on_highlight = Some(Box::new(handler));
         self
     }
+
+    /// Attach a host-owned [`FocusGroup`] for per-tile arrow-nav and
+    /// Tab-reachability under macOS Full Keyboard Access. Only honoured by
+    /// the [`PickerStyle::Palette`] layout, which exposes each tile as a
+    /// Tab stop when this is paired with
+    /// [`Picker::palette_focus_handles`] and the active theme reports FKA.
+    /// Use [`FocusGroup::open`] so Tab still exits the palette naturally.
+    pub fn palette_focus_group(mut self, group: FocusGroup) -> Self {
+        self.palette_focus_group = Some(group);
+        self
+    }
+
+    /// Per-tile [`FocusHandle`]s for the [`PickerStyle::Palette`] layout.
+    /// Expected to hold exactly one handle per palette item, in item
+    /// order. Host-owned: stateless components cannot keep handles across
+    /// renders.
+    pub fn palette_focus_handles(mut self, handles: Vec<FocusHandle>) -> Self {
+        self.palette_focus_handles = handles;
+        self
+    }
+}
+
+/// Index of the tile directly above `idx` in a `tiles_per_row` grid,
+/// or `idx` itself when already on the top row (no-op clamp).
+const fn palette_up_target(idx: usize, tiles_per_row: usize) -> usize {
+    if idx < tiles_per_row {
+        idx
+    } else {
+        idx - tiles_per_row
+    }
+}
+
+/// Index of the tile directly below `idx` in a grid of `total` tiles /
+/// `tiles_per_row`, preserving column. When the next row is ragged and
+/// has no tile in the same column, clamps to the last tile. Returns
+/// `idx` itself when already on the bottom row. Requires `total > 0`.
+const fn palette_down_target(idx: usize, total: usize, tiles_per_row: usize) -> usize {
+    let col = idx % tiles_per_row;
+    let row_idx = idx / tiles_per_row;
+    let last_row = total.saturating_sub(1) / tiles_per_row;
+    if row_idx >= last_row {
+        return idx;
+    }
+    let target = (row_idx + 1) * tiles_per_row + col;
+    let max = total.saturating_sub(1);
+    if target > max { max } else { target }
 }
 
 impl RenderOnce for Picker {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let style = self.style;
 
@@ -506,12 +563,25 @@ impl RenderOnce for Picker {
             const TILES_PER_ROW: usize = 10;
             const TILE_SIZE: f32 = 32.0;
 
+            // FKA: only attach per-tile focus when the flag is set AND the
+            // host supplied both a FocusGroup and exactly one handle per
+            // tile. Strict count matching avoids leaking stale tab indices
+            // from a previous item layout.
+            let fka_tiles = FocusGroup::bind_if_fka(
+                theme.full_keyboard_access(),
+                self.palette_focus_group,
+                self.palette_focus_handles,
+                items_flat.len(),
+            );
+
             let mut grid = div()
                 .id(self.id.clone())
                 .flex()
                 .flex_col()
                 .gap(theme.spacing_xs);
 
+            let mut global_idx = 0usize;
+            let total_tiles = items_flat.len();
             for chunk in items_flat.chunks(TILES_PER_ROW) {
                 let mut row = div().flex().flex_row().gap(theme.spacing_xs);
                 for item in chunk {
@@ -564,7 +634,76 @@ impl RenderOnce for Picker {
                             h(&item_value, window, cx);
                         }
                     });
+
+                    // FKA: attach per-tile focus + 2D arrow-nav keybindings
+                    // + per-tile focus ring. Left/Right step ±1 via the
+                    // FocusGroup; Up/Down step by a whole row of tiles
+                    // while preserving the same column — important for a
+                    // ragged last row where the naive `+TILES_PER_ROW` jump
+                    // would slide the focus into a neighbouring column if
+                    // clamped. End jumps to the last tile; Home to the
+                    // first. Enter/Space activates the tile via its click
+                    // handler.
+                    if let Some((group, handles)) = fka_tiles.as_ref() {
+                        let handle = &handles[global_idx];
+                        let is_focused = handle.is_focused(window);
+                        tile = tile.focus_group(group, handle);
+                        tile = apply_focus_ring(tile, theme, is_focused, &[]);
+
+                        // Precompute the two handles the Up/Down branches
+                        // need. Doing this per-tile avoids cloning the
+                        // full `Vec<FocusHandle>` into every on_key_down
+                        // closure (O(N²) across the render); each branch
+                        // now holds a single `FocusHandle` (Rc bump only).
+                        let up_handle =
+                            handles[palette_up_target(global_idx, TILES_PER_ROW)].clone();
+                        let down_handle = handles
+                            [palette_down_target(global_idx, total_tiles, TILES_PER_ROW)]
+                        .clone();
+
+                        let nav_group = group.clone();
+                        let nav_change = on_change.clone();
+                        let nav_value = item.value.clone();
+                        tile = tile.on_key_down(move |ev: &KeyDownEvent, window, cx| {
+                            match ev.keystroke.key.as_str() {
+                                "left" => {
+                                    nav_group.focus_previous(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "right" => {
+                                    nav_group.focus_next(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "up" => {
+                                    up_handle.focus(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "down" => {
+                                    down_handle.focus(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "home" => {
+                                    nav_group.focus_first(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "end" => {
+                                    nav_group.focus_last(window, cx);
+                                    cx.stop_propagation();
+                                }
+                                _ => {
+                                    if crate::foundations::keyboard::is_activation_key(ev)
+                                        && let Some(ref h) = nav_change
+                                    {
+                                        h(&nav_value, window, cx);
+                                        cx.stop_propagation();
+                                    }
+                                }
+                            }
+                        });
+                    }
+
                     row = row.child(tile);
+                    global_idx += 1;
                 }
                 grid = grid.child(row);
             }
@@ -886,9 +1025,12 @@ impl RenderOnce for Picker {
 #[cfg(test)]
 mod tests {
     use super::{Picker, PickerItem, PickerStyle};
+    use crate::foundations::accessibility::{AccessibilityMode, FocusGroup};
     use crate::foundations::icons::IconName;
+    use crate::foundations::theme::TahoeTheme;
+    use crate::test_helpers::helpers::setup_test_window;
     use core::prelude::v1::test;
-    use gpui::SharedString;
+    use gpui::{Context, FocusHandle, IntoElement, Render, SharedString, TestAppContext, Window};
 
     #[test]
     fn picker_defaults() {
@@ -1012,5 +1154,248 @@ mod tests {
     fn picker_item_icon_builder() {
         let item = PickerItem::new("Label", "v").icon(IconName::CircleFilled);
         assert!(item.icon.is_some());
+    }
+
+    #[test]
+    fn picker_palette_focus_fields_default_empty() {
+        let p = Picker::new("test");
+        assert!(p.palette_focus_group.is_none());
+        assert!(p.palette_focus_handles.is_empty());
+    }
+
+    // ─── HIG: Full Keyboard Access ───────────────────────────────────
+
+    fn palette_items() -> Vec<PickerItem> {
+        vec![
+            PickerItem::new("Star", "s").icon(IconName::StarFill),
+            PickerItem::new("Circle", "c").icon(IconName::CircleFilled),
+            PickerItem::new("Bell", "b"),
+        ]
+    }
+
+    struct PickerFkaHarness {
+        handles: Vec<FocusHandle>,
+        group: FocusGroup,
+    }
+
+    impl PickerFkaHarness {
+        fn new(cx: &mut Context<Self>, count: usize) -> Self {
+            Self {
+                handles: (0..count).map(|_| cx.focus_handle()).collect(),
+                group: FocusGroup::open(),
+            }
+        }
+    }
+
+    impl Render for PickerFkaHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Picker::new("palette-test")
+                .style(PickerStyle::Palette)
+                .items(palette_items())
+                .palette_focus_group(self.group.clone())
+                .palette_focus_handles(self.handles.clone())
+        }
+    }
+
+    #[gpui::test]
+    async fn fka_off_does_not_register_palette_handles(cx: &mut TestAppContext) {
+        let (host, _cx) = setup_test_window(cx, |_window, cx| PickerFkaHarness::new(cx, 3));
+        host.update(cx, |host, _cx| {
+            assert!(host.group.is_empty());
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_registers_one_focus_per_tile(cx: &mut TestAppContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PickerFkaHarness::new(cx, 3)
+        });
+        host.update(vcx, |host, _cx| {
+            assert_eq!(host.group.len(), 3);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_preserves_registration_order(cx: &mut TestAppContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PickerFkaHarness::new(cx, 3)
+        });
+        host.update(vcx, |host, _cx| {
+            for (i, handle) in host.handles.iter().enumerate() {
+                assert_eq!(host.group.register(handle), i);
+            }
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_mismatched_handle_count_skips_registration(cx: &mut TestAppContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PickerFkaHarness {
+                group: FocusGroup::open(),
+                handles: vec![cx.focus_handle()], // 1 for 3 items
+            }
+        });
+        host.update(vcx, |host, _cx| {
+            assert!(host.group.is_empty());
+        });
+    }
+
+    // ─── Palette 2D arrow-nav: 25 tiles = 2 full rows + 1 partial (5) ───
+    //
+    // Pure helpers `palette_up_target` / `palette_down_target` are the
+    // single source of truth for the render path's Up/Down targets, so
+    // verifying their arithmetic verifies the closure's navigation.
+
+    const TILES_PER_ROW: usize = 10;
+    const TOTAL_TILES: usize = 25; // rows: 0..10, 10..20, 20..25
+
+    #[test]
+    fn up_top_row_is_noop() {
+        // Any tile on the top row stays put (Up from row 0 = no-op).
+        for idx in 0..TILES_PER_ROW {
+            assert_eq!(super::palette_up_target(idx, TILES_PER_ROW), idx);
+        }
+    }
+
+    #[test]
+    fn up_middle_row_moves_one_row_up() {
+        // Tile 15 is row 1, col 5 → moves to tile 5 (row 0, col 5).
+        assert_eq!(super::palette_up_target(15, TILES_PER_ROW), 5);
+    }
+
+    #[test]
+    fn up_bottom_row_moves_one_row_up() {
+        // Tile 22 is row 2, col 2 → moves to tile 12 (row 1, col 2).
+        assert_eq!(super::palette_up_target(22, TILES_PER_ROW), 12);
+    }
+
+    #[test]
+    fn down_middle_row_preserves_column_into_full_row() {
+        // Tile 5 (row 0, col 5) → tile 15 (row 1, col 5). Both full rows.
+        assert_eq!(
+            super::palette_down_target(5, TOTAL_TILES, TILES_PER_ROW),
+            15
+        );
+    }
+
+    #[test]
+    fn down_middle_row_into_ragged_row_clamps_to_last_tile() {
+        // Tile 15 (row 1, col 5) → row 2 has no col 5 (last row is
+        // tiles 20..25, cols 0..5 only; col 5 doesn't exist). Clamp
+        // to last tile (24).
+        assert_eq!(
+            super::palette_down_target(15, TOTAL_TILES, TILES_PER_ROW),
+            24
+        );
+    }
+
+    #[test]
+    fn down_middle_row_into_ragged_row_keeps_existing_column() {
+        // Tile 13 (row 1, col 3) → tile 23 (row 2, col 3) exists, no clamp.
+        assert_eq!(
+            super::palette_down_target(13, TOTAL_TILES, TILES_PER_ROW),
+            23
+        );
+    }
+
+    #[test]
+    fn down_bottom_row_is_noop() {
+        // Any tile on the last row stays put.
+        for idx in 20..TOTAL_TILES {
+            assert_eq!(
+                super::palette_down_target(idx, TOTAL_TILES, TILES_PER_ROW),
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn down_single_row_is_noop() {
+        // With only 5 tiles (single ragged row), Down anywhere is a no-op.
+        for idx in 0..5 {
+            assert_eq!(super::palette_down_target(idx, 5, TILES_PER_ROW), idx);
+        }
+    }
+
+    struct PaletteGridHarness {
+        handles: Vec<FocusHandle>,
+        group: FocusGroup,
+    }
+
+    impl Render for PaletteGridHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let items: Vec<PickerItem> = (0..TOTAL_TILES)
+                .map(|i| PickerItem::new(format!("Item {i}"), format!("v{i}")))
+                .collect();
+            Picker::new("palette-grid-test")
+                .style(PickerStyle::Palette)
+                .items(items)
+                .palette_focus_group(self.group.clone())
+                .palette_focus_handles(self.handles.clone())
+        }
+    }
+
+    #[gpui::test]
+    async fn fka_on_registers_all_tiles_in_25_item_grid(cx: &mut TestAppContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PaletteGridHarness {
+                handles: (0..TOTAL_TILES).map(|_| cx.focus_handle()).collect(),
+                group: FocusGroup::open(),
+            }
+        });
+        host.update(vcx, |host, _cx| {
+            assert_eq!(host.group.len(), TOTAL_TILES);
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_25_item_grid_focus_next_walks_registration_order(cx: &mut TestAppContext) {
+        // Proves Left/Right arrow-nav (which calls focus_next/previous)
+        // walks the grid in flat registration order.
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PaletteGridHarness {
+                handles: (0..TOTAL_TILES).map(|_| cx.focus_handle()).collect(),
+                group: FocusGroup::open(),
+            }
+        });
+        host.update_in(vcx, |host, window, cx| {
+            host.handles[9].focus(window, cx); // end of row 0
+            host.group.focus_next(window, cx); // → row 1, col 0
+            assert!(host.handles[10].is_focused(window));
+        });
+    }
+
+    #[gpui::test]
+    async fn fka_on_25_item_grid_focus_last_jumps_to_final_tile(cx: &mut TestAppContext) {
+        // End key → focus_last → last registered handle (index 24).
+        let (host, vcx) = cx.add_window_view(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+            cx.set_global(theme);
+            PaletteGridHarness {
+                handles: (0..TOTAL_TILES).map(|_| cx.focus_handle()).collect(),
+                group: FocusGroup::open(),
+            }
+        });
+        host.update_in(vcx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+            host.group.focus_last(window, cx);
+            assert!(host.handles[TOTAL_TILES - 1].is_focused(window));
+        });
     }
 }

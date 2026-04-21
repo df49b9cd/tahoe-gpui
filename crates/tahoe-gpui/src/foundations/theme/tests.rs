@@ -1229,6 +1229,40 @@ fn effective_weight_other_modes_pass_through() {
     );
 }
 
+// ─── HIG: Full Keyboard Access helper ────────────────────────────────
+
+#[test]
+fn full_keyboard_access_default_mode_is_false() {
+    let theme = TahoeTheme::dark();
+    assert!(!theme.full_keyboard_access());
+}
+
+#[test]
+fn full_keyboard_access_reports_when_flag_set() {
+    let mut theme = TahoeTheme::dark();
+    theme.accessibility_mode = AccessibilityMode::FULL_KEYBOARD_ACCESS;
+    assert!(theme.full_keyboard_access());
+}
+
+#[test]
+fn full_keyboard_access_reports_when_combined_with_other_flags() {
+    let mut theme = TahoeTheme::dark();
+    theme.accessibility_mode =
+        AccessibilityMode::FULL_KEYBOARD_ACCESS | AccessibilityMode::BOLD_TEXT;
+    assert!(theme.full_keyboard_access());
+    assert_eq!(
+        theme.effective_weight(FontWeight::NORMAL),
+        FontWeight::MEDIUM
+    );
+}
+
+#[test]
+fn full_keyboard_access_other_flags_do_not_enable() {
+    let mut theme = TahoeTheme::dark();
+    theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
+    assert!(!theme.full_keyboard_access());
+}
+
 // ─── HIG Phase 3: Spring Token Tests ─────────────────────────────────
 
 #[test]
