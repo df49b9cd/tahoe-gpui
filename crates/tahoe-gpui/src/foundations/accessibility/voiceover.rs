@@ -84,6 +84,9 @@ pub enum AccessibilityRole {
     ProgressIndicator,
     /// Group of related controls with an accessibility label.
     Group,
+    /// Group of mutually exclusive radio buttons. Maps to WAI-ARIA
+    /// `role="radiogroup"` / NSAccessibility `AXRadioGroup`.
+    RadioGroup,
     /// Toolbar — horizontal bar of related actions. Matches WAI-ARIA
     /// `role="toolbar"` and NSAccessibilityRole `.toolbar`.
     ///
@@ -125,6 +128,10 @@ pub struct AccessibilityProps {
     pub role: Option<AccessibilityRole>,
     /// Stateful-control value description (e.g. "75%" for sliders).
     pub value: Option<SharedString>,
+    /// 1-based position within a group (WAI-ARIA `aria-posinset`).
+    pub posinset: Option<usize>,
+    /// Total items in the group (WAI-ARIA `aria-setsize`).
+    pub setsize: Option<usize>,
     /// Declares this element as a modal container (WAI-ARIA `aria-modal`
     /// / NSAccessibility `AXModal`). Pairs with [`AccessibilityRole::Dialog`]
     /// or [`AccessibilityRole::Alert`] so VoiceOver announces "modal dialog"
@@ -180,9 +187,26 @@ impl AccessibilityProps {
         self
     }
 
+    /// Set the 1-based position within a group (WAI-ARIA `aria-posinset`).
+    pub fn posinset(mut self, pos: usize) -> Self {
+        self.posinset = Some(pos);
+        self
+    }
+
+    /// Set the total number of items in the group (WAI-ARIA `aria-setsize`).
+    pub fn setsize(mut self, size: usize) -> Self {
+        self.setsize = Some(size);
+        self
+    }
+
     /// Returns true when at least one field carries information.
     pub fn is_some(&self) -> bool {
-        self.label.is_some() || self.role.is_some() || self.value.is_some() || self.modal
+        self.label.is_some()
+            || self.role.is_some()
+            || self.value.is_some()
+            || self.modal
+            || self.posinset.is_some()
+            || self.setsize.is_some()
     }
 }
 
@@ -352,5 +376,27 @@ mod tests {
             .invisible()
             .with_accessibility(&props);
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn radio_group_role_differs_from_group() {
+        assert_ne!(AccessibilityRole::RadioGroup, AccessibilityRole::Group);
+    }
+
+    #[test]
+    fn accessibility_props_posinset_setsize_builders() {
+        let props = AccessibilityProps::new().posinset(2).setsize(5);
+        assert_eq!(props.posinset, Some(2));
+        assert_eq!(props.setsize, Some(5));
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_posinset() {
+        assert!(AccessibilityProps::new().posinset(1).is_some());
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_setsize() {
+        assert!(AccessibilityProps::new().setsize(3).is_some());
     }
 }
