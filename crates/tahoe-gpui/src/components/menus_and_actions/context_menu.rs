@@ -18,6 +18,7 @@ use gpui::{
 
 use crate::callback_types::OnMutCallback;
 use crate::components::layout_and_organization::separator::Separator;
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, SPACING_4};
@@ -1010,6 +1011,11 @@ fn render_rows(
                     ));
                 }
 
+                let a11y = AccessibilityProps::new()
+                    .role(AccessibilityRole::MenuItem)
+                    .label(item.label.clone());
+                row = row.with_accessibility(&a11y);
+
                 children.push(row.into_any_element());
             }
             ContextMenuEntry::Submenu { label, icon, .. } => {
@@ -1096,6 +1102,11 @@ fn render_rows(
                         }
                     }));
                 }
+
+                let a11y = AccessibilityProps::new()
+                    .role(AccessibilityRole::MenuItem)
+                    .label(label.clone());
+                row = row.with_accessibility(&a11y);
 
                 children.push(row.into_any_element());
             }

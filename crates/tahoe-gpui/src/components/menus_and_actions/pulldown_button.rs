@@ -17,6 +17,7 @@ use gpui::{
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
@@ -535,6 +536,7 @@ impl RenderOnce for PulldownButton {
                     row = row.child(Icon::new(icon_name).size(px(16.0)).color(text_color));
                 }
 
+                let action_label = action.label.clone();
                 row = row.child(div().flex_1().child(action.label));
 
                 // Trailing keyboard-shortcut glyph. Uses the secondary-label
@@ -560,6 +562,11 @@ impl RenderOnce for PulldownButton {
                         }
                     });
                 }
+
+                let a11y = AccessibilityProps::new()
+                    .role(AccessibilityRole::MenuItem)
+                    .label(action_label);
+                row = row.with_accessibility(&a11y);
 
                 list = list.child(row);
                 // Silence unused: `action_handlers` is captured by the
