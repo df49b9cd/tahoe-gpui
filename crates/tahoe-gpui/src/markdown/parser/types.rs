@@ -113,7 +113,7 @@ pub enum InlineContent {
     /// An inline citation reference, e.g. `[1]`. The number is 1-based.
     Citation(usize),
     /// A GFM footnote reference, e.g. `[^1]`. The label is the identifier
-    /// between the carets (e.g., `"1"` for `[^1]`, `"note"` for `[^note]`).
+    /// after the caret (e.g., `"1"` for `[^1]`, `"note"` for `[^note]`).
     FootnoteReference(String),
     /// An inline image.
     Image {

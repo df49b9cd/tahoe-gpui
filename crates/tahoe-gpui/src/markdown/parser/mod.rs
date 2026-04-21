@@ -477,11 +477,7 @@ impl IncrementalMarkdownParser {
                             if let Some(b) = block {
                                 inner_blocks.push(b);
                             }
-                            if next <= idx {
-                                idx += 1;
-                            } else {
-                                idx = next;
-                            }
+                            idx = next;
                         }
                     }
                 }
