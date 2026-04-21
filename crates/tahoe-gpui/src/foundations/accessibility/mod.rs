@@ -1,9 +1,9 @@
 //! Accessibility configuration aligned with HIG.
 //!
-//! Provides accessibility mode bitflags, accessibility tokens for
-//! Liquid Glass surfaces, and the [`AccessibilityProps`] / [`AccessibleExt`]
-//! scaffolding used by components to declare VoiceOver labels, roles, and
-//! values.
+//! Provides accessibility mode bitflags, accessibility tokens for Liquid
+//! Glass surfaces, the [`FocusGroup`] focus-cluster primitive, and the
+//! [`AccessibilityProps`] / [`AccessibleExt`] scaffolding used by components
+//! to declare VoiceOver labels, roles, and values.
 //!
 //! # VoiceOver status (GPUI upstream gap)
 //!
@@ -13,12 +13,13 @@
 //! at that tag for `accessibility`, `AXRole`, `NSAccessibility`, and
 //! `VoiceOver` — no matches outside settings strings. Components store
 //! their labels via [`AccessibilityProps`] and attach them through
-//! [`AccessibleExt`] so that when GPUI lands the upstream API the single
-//! `apply_accessibility` entry point below can wire labels to the AX
+//! [`AccessibleExt::with_accessibility`] so that when GPUI lands the
+//! upstream API the single trait impl below can wire labels to the AX
 //! tree without any per-component changes.
 //!
-//! Tracked in <https://github.com/df49b9cd/tahoe-gpui/issues/47>; file a GPUI
-//! upstream issue in zed-industries/zed if one does not yet exist.
+//! File a GPUI upstream issue in zed-industries/zed if one does not yet
+//! exist; the [`AccessibleExt`] blanket impl is the single wiring point
+//! when the upstream API lands.
 //!
 //! For keyboard graph navigation that does work today (per-component
 //! focus rings, Tab-order cycling), see

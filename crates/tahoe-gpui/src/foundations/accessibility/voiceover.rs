@@ -123,8 +123,6 @@ impl AccessibilityProps {
 /// upstream issue → land the impl → reap AX for free" plan. Callers
 /// relying on AX *today* must integrate with the host's native platform
 /// AX path (e.g. NSAccessibility on macOS) outside this trait.
-///
-/// Tracked in <https://github.com/df49b9cd/tahoe-gpui/issues/47>.
 pub trait AccessibleExt: gpui::Styled + Sized {
     /// Attach the given accessibility props to `self`.
     ///
@@ -155,9 +153,8 @@ fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
     eprintln!(
         "[tahoe-gpui] AccessibleExt::with_accessibility dropped \
          AccessibilityProps at {}:{} — GPUI v0.231.1-pre has no AX API, \
-         so VoiceOver/AX tree see nothing. Tracked in \
-         https://github.com/df49b9cd/tahoe-gpui/issues/47 (this warning \
-         fires once per process).",
+         so VoiceOver/AX tree see nothing (this warning fires once per \
+         process).",
         loc.file(),
         loc.line(),
     );

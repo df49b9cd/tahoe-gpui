@@ -8,13 +8,17 @@ use gpui::{App, FocusHandle, InteractiveElement, KeyDownEvent, Window};
 ///   through to the enclosing order at edges. Use for logical clusters where
 ///   Tab should still exit naturally (toolbar slot clusters, form rows).
 /// - [`Cycle`](Self::Cycle): wrap around inside the group's programmatic
-///   navigation (`focus_next` / `focus_previous`). Intended for arrow-key
-///   navigation inside radio groups, segmented controls, or tab bars. Tab is
-///   left to GPUI's native [`TabStopMap`](https://docs.rs/gpui) so the
-///   surrounding document order stays walkable — this means Tab does **not**
-///   wrap at the group's edges. Only the programmatic `focus_next` /
-///   `focus_previous` entry points honor Cycle's wrap contract; host-bound
-///   keys (typically arrow keys) are the intended driver.
+///   navigation (`focus_next` / `focus_previous`). Intended as the
+///   *focus-movement* substrate for arrow-key clusters — segmented
+///   controls, tab bars, and the focus half of an APG radio group. Tab
+///   is left to GPUI's native [`TabStopMap`](https://docs.rs/gpui) so
+///   the surrounding document order stays walkable — this means Tab
+///   does **not** wrap at the group's edges. Only the programmatic
+///   `focus_next` / `focus_previous` entry points honor Cycle's wrap
+///   contract; host-bound keys (typically arrow keys) are the intended
+///   driver. Selection-follows-focus (as APG's radio-group pattern
+///   requires) is the host's responsibility — `FocusGroup` moves focus
+///   only.
 /// - [`Trap`](Self::Trap): Tab and Shift+Tab are intercepted, wrapped, and
 ///   consumed so focus cannot escape the group. Use for modal dialogs and
 ///   action sheets following the WAI-ARIA dialog pattern.
@@ -43,8 +47,8 @@ struct FocusGroupInner {
 /// [`InteractiveElement`] plus `Window::focus_next` / `focus_prev` for Tab
 /// traversal, but has no grouping primitive that bundles those with programmatic
 /// navigation (`focus_next`/`focus_previous`/`focus_first`/`focus_last`) and
-/// trap/cycle semantics. Without this layer, every component that needs a
-/// radio-group, tab-bar, or modal focus trap re-implements the wrap math and
+/// trap/cycle semantics. Without this layer, every component that needs an
+/// arrow-key cluster or modal focus trap re-implements the wrap math and
 /// Tab-swallow. See [`Modal`](crate::components::presentation::Modal) for a
 /// concrete Trap-mode user.
 ///
@@ -64,13 +68,13 @@ struct FocusGroupInner {
 /// # Typical usage
 ///
 /// ```ignore
-/// // On the parent entity:
-/// struct MyRadioGroup {
+/// // On the parent entity (e.g. a segmented control):
+/// struct MySegmentedControl {
 ///     options: Vec<FocusHandle>,
 ///     group: FocusGroup,
 /// }
 ///
-/// impl MyRadioGroup {
+/// impl MySegmentedControl {
 ///     fn new(cx: &mut Context<Self>) -> Self {
 ///         Self {
 ///             options: (0..3).map(|_| cx.focus_handle()).collect(),
@@ -172,10 +176,24 @@ impl FocusGroup {
     }
 
     /// Remove all registered handles. Call from the parent's render when
-    /// member identity changes frame-to-frame (e.g. the number of options in
-    /// a radio group depends on runtime state).
+    /// member identity changes frame-to-frame (e.g. the number of options
+    /// depends on runtime state).
     pub fn clear(&self) {
         self.inner.borrow_mut().handles.clear();
+    }
+
+    /// Replace the registered handles with those yielded by `handles`,
+    /// preserving iteration order as tab order.
+    ///
+    /// Equivalent to [`clear`](Self::clear) followed by
+    /// [`register`](Self::register) for each handle, but performed under
+    /// a single borrow. Use from the render path when member identity
+    /// (not just count) changes frame-to-frame — avoids accidentally
+    /// leaving stale handles from a prior frame.
+    pub fn set_members<'a>(&self, handles: impl IntoIterator<Item = &'a FocusHandle>) {
+        let mut inner = self.inner.borrow_mut();
+        inner.handles.clear();
+        inner.handles.extend(handles.into_iter().cloned());
     }
 
     /// Focus the first registered member. No-op when the group is empty.
@@ -207,7 +225,7 @@ impl FocusGroup {
     }
 
     fn advance(&self, window: &mut Window, cx: &mut App, forward: bool) {
-        let (next_handle, _) = {
+        let next_handle = {
             let inner = self.inner.borrow();
             let len = inner.handles.len();
             if len == 0 {
@@ -237,7 +255,7 @@ impl FocusGroup {
                 None if forward => Some(0),
                 None => Some(len - 1),
             };
-            (next.map(|i| inner.handles[i].clone()), len)
+            next.map(|i| inner.handles[i].clone())
         };
         if let Some(handle) = next_handle {
             handle.focus(window, cx);
@@ -284,6 +302,14 @@ impl FocusGroup {
 /// the group managing the index. Safe to call every render — [`FocusGroup::register`]
 /// is idempotent by FocusId.
 pub trait FocusGroupExt: InteractiveElement + Sized {
+    /// Register `handle` with `group` (appending to tab order if it is
+    /// not already a member) and wire the element as its focus target.
+    ///
+    /// The index assigned by [`FocusGroup::register`] is used as the
+    /// element's [`tab_index`](InteractiveElement::tab_index), so
+    /// registration order becomes the visual tab order. Idempotent:
+    /// re-registering the same handle on a later render returns the
+    /// existing index and leaves the group unchanged.
     fn focus_group(self, group: &FocusGroup, handle: &FocusHandle) -> Self {
         let index = group.register(handle) as isize;
         self.track_focus(handle).tab_index(index)
@@ -500,6 +526,36 @@ mod interaction_tests {
             assert!(
                 host.handles[2].is_focused(window),
                 "Trap: focus_previous past first wraps to last"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_previous_wraps_in_cycle_mode(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.handles[0].focus(window, cx);
+            host.group.focus_previous(window, cx);
+            assert!(
+                host.handles[2].is_focused(window),
+                "Cycle: focus_previous past first wraps to last"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_next_wraps_in_trap_mode(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Trap, cx)
+        });
+        host.update_in(cx, |host, window, cx| {
+            host.handles[2].focus(window, cx);
+            host.group.focus_next(window, cx);
+            assert!(
+                host.handles[0].is_focused(window),
+                "Trap: focus_next past last wraps to first"
             );
         });
     }
@@ -740,6 +796,39 @@ mod interaction_tests {
             }
             root
         }
+    }
+
+    #[gpui::test]
+    async fn set_members_replaces_existing_registrations(cx: &mut TestAppContext) {
+        let (host, cx) = setup_test_window(cx, |_window, cx| {
+            GroupHarness::new(FocusGroupMode::Cycle, cx)
+        });
+        host.update(cx, |host, cx| {
+            assert_eq!(host.group.len(), 3, "precondition: three pre-registered");
+
+            // Replace with two fresh handles; pre-existing handles must drop.
+            let fresh_a = cx.focus_handle();
+            let fresh_b = cx.focus_handle();
+            host.group.set_members([&fresh_a, &fresh_b]);
+
+            assert_eq!(host.group.len(), 2, "set_members replaces, not appends");
+            assert_eq!(
+                host.group.register(&fresh_a),
+                0,
+                "first supplied handle is at index 0"
+            );
+            assert_eq!(
+                host.group.register(&fresh_b),
+                1,
+                "second supplied handle is at index 1"
+            );
+            // Original handles are no longer members.
+            assert_eq!(
+                host.group.register(&host.handles[0]),
+                2,
+                "previously-registered handle is gone and re-registers fresh"
+            );
+        });
     }
 
     #[gpui::test]

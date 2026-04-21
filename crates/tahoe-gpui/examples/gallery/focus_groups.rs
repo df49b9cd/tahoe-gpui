@@ -3,10 +3,13 @@
 //! Three focusable "option" rows are registered with a shared
 //! `FocusGroup::cycle()`. Arrow-up / Arrow-down cycle focus vertically,
 //! wrapping at the edges; Tab / Shift+Tab fall through to GPUI's native
-//! tab-stop map (Cycle mode doesn't trap Tab). This is the pattern host
-//! apps should reach for when building radio groups, segmented pickers,
-//! or custom navigation rails — instead of hand-rolling the wrap math
-//! every time.
+//! tab-stop map (Cycle mode doesn't trap Tab). This is the *focus-
+//! movement* substrate host apps reach for when building segmented
+//! pickers, tab bars, or custom navigation rails — instead of hand-
+//! rolling the wrap math every time. APG radio groups additionally
+//! require selection-follows-focus (the selected option changes as
+//! focus moves); `FocusGroup` only moves focus, so the selection
+//! side has to be wired by the host.
 //!
 //! Only the vertical axis is bound in this demo. Host apps laying out a
 //! horizontal row should mirror this and bind `left`/`right` to
@@ -29,10 +32,10 @@ pub fn render(
     let theme = cx.global::<TahoeTheme>().clone();
     let theme = &theme;
 
-    // Idempotent: safe to call every render.
-    for handle in &state.focus_group_handles {
-        state.focus_group.register(handle);
-    }
+    // Set — not append — so hosts whose member identity changes across
+    // renders get a fresh, correctly-sized group instead of a list that
+    // grows every frame.
+    state.focus_group.set_members(&state.focus_group_handles);
 
     let group = state.focus_group.clone();
     let handles = state.focus_group_handles.clone();

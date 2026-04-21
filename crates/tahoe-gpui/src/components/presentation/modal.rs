@@ -4,7 +4,7 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/modality>
 
-use crate::foundations::accessibility::FocusGroup;
+use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::{MODAL_MAX_HEIGHT, MODAL_WIDTH};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
@@ -170,16 +170,15 @@ impl Modal {
     /// FocusGroup (e.g. for arrow-key navigation inside the modal's
     /// content) and wants the same group to drive the Tab trap.
     ///
-    /// The group **must** be in
-    /// [`FocusGroupMode::Trap`][crate::foundations::accessibility::FocusGroupMode::Trap]
-    /// mode. When it is not, the modal's Tab handler still swallows Tab
-    /// (to prevent focus escaping) but does not advance focus — keyboard
-    /// users get stranded on whatever element they landed on. A
-    /// `debug_assert!` fires in debug builds to catch this early.
+    /// The group **must** be in [`FocusGroupMode::Trap`] mode. When it
+    /// is not, the modal's Tab handler still swallows Tab (to prevent
+    /// focus escaping) but does not advance focus — keyboard users get
+    /// stranded on whatever element they landed on. A `debug_assert!`
+    /// fires in debug builds to catch this early.
     pub fn focus_group(mut self, group: FocusGroup) -> Self {
         debug_assert_eq!(
             group.mode(),
-            crate::foundations::accessibility::FocusGroupMode::Trap,
+            FocusGroupMode::Trap,
             "Modal::focus_group requires a Trap-mode FocusGroup; other \
              modes cause Tab to be swallowed without advancing focus, \
              stranding keyboard users."
@@ -441,9 +440,16 @@ mod tests {
 
     #[test]
     fn modal_focus_group_defaults_to_trap_mode() {
-        use crate::foundations::accessibility::FocusGroupMode;
         let modal = Modal::new("test", gpui::div());
-        assert_eq!(modal.focus_group.mode(), FocusGroupMode::Trap);
+        assert_eq!(modal.focus_group.mode(), super::FocusGroupMode::Trap);
+    }
+
+    #[test]
+    #[should_panic(expected = "Modal::focus_group requires a Trap-mode FocusGroup")]
+    fn modal_focus_group_rejects_non_trap_mode() {
+        use super::FocusGroup;
+        let cycle = FocusGroup::cycle();
+        let _ = Modal::new("test", gpui::div()).focus_group(cycle);
     }
 
     #[test]
@@ -640,6 +646,26 @@ mod interaction_tests {
             assert!(
                 host.first.is_focused(window),
                 "Shift+Tab moves backward to first"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn initial_focus_lands_on_first_focus_group_member(cx: &mut TestAppContext) {
+        // WAI-ARIA dialog pattern: on open, focus the first focusable
+        // child. The harness hands the modal a populated focus group but
+        // never focuses the outer handle — opening the modal must land
+        // focus on the first registered member on its own.
+        let (host, cx) = setup_test_window(cx, |_window, cx| TabCycleHarness::new(cx));
+
+        host.update_in(cx, |host, window, _cx| {
+            assert!(
+                host.first.is_focused(window),
+                "initial render should focus the first focus-group member"
+            );
+            assert!(
+                !host.outer_focus.is_focused(window),
+                "outer container must not steal focus when a member exists"
             );
         });
     }
