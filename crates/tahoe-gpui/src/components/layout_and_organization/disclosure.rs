@@ -65,7 +65,9 @@ impl Disclosure {
         self
     }
 
-    /// Marks the triangle as keyboard-focused so a visible focus ring is rendered.
+    /// Marks the triangle as keyboard-focused so a visible focus ring is
+    /// rendered. Ignored when a [`focus_handle`](Self::focus_handle) is
+    /// attached — the handle's live state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
