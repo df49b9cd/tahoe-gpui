@@ -34,11 +34,11 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::with_alpha;
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, resolve_focused};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`List`].
@@ -141,6 +141,11 @@ pub struct List {
     selected_id: Option<SharedString>,
     on_select: OnSelect,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
+    /// when set, the focus-ring derives from `handle.is_focused(window)`
+    /// and the root element threads `track_focus(&handle)`.
+    focus_handle: Option<FocusHandle>,
 }
 
 impl List {
@@ -152,6 +157,7 @@ impl List {
             selected_id: None,
             on_select: None,
             focused: false,
+            focus_handle: None,
         }
     }
 
@@ -183,8 +189,24 @@ impl List {
         self
     }
 
+    /// Show a focus ring around the list when keyboard-focused. For
+    /// [`ListStyle::Sidebar`] this also promotes the currently selected
+    /// row to the keyboard-focused row (source lists treat selection
+    /// and keyboard focus as one row). Ignored when a
+    /// [`focus_handle`](Self::focus_handle) is also attached — the
+    /// handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the list participates in the host's
+    /// focus graph. Takes precedence over [`focused`](Self::focused) per
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused).
+    /// For [`ListStyle::Sidebar`], when the handle is focused the
+    /// currently selected row receives the keyboard-focus outline.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 }
@@ -294,11 +316,12 @@ fn render_row(
 }
 
 impl RenderOnce for List {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let style = self.style;
         let selected_id = self.selected_id.clone();
         let on_select = self.on_select.clone();
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
 
         // Collect row ids for keyboard navigation.
         let all_ids: Vec<SharedString> = self
@@ -350,11 +373,7 @@ impl RenderOnce for List {
         // Sidebar style promotes the currently-selected row to the
         // keyboard-focused row so it picks up the 2pt accent outline.
         // Other styles ignore per-row focus.
-        let focused_id = if self.focused {
-            selected_id.clone()
-        } else {
-            None
-        };
+        let focused_id = if focused { selected_id.clone() } else { None };
         let mut global_row_index: usize = 0;
 
         for section in self.sections {
@@ -442,7 +461,10 @@ impl RenderOnce for List {
             });
         }
 
-        container = apply_focus_ring(container, theme, self.focused, &[]);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            container = container.track_focus(handle);
+        }
+        container = apply_focus_ring(container, theme, focused, &[]);
 
         container
     }
@@ -501,6 +523,7 @@ mod tests {
         assert!(list.selected_id.is_none());
         assert!(list.on_select.is_none());
         assert!(!list.focused);
+        assert!(list.focus_handle.is_none());
     }
 
     #[test]

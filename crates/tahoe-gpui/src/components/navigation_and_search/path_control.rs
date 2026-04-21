@@ -21,12 +21,12 @@
 
 use crate::foundations::layout::SPACING_4;
 use gpui::prelude::*;
-use gpui::{App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{App, ElementId, FocusHandle, FontWeight, KeyDownEvent, SharedString, Window, div, px};
 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::components::menus_and_actions::pulldown_button::{PulldownButton, PulldownItem};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, resolve_focused};
 use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
@@ -103,6 +103,11 @@ pub struct PathControl {
     on_pop_up_select: OnPopUpSelect,
     highlighted_index: Option<usize>,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
+    /// when set, the focus-ring derives from `handle.is_focused(window)`
+    /// and the root element threads `track_focus(&handle)`.
+    focus_handle: Option<FocusHandle>,
     style: PathControlStyle,
     truncated: bool,
 }
@@ -121,6 +126,7 @@ impl PathControl {
             on_pop_up_select: None,
             highlighted_index: None,
             focused: false,
+            focus_handle: None,
             style: PathControlStyle::Standard,
             truncated: false,
         }
@@ -154,8 +160,18 @@ impl PathControl {
     }
 
     /// Marks this control as focused, showing a visible focus ring.
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is also attached
+    /// — the handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the path control participates in the
+    /// host's focus graph. Takes precedence over [`focused`](Self::focused)
+    /// per [`resolve_focused`](crate::foundations::materials::resolve_focused).
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -195,9 +211,10 @@ impl PathControl {
 }
 
 impl RenderOnce for PathControl {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let segment_count = self.segments.len();
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
 
         let on_select_rc = rc_wrap(self.on_select);
         let on_pop_up_rc = rc_wrap(self.on_pop_up_select);
@@ -213,7 +230,11 @@ impl RenderOnce for PathControl {
             .items_center()
             .gap(px(SPACING_4));
 
-        row = apply_focus_ring(row, theme, self.focused, &[]);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            row = row.track_focus(handle);
+        }
+
+        row = apply_focus_ring(row, theme, focused, &[]);
 
         // Enter selects the highlighted segment.
         if segment_count > 1
@@ -428,6 +449,8 @@ mod tests {
         assert!(ctrl.on_pop_up_select.is_none());
         assert_eq!(ctrl.style, PathControlStyle::Standard);
         assert!(!ctrl.truncated);
+        assert!(!ctrl.focused);
+        assert!(ctrl.focus_handle.is_none());
     }
 
     #[test]

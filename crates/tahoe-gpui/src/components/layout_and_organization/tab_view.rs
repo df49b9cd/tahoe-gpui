@@ -25,10 +25,13 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, FontWeight, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{
+    AnyElement, App, ElementId, FocusHandle, FontWeight, KeyDownEvent, SharedString, Window, div,
+    px,
+};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, resolve_focused};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// HIG-recommended maximum tab count for a `NSTabView`-style tab strip.
@@ -66,6 +69,13 @@ pub struct TabView {
     on_select: OnSelect,
     hide_control: bool,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
+    /// when set, the focus-ring derives from `handle.is_focused(window)`
+    /// and the root element threads `track_focus(&handle)` — which is
+    /// what keeps the ring in sync with Tab navigation instead of a
+    /// stale `.focused(bool)` cache.
+    focus_handle: Option<FocusHandle>,
 }
 
 impl TabView {
@@ -77,6 +87,7 @@ impl TabView {
             on_select: None,
             hide_control: false,
             focused: false,
+            focus_handle: None,
         }
     }
 
@@ -111,15 +122,29 @@ impl TabView {
         self
     }
 
+    /// Show a focus ring around the tab view when keyboard-focused.
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is also attached
+    /// — the handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the tab view participates in the host's
+    /// focus graph. Takes precedence over [`focused`](Self::focused) per
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused),
+    /// keeping the ring in sync with Tab navigation instead of a stale
+    /// `.focused(bool)` cache.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 }
 
 impl RenderOnce for TabView {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
         let selected_idx = self
             .selected_id
             .as_ref()
@@ -249,7 +274,10 @@ impl RenderOnce for TabView {
         }
 
         container = container.child(control).child(body_container);
-        container = apply_focus_ring(container, theme, self.focused, &[]);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            container = container.track_focus(handle);
+        }
+        container = apply_focus_ring(container, theme, focused, &[]);
 
         container
     }
@@ -277,6 +305,7 @@ mod tests {
         assert!(view.on_select.is_none());
         assert!(!view.hide_control);
         assert!(!view.focused);
+        assert!(view.focus_handle.is_none());
     }
 
     #[test]
