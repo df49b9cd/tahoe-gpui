@@ -1,11 +1,11 @@
 //! HIG Disclosure Control -- standalone expand/collapse arrow.
 
 use gpui::prelude::*;
-use gpui::{App, ElementId, KeyDownEvent, Window, div, px};
+use gpui::{App, ElementId, FocusHandle, KeyDownEvent, Window, div, px};
 
 use crate::callback_types::OnToggle;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::glass_interactive_hover;
+use crate::foundations::materials::{apply_focus_ring, glass_interactive_hover};
 use crate::foundations::theme::ActiveTheme;
 
 /// A standalone disclosure indicator (expand/collapse triangle) per HIG.
@@ -39,6 +39,13 @@ use crate::foundations::theme::ActiveTheme;
 pub struct Disclosure {
     id: ElementId,
     is_expanded: bool,
+    focused: bool,
+    /// Optional host-supplied focus handle. Finding 18 in the Zed
+    /// cross-reference audit — when set, the focus-ring visibility
+    /// comes from `handle.is_focused(window)` and the element threads
+    /// `track_focus(&handle)`; otherwise uses the explicit
+    /// [`focused`](Self::focused) bool.
+    focus_handle: Option<FocusHandle>,
     on_toggle: OnToggle,
 }
 
@@ -47,12 +54,31 @@ impl Disclosure {
         Self {
             id: id.into(),
             is_expanded: false,
+            focused: false,
+            focus_handle: None,
             on_toggle: None,
         }
     }
 
     pub fn expanded(mut self, is_expanded: bool) -> Self {
         self.is_expanded = is_expanded;
+        self
+    }
+
+    /// Marks the triangle as keyboard-focused so a visible focus ring is rendered.
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the disclosure participates in the
+    /// host's focus graph. When set, the focus-ring visibility comes
+    /// from `handle.is_focused(window)` and the element threads
+    /// `track_focus(&handle)` so Tab-cycling and keyboard shortcuts
+    /// scoped to the handle fire correctly. Finding 18 in the Zed
+    /// cross-reference audit.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -87,10 +113,16 @@ fn should_fire_toggle(event: &KeyDownEvent, is_expanded: bool, is_rtl: bool) -> 
 }
 
 impl RenderOnce for Disclosure {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let is_expanded = self.is_expanded;
         let new_state = !is_expanded;
+        // Finding 18 in the Zed cross-reference audit.
+        let focused = self
+            .focus_handle
+            .as_ref()
+            .map(|h| h.is_focused(window))
+            .unwrap_or(self.focused);
 
         // HIG disclosure glyph: filled triangle. Down = expanded, right = collapsed.
         let icon_name = if is_expanded {
@@ -116,6 +148,12 @@ impl RenderOnce for Disclosure {
             .id(self.id)
             .focusable()
             .child(Icon::new(icon_name).size(theme.icon_size_inline));
+
+        if let Some(handle) = self.focus_handle.as_ref() {
+            el = el.track_focus(handle);
+        }
+
+        el = apply_focus_ring(el, theme, focused, &[]);
 
         if let Some(handler) = self.on_toggle {
             let handler = std::rc::Rc::new(handler);
@@ -184,6 +222,24 @@ mod tests {
             .on_toggle(|_, _, _| {});
         assert!(d.is_expanded);
         assert!(d.on_toggle.is_some());
+    }
+
+    #[test]
+    fn disclosure_focused_default_is_false() {
+        let d = Disclosure::new("test");
+        assert!(!d.focused);
+    }
+
+    #[test]
+    fn disclosure_focused_builder() {
+        let d = Disclosure::new("test").focused(true);
+        assert!(d.focused);
+    }
+
+    #[test]
+    fn disclosure_focus_handle_default_is_none() {
+        let d = Disclosure::new("test");
+        assert!(d.focus_handle.is_none());
     }
 
     #[test]
