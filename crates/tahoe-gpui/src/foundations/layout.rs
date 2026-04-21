@@ -366,6 +366,12 @@ pub const MACOS_DEFAULT_TOUCH_TARGET: f32 = 28.0;
 /// on [`Platform::MacOS`] and [`Platform::min_target_size`].
 pub const MACOS_MIN_TOUCH_TARGET: f32 = 20.0;
 
+/// Diameter of a presence/unread dot in points (8 pt).
+///
+/// Used by [`Badge::dot`](crate::components::content::badge::Badge::dot) and
+/// matching avatar status indicators.
+pub const BADGE_DOT_SIZE: f32 = 8.0;
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Window Chrome (macOS AppKit) — foundations.md:L767
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

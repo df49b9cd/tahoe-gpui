@@ -10,8 +10,10 @@
 //! - [`BadgeVariant::Dot`] — 8 pt opaque circle for silent presence /
 //!   unread indicators (Zed's `UnreadIndicator` equivalent).
 
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::text_on_background;
 use crate::foundations::icons::{Icon, IconName};
+use crate::foundations::layout::BADGE_DOT_SIZE;
 use crate::foundations::theme::{ActiveTheme, GlassSize, GlassTintColor, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{App, SharedString, Window, div, px};
@@ -43,14 +45,17 @@ pub struct Badge {
     label: SharedString,
     variant: BadgeVariant,
     interactive: bool,
+    accessibility_label: Option<SharedString>,
 }
 
 impl Badge {
+    /// Create a badge displaying `label` in the default variant.
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: label.into(),
             variant: BadgeVariant::default(),
             interactive: false,
+            accessibility_label: None,
         }
     }
 
@@ -74,6 +79,7 @@ impl Badge {
             label,
             variant,
             interactive: false,
+            accessibility_label: None,
         }
     }
 
@@ -83,9 +89,11 @@ impl Badge {
             label: SharedString::from(""),
             variant: BadgeVariant::Dot,
             interactive: false,
+            accessibility_label: None,
         }
     }
 
+    /// Set the badge variant, which controls color and shape. See [`BadgeVariant`].
     pub fn variant(mut self, variant: BadgeVariant) -> Self {
         self.variant = variant;
         self
@@ -98,6 +106,14 @@ impl Badge {
         self.interactive = interactive;
         self
     }
+
+    /// Override the VoiceOver label. Defaults to the badge's display text
+    /// for text badges, "unread indicator" for Dot, and a count-derived
+    /// string for Notification.
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
+        self
+    }
 }
 
 impl RenderOnce for Badge {
@@ -105,10 +121,38 @@ impl RenderOnce for Badge {
         let theme = cx.theme();
         let glass = &theme.glass;
 
-        // Dot: 8 pt opaque circle, no text, no shadow.
+        // Derive display label from the variant's count when the caller used
+        // `.variant(Notification { count })` directly (bypassing Badge::notification()).
+        let effective_label: SharedString = if self.label.is_empty() {
+            match self.variant {
+                BadgeVariant::Notification { count: Some(c) } => {
+                    if c > 99 {
+                        SharedString::from("99+")
+                    } else {
+                        SharedString::from(c.to_string())
+                    }
+                }
+                _ => self.label.clone(),
+            }
+        } else {
+            self.label.clone()
+        };
+
+        // Dot: opaque circle, no text, no shadow.
         if matches!(self.variant, BadgeVariant::Dot) {
             let bg = theme.palette.red;
-            let mut el = div().size(px(8.0)).rounded(theme.radius_full).bg(bg);
+            let a11y_label = self
+                .accessibility_label
+                .clone()
+                .unwrap_or_else(|| SharedString::from("unread indicator"));
+            let a11y_props = AccessibilityProps::new()
+                .label(a11y_label)
+                .role(AccessibilityRole::Image);
+            let mut el = div()
+                .size(px(BADGE_DOT_SIZE))
+                .rounded(theme.radius_full)
+                .bg(bg)
+                .with_accessibility(&a11y_props);
             el = crate::foundations::materials::apply_high_contrast_border(el, theme);
             return el.into_any_element();
         }
@@ -155,23 +199,27 @@ impl RenderOnce for Badge {
                 false,
             ),
             BadgeVariant::Notification { .. } => {
-                // Opaque red pill per HIG notification guidance. No glass
-                // tint — notification badges are content, not controls, and
-                // must stay legible against any surface.
+                // Opaque red pill per HIG notification guidance. Flat (no
+                // shadow) to distinguish content badges from interactive
+                // glass pills.
                 let bg = theme.palette.red;
                 (bg, theme.text_on_accent, false, true)
             }
-            BadgeVariant::Dot => {
-                let bg = theme.palette.red;
-                let mut el = div().size(px(8.0)).rounded(theme.radius_full).bg(bg);
-                el = crate::foundations::materials::apply_high_contrast_border(el, theme);
-                return el.into_any_element();
-            }
+            BadgeVariant::Dot => unreachable!("Dot variant handled by early return above"),
         };
 
-        // HIG: interactive filter chips must reach the 20 pt minimum
-        // height. Non-interactive pills stay visually compact.
-        let vertical_padding = if self.interactive { px(5.0) } else { px(2.0) };
+        // Empty-label semantic pills produce visible glass shapes with no
+        // informational content. Skip rendering for those variants.
+        if effective_label.is_empty()
+            && !matches!(
+                self.variant,
+                BadgeVariant::Notification { .. } | BadgeVariant::Dot
+            )
+        {
+            return div().into_any_element();
+        }
+
+        let vertical_padding = px(f32::from(theme.spacing_xs) / 2.0);
 
         let mut el = div()
             .px(theme.spacing_sm)
@@ -181,6 +229,10 @@ impl RenderOnce for Badge {
             .text_color(text_color)
             .text_style(TextStyle::Caption1, theme);
 
+        if self.interactive {
+            el = el.min_h(px(theme.min_target_size()));
+        }
+
         if use_shadow {
             el = el.shadow(glass.shadows(GlassSize::Small).to_vec());
         }
@@ -188,13 +240,14 @@ impl RenderOnce for Badge {
             el = crate::foundations::materials::apply_high_contrast_border(el, theme);
         }
 
-        // DWC: prepend an icon for semantic variants so state is not color-only.
+        // DWC: prepend an icon so state is not conveyed by color alone.
         let dwc_icon: Option<IconName> = if theme.accessibility_mode.differentiate_without_color() {
             match self.variant {
                 BadgeVariant::Success => Some(IconName::Check),
                 BadgeVariant::Warning => Some(IconName::AlertTriangle),
                 BadgeVariant::Error => Some(IconName::XmarkCircleFill),
                 BadgeVariant::Info => Some(IconName::Info),
+                BadgeVariant::Notification { .. } => Some(IconName::CircleFilled),
                 _ => None,
             }
         } else {
@@ -202,14 +255,24 @@ impl RenderOnce for Badge {
         };
 
         if let Some(icon_name) = dwc_icon {
-            el = el
-                .flex()
-                .items_center()
-                .gap(px(3.0))
-                .child(Icon::new(icon_name).size(px(10.0)).color(text_color));
+            el = el.flex().items_center().gap(theme.spacing_xs).child(
+                Icon::new(icon_name)
+                    .size(theme.icon_size_xs)
+                    .color(text_color),
+            );
         }
 
-        el.child(self.label).into_any_element()
+        let a11y_label: SharedString = self
+            .accessibility_label
+            .clone()
+            .unwrap_or_else(|| effective_label.clone());
+        let a11y_props = AccessibilityProps::new()
+            .label(a11y_label)
+            .role(AccessibilityRole::StaticText);
+
+        el.child(effective_label)
+            .with_accessibility(&a11y_props)
+            .into_any_element()
     }
 }
 
@@ -309,5 +372,46 @@ mod tests {
     fn notification_count_capped_large() {
         let b = Badge::notification(999_999_999);
         assert_eq!(b.label.as_ref(), "99+");
+    }
+
+    #[test]
+    fn accessibility_label_defaults_to_none() {
+        let b = Badge::new("test");
+        assert!(b.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn accessibility_label_builder() {
+        let b = Badge::new("Active").accessibility_label("Active status");
+        assert_eq!(
+            b.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("Active status")
+        );
+    }
+
+    #[test]
+    fn dot_constructor_accessibility_label_none() {
+        let b = Badge::dot();
+        assert!(b.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn notification_constructor_accessibility_label_none() {
+        let b = Badge::notification(5);
+        assert!(b.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn notification_variant_with_empty_label_carries_count() {
+        let b = Badge::new("").variant(BadgeVariant::Notification { count: Some(7) });
+        assert!(b.label.is_empty());
+        assert_eq!(b.variant, BadgeVariant::Notification { count: Some(7) });
+    }
+
+    #[test]
+    fn notification_variant_with_zero_count_empty_label() {
+        let b = Badge::new("").variant(BadgeVariant::Notification { count: None });
+        assert!(b.label.is_empty());
+        assert_eq!(b.variant, BadgeVariant::Notification { count: None });
     }
 }
