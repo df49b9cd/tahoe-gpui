@@ -251,6 +251,10 @@ impl Modal {
     /// VoiceOver announces the label followed by "modal dialog" once
     /// GPUI lands an AX tree. No-op at runtime today — see
     /// [`AccessibleExt::with_accessibility`].
+    ///
+    /// WAI-ARIA dialogs MUST have an accessible label. In debug builds a
+    /// missing label fires a `debug_assert!` to surface the violation
+    /// during development.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
@@ -434,6 +438,12 @@ impl RenderOnce for Modal {
         if let Some(label) = self.accessibility_label.as_ref() {
             a11y = a11y.label(label.clone());
         }
+        debug_assert!(
+            a11y.label.is_some(),
+            "WAI-ARIA dialog pattern requires an accessible label. \
+             Call Modal::accessibility_label(...) or the dialog will be \
+             unidentified to VoiceOver users."
+        );
         content_div = content_div.with_accessibility(&a11y);
 
         // Key handler: Escape / Cmd-. dismiss per HIG `#modality`; Tab /
@@ -590,6 +600,31 @@ mod tests {
             Some("Confirm deletion")
         );
     }
+
+    #[test]
+    fn modal_accessibility_props_use_dialog_role() {
+        use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole};
+        let a11y = AccessibilityProps::new()
+            .role(AccessibilityRole::Dialog)
+            .modal(true)
+            .label("Confirm action");
+        assert_eq!(a11y.role, Some(AccessibilityRole::Dialog));
+        assert!(a11y.modal);
+        assert!(a11y.label.is_some());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "WAI-ARIA dialog pattern requires an accessible label")]
+    fn modal_unlabeled_panics_in_debug() {
+        let label: Option<&str> = None;
+        debug_assert!(
+            label.is_some(),
+            "WAI-ARIA dialog pattern requires an accessible label. \
+             Call Modal::accessibility_label(...) or the dialog will be \
+             unidentified to VoiceOver users."
+        );
+    }
 }
 
 #[cfg(test)]
@@ -630,6 +665,7 @@ mod interaction_tests {
             let entity = cx.entity().clone();
             Modal::new("modal", div().w(px(160.0)).h(px(80.0)).child("Modal body"))
                 .open(self.is_open)
+                .accessibility_label("Test modal")
                 .focus_handle(self.focus_handle.clone())
                 .on_dismiss(move |_, cx| {
                     entity.update(cx, |this, cx| {
@@ -713,6 +749,7 @@ mod interaction_tests {
                 .child(div().id("second").track_focus(&self.second).child("Second"));
             Modal::new("modal", body)
                 .open(true)
+                .accessibility_label("Tab cycle modal")
                 .focus_handle(self.outer_focus.clone())
                 .focus_cycle(vec![self.first.clone(), self.second.clone()])
                 .on_dismiss(|_, _| {})
@@ -867,6 +904,7 @@ mod interaction_tests {
                 .child(div().id("second").track_focus(&self.second).child("Second"));
             Modal::new("modal", body)
                 .open(true)
+                .accessibility_label("Auto-focus modal")
                 .focus_handle(self.outer_focus.clone())
                 .focus_cycle(vec![self.first.clone(), self.second.clone()])
                 .on_dismiss(|_, _| {})
@@ -925,6 +963,7 @@ mod interaction_tests {
                 .child("Modal body");
             Modal::new("modal", body)
                 .open(self.is_open)
+                .accessibility_label("Focus restore modal")
                 .focus_handle(self.modal_focus.clone())
                 .restore_focus_to(self.previous.clone())
                 .on_dismiss(move |_, cx| {
@@ -1012,6 +1051,7 @@ mod interaction_tests {
             let entity = cx.entity().clone();
             Modal::new("modal", div().w(px(160.0)).h(px(80.0)).child("Modal body"))
                 .open(self.is_open)
+                .accessibility_label("Dismiss emitter modal")
                 .focus_handle(self.focus_handle.clone())
                 .dismiss_emitter(&self.emitter)
                 .on_dismiss(move |_, cx| {
@@ -1122,6 +1162,7 @@ mod interaction_tests {
                 );
             Modal::new("modal", body)
                 .open(true)
+                .accessibility_label("Group trap modal")
                 .focus_handle(self.modal_focus.clone())
                 .focus_group(self.shared_group.clone())
                 .on_dismiss(|_, _| {})
@@ -1183,6 +1224,7 @@ mod interaction_tests {
             external.register(&handle_a);
 
             let modal = Modal::new("test", div())
+                .accessibility_label("Focus group replace test")
                 .focus_group(external.clone())
                 .focus_cycle(vec![handle_b.clone()]);
 

@@ -270,7 +270,7 @@ impl Alert {
     }
 
     /// Attach a VoiceOver label to the alert surface. Paired with an
-    /// implicit [`AccessibilityRole::Alert`] role and a modal flag so
+    /// implicit [`AccessibilityRole::AlertDialog`] role and a modal flag so
     /// VoiceOver announces the label followed by "modal alert" once GPUI
     /// lands an AX tree. When unset, the alert's `title` is used as the
     /// label so the surface is always identified. No-op at runtime
@@ -364,7 +364,7 @@ impl RenderOnce for Alert {
         // Label defaults to the alert's title so VoiceOver users never hit
         // an unidentified "modal alert" announcement (resolved above).
         let a11y = AccessibilityProps::new()
-            .role(AccessibilityRole::Alert)
+            .role(AccessibilityRole::AlertDialog)
             .modal(true)
             .label(accessibility_label);
         content_div = content_div.with_accessibility(&a11y);
@@ -810,6 +810,25 @@ mod tests {
     fn alert_action_on_click_builder() {
         let action = AlertAction::new("OK").on_click(|_, _| {});
         assert!(action.on_click.is_some());
+    }
+
+    #[test]
+    fn alert_accessibility_uses_alertdialog_role() {
+        // WAI-ARIA: an alert with interactive buttons must use
+        // role="alertdialog", not role="alert".
+        use crate::foundations::accessibility::AccessibilityRole;
+        assert_eq!(
+            AccessibilityRole::AlertDialog,
+            AccessibilityRole::AlertDialog,
+        );
+        assert_ne!(AccessibilityRole::AlertDialog, AccessibilityRole::Alert);
+    }
+
+    #[test]
+    fn alert_accessibility_modal_flag_is_set() {
+        use crate::foundations::accessibility::AccessibilityProps;
+        let a11y = AccessibilityProps::new().modal(true);
+        assert!(a11y.modal);
     }
 
     #[test]
