@@ -33,6 +33,7 @@ pub mod theme;
 pub mod typography;
 pub mod writing;
 
+pub use accessibility::{FocusGroup, FocusGroupExt, FocusGroupMode};
 pub use surface_scope::{
     GlassSurfaceGuard, GlassSurfaceScope, GlassSurfaceScopeElement, is_on_glass_surface,
 };

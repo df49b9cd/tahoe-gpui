@@ -4,6 +4,7 @@
 //!
 //! <https://developer.apple.com/design/human-interface-guidelines/modality>
 
+use crate::foundations::accessibility::FocusGroup;
 use crate::foundations::layout::{MODAL_MAX_HEIGHT, MODAL_WIDTH};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize};
@@ -72,9 +73,12 @@ pub struct Modal {
     on_dismiss: OnMutCallback,
     focus_handle: Option<FocusHandle>,
     scroll: bool,
-    /// Child focus handles in tab order. Used to cycle Tab / Shift+Tab
-    /// without letting focus escape the modal (WAI-ARIA dialog pattern).
-    focus_cycle: Vec<FocusHandle>,
+    /// Child focus handles (in tab order) wrapped in a Trap-mode
+    /// [`FocusGroup`]. Tab / Shift+Tab cycle through the registered
+    /// handles with wrap-around per the WAI-ARIA dialog pattern; the
+    /// group's `handle_key_down` helper consumes Tab so focus cannot
+    /// escape the modal surface.
+    focus_group: FocusGroup,
     /// Focus handle to restore when the modal dismisses. HIG: "Return focus
     /// to a sensible location after modal dismissal."
     restore_focus_to: Option<FocusHandle>,
@@ -97,7 +101,7 @@ impl Modal {
             on_dismiss: None,
             focus_handle: None,
             scroll: true,
-            focus_cycle: Vec::new(),
+            focus_group: FocusGroup::trap(),
             restore_focus_to: None,
             level: ModalLevel::default(),
             dismiss_emitter: None,
@@ -146,8 +150,28 @@ impl Modal {
     /// `stop_propagation()` on Tab would only prevent focus from escaping the
     /// modal but leave the focus chain stalled — keyboard users would be
     /// stuck on whatever element they landed on.
+    ///
+    /// Internally routes handles through a Trap-mode [`FocusGroup`].
+    /// Callers that already manage a [`FocusGroup`] can share it via
+    /// [`Modal::focus_group`].
     pub fn focus_cycle(mut self, handles: Vec<FocusHandle>) -> Self {
-        self.focus_cycle = handles;
+        self.focus_group = FocusGroup::trap();
+        for handle in &handles {
+            self.focus_group.register(handle);
+        }
+        self
+    }
+
+    /// Attach a caller-managed [`FocusGroup`] driving the modal's Tab
+    /// trap. Overrides any handles previously supplied via
+    /// [`Modal::focus_cycle`]. Use when the host already maintains a
+    /// FocusGroup (e.g. for arrow-key navigation inside the modal's
+    /// content) and wants the same group to drive the Tab trap.
+    ///
+    /// The group should be in [`FocusGroupMode::Trap`][crate::foundations::accessibility::FocusGroupMode::Trap]
+    /// mode — other modes will let Tab escape the modal.
+    pub fn focus_group(mut self, group: FocusGroup) -> Self {
+        self.focus_group = group;
         self
     }
 
@@ -218,8 +242,8 @@ impl RenderOnce for Modal {
             .focus_handle
             .clone()
             .unwrap_or_else(|| cx.focus_handle());
-        let any_modal_focus = focus_handle.is_focused(window)
-            || self.focus_cycle.iter().any(|h| h.is_focused(window));
+        let any_modal_focus =
+            focus_handle.is_focused(window) || self.focus_group.contains_focused(window);
         if !any_modal_focus {
             focus_handle.focus(window, cx);
         }
@@ -305,18 +329,16 @@ impl RenderOnce for Modal {
 
         content_div = content_div.track_focus(&focus_handle);
 
-        // Key handler: Escape dismisses; Tab/Shift+Tab cycle focus inside
-        // the modal per WAI-ARIA dialog pattern. The cycle is powered by
-        // the caller-provided `focus_cycle` list — when the list is
-        // non-empty, Tab/Shift+Tab advance/retreat through it with
-        // wrap-around; when the list is empty we still swallow Tab so
-        // focus cannot escape the modal surface (a bare stop-propagation
-        // is the "no-op trap" required by the WAI-ARIA dialog pattern
-        // when no child is focusable).
+        // Key handler: Escape / Cmd-. dismiss per HIG `#modality`; Tab /
+        // Shift+Tab routed through the modal's Trap-mode `FocusGroup`
+        // (`handle_key_down` consumes the event and wraps through the
+        // registered handles). When the group is empty we still swallow
+        // Tab so focus cannot escape the modal surface — the "no-op trap"
+        // required by the WAI-ARIA dialog pattern when no child is
+        // focusable.
         let dismiss_for_keys = on_dismiss_rc.clone();
-        let focus_cycle = self.focus_cycle.clone();
+        let focus_group = self.focus_group.clone();
         content_div = content_div.on_key_down(move |event: &KeyDownEvent, window, cx| {
-            // HIG `#modality` dismissal shortcuts: Escape and Command-Period.
             let modifiers = &event.keystroke.modifiers;
             let is_cmd_period = modifiers.platform && event.keystroke.key.as_str() == ".";
             if crate::foundations::keyboard::is_escape_key(event) || is_cmd_period {
@@ -326,34 +348,11 @@ impl RenderOnce for Modal {
                 return;
             }
             if event.keystroke.key.as_str() == "tab" {
-                cx.stop_propagation();
-                // Cycle focus only when the caller registered child handles.
-                // Without handles we still swallow Tab so focus doesn't
-                // escape the modal (prior behaviour), but we cannot move
-                // focus forward.
-                if !focus_cycle.is_empty() {
-                    let shift = event.keystroke.modifiers.shift;
-                    let current = focus_cycle
-                        .iter()
-                        .position(|handle| handle.is_focused(window));
-                    let next_idx = match current {
-                        Some(idx) => {
-                            let len = focus_cycle.len();
-                            if shift {
-                                (idx + len - 1) % len
-                            } else {
-                                (idx + 1) % len
-                            }
-                        }
-                        None => {
-                            if shift {
-                                focus_cycle.len() - 1
-                            } else {
-                                0
-                            }
-                        }
-                    };
-                    focus_cycle[next_idx].focus(window, cx);
+                // In Trap mode with members, this wraps focus; with no
+                // members it still stops propagation so the dialog pattern
+                // is preserved.
+                if !focus_group.handle_key_down(event, window, cx) {
+                    cx.stop_propagation();
                 }
             }
         });
@@ -417,7 +416,14 @@ mod tests {
     #[test]
     fn modal_focus_cycle_defaults_to_empty() {
         let modal = Modal::new("test", gpui::div());
-        assert!(modal.focus_cycle.is_empty());
+        assert!(modal.focus_group.is_empty());
+    }
+
+    #[test]
+    fn modal_focus_group_defaults_to_trap_mode() {
+        use crate::foundations::accessibility::FocusGroupMode;
+        let modal = Modal::new("test", gpui::div());
+        assert_eq!(modal.focus_group.mode(), FocusGroupMode::Trap);
     }
 
     #[test]

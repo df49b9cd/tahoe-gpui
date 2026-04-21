@@ -32,6 +32,7 @@ mod gallery {
     pub mod disclosure_controls;
     pub mod disclosure_groups;
     pub mod flex_headers;
+    pub mod focus_groups;
     pub mod forms;
     pub mod gauges;
     pub mod hover_cards;
@@ -96,7 +97,7 @@ use tahoe_gpui::components::menus_and_actions::context_menu::{
 use tahoe_gpui::components::presentation::hover_card::HoverCard;
 use tahoe_gpui::components::selection_and_input::checkbox::CheckboxState;
 use tahoe_gpui::components::selection_and_input::date_picker::SimpleDate;
-use tahoe_gpui::foundations::accessibility::AccessibilityMode;
+use tahoe_gpui::foundations::accessibility::{AccessibilityMode, FocusGroup};
 
 use tahoe_gpui::components::layout_and_organization::split_view::SplitView;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
@@ -223,6 +224,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Flex Headers",
         render: gallery::flex_headers::render,
+    },
+    Demo {
+        label: "Focus Groups",
+        render: gallery::focus_groups::render,
     },
     Demo {
         label: "Forms",
@@ -463,6 +468,11 @@ pub struct ComponentGallery {
     pub modal_open: bool,
     pub dialog_open: bool,
     pub panel_open: bool,
+    /// Three focus handles for the Focus Groups demo, wrapped in a
+    /// Cycle-mode `FocusGroup`. Arrow keys navigate between them; the
+    /// `FocusGroup`'s `focus_next` / `focus_previous` wraps around.
+    pub focus_group_handles: [FocusHandle; 3],
+    pub focus_group: FocusGroup,
 }
 
 impl ComponentGallery {
@@ -583,6 +593,8 @@ impl ComponentGallery {
             modal_open: false,
             dialog_open: false,
             panel_open: false,
+            focus_group_handles: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            focus_group: FocusGroup::cycle(),
             token_field: {
                 let entity = cx.new(|cx| {
                     let mut tf = TokenField::new(cx);
