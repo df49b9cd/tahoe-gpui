@@ -24,10 +24,12 @@
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, App, ElementId, KeyDownEvent, Pixels, SharedString, Window, div, px};
+use gpui::{
+    AnyElement, App, ElementId, FocusHandle, KeyDownEvent, Pixels, SharedString, Window, div, px,
+};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, resolve_focused};
 use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Grid layout style for a collection view.
@@ -141,6 +143,11 @@ pub struct CollectionView {
     labels: Vec<Option<SharedString>>,
     selected_index: Option<usize>,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`]: when set, the focus-ring derives from
+    /// `handle.is_focused(window)` and the root element threads
+    /// `track_focus(&handle)`.
+    focus_handle: Option<FocusHandle>,
     on_select: OnSelect,
 }
 
@@ -155,6 +162,7 @@ impl CollectionView {
             labels: Vec::new(),
             selected_index: None,
             focused: false,
+            focus_handle: None,
             on_select: None,
         }
     }
@@ -219,8 +227,18 @@ impl CollectionView {
     }
 
     /// Show a focus ring around the collection when keyboard-focused.
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is also attached
+    /// — the handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the collection view participates in
+    /// the host's focus graph. Takes precedence over [`focused`](Self::focused)
+    /// per [`resolve_focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -297,9 +315,10 @@ fn items_row(
 }
 
 impl RenderOnce for CollectionView {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let spacing = self.spacing.unwrap_or(theme.spacing_sm_md);
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
 
         let total_items = self.items.len();
         let columns = self.layout.columns();
@@ -373,7 +392,10 @@ impl RenderOnce for CollectionView {
             });
         }
 
-        container = apply_focus_ring(container, theme, self.focused, &[]);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            container = container.track_focus(handle);
+        }
+        container = apply_focus_ring(container, theme, focused, &[]);
 
         container
     }
@@ -391,6 +413,8 @@ mod tests {
     fn collection_view_default_layout() {
         let view = CollectionView::new("test");
         assert!(matches!(view.layout, CollectionLayout::Grid { columns: 3 }));
+        assert!(!view.focused);
+        assert!(view.focus_handle.is_none());
     }
 
     #[test]

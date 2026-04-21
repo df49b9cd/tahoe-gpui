@@ -19,14 +19,15 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, SharedString, Window, div,
+    px,
 };
 
 use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
-use crate::foundations::materials::{SurfaceContext, apply_focus_ring};
+use crate::foundations::materials::{SurfaceContext, apply_focus_ring, resolve_focused};
 use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
@@ -456,6 +457,17 @@ pub struct SidebarItem {
     icon: Option<IconName>,
     selected: bool,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
+    /// when set, the focus-ring derives from `handle.is_focused(window)`
+    /// and the root element threads `track_focus(&handle)`.
+    ///
+    /// Each `SidebarItem` must own its own `FocusHandle` — sharing one
+    /// across multiple items collapses the focus-graph node and the ring
+    /// will follow whichever item rendered last. A sibling [`List`] (or
+    /// any other host-level focus target) should hold a distinct handle
+    /// too; do not wire the same handle to both a list and its rows.
+    focus_handle: Option<FocusHandle>,
     disabled: bool,
     on_click: OnClick,
     accessibility_label: Option<SharedString>,
@@ -471,6 +483,7 @@ impl SidebarItem {
             icon: None,
             selected: false,
             focused: false,
+            focus_handle: None,
             disabled: false,
             on_click: None,
             accessibility_label: None,
@@ -492,8 +505,22 @@ impl SidebarItem {
     }
 
     /// Mark this item as keyboard-focused (renders a focus ring).
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is also attached
+    /// — the handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the sidebar item participates in the
+    /// host's focus graph. Takes precedence over [`focused`](Self::focused)
+    /// per [`resolve_focused`].
+    ///
+    /// Each item must own its own handle — do not share a handle across
+    /// multiple `SidebarItem`s, and do not reuse the enclosing `List`'s
+    /// handle, or the focus ring will follow whichever node rendered last.
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -535,8 +562,9 @@ impl SidebarItem {
 }
 
 impl RenderOnce for SidebarItem {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
 
         // Per macOS Tahoe: selected sidebar item uses a soft accent-tinted
         // background (light blue ~#D4E4F7 for blue accent), not the generic hover gray.
@@ -578,6 +606,10 @@ impl RenderOnce for SidebarItem {
             .text_style(TextStyle::Body, theme)
             .font_weight(weight);
 
+        if let Some(handle) = self.focus_handle.as_ref() {
+            row = row.track_focus(handle);
+        }
+
         if self.disabled {
             row = row.opacity(0.5).cursor_default();
         } else if has_handler {
@@ -585,7 +617,7 @@ impl RenderOnce for SidebarItem {
         }
 
         // Visible focus ring when keyboard-focused.
-        row = apply_focus_ring(row, theme, self.focused, &[]);
+        row = apply_focus_ring(row, theme, focused, &[]);
 
         // Wire click + keyboard handlers. Rc lets us share the closure
         // between mouse click, keyboard activation, and reorder paths.
@@ -800,6 +832,7 @@ mod tests {
         assert!(item.icon.is_none());
         assert!(!item.selected);
         assert!(!item.focused);
+        assert!(item.focus_handle.is_none());
         assert!(!item.disabled);
         assert!(item.on_click.is_none());
         assert!(item.accessibility_label.is_none());

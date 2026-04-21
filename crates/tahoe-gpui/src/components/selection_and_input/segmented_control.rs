@@ -54,6 +54,7 @@ pub struct SegmentedControl {
     momentary: bool,
     disabled: bool,
     focus_handle: Option<FocusHandle>,
+    accessibility_label: Option<SharedString>,
 }
 
 impl SegmentedControl {
@@ -66,6 +67,7 @@ impl SegmentedControl {
             momentary: false,
             disabled: false,
             focus_handle: None,
+            accessibility_label: None,
         }
     }
 
@@ -126,6 +128,19 @@ impl SegmentedControl {
     /// renders a focus ring.
     pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
         self.focus_handle = Some(handle.clone());
+        self
+    }
+
+    /// Accessibility label announced by VoiceOver for the control as a
+    /// whole (e.g. "Size", "View mode").
+    ///
+    /// Attached to the outer track via
+    /// [`AccessibleExt::with_accessibility`], which is a structural no-op
+    /// today because GPUI v0.231.1-pre has no public
+    /// `accessibility_label` API. When the upstream API lands, the label
+    /// lights up for VoiceOver without per-caller changes.
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
         self
     }
 }
@@ -362,9 +377,12 @@ impl RenderOnce for SegmentedControl {
         // tablist/segmented-control — each segment is a `Tab` conceptually,
         // but the crate renders segments as `div` children rather than
         // individually-labelled elements.
-        let ax_props = AccessibilityProps::new()
+        let mut ax_props = AccessibilityProps::new()
             .role(AccessibilityRole::Group)
             .value(selected_label);
+        if let Some(label) = self.accessibility_label {
+            ax_props = ax_props.label(label);
+        }
         track.with_accessibility(&ax_props).into_any_element()
     }
 }
@@ -433,5 +451,20 @@ mod tests {
         assert!(!sc.momentary);
         let sc = SegmentedControl::new("test").momentary(true);
         assert!(sc.momentary);
+    }
+
+    #[test]
+    fn accessibility_label_defaults_to_none() {
+        let sc = SegmentedControl::new("test");
+        assert!(sc.accessibility_label.is_none());
+    }
+
+    #[test]
+    fn accessibility_label_builder_sets_value() {
+        let sc = SegmentedControl::new("test").accessibility_label("View mode");
+        assert_eq!(
+            sc.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("View mode"),
+        );
     }
 }

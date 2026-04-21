@@ -26,7 +26,7 @@
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::foundations::accessibility::{FocusGroup, FocusGroupExt};
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::apply_focus_ring;
+use crate::foundations::materials::{apply_focus_ring, resolve_focused};
 use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
@@ -48,6 +48,11 @@ pub struct PageControls {
     total: usize,
     current: usize,
     focused: bool,
+    /// Optional host-supplied focus handle. Precedence rules live on
+    /// [`resolve_focused`](crate::foundations::materials::resolve_focused):
+    /// when set, the focus-ring derives from `handle.is_focused(window)`
+    /// and the root element threads `track_focus(&handle)`.
+    focus_handle: Option<FocusHandle>,
     on_change: OnUsizeChange,
     /// Host-owned focus group used when
     /// `AccessibilityMode::FULL_KEYBOARD_ACCESS` is active. When paired
@@ -67,6 +72,7 @@ impl PageControls {
             total: 0,
             current: 0,
             focused: false,
+            focus_handle: None,
             on_change: None,
             dot_focus_group: None,
             dot_focus_handles: Vec::new(),
@@ -83,8 +89,19 @@ impl PageControls {
         self
     }
 
+    /// Show a focus ring around the dot row when keyboard-focused.
+    /// Ignored when a [`focus_handle`](Self::focus_handle) is also attached
+    /// — the handle's live `is_focused(window)` state wins.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Attach a [`FocusHandle`] so the page controls participate in the
+    /// host's focus graph. Takes precedence over [`focused`](Self::focused)
+    /// per [`resolve_focused`].
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
         self
     }
 
@@ -116,6 +133,7 @@ impl PageControls {
 impl RenderOnce for PageControls {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
 
         // Clamp current index to valid range.
         let current = if self.total > 0 {
@@ -158,7 +176,11 @@ impl RenderOnce for PageControls {
             .px(theme.spacing_xs)
             .py(theme.spacing_xs);
 
-        dot_row = apply_focus_ring(dot_row, theme, self.focused, &[]);
+        if let Some(handle) = self.focus_handle.as_ref() {
+            dot_row = dot_row.track_focus(handle);
+        }
+
+        dot_row = apply_focus_ring(dot_row, theme, focused, &[]);
 
         for i in 0..self.total {
             let is_active = i == current;
@@ -292,6 +314,8 @@ mod tests {
         assert_eq!(pc.total, 0);
         assert_eq!(pc.current, 0);
         assert!(pc.on_change.is_none());
+        assert!(!pc.focused);
+        assert!(pc.focus_handle.is_none());
     }
 
     #[test]
