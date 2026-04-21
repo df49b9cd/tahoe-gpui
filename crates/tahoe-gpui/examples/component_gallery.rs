@@ -19,6 +19,7 @@ mod gallery {
     pub mod boxes;
     pub mod button_groups;
     pub mod buttons;
+    pub mod charts;
     pub mod checkboxes;
     pub mod collections;
     pub mod color_wells;
@@ -180,6 +181,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Checkboxes",
         render: gallery::checkboxes::render,
+    },
+    Demo {
+        label: "Charts",
+        render: gallery::charts::render,
     },
     Demo {
         label: "Collections",

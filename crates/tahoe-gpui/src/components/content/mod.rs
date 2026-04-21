@@ -17,7 +17,10 @@ pub mod web_view;
 
 pub use avatar::{Avatar, AvatarSize, AvatarStatus};
 pub use badge::{Badge, BadgeVariant};
-pub use chart::{Chart, ChartDataSeries, ChartType};
+pub use chart::{
+    AxisConfig, Chart, ChartDataSeries, ChartDataSet, ChartSeries, ChartType, ChartView,
+    GridlineConfig,
+};
 pub use image_view::{ContentMode, ImageView};
 pub use label::{Label, LabelVariant};
 pub use text_view::TextView;

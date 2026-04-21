@@ -107,6 +107,13 @@ pub enum AccessibilityRole {
     Toolbar,
     /// Image / decorative media.
     Image,
+    /// Individual data point within a chart or graph. Maps to
+    /// NSAccessibility `AXDataPoint`. No direct WAI-ARIA equivalent;
+    /// the closest analogue is the WAI-ARIA Graphics Module
+    /// `graphics-symbol`. VoiceOver announces the value and position
+    /// within the series (e.g. "10, row 1 of 5") rather than a
+    /// generic "button."
+    DataPoint,
     /// Heading at the given depth. Carries the level so VoiceOver's
     /// "next heading" and "headings at level N" gestures can land on the
     /// right rung of the document outline when GPUI exposes an AX tree.
