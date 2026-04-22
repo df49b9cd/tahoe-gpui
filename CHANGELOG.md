@@ -37,6 +37,22 @@ follow SemVer once the crate reaches 1.0.
   component with 11 new builders: `styled_text`, `max_lines`, `emphasize`,
   `color`, `label_level`, `font_design`, `leading_style`, `text_align`,
   `scrollable`, `readable_width`, and `accessibility_label`.
+- `TextView` keyboard scroll (scrollable views only): Up / Down move by one
+  rendered line-height, Page Up / Page Down move by one viewport height,
+  Home jumps to the start, End jumps to the end. Bound inside the new
+  `TEXT_VIEW_CONTEXT` key scope so the raw keys only fire when a focused
+  `TextView` owns the dispatch path — they do not leak to the global scope
+  where Up / Down drive tab switches, menu cursors, or sliders.
+- `TextView` right-click context menu: a two-item menu (Copy + Select All)
+  backed by the existing [`ContextMenu`] component. Copy renders disabled
+  when the selection is empty; Select All is always enabled. Activation
+  dispatches the same `text_editing::{Copy, SelectAll}` actions a keyboard
+  shortcut fires, so click, ⌘-key, and the (future) command palette all
+  share one handler. Selectable views only — non-selectable `TextView`s
+  suppress the menu since they have no Copy / Select All semantics.
+- `tahoe_gpui::text_actions::{Up, Down, PageUp, PageDown}` actions in the
+  `text_editing` namespace. `TextView` binds them for scroll; future
+  multi-line text editors may rebind them for cursor movement.
 - `foundations::theme::LabelLevel` — HIG semantic-tier enum (`Primary` /
   `Secondary` / `Tertiary` / `Quaternary` / `Quinary`, the last added in
   macOS Tahoe) resolving to the matching theme colour via
@@ -59,6 +75,17 @@ follow SemVer once the crate reaches 1.0.
   `&TahoeTheme` argument, and `Icon::resolved_stroke_width` no longer takes one
   either. Both derive their result from the surface scope, not the theme.
   Call sites inside this crate and the two in-repo examples have been updated.
+- **Breaking (signature)** — `TextView::new(text)` → `TextView::new(cx, text)`.
+  `TextView` is now a stateful `Entity<Self>: Render + Focusable` instead of
+  a `RenderOnce` element, so construction goes through
+  `cx.new(|cx| TextView::new(cx, "…").…)`. It owns a `FocusHandle`, a
+  `TextViewSelection` coordinator (drag-select, double-click word,
+  triple-click paragraph, shift-click extend, ⌘A, ⌘C), and — for scrollable
+  views — a `ScrollHandle` wired to the keyboard-scroll action set. Hosts
+  should register the new `textview_keybindings()` set alongside the
+  existing `text_keybindings()` (or call `all_keybindings()`) during app
+  startup so the raw Up / Down / Page / Home / End keys fire against the
+  focused view. The gallery and all in-crate tests are migrated.
 
 ### Behavioural change (source-compatible but visible)
 
@@ -94,6 +121,4 @@ follow SemVer once the crate reaches 1.0.
 - `TextView::max_lines(...)` and `TextView::scrollable(...)` are mutually
   exclusive: clamped height short-circuits GPUI's scroll viewport. Setting
   both trips a `debug_assert!` so the conflict panics in tests; release
-  builds silently prefer `max_lines`. `TextView` has no `FocusHandle` (it
-  is a stateless `RenderOnce`), so the scroll container is not focusable —
-  keyboard users rely on a focused scroll container owned by the host app.
+  builds silently prefer `max_lines`.

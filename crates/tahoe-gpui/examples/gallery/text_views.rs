@@ -1,7 +1,7 @@
 //! Text Views demo for the primitive gallery.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, HighlightStyle, StyledText, Window, div};
+use gpui::{AnyElement, Context, HighlightStyle, Window, div};
 
 use tahoe_gpui::components::content::text_view::TextView;
 use tahoe_gpui::foundations::theme::{
@@ -47,10 +47,13 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Body style (default)"),
         )
-        .child(TextView::new(
-            "The quick brown fox jumps over the lazy dog. \
-             This text view uses the default Body text style.",
-        ))
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "The quick brown fox jumps over the lazy dog. \
+                 This text view uses the default Body text style.",
+            )
+        }))
         // ── Title 1 ────────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -59,7 +62,11 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Title 1 style"),
         )
-        .child(TextView::new("Large styled heading text").text_style(TextStyle::Title1))
+        .child(
+            cx.new(|cx| {
+                TextView::new(cx, "Large styled heading text").text_style(TextStyle::Title1)
+            }),
+        )
         // ── Caption ────────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -68,10 +75,13 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Caption style"),
         )
-        .child(
-            TextView::new("Small caption text suitable for footnotes and metadata.")
-                .text_style(TextStyle::Caption1),
-        )
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "Small caption text suitable for footnotes and metadata.",
+            )
+            .text_style(TextStyle::Caption1)
+        }))
         // ── Emphasized ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -80,13 +90,14 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Emphasized"),
         )
-        .child(
+        .child(cx.new(|cx| {
             TextView::new(
+                cx,
                 "This body text uses the HIG emphasized weight (Semibold). \
                  Useful for lead paragraphs or standout content blocks.",
             )
-            .emphasize(true),
-        )
+            .emphasize(true)
+        }))
         // ── max_lines ──────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -95,13 +106,14 @@ pub fn render(
                 .text_color(theme.text)
                 .child("With max_lines(2)"),
         )
-        .child(
+        .child(cx.new(|cx| {
             TextView::new(
+                cx,
                 "This text view has max_lines set to 2. Content beyond two \
                  lines is clipped via GPUI's native line-clamp support.",
             )
-            .max_lines(2),
-        )
+            .max_lines(2)
+        }))
         // ── Styled text ────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -110,9 +122,9 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Styled text"),
         )
-        .child(TextView::new("placeholder").styled_text(
-            "Bold and accent-colored text within a single view.",
-            StyledText::new("Bold and accent-colored text within a single view.").with_highlights(
+        .child(cx.new(|cx| {
+            TextView::new(cx, "placeholder").styled_text(
+                "Bold and accent-colored text within a single view.",
                 vec![(
                     0..4,
                     HighlightStyle {
@@ -120,8 +132,8 @@ pub fn render(
                         ..Default::default()
                     },
                 )],
-            ),
-        ))
+            )
+        }))
         // ── Font design ────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -130,13 +142,14 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Font design: Serif (New York)"),
         )
-        .child(
+        .child(cx.new(|cx| {
             TextView::new(
+                cx,
                 "This text renders in the New York serif typeface, \
                  suitable for editorial and reading contexts per HIG.",
             )
-            .font_design(FontDesign::Serif),
-        )
+            .font_design(FontDesign::Serif)
+        }))
         // ── Leading styles ─────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -146,30 +159,43 @@ pub fn render(
                 .child("Leading: Tight vs Standard vs Loose"),
         )
         .child(
-            div().flex().flex_col().gap(theme.spacing_xs).child(
-                TextView::new(
-                    "Tight leading — saves vertical space in constrained layouts \
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing_xs)
+                .child(cx.new(|cx| {
+                    TextView::new(
+                        cx,
+                        "Tight leading — saves vertical space in constrained layouts \
                      like list rows and compact panels.",
-                )
-                .leading_style(LeadingStyle::Tight),
-            ),
+                    )
+                    .leading_style(LeadingStyle::Tight)
+                })),
         )
         .child(
             div()
                 .flex()
                 .flex_col()
                 .gap(theme.spacing_xs)
-                .child(TextView::new(
-                    "Standard leading — the default HIG line height for comfortable reading.",
-                )),
+                .child(cx.new(|cx| {
+                    TextView::new(
+                        cx,
+                        "Standard leading — the default HIG line height for comfortable reading.",
+                    )
+                })),
         )
         .child(
-            div().flex().flex_col().gap(theme.spacing_xs).child(
-                TextView::new(
-                    "Loose leading — extra spacing for wide columns and long-form passages.",
-                )
-                .leading_style(LeadingStyle::Loose),
-            ),
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing_xs)
+                .child(cx.new(|cx| {
+                    TextView::new(
+                        cx,
+                        "Loose leading — extra spacing for wide columns and long-form passages.",
+                    )
+                    .leading_style(LeadingStyle::Loose)
+                })),
         )
         // ── Label levels ───────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
@@ -179,34 +205,37 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Label levels (HIG hierarchy)"),
         )
-        .child(
-            TextView::new("Primary text — the default label color.")
-                .label_level(LabelLevel::Primary),
-        )
-        .child(
-            TextView::new("Secondary text — supplemental or subheading content.")
-                .label_level(LabelLevel::Secondary),
-        )
-        .child(
-            TextView::new("Tertiary text — unavailable items or low-priority detail.")
-                .label_level(LabelLevel::Tertiary),
-        )
-        .child(
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Primary text — the default label color.")
+                .label_level(LabelLevel::Primary)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Secondary text — supplemental or subheading content.")
+                .label_level(LabelLevel::Secondary)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "Tertiary text — unavailable items or low-priority detail.",
+            )
+            .label_level(LabelLevel::Tertiary)
+        }))
+        .child(cx.new(|cx| {
             // Quaternary is HIG's watermark / empty-state tier — use it for
             // background-style hints that should recede into the surface,
             // not for running prose.
-            TextView::new("Drop a file here to start")
+            TextView::new(cx, "Drop a file here to start")
                 .label_level(LabelLevel::Quaternary)
-                .text_align(gpui::TextAlign::Center),
-        )
-        .child(
+                .text_align(gpui::TextAlign::Center)
+        }))
+        .child(cx.new(|cx| {
             // Quinary (macOS Tahoe) is the lightest tier — reserved for
             // decorative separators or timestamps that should not compete
             // with nearby primary content.
-            TextView::new("Last updated 2 min ago")
+            TextView::new(cx, "Last updated 2 min ago")
                 .label_level(LabelLevel::Quinary)
-                .text_style(TextStyle::Caption2),
-        )
+                .text_style(TextStyle::Caption2)
+        }))
         // ── Disabled look via explicit color ───────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -215,16 +244,17 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Disabled look"),
         )
-        .child(
+        .child(cx.new(|cx| {
             // TextView has no .disabled() — it's read-only with no
             // interactive state. For a disabled appearance, pass the
             // disabled color directly.
             TextView::new(
+                cx,
                 "This text view uses theme.text_disabled() to signal that \
                  the surrounding control is inactive.",
             )
-            .color(theme.text_disabled()),
-        )
+            .color(theme.text_disabled())
+        }))
         // ── Readable width ─────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -233,16 +263,17 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Readable width (544 pt)"),
         )
-        .child(
+        .child(cx.new(|cx| {
             TextView::new(
+                cx,
                 "This text view is constrained to the HIG readable-content optimal \
                  width of 544 points (~65 characters at macOS body size). This keeps \
                  long-form text comfortable to read regardless of the window width. \
                  The quick brown fox jumps over the lazy dog. Pack my box with five \
                  dozen liquor jugs.",
             )
-            .readable_width(true),
-        )
+            .readable_width(true)
+        }))
         // ── Scrollable ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -251,18 +282,17 @@ pub fn render(
                 .text_color(theme.text)
                 .child("Scrollable"),
         )
-        .child(
-            div().max_h(gpui::px(120.0)).child(
-                TextView::new(
-                    "This is a scrollable text view. When the content exceeds the \
+        .child(div().max_h(gpui::px(120.0)).child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "This is a scrollable text view. When the content exceeds the \
                      visible area, the text scrolls vertically. This matches the HIG \
                      requirement that text views support scrolling when content is \
                      taller than the view. The quick brown fox jumps over the lazy dog. \
                      Pack my box with five dozen liquor jugs. How vexingly quick daft \
                      zebras jump. The five boxing wizards jump quickly.",
-                )
-                .scrollable("scrollable-demo"),
-            ),
-        )
+            )
+            .scrollable("scrollable-demo")
+        })))
         .into_any_element()
 }

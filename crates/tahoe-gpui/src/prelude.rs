@@ -109,4 +109,4 @@ pub use crate::citation::{CitationSource, InlineCitation};
 
 // ── Keybindings ────────────────────────────────────────────────────────────
 
-pub use crate::{all_keybindings, text_keybindings, textfield_keybindings};
+pub use crate::{all_keybindings, text_keybindings, textfield_keybindings, textview_keybindings};

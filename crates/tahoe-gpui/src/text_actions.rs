@@ -77,6 +77,16 @@ actions!(
         DeleteWord,
         DeleteToEnd,
         DeleteToStart,
+        /// Up arrow — line-up navigation. TextView binds this to
+        /// scroll-up-by-one-line when scrollable; future multi-line
+        /// editors may bind it to cursor-move-up.
+        Up,
+        /// Down arrow — line-down navigation.
+        Down,
+        /// Page Up — scroll or jump by one viewport height.
+        PageUp,
+        /// Page Down — scroll or jump by one viewport height.
+        PageDown,
     ]
 );
 

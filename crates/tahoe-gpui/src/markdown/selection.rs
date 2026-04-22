@@ -20,6 +20,8 @@ use std::rc::Rc;
 
 use gpui::{App, ClipboardItem, ElementId, SharedString};
 
+use crate::components::content::selectable_text::{SelectionCoordinator, word_range_at};
+
 /// The selection gesture mode set at mouse-down time. Determines how
 /// subsequent drag moves extend the selection — character-granular
 /// for a single click, whole-word for double-click, whole-paragraph
@@ -429,6 +431,39 @@ impl MarkdownSelection {
     }
 }
 
+impl SelectionCoordinator for MarkdownSelection {
+    fn register(&self, element_id: ElementId, text: SharedString) {
+        MarkdownSelection::register(self, element_id, text);
+    }
+
+    fn range_for_element(&self, element_id: &ElementId, text_len: usize) -> Option<Range<usize>> {
+        MarkdownSelection::range_for_element(self, element_id, text_len)
+    }
+
+    fn mouse_down(
+        &self,
+        element_id: ElementId,
+        text: &str,
+        char_index: usize,
+        click_count: usize,
+        shift: bool,
+    ) {
+        MarkdownSelection::mouse_down(self, element_id, text, char_index, click_count, shift);
+    }
+
+    fn drag_to(&self, element_id: ElementId, text: &str, char_index: usize) {
+        MarkdownSelection::drag_to(self, element_id, text, char_index);
+    }
+
+    fn end_drag(&self) {
+        MarkdownSelection::end_drag(self);
+    }
+
+    fn is_pending(&self) -> bool {
+        MarkdownSelection::is_pending(self)
+    }
+}
+
 fn normalise(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
     if a <= b { (a, b) } else { (b, a) }
 }
@@ -471,104 +506,6 @@ fn extend_with_range(
         state.anchor = Some(orig_start);
         state.focus = Some(head_end);
     }
-}
-
-/// Kind used by [`word_range_at`] to identify consecutive runs of
-/// same-kind characters. `Word` covers Unicode alphanumerics and
-/// underscores; `Whitespace` is `char::is_whitespace`; everything
-/// else is `Punctuation`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CharKind {
-    Whitespace,
-    Punctuation,
-    Word,
-}
-
-impl CharKind {
-    fn of(c: char) -> Self {
-        if c.is_whitespace() {
-            Self::Whitespace
-        } else if c.is_alphanumeric() || c == '_' {
-            Self::Word
-        } else {
-            Self::Punctuation
-        }
-    }
-
-    /// Priority for picking the kind at a boundary: Word beats
-    /// Punctuation which beats Whitespace — matches the convention
-    /// used by Zed's `CharClassifier` and macOS NSTextView double-
-    /// click behaviour (prefer the word when hovering the boundary).
-    fn priority(self) -> u8 {
-        match self {
-            Self::Whitespace => 0,
-            Self::Punctuation => 1,
-            Self::Word => 2,
-        }
-    }
-}
-
-/// Return the byte range of the "word" surrounding `index` in `text`.
-/// A word is a maximal run of consecutive same-kind characters
-/// (Word > Punctuation > Whitespace, with priority at boundaries).
-///
-/// `index` is clamped to `[0, text.len()]` and must lie on a UTF-8
-/// char boundary (as GPUI's `TextLayout::index_for_position`
-/// guarantees).
-pub fn word_range_at(text: &str, index: usize) -> Range<usize> {
-    let index = index.min(text.len());
-    if text.is_empty() {
-        return 0..0;
-    }
-    if !text.is_char_boundary(index) {
-        // Defensive: the caller should never pass a non-boundary
-        // index, but if they do, snap to the nearest previous
-        // boundary.
-        let mut snapped = index;
-        while snapped > 0 && !text.is_char_boundary(snapped) {
-            snapped -= 1;
-        }
-        return word_range_at(text, snapped);
-    }
-
-    let before = &text[..index];
-    let after = &text[index..];
-
-    let prev_kind = before.chars().next_back().map(CharKind::of);
-    let next_kind = after.chars().next().map(CharKind::of);
-    let kind = match (prev_kind, next_kind) {
-        (Some(p), Some(n)) => {
-            if p.priority() >= n.priority() {
-                p
-            } else {
-                n
-            }
-        }
-        (Some(k), None) | (None, Some(k)) => k,
-        (None, None) => return 0..0,
-    };
-
-    // Expand backwards.
-    let mut start = index;
-    for (i, c) in before.char_indices().rev() {
-        if CharKind::of(c) == kind {
-            start = i;
-        } else {
-            break;
-        }
-    }
-
-    // Expand forwards.
-    let mut end = index;
-    for (i, c) in after.char_indices() {
-        if CharKind::of(c) == kind {
-            end = index + i + c.len_utf8();
-        } else {
-            break;
-        }
-    }
-
-    start..end
 }
 
 #[cfg(test)]
