@@ -221,8 +221,8 @@ impl ChartView {
     ///
     /// Mirrors Swift Charts' behaviour of animating between old and new
     /// data when the source changes — numeric Y values lerp, while Date
-    /// and Category Y values cross-fade at the midpoint. Runs across
-    /// [`DATA_TRANSITION_DURATION`] (HIG medium ramp, ~300 ms).
+    /// and Category Y values cross-fade at the midpoint. Runs across the
+    /// HIG medium ramp (~300 ms, matching SwiftUI's implicit `.spring`).
     ///
     /// When the active theme has `REDUCE_MOTION` set, the chart snaps
     /// to `data` immediately and no frame-tick task is spawned, matching

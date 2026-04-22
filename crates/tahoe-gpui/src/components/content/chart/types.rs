@@ -544,8 +544,7 @@ pub type AxisValueFormatter = Arc<dyn Fn(&PlottableValue) -> SharedString + Send
 /// Mirrors Swift Charts' `AxisMarks` builder — position, tick style,
 /// gridline style, and an optional value label formatter. Defaults match
 /// the HIG: automatic placement, automatic ticks, solid gridlines, and
-/// the legacy format (`0`, `42`, `1.5`) from
-/// [`super::render::format_y_tick`].
+/// the legacy numeric format (`0`, `42`, `1.5`).
 #[derive(Clone, Default)]
 pub struct AxisMarks {
     /// Where the axis renders relative to the plot area.
@@ -769,10 +768,10 @@ impl AxisConfig {
         self
     }
 
-    /// Choose the Y-axis tick generator. `Automatic` uses
-    /// [`nice_ticks`], `Manual(Vec<f32>)` pins explicit positions, and
-    /// `Hidden` suppresses both the tick labels and the gutter reserved
-    /// for them.
+    /// Choose the Y-axis tick generator. `Automatic` uses the nice-round
+    /// rounding algorithm, `Manual(Vec<f32>)` pins explicit positions,
+    /// and `Hidden` suppresses both the tick labels and the gutter
+    /// reserved for them.
     pub fn y_tick_style(mut self, style: AxisTickStyle) -> Self {
         self.y_marks.tick_style = style.clone();
         // Keep the legacy `y_ticks` field in sync so existing call-sites
