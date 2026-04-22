@@ -864,6 +864,12 @@ impl RenderOnce for Chart {
             let scale_for_canvas = y_scale.clone();
             let v_style = gl_base_style;
 
+            // Absolute positioning is load-bearing: the plot wrapper at
+            // line ~945 is `div().relative()` (block layout, not flex), so
+            // an in-flow gridline canvas would stack above the plot and
+            // push bars/lines out of the plot_height region — producing
+            // clumped, clipped marks. Absolute + top/left 0 overlays the
+            // gridlines behind the plot without displacing it.
             Some(
                 canvas(
                     |_info, _window, _cx| {},
@@ -893,6 +899,9 @@ impl RenderOnce for Chart {
                         }
                     },
                 )
+                .absolute()
+                .top_0()
+                .left_0()
                 .w(px(pw))
                 .h(px(ph)),
             )
