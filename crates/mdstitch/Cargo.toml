@@ -1,7 +1,9 @@
 [package]
 name = "mdstitch"
 description = "Streaming markdown preprocessor that closes unterminated syntax token-by-token."
-publish = false
+readme = "README.md"
+keywords = ["markdown", "streaming", "pulldown-cmark", "commonmark"]
+categories = ["text-processing", "parser-implementations"]
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

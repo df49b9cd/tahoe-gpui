@@ -31,7 +31,7 @@
   <!-- ===== WORDMARK + SUBTITLE (left column) ===== -->
   <g transform="translate(56,178)">
     <text font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="11" letter-spacing="3" fill="#6E7681" y="-18">
-      ZERO-ALLOC FAST PATH · COMMONMARK · NO_STD
+      ZERO-ALLOC FAST PATH · COMMONMARK · PULLDOWN-CMARK PRE-PASS
     </text>
 
     <g font-family="'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="132" font-weight="800" letter-spacing="-6">
