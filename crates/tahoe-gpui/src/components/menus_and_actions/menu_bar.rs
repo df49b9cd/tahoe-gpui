@@ -43,15 +43,15 @@
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, ElementId, FocusHandle, FontWeight, KeyDownEvent, Pixels,
-    SharedString, Window, deferred, div, px,
+    SharedString, Window, div, point, px,
 };
 
 use crate::callback_types::rc_wrap;
-use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
 use crate::foundations::materials::glass_surface;
 use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// A single menu in the menu bar.
@@ -347,7 +347,6 @@ impl RenderOnce for MenuBar {
         }
 
         // Render menu titles
-        let mut container = div().relative().w_full();
         let mut open_content: Option<AnyElement> = None;
         let mut open_offset: Pixels = px(0.0);
 
@@ -401,16 +400,22 @@ impl RenderOnce for MenuBar {
             }
         }
 
-        container = container.child(bar);
+        // ── Overlay-anchored menu content ───────────────────────────────────
+        // The bar is the overlay's trigger; the dropdown anchors below
+        // its bottom-left. `.offset(point(open_offset, 0))` shifts the
+        // dropdown horizontally to sit under the activating title —
+        // `AnchoredOverlay::offset` is free-form (sign honoured as
+        // given) so it is the right semantics for a title-index-driven
+        // horizontal nudge. Vertical gap is zero (menu dropdown meets
+        // the bar flush), matching the previous `.top(target_size)`
+        // placement.
+        let mut overlay = AnchoredOverlay::new(ElementId::Name("menu-bar-overlay".into()), bar)
+            .anchor(OverlayAnchor::BelowLeft)
+            .offset(point(open_offset, px(0.0)));
 
-        // Render open menu content as absolute overlay, positioned under
-        // the activating title (macOS HIG requirement).
         if let Some(content) = open_content {
             let dropdown = glass_surface(
                 div()
-                    .absolute()
-                    .left(open_offset)
-                    .top(px(theme.target_size()))
                     .min_w(px(MENU_MIN_WIDTH))
                     .max_h(px(DROPDOWN_MAX_HEIGHT))
                     .flex()
@@ -418,17 +423,12 @@ impl RenderOnce for MenuBar {
                 theme,
                 GlassSize::Medium,
             )
+            .debug_selector(|| "menu-bar-dropdown".into())
             .child(content);
-
-            // TODO(overlay-migration): port this dropdown to
-            // `AnchoredOverlay` so it escapes parent `overflow_hidden()`
-            // clipping like Popover and HoverCard already do. Priority
-            // rename is cosmetic; the absolute-positioned `deferred()`
-            // still lives inside the trigger's layout tree.
-            container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
+            overlay = overlay.content(dropdown);
         }
 
-        container
+        overlay
     }
 }
 
@@ -654,5 +654,112 @@ mod tests {
         assert_eq!(offsets.len(), 3);
         assert!(offsets[0] < offsets[1], "offsets must be monotonic");
         assert!(offsets[1] < offsets[2], "offsets must be monotonic");
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{Menu, MenuBar};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Nest the menu bar inside a narrow `overflow_hidden()` container
+    /// so we can verify `AnchoredOverlay` anchors the dropdown past
+    /// the parent's clip region. The bar itself stays inside; the
+    /// opened menu must escape.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(40.0)).pl(px(20.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(200.0))
+                    .h(px(28.0))
+                    .overflow_hidden()
+                    .child(
+                        MenuBar::new("bar")
+                            .menus(vec![
+                                Menu::new("File", div().w(px(120.0)).h(px(80.0)).child("items")),
+                                Menu::new("Edit", div().w(px(120.0)).h(px(80.0)).child("items")),
+                            ])
+                            .open_menu(Some(1)),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn dropdown_layout_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("menu-bar-dropdown");
+
+        // The bar fills the clip vertically (28pt); the dropdown anchors
+        // below the bar, so a correctly-escaped overlay has its top at
+        // or below the clip's bottom edge.
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
+    }
+
+    /// A second menu's dropdown must anchor at a strictly greater
+    /// horizontal offset than the first menu's. This locks the
+    /// `.offset(point(open_offset, 0))` behaviour: without it, all
+    /// menus would collapse to the bar's left edge regardless of
+    /// which title was active.
+    struct OffsetPreservedHarness {
+        open_idx: Option<usize>,
+    }
+
+    impl Render for OffsetPreservedHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(40.0)).pl(px(20.0)).child(
+                MenuBar::new("bar")
+                    .menus(vec![
+                        Menu::new("File", div().w(px(120.0)).h(px(80.0)).child("file")),
+                        Menu::new("Edit", div().w(px(120.0)).h(px(80.0)).child("edit")),
+                    ])
+                    .open_menu(self.open_idx),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn dropdown_horizontal_offset_tracks_active_title(cx: &mut TestAppContext) {
+        // Render with the first menu open, capture the dropdown's left
+        // edge, then swap to the second menu and assert the dropdown
+        // has moved strictly right.
+        let (host, cx) = setup_test_window(cx, |_window, _cx| OffsetPreservedHarness {
+            open_idx: Some(0),
+        });
+
+        let first_left = cx.get_element("menu-bar-dropdown").bounds.left();
+
+        host.update(cx, |host, cx| {
+            host.open_idx = Some(1);
+            cx.notify();
+        });
+
+        let second_left = cx.get_element("menu-bar-dropdown").bounds.left();
+
+        assert!(
+            second_left > first_left,
+            "dropdown under 'Edit' ({second_left:?}) must be to the right of 'File' ({first_left:?})",
+        );
     }
 }
