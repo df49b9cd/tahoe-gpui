@@ -130,6 +130,14 @@ impl ChartView {
             0.0
         }
     }
+
+    /// Padding applied by `Chart::render` around the plot area so data
+    /// marks don't land in the rounded-corner clip region. Mirrored here
+    /// so the crosshair and hover-index computations stay aligned with
+    /// where the plot actually paints.
+    fn plot_inset(&self, theme: &crate::foundations::theme::TahoeTheme) -> f32 {
+        f32::from(theme.radius_md)
+    }
 }
 
 impl Render for ChartView {
@@ -159,6 +167,7 @@ impl Render for ChartView {
         let height = self.height;
         let max_pts = self.max_points();
         let y_margin = self.y_margin(theme);
+        let plot_inset = self.plot_inset(theme);
 
         let crosshair_color = theme.text_muted;
         let origin_tracker = self.wrapper_origin_x.clone();
@@ -175,17 +184,22 @@ impl Render for ChartView {
                     return;
                 }
                 // Crosshair x lives inside the plot area (wrapper width
-                // minus the Y-label column).
-                let plot_w = (f32::from(bounds.size.width) - y_margin).max(0.0);
+                // minus the plot inset on both sides and the Y-label
+                // column).
+                let plot_w = (f32::from(bounds.size.width) - 2.0 * plot_inset - y_margin).max(0.0);
                 let slot_w = plot_w / max_pts as f32;
-                let x = bounds.origin.x + gpui::px(y_margin + slot_w * (idx as f32 + 0.5));
+                let x =
+                    bounds.origin.x + gpui::px(plot_inset + y_margin + slot_w * (idx as f32 + 0.5));
 
+                // Keep the crosshair vertically inside the plot area so it
+                // matches where data paints (Chart insets by `plot_inset`
+                // on top and bottom too).
+                let top = bounds.origin.y + gpui::px(plot_inset);
+                let bottom = bounds.origin.y
+                    + gpui::px((f32::from(bounds.size.height) - plot_inset).max(0.0));
                 let mut pb = gpui::PathBuilder::stroke(gpui::px(1.0));
-                pb.move_to(gpui::point(x, bounds.origin.y));
-                pb.line_to(gpui::point(
-                    x,
-                    bounds.origin.y + gpui::px(f32::from(bounds.size.height)),
-                ));
+                pb.move_to(gpui::point(x, top));
+                pb.line_to(gpui::point(x, bottom));
                 if let Ok(path) = pb.build() {
                     window.paint_path(path, crosshair_color);
                 }
@@ -258,11 +272,12 @@ impl Render for ChartView {
             None
         };
 
-        // y_margin is theme-derived and theme isn't reachable from listener
-        // closures — snapshot it each render and move the value into each
-        // closure.
+        // y_margin and plot_inset are theme-derived and theme isn't
+        // reachable from listener closures — snapshot them each render
+        // and move the values into each closure.
         let captured_width = f32::from(width);
         let captured_y_margin = y_margin;
+        let captured_plot_inset = plot_inset;
         let on_move = cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
             // Translate window-space pointer x into wrapper-local x using
             // the origin captured during the last paint.
@@ -271,6 +286,7 @@ impl Render for ChartView {
                 local_x,
                 captured_width,
                 captured_y_margin,
+                captured_plot_inset,
                 this.max_points(),
             );
             // P0: pixel-level mouse motion fires this listener 60+ times
@@ -350,22 +366,26 @@ impl Render for ChartView {
 }
 
 /// Map a pointer x (relative to the wrapper's left edge) to the hovered
-/// data-point slot. Returns `None` when the pointer is inside the Y-label
-/// column, past the right edge, or the chart has no data.
+/// data-point slot. Returns `None` when the pointer is inside the plot
+/// inset or the Y-label column, past the right inset, or the chart has no
+/// data.
 fn compute_hover_index(
     local_x: f32,
     width: f32,
     y_margin: f32,
+    plot_inset: f32,
     max_points: usize,
 ) -> Option<usize> {
     if max_points == 0 {
         return None;
     }
-    let plot_x = local_x - y_margin;
+    // Plot area sits between `plot_inset + y_margin` on the left and
+    // `width - plot_inset` on the right — mirror `Chart::render`.
+    let plot_x = local_x - plot_inset - y_margin;
     if plot_x < 0.0 {
         return None;
     }
-    let plot_w = (width - y_margin).max(0.0);
+    let plot_w = (width - 2.0 * plot_inset - y_margin).max(0.0);
     if plot_w <= 0.0 {
         return None;
     }
@@ -381,29 +401,39 @@ mod tests {
     use super::compute_hover_index;
 
     #[test]
-    fn hover_with_no_axis_covers_full_width() {
-        assert_eq!(compute_hover_index(0.0, 200.0, 0.0, 5), Some(0));
-        assert_eq!(compute_hover_index(120.0, 200.0, 0.0, 5), Some(3));
-        assert_eq!(compute_hover_index(199.9, 200.0, 0.0, 5), Some(4));
+    fn hover_with_no_axis_covers_plot_width_minus_insets() {
+        // plot area is 200 - 2*8 = 184 wide, 5 slots of 36.8, starting at x=8.
+        assert_eq!(compute_hover_index(8.0, 200.0, 0.0, 8.0, 5), Some(0));
+        assert_eq!(compute_hover_index(120.0, 200.0, 0.0, 8.0, 5), Some(3));
+        assert_eq!(compute_hover_index(191.9, 200.0, 0.0, 8.0, 5), Some(4));
+    }
+
+    #[test]
+    fn hover_inside_left_inset_returns_none() {
+        // plot_inset=8 means the plot starts at x=8; anything left of
+        // that is inside the clipped-corner inset.
+        assert_eq!(compute_hover_index(0.0, 200.0, 0.0, 8.0, 5), None);
+        assert_eq!(compute_hover_index(7.9, 200.0, 0.0, 8.0, 5), None);
+        assert_eq!(compute_hover_index(8.0, 200.0, 0.0, 8.0, 5), Some(0));
     }
 
     #[test]
     fn hover_inside_y_label_column_returns_none() {
-        // y_margin = 40 means the plot starts at x=40.
-        assert_eq!(compute_hover_index(20.0, 240.0, 40.0, 5), None);
-        assert_eq!(compute_hover_index(39.9, 240.0, 40.0, 5), None);
+        // y_margin=40 + plot_inset=8 means the plot starts at x=48.
+        assert_eq!(compute_hover_index(20.0, 256.0, 40.0, 8.0, 5), None);
+        assert_eq!(compute_hover_index(47.9, 256.0, 40.0, 8.0, 5), None);
     }
 
     #[test]
     fn hover_with_axis_offsets_plot_area_left_edge() {
-        // plot area is 240 - 40 = 200 wide, 5 slots of 40.
-        assert_eq!(compute_hover_index(40.0, 240.0, 40.0, 5), Some(0));
-        assert_eq!(compute_hover_index(160.0, 240.0, 40.0, 5), Some(3));
-        assert_eq!(compute_hover_index(239.0, 240.0, 40.0, 5), Some(4));
+        // plot area is 256 - 40 - 16 = 200 wide, 5 slots of 40, starting at x=48.
+        assert_eq!(compute_hover_index(48.0, 256.0, 40.0, 8.0, 5), Some(0));
+        assert_eq!(compute_hover_index(168.0, 256.0, 40.0, 8.0, 5), Some(3));
+        assert_eq!(compute_hover_index(247.0, 256.0, 40.0, 8.0, 5), Some(4));
     }
 
     #[test]
     fn hover_with_empty_series_returns_none() {
-        assert_eq!(compute_hover_index(100.0, 200.0, 0.0, 0), None);
+        assert_eq!(compute_hover_index(100.0, 200.0, 0.0, 8.0, 0), None);
     }
 }

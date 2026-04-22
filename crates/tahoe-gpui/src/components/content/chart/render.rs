@@ -389,8 +389,19 @@ impl RenderOnce for Chart {
             px(0.0)
         };
 
-        let plot_width = px(f32::from(total_width) - f32::from(y_margin));
-        let plot_height = px(f32::from(total_height) - f32::from(x_margin));
+        // Inset the plot area by the container's corner radius on every
+        // side. `overflow_hidden` + `rounded` clips the four corners, so
+        // painting edge-to-edge (e.g. a Line peak landing on `origin.y`)
+        // puts the stroke in the clipped region and the mark appears cut
+        // off. Equal inset on all sides keeps the plot rectangle inside
+        // the unclipped interior regardless of which corner it would
+        // otherwise reach.
+        let plot_inset = theme.radius_md;
+        let inset_f = f32::from(plot_inset);
+        let plot_width =
+            px((f32::from(total_width) - 2.0 * inset_f - f32::from(y_margin)).max(0.0));
+        let plot_height =
+            px((f32::from(total_height) - 2.0 * inset_f - f32::from(x_margin)).max(0.0));
 
         // Build the plot area.
         let plot: Option<gpui::Div> = if all_empty {
@@ -501,6 +512,10 @@ impl RenderOnce for Chart {
         };
 
         // Compose the layout: Y-labels | plot area (with X-labels below).
+        // `p(plot_inset)` keeps every child (axis labels and plot area) out
+        // of the rounded-corner clip region; `plot_width`/`plot_height`
+        // above already account for this so the content fits inside the
+        // padded area.
         let mut container = div()
             .w(total_width)
             .h(total_height)
@@ -508,6 +523,7 @@ impl RenderOnce for Chart {
             .rounded(theme.radius_md)
             .border_1()
             .border_color(theme.border)
+            .p(plot_inset)
             .overflow_hidden()
             .with_accessibility(&a11y_props);
 
