@@ -11,7 +11,8 @@
 //!   [`ChartDataSeries`] or a multi-series [`ChartDataSet`]. Optional
 //!   [`AxisConfig`] adds Y-axis labels + X category labels; [`GridlineConfig`]
 //!   paints gridlines behind the marks. Multi-series charts auto-show a
-//!   legend; call [`Chart::show_legend`] to override. [`Chart::title`] and
+//!   legend; [`Chart::show_legend`] forces it on (`true`) for single-series
+//!   or off (`false`) for multi-series. [`Chart::title`] and
 //!   [`Chart::subtitle`] add descriptive text above the plot.
 //! - [`ChartView`] — stateful wrapper that adds an interactive hover
 //!   crosshair and value tooltip, plus keyboard navigation (arrows, Home/End,

@@ -6,6 +6,8 @@
 //!
 //! `examples/dashboard_app.rs`.
 
+use std::sync::Arc;
+
 use gpui::{Hsla, PathBuilder, Pixels, Point, Window, point, px};
 
 use super::types::ChartType;
@@ -236,16 +238,15 @@ pub(crate) type PaintFn = Box<dyn FnOnce(&mut Window)>;
 /// Returns `None` for Bar and Point (those use div-based rendering).
 /// For Range charts, `range_low` provides the lower-bound values.
 ///
-/// Takes `values` / `range_low` by value so callers that have already
-/// cloned the series data can move it in without a second `.to_vec()`
-/// inside each variant arm.
+/// Takes `values` / `range_low` as `Arc<[f32]>` so the closure captures a
+/// refcount-clone of the sample buffer instead of a deep-copied `Vec`.
 pub(crate) fn canvas_paint_callback(
     chart_type: ChartType,
     origin: Point<Pixels>,
     w: f32,
     h: f32,
-    values: Vec<f32>,
-    range_low: Option<Vec<f32>>,
+    values: Arc<[f32]>,
+    range_low: Option<Arc<[f32]>>,
     min: f32,
     range: f32,
     color: Hsla,

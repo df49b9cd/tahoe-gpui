@@ -1,5 +1,8 @@
 //! Stateful chart with interactive hover tooltip.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::prelude::*;
 use gpui::{
     Context, ElementId, FocusHandle, Hsla, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels,
@@ -29,6 +32,11 @@ pub struct ChartView {
     gridlines: Option<GridlineConfig>,
     focus_handle: FocusHandle,
     hover_index: Option<usize>,
+    /// Wrapper's left edge in window coordinates, captured during paint
+    /// so `on_mouse_move` can translate `event.position.x` (window space)
+    /// into the wrapper-local `x` that `compute_hover_index` expects.
+    /// Updated from the crosshair canvas paint callback.
+    wrapper_origin_x: Rc<Cell<f32>>,
 }
 
 impl ChartView {
@@ -44,35 +52,44 @@ impl ChartView {
             gridlines: None,
             focus_handle: cx.focus_handle(),
             hover_index: None,
+            wrapper_origin_x: Rc::new(Cell::new(0.0)),
         }
     }
 
+    /// Override the chart's root element id.
     pub fn id(mut self, id: impl Into<SharedString>) -> Self {
         self.id = id.into();
         self
     }
 
+    /// Set the mark type rendered by the inner [`super::Chart`].
     pub fn chart_type(mut self, chart_type: ChartType) -> Self {
         self.chart_type = chart_type;
         self
     }
 
+    /// Set the overall wrapper size. Plot area is this minus any axis margins.
     pub fn size(mut self, width: Pixels, height: Pixels) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 
+    /// Override the single-series mark colour. Multi-series charts auto-
+    /// assign palette colours; this value only applies to series index 0.
     pub fn color(mut self, color: Hsla) -> Self {
         self.global_color = Some(color);
         self
     }
 
+    /// Configure axis labels and tick marks. Without this, the chart
+    /// renders as a sparkline with no margins.
     pub fn axis(mut self, config: AxisConfig) -> Self {
         self.axis = Some(config);
         self
     }
 
+    /// Add gridlines to the chart. Rendered behind data marks.
     pub fn gridlines(mut self, config: GridlineConfig) -> Self {
         self.gridlines = Some(config);
         self
@@ -131,9 +148,15 @@ impl Render for ChartView {
         let y_margin = self.y_margin();
 
         let crosshair_color = theme.text_muted;
+        let origin_tracker = self.wrapper_origin_x.clone();
         let crosshair = canvas(
             |_info, _window, _cx| {},
             move |bounds, _state, window, _cx| {
+                // `MouseMoveEvent.position` arrives in window coordinates;
+                // cache the wrapper's window-space left edge each paint so
+                // `on_mouse_move` can translate back to local-x.
+                origin_tracker.set(f32::from(bounds.origin.x));
+
                 let Some(idx) = hover_index else { return };
                 if max_pts == 0 {
                     return;
@@ -223,8 +246,11 @@ impl Render for ChartView {
         };
 
         let on_move = cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+            // Translate window-space pointer x into wrapper-local x using
+            // the origin captured during the last paint.
+            let local_x = f32::from(event.position.x) - this.wrapper_origin_x.get();
             let next = compute_hover_index(
-                f32::from(event.position.x),
+                local_x,
                 f32::from(this.width),
                 this.y_margin(),
                 this.max_points(),
@@ -269,6 +295,9 @@ impl Render for ChartView {
                 this.hover_index = next;
                 cx.notify();
             }
+            // Consume the keystroke so a parent focus group / workflow pane
+            // doesn't also process the arrow/Home/End/Escape.
+            cx.stop_propagation();
         });
 
         let focus_handle = self.focus_handle.clone();

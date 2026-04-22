@@ -20,6 +20,7 @@ pub fn render(
 
     let sales = ChartDataSeries::new("Sales", vec![10.0, 20.0, 15.0, 30.0, 25.0]);
     let trend = ChartDataSeries::new("Trend", vec![5.0, 12.0, 8.0, 22.0, 18.0, 30.0, 25.0]);
+    let target = ChartDataSeries::new("Target", vec![50.0]);
     let empty = ChartDataSeries::new("Empty", vec![]);
 
     div()
@@ -41,9 +42,11 @@ pub fn render(
                         .text_style(TextStyle::Body, theme)
                         .text_color(theme.text_muted)
                         .child(
-                            "Minimal Bar and Line chart primitives aligned with \
-                             the HIG Charts page. v1 scope: single-series, \
-                             no axes or gridlines.",
+                            "Bar, Line, Area, Point, Range, and Rule marks \
+                             aligned with the HIG Charts page. \
+                             See individual galleries for multi-series, \
+                             axes, gridlines, legends, titles, and the \
+                             interactive ChartView with hover crosshair.",
                         ),
                 )
                 .child(
@@ -114,7 +117,7 @@ pub fn render(
                         .child("Rule chart"),
                 )
                 .child(
-                    Chart::new(trend)
+                    Chart::new(target)
                         .id("rule-chart")
                         .chart_type(ChartType::Rule),
                 )

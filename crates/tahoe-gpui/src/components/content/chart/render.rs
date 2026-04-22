@@ -1,5 +1,7 @@
 //! Chart component render implementation.
 
+use std::sync::Arc;
+
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, Hsla, Pixels, SharedString, TextAlign, Window, canvas, div, px,
@@ -40,7 +42,10 @@ pub struct Chart {
     pub(crate) point_focus_handles: Vec<FocusHandle>,
     pub(crate) axis: Option<AxisConfig>,
     pub(crate) gridlines: Option<GridlineConfig>,
-    pub(crate) show_legend: bool,
+    /// `None` = auto (single-series hides, multi-series shows).
+    /// `Some(true)` forces a legend on single-series; `Some(false)` forces
+    /// a multi-series chart to hide its legend.
+    pub(crate) show_legend: Option<bool>,
     pub(crate) title: Option<SharedString>,
     pub(crate) subtitle: Option<SharedString>,
 }
@@ -64,7 +69,7 @@ impl Chart {
             point_focus_handles: Vec::new(),
             axis: None,
             gridlines: None,
-            show_legend: false,
+            show_legend: None,
             title: None,
             subtitle: None,
         }
@@ -120,10 +125,14 @@ impl Chart {
         self
     }
 
-    /// Show a legend row below the chart. Automatically shown for
-    /// multi-series charts; call this to override.
+    /// Force the legend row on (`true`) or off (`false`).
+    ///
+    /// Without this, multi-series charts auto-show a legend and
+    /// single-series charts hide it. Call `show_legend(true)` to force
+    /// a legend on a single-series chart, or `show_legend(false)` to
+    /// hide the legend on a multi-series chart.
     pub fn show_legend(mut self, show: bool) -> Self {
-        self.show_legend = show;
+        self.show_legend = Some(show);
         self
     }
 
@@ -177,16 +186,6 @@ impl Chart {
             series_count,
             names.join(", ")
         )
-    }
-
-    /// Resolve the colour for a series index.
-    fn series_color(
-        data_set: &ChartDataSet,
-        global_color: Option<Hsla>,
-        idx: usize,
-        theme: &crate::foundations::theme::TahoeTheme,
-    ) -> Hsla {
-        series_color(data_set, global_color, idx, theme)
     }
 }
 
@@ -300,10 +299,47 @@ impl RenderOnce for Chart {
         let global_color = self.color;
         let axis_config = self.axis.take();
         let gridline_config = self.gridlines.take();
-        let show_legend = self.show_legend || data_set.is_multi();
+        let show_legend = self.show_legend.unwrap_or(data_set.is_multi());
         let title = self.title.take();
         let subtitle = self.subtitle.take();
         let multi_series = data_set.is_multi();
+
+        // Precompute per-point VoiceOver labels once. The canvas / div
+        // paint paths call `attach_fka` inside tight loops, so building
+        // labels on each call re-allocates a String per data point on
+        // every redraw. One pass here lets `attach_fka` clone a cheap
+        // `SharedString`.
+        let fka_labels: Vec<SharedString> = if fka_points.is_some() {
+            let voice = chart_type.voice_label();
+            let mut labels = Vec::with_capacity(total_fka_points);
+            for series in data_set.series.iter() {
+                for v in series.inner.values.iter() {
+                    let global_idx = labels.len();
+                    let label = if multi_series {
+                        format!(
+                            "{} {}: {} of {}, {:.2}",
+                            series.inner.name,
+                            voice,
+                            global_idx + 1,
+                            total_fka_points,
+                            v
+                        )
+                    } else {
+                        format!(
+                            "{}: {} of {}, {:.2}",
+                            voice,
+                            global_idx + 1,
+                            total_fka_points,
+                            v
+                        )
+                    };
+                    labels.push(SharedString::from(label));
+                }
+            }
+            labels
+        } else {
+            Vec::new()
+        };
 
         let has_gridlines = gridline_config.as_ref().is_some_and(|g| g.is_active());
 
@@ -360,8 +396,7 @@ impl RenderOnce for Chart {
                     &point_prefix,
                     total_fka_points,
                     &series_offsets,
-                    multi_series,
-                    chart_type,
+                    &fka_labels,
                     dwc,
                 ),
                 ChartType::Point => render_points(
@@ -377,8 +412,7 @@ impl RenderOnce for Chart {
                     &point_prefix,
                     total_fka_points,
                     &series_offsets,
-                    multi_series,
-                    chart_type,
+                    &fka_labels,
                     dwc,
                 ),
                 ChartType::Line | ChartType::Area | ChartType::Range | ChartType::Rule => {
@@ -395,7 +429,7 @@ impl RenderOnce for Chart {
                         &point_prefix,
                         total_fka_points,
                         &series_offsets,
-                        multi_series,
+                        &fka_labels,
                         chart_type,
                         dwc,
                     )
@@ -561,7 +595,7 @@ impl RenderOnce for Chart {
                 .w(total_width);
 
             for (si, series) in data_set.series.iter().enumerate() {
-                let color = Self::series_color(&data_set, global_color, si, theme);
+                let color = series_color(&data_set, global_color, si, theme);
                 legend_row = legend_row.child(
                     div()
                         .flex()
@@ -643,8 +677,7 @@ fn render_bars(
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
     series_offsets: &[usize],
-    multi_series: bool,
-    chart_type: ChartType,
+    fka_labels: &[SharedString],
     dwc: bool,
 ) -> gpui::Div {
     let n_series = data_set.series.len();
@@ -685,7 +718,7 @@ fn render_bars(
             let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
             let norm = ((v - min) / range).clamp(0.0, 1.0);
             let bar_h = f32::from(height) * norm;
-            let color = Chart::series_color(data_set, global_color, si, theme);
+            let color = series_color(data_set, global_color, si, theme);
             let mut bar = div()
                 .w(px(bar_width))
                 .h(px(bar_h))
@@ -709,13 +742,10 @@ fn render_bars(
                             handles,
                             prefix,
                             total: total_fka_points,
-                            chart_type,
                             theme,
-                            series_name: &series.inner.name,
-                            multi_series,
+                            labels: fka_labels,
                         },
                         fka_idx,
-                        v,
                         window,
                     )
                 }
@@ -742,8 +772,7 @@ fn render_points(
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
     series_offsets: &[usize],
-    multi_series: bool,
-    chart_type: ChartType,
+    fka_labels: &[SharedString],
     dwc: bool,
 ) -> gpui::Div {
     let max_points = data_set
@@ -765,7 +794,7 @@ fn render_points(
             let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
             let norm = ((v - min) / range).clamp(0.0, 1.0);
             let top_offset = f32::from(height) * (1.0 - norm) - point_size / 2.0;
-            let color = Chart::series_color(data_set, global_color, si, theme);
+            let color = series_color(data_set, global_color, si, theme);
 
             let mut dot = div()
                 .absolute()
@@ -792,13 +821,10 @@ fn render_points(
                             handles,
                             prefix,
                             total: total_fka_points,
-                            chart_type,
                             theme,
-                            series_name: &series.inner.name,
-                            multi_series,
+                            labels: fka_labels,
                         },
                         fka_idx,
-                        v,
                         window,
                     )
                 }
@@ -867,14 +893,14 @@ fn render_canvas(
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
     series_offsets: &[usize],
-    multi_series: bool,
+    fka_labels: &[SharedString],
     chart_type: ChartType,
     dwc: bool,
 ) -> gpui::Div {
     let w_f = f32::from(width);
     let h_f = f32::from(height);
 
-    let series_data: Vec<(Vec<f32>, Option<Vec<f32>>, Hsla)> = data_set
+    let series_data: Vec<(Arc<[f32]>, Option<Arc<[f32]>>, Hsla)> = data_set
         .series
         .iter()
         .enumerate()
@@ -882,7 +908,7 @@ fn render_canvas(
             (
                 s.inner.values.clone(),
                 s.inner.range_low.clone(),
-                Chart::series_color(data_set, global_color, si, theme),
+                series_color(data_set, global_color, si, theme),
             )
         })
         .collect();
@@ -961,13 +987,10 @@ fn render_canvas(
                         handles,
                         prefix,
                         total: total_fka_points,
-                        chart_type,
                         theme,
-                        series_name: &series.inner.name,
-                        multi_series,
+                        labels: fka_labels,
                     },
                     fka_idx,
-                    *v,
                     window,
                 );
                 row = row.child(hit);

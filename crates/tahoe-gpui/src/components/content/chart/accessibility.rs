@@ -9,59 +9,37 @@ use crate::foundations::accessibility::{
 use crate::foundations::layout::{ControlSize, hit_region};
 use crate::foundations::materials::apply_focus_ring;
 
-use super::types::ChartType;
-
 /// Context shared between the bar and point FKA attachment paths.
+///
+/// Per-point VoiceOver labels live in `labels` — a slice indexed by the
+/// same contiguous `index` passed to [`attach_fka`]. Precomputing the
+/// strings in `Chart::render` keeps the format! calls out of the paint
+/// path, so scrolling a 100-point multi-series chart doesn't rebuild
+/// every label on each redraw.
 pub(crate) struct FkaAttachContext<'a> {
     pub group: &'a FocusGroup,
     pub handles: &'a [FocusHandle],
     pub prefix: &'a SharedString,
     pub total: usize,
-    pub chart_type: ChartType,
     pub theme: &'a crate::foundations::theme::TahoeTheme,
-    /// Name of the series that owns the data point, used as a VoiceOver
-    /// prefix when the chart has more than one series.
-    pub series_name: &'a SharedString,
-    /// Whether the chart has more than one series. Flips the label format
-    /// to include the series name so multi-series points don't sound
-    /// identical to VoiceOver.
-    pub multi_series: bool,
+    pub labels: &'a [SharedString],
 }
 
 /// Wire a bar or point div up for Full Keyboard Access: per-value element
 /// id, focus-group registration, per-value VoiceOver label, focus ring,
-/// and arrow/Home/End/activation key handling.
+/// and arrow/Home/End key handling.
 pub(crate) fn attach_fka(
     el: gpui::Div,
     ctx: &FkaAttachContext,
     index: usize,
-    value: f32,
     window: &Window,
 ) -> gpui::AnyElement {
     let is_focused = ctx.handles[index].is_focused(window);
     // C2: Use DataPoint role instead of Button — chart data points are not
     // activatable buttons. C3: Populate posinset/setsize so VoiceOver can
     // announce "row 1 of 5" structurally.
-    let label = if ctx.multi_series {
-        format!(
-            "{} {}: {} of {}, {:.2}",
-            ctx.series_name,
-            ctx.chart_type.voice_label(),
-            index + 1,
-            ctx.total,
-            value
-        )
-    } else {
-        format!(
-            "{}: {} of {}, {:.2}",
-            ctx.chart_type.voice_label(),
-            index + 1,
-            ctx.total,
-            value
-        )
-    };
     let a11y = AccessibilityProps::new()
-        .label(SharedString::from(label))
+        .label(ctx.labels[index].clone())
         .role(AccessibilityRole::DataPoint)
         .posinset(index + 1)
         .setsize(ctx.total);

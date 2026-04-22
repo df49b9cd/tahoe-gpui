@@ -1,5 +1,7 @@
 //! Chart data types.
 
+use std::sync::Arc;
+
 use gpui::{Hsla, SharedString};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -60,20 +62,25 @@ impl ChartType {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// A single named data series.
+///
+/// Values are stored in `Arc<[f32]>` so the canvas render path can
+/// refcount-clone instead of deep-copying the sample buffer into each
+/// paint closure. `Vec<f32>` callers continue to work via
+/// `From<Vec<T>> for Arc<[T]>`.
 #[derive(Debug, Clone)]
 pub struct ChartDataSeries {
     pub name: SharedString,
-    pub values: Vec<f32>,
+    pub values: Arc<[f32]>,
     /// Lower-bound values for Range charts. When `None`, the series is
     /// treated as a simple value series (Bar, Line, Area, Point, Rule).
-    pub range_low: Option<Vec<f32>>,
+    pub range_low: Option<Arc<[f32]>>,
 }
 
 impl ChartDataSeries {
-    pub fn new(name: impl Into<SharedString>, values: Vec<f32>) -> Self {
+    pub fn new(name: impl Into<SharedString>, values: impl Into<Arc<[f32]>>) -> Self {
         Self {
             name: name.into(),
-            values,
+            values: values.into(),
             range_low: None,
         }
     }
@@ -81,11 +88,15 @@ impl ChartDataSeries {
     /// Create a Range series with separate lower and upper bound arrays.
     ///
     /// `values` is the upper bound, `low` is the lower bound.
-    pub fn range(name: impl Into<SharedString>, low: Vec<f32>, high: Vec<f32>) -> Self {
+    pub fn range(
+        name: impl Into<SharedString>,
+        low: impl Into<Arc<[f32]>>,
+        high: impl Into<Arc<[f32]>>,
+    ) -> Self {
         Self {
             name: name.into(),
-            values: high,
-            range_low: Some(low),
+            values: high.into(),
+            range_low: Some(low.into()),
         }
     }
 
@@ -316,6 +327,12 @@ pub(crate) fn nice_ticks(min: f32, max: f32, count: usize) -> Vec<f32> {
 
     let nice_min = (lo / nice_step).floor() * nice_step;
     let nice_max = (hi / nice_step).ceil() * nice_step;
+    // Rounding up past `f32::MAX` produces infinity, which would then
+    // overflow the tick loop and emit non-finite ticks. Fall back to
+    // the raw bounds when the rounded range escapes the finite axis.
+    if !nice_min.is_finite() || !nice_max.is_finite() {
+        return vec![lo];
+    }
     let stop = nice_max + nice_step * 0.01;
 
     let mut ticks = Vec::new();
@@ -325,6 +342,9 @@ pub(crate) fn nice_ticks(min: f32, max: f32, count: usize) -> Vec<f32> {
     let max_iters = count.saturating_mul(4).max(32);
     for _ in 0..max_iters {
         if v > stop {
+            break;
+        }
+        if !v.is_finite() {
             break;
         }
         ticks.push(v);

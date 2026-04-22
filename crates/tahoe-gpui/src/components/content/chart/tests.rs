@@ -240,6 +240,19 @@ async fn fka_on_focus_previous_retreats_along_axis(cx: &mut TestAppContext) {
     });
 }
 
+// ─── Render-harness smoke tests ─────────────────────────────────────
+//
+// The `#[gpui::test]` suites from here to the end of the file force a
+// render pass for a given Chart/ChartView configuration inside a test
+// window and assert only that the pass completes without panic.
+//
+// They catch panics, borrow failures, accessibility-mode transitions,
+// and missing child-element wiring. They do NOT assert rendered
+// behaviour (legend visibility, tick positions, tooltip contents, axis
+// layout). Visual-regression goldens via the `test-support` feature
+// are the right tool for that and should be added when a UI bug slips
+// past these smoke tests.
+
 // ─── Differentiate Without Color ────────────────────────────────────
 
 struct ChartDwcHarness {
@@ -493,12 +506,29 @@ fn nice_ticks_handles_nan_and_infinity() {
 
 proptest::proptest! {
     // Guards against the infinite-loop / NaN-propagation classes from
-    // P1.1. Inputs sweep the f32 domain including negatives; the
-    // function must terminate with finite ticks for every sample.
+    // P1.1. The strategy mixes the ordinary numeric range with the
+    // exact degenerate values the guard at types.rs was written to
+    // defend against (NaN, ±Infinity, f32::MAX, f32::MIN_POSITIVE),
+    // so a regression in the log10/powf round-trip will surface as a
+    // non-finite tick rather than being hidden by a narrow domain.
     #[test]
     fn nice_ticks_terminates_for_arbitrary_ranges(
-        min in -1e9f32..1e9f32,
-        max in -1e9f32..1e9f32,
+        min in proptest::prop_oneof![
+            -1e9f32..1e9f32,
+            proptest::strategy::Just(f32::NAN),
+            proptest::strategy::Just(f32::INFINITY),
+            proptest::strategy::Just(f32::NEG_INFINITY),
+            proptest::strategy::Just(f32::MAX),
+            proptest::strategy::Just(f32::MIN_POSITIVE),
+        ],
+        max in proptest::prop_oneof![
+            -1e9f32..1e9f32,
+            proptest::strategy::Just(f32::NAN),
+            proptest::strategy::Just(f32::INFINITY),
+            proptest::strategy::Just(f32::NEG_INFINITY),
+            proptest::strategy::Just(f32::MAX),
+            proptest::strategy::Just(f32::MIN_POSITIVE),
+        ],
         count in 0usize..10,
     ) {
         let ticks = nice_ticks(min, max, count);
