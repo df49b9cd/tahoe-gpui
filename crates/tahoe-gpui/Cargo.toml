@@ -28,7 +28,7 @@ test-support = ["gpui/test-support", "dep:image"]
 gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre" }
 
 # Markdown auto-completion
-remend = { version = "0.1.0", path = "../remend" }
+mdstitch = { version = "0.1.0", path = "../mdstitch" }
 
 # Markdown parsing
 pulldown-cmark = { version = "0.13", default-features = false, features = ["simd"] }

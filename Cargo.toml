@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/tahoe-gpui",
-    "crates/remend",
+    "crates/mdstitch",
 ]
 
 [workspace.package]

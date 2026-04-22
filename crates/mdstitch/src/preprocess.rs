@@ -1,7 +1,9 @@
 //! Markdown preprocessing for custom and literal HTML tags.
 //!
-//! Ported from Streamdown's `preprocess-custom-tags.ts`,
-//! `preprocess-literal-tag-content.ts`, and `normalizeHtmlIndentation`.
+//! Prepares HTML tag bodies so CommonMark treats them as intended: keeps
+//! blank-line-containing custom tags in one block, renders literal-tag
+//! contents as plain text, and strips indentation that would turn an HTML
+//! tag into an indented code block.
 
 use std::borrow::Cow;
 
@@ -200,8 +202,6 @@ fn escape_markdown(text: &str) -> String {
 /// CommonMark treats 4+ spaces of indentation as code blocks. When LLMs generate
 /// indented HTML, this causes the HTML to render as a code block instead of being
 /// parsed as HTML. This function strips that indentation.
-///
-/// Ported from Streamdown's `normalizeHtmlIndentation`.
 pub fn normalize_html_indentation(text: &str) -> Cow<'_, str> {
     if text.is_empty() {
         return Cow::Borrowed(text);

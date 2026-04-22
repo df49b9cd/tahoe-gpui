@@ -3,18 +3,18 @@ use std::borrow::Cow;
 /// How to handle incomplete links.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LinkMode {
-    /// Use `streamdown:incomplete-link` placeholder URL (default).
+    /// Use `stitch:incomplete-link` placeholder URL (default).
     #[default]
     Protocol,
     /// Display only the link text without any link markup.
     TextOnly,
 }
 
-/// A custom handler that transforms text during the remend pipeline.
+/// A custom handler that transforms text during the stitch pipeline.
 ///
 /// Implement this trait to add custom preprocessing steps. Custom handlers
 /// are merged with the built-in handlers and sorted by priority.
-pub trait RemendHandler: Send + Sync {
+pub trait StitchHandler: Send + Sync {
     /// Transform the text. Return `Cow::Borrowed(text)` if no changes are needed.
     fn handle<'a>(&self, text: &'a str) -> Cow<'a, str>;
 
@@ -28,7 +28,7 @@ pub trait RemendHandler: Send + Sync {
     }
 }
 
-/// Built-in handler priorities, matching the TypeScript implementation.
+/// Built-in handler priorities.
 ///
 /// Lower values run first. Custom handlers default to [`priority::DEFAULT`].
 pub mod priority {
@@ -64,14 +64,14 @@ pub mod priority {
     pub const DEFAULT: i32 = 100;
 }
 
-/// Configuration options for the [`remend`](super::remend) function.
+/// Configuration options for the [`stitch`](super::stitch) function.
 ///
 /// All options default to `true` (enabled) except `inline_katex` which
 /// defaults to `false` (single `$` is ambiguous with currency symbols).
 ///
 /// Fields are public for direct construction; the builder methods are provided
 /// as a convenience for chained configuration.
-pub struct RemendOptions {
+pub struct StitchOptions {
     /// Complete bold formatting (`**text` → `**text**`).
     pub bold: bool,
     /// Complete italic formatting (`*text` → `*text*`, `_text` → `_text_`).
@@ -82,7 +82,7 @@ pub struct RemendOptions {
     pub inline_code: bool,
     /// Complete strikethrough formatting (`~~text` → `~~text~~`).
     pub strikethrough: bool,
-    /// Complete links (`[text](url` → `[text](streamdown:incomplete-link)`).
+    /// Complete links (`[text](url` → `[text](stitch:incomplete-link)`).
     pub links: bool,
     /// Handle incomplete images (`![alt](url` → removed).
     pub images: bool,
@@ -101,13 +101,13 @@ pub struct RemendOptions {
     pub comparison_operators: bool,
     /// How to handle incomplete links.
     pub link_mode: LinkMode,
-    /// Custom handlers to extend the remend pipeline.
-    pub handlers: Vec<Box<dyn RemendHandler>>,
+    /// Custom handlers to extend the stitch pipeline.
+    pub handlers: Vec<Box<dyn StitchHandler>>,
 }
 
-impl std::fmt::Debug for RemendOptions {
+impl std::fmt::Debug for StitchOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RemendOptions")
+        f.debug_struct("StitchOptions")
             .field("bold", &self.bold)
             .field("italic", &self.italic)
             .field("bold_italic", &self.bold_italic)
@@ -127,7 +127,7 @@ impl std::fmt::Debug for RemendOptions {
     }
 }
 
-impl Default for RemendOptions {
+impl Default for StitchOptions {
     fn default() -> Self {
         Self {
             bold: true,
@@ -149,7 +149,7 @@ impl Default for RemendOptions {
     }
 }
 
-impl RemendOptions {
+impl StitchOptions {
     /// Enables or disables bold (`**`) completion.
     pub fn bold(mut self, enabled: bool) -> Self {
         self.bold = enabled;
@@ -235,7 +235,7 @@ impl RemendOptions {
     }
 
     /// Add a custom handler to the pipeline.
-    pub fn handler(mut self, handler: Box<dyn RemendHandler>) -> Self {
+    pub fn handler(mut self, handler: Box<dyn StitchHandler>) -> Self {
         self.handlers.push(handler);
         self
     }
