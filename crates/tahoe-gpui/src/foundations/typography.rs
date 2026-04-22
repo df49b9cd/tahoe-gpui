@@ -3,6 +3,8 @@
 //! Provides text styles, font design variants, tracking utilities,
 //! and the `TextStyledExt` trait for applying HIG type scale to GPUI elements.
 
+use std::borrow::Cow;
+
 use gpui::{DefiniteLength, FontWeight, Hsla, Pixels, Styled, px};
 
 use super::theme::TahoeTheme;
@@ -430,20 +432,23 @@ impl TextStyleAttrs {
     pub fn with_leading(mut self, style: LeadingStyle) -> Self {
         match style {
             LeadingStyle::Tight => {
-                // Defence against a style whose HIG Standard leading
-                // sits near the practical SF Pro floor: clamp the Tight
-                // result so the ratio never drops below `size × 1.15`,
-                // the ratio at which SF Pro ascenders and descenders
-                // visibly start colliding. Today only Title1 (26 pt
-                // leading, 22 pt size → 1.18× ratio) is close enough
-                // that the clamp kicks in; every other HIG style has
-                // enough headroom for the multiplier to win outright.
-                // The clamp keeps the contract stable if a caller
-                // introduces a custom style with tighter baseline
-                // spacing.
+                // Tier the floor against the size tier: body-scale
+                // styles (size ≤ 15 pt — Body, Callout, Subheadline,
+                // Footnote, Caption1, Caption2) stay at ≥ 1.5× leading
+                // so running paragraphs meet WCAG 1.4.12 (Text Spacing),
+                // which requires line-height ≥ 1.5× the font size for
+                // body copy. Display styles (Title*, LargeTitle,
+                // Headline) only need the 1.15× SF Pro
+                // ascender/descender floor — they typically sit on a
+                // single line, so the stricter body-copy ratio would
+                // add visible whitespace above headings.
                 let size = f32::from(self.size);
                 let scaled = f32::from(self.leading) * 0.95;
-                let floor = size * 1.15;
+                let floor = if size <= 15.0 {
+                    size * 1.5
+                } else {
+                    size * 1.15
+                };
                 self.leading = px(scaled.max(floor));
             }
             LeadingStyle::Standard => {}
@@ -465,10 +470,11 @@ impl TextStyleAttrs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LeadingStyle {
     /// Tighter line spacing for constrained areas (list rows, compact UI).
-    /// Scales leading by `0.95` (~5% tighter) so the delta stays
-    /// proportional across all [`TextStyle`] sizes — see
-    /// [`TextStyleAttrs::with_leading`] for the rationale and why the
-    /// multiplier is capped at 0.95 rather than something more aggressive.
+    /// Scales leading by `0.95` (~5% tighter), then clamps so the
+    /// resulting ratio never drops below a size-tiered floor:
+    /// `size × 1.5` for body-scale styles (size ≤ 15 pt, matching WCAG
+    /// 1.4.12 *Text Spacing*) and `size × 1.15` for display styles — see
+    /// [`TextStyleAttrs::with_leading`] for the per-tier rationale.
     Tight,
     /// Default HIG leading for the text style.
     #[default]
@@ -509,18 +515,35 @@ pub enum TextCase {
 }
 
 impl TextCase {
-    /// Apply the case transform, returning a freshly allocated [`String`].
-    pub fn apply(self, s: &str) -> String {
+    /// Apply the case transform, borrowing the input when the string is
+    /// already in the target case. On the typical render path — text
+    /// authored in the desired case — this avoids the
+    /// [`str::to_uppercase`] / [`str::to_lowercase`] allocation every
+    /// frame.
+    pub fn apply(self, s: &str) -> Cow<'_, str> {
         match self {
-            Self::Uppercase => s.to_uppercase(),
-            Self::Lowercase => s.to_lowercase(),
-            Self::SentenceCase => {
-                let mut chars = s.chars();
-                match chars.next() {
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                    None => String::new(),
+            Self::Uppercase => {
+                if s.chars().all(|c| !c.is_lowercase()) {
+                    Cow::Borrowed(s)
+                } else {
+                    Cow::Owned(s.to_uppercase())
                 }
             }
+            Self::Lowercase => {
+                if s.chars().all(|c| !c.is_uppercase()) {
+                    Cow::Borrowed(s)
+                } else {
+                    Cow::Owned(s.to_lowercase())
+                }
+            }
+            Self::SentenceCase => match s.chars().next() {
+                None => Cow::Borrowed(s),
+                Some(first) if !first.is_lowercase() => Cow::Borrowed(s),
+                Some(first) => {
+                    let rest = &s[first.len_utf8()..];
+                    Cow::Owned(first.to_uppercase().collect::<String>() + rest)
+                }
+            },
         }
     }
 }
@@ -530,6 +553,13 @@ impl TextCase {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Where to place the ellipsis when text overflows its container.
+///
+/// All variants use the horizontal ellipsis character `…` (`U+2026`),
+/// matching AppKit's `NSLineBreakMode` truncation glyphs. Truncation is
+/// **visual only** — assistive technologies (VoiceOver) read the full,
+/// untruncated text so the author's canonical content remains
+/// accessible. `TextView` enforces this by feeding the a11y label from
+/// the pre-truncation content.
 ///
 /// Head and tail map directly to GPUI's [`TextOverflow::TruncateStart`]
 /// and [`TextOverflow::Truncate`]. Middle has no native GPUI primitive,
@@ -542,14 +572,18 @@ impl TextCase {
 /// [`TextOverflow::TruncateStart`]: gpui::TextOverflow::TruncateStart
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TruncationMode {
-    /// Truncate at the end: "long text h…".
+    /// Truncate at the end, appending `…` (`U+2026`): `"long text h…"`.
+    /// Visual only — a11y reads the full text.
     #[default]
     Tail,
-    /// Truncate at the start: "…ext here". Typical for file paths where
-    /// the trailing name is more informative than the leading directories.
+    /// Truncate at the start, prepending `…` (`U+2026`): `"…ext here"`.
+    /// Typical for file paths where the trailing name is more
+    /// informative than the leading directories. Visual only — a11y
+    /// reads the full text.
     Head,
-    /// Truncate in the middle: "long…here". Useful for breadcrumb labels
-    /// and file paths that want to show both ends.
+    /// Truncate in the middle with `…` (`U+2026`): `"long…here"`.
+    /// Useful for breadcrumb labels and file paths that want to show
+    /// both ends. Visual only — a11y reads the full text.
     Middle,
 }
 

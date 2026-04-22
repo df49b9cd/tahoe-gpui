@@ -40,5 +40,5 @@ pub use tokens::{
     reduce_motion_substitute_ms,
 };
 pub use voiceover::{
-    AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel, TextContentType,
+    A11yTextContentType, AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
 };

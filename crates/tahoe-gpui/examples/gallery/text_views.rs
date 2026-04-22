@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, StrikethroughStyle, UnderlineStyle, Window, div};
 
 use tahoe_gpui::components::content::text_view::{TextRuns, TextView};
-use tahoe_gpui::foundations::accessibility::{HeadingLevel, TextContentType};
+use tahoe_gpui::foundations::accessibility::{A11yTextContentType, HeadingLevel};
 use tahoe_gpui::foundations::theme::{
     FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle, TextStyledExt,
     TruncationMode,
@@ -541,12 +541,12 @@ pub fn render(
         }))
         .child(cx.new(|cx| {
             TextView::new(cx, "/Users/example/Documents/report.pdf")
-                .accessibility_text_content_type(TextContentType::FileSystemPath)
+                .accessibility_text_content_type(A11yTextContentType::FileSystemPath)
         }))
         .child(cx.new(|cx| {
             TextView::new(cx, "error: cannot find function `foo` in this scope")
                 .font_design(FontDesign::Monospaced)
-                .accessibility_text_content_type(TextContentType::ConsoleOutput)
+                .accessibility_text_content_type(A11yTextContentType::ConsoleOutput)
         }))
         // ── Markdown ───────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))

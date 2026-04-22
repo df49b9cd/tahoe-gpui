@@ -79,6 +79,7 @@ pub use crate::components::selection_and_input::{
     TextContentType, TextField, TextFieldStyle, TextFieldValidation, TimePicker, TimePickerStyle,
     Toggle, ToggleSize,
 };
+pub use crate::foundations::accessibility::A11yTextContentType;
 
 // ── Components > Status ────────────────────────────────────────────────────
 

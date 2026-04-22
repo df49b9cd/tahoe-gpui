@@ -1416,12 +1416,33 @@ fn text_style_emphasized_preserves_size() {
 const LEADING_TOLERANCE: f32 = f32::EPSILON * 100.0;
 
 #[test]
-fn leading_style_tight_reduces() {
-    let standard = TextStyle::Body.attrs();
+fn leading_style_tight_reduces_on_display_sizes() {
+    // Display-size styles (LargeTitle: 32 pt leading, 26 pt size) have
+    // enough headroom above the 1.15× SF Pro floor that the 0.95
+    // multiplier wins outright — Tight genuinely reduces. Body-scale
+    // styles are now clamped at the 1.5× WCAG floor and therefore
+    // *increase* under Tight; that contract is covered by
+    // `leading_style_tight_clamps_body_to_wcag_floor`.
+    let standard = TextStyle::LargeTitle.attrs();
     let tight = standard.with_leading(LeadingStyle::Tight);
     assert!(f32::from(tight.leading) < f32::from(standard.leading));
     let expected = f32::from(standard.leading) * 0.95;
     assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
+}
+
+#[test]
+fn leading_style_tight_clamps_body_to_wcag_floor() {
+    // Body-scale styles (size ≤ 15 pt) clamp Tight to `size × 1.5` so
+    // running paragraphs meet WCAG 1.4.12 (Text Spacing). Body is
+    // 13 pt × 1.5 = 19.5 pt, which is *above* the 16 pt standard
+    // leading — Tight on body copy actually opens the line box to
+    // the accessibility floor rather than compressing below it.
+    let standard = TextStyle::Body.attrs();
+    let tight = standard.with_leading(LeadingStyle::Tight);
+    let size = f32::from(standard.size);
+    let expected = size * 1.5;
+    assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
+    assert!(f32::from(tight.leading) >= f32::from(standard.leading));
 }
 
 #[test]
@@ -1483,8 +1504,10 @@ fn leading_style_proportional_across_all_text_styles() {
     // multiplier keeps the relative delta identical across every style;
     // this sweep catches any future regression that breaks that contract.
     //
-    // Tight is `max(leading × 0.95, size × 1.15)` — for most styles the
-    // multiplier wins, but Title1's 1.18× baseline lands the clamp.
+    // Tight is `max(leading × 0.95, size × floor_ratio)` where
+    // `floor_ratio` is 1.5 for body-scale styles (size ≤ 15 pt, per
+    // WCAG 1.4.12) and 1.15 for display styles (SF Pro
+    // ascender/descender floor).
     // Loose is a pure multiplier with no floor, so the assertion there
     // stays exact.
     for style in [
@@ -1505,11 +1528,12 @@ fn leading_style_proportional_across_all_text_styles() {
         let size = f32::from(attrs.size);
         let tight = f32::from(attrs.with_leading(LeadingStyle::Tight).leading);
         let loose = f32::from(attrs.with_leading(LeadingStyle::Loose).leading);
-        let expected_tight = (base * 0.95).max(size * 1.15);
+        let floor_ratio = if size <= 15.0 { 1.5 } else { 1.15 };
+        let expected_tight = (base * 0.95).max(size * floor_ratio);
         assert!(
             (tight - expected_tight).abs() < LEADING_TOLERANCE,
-            "{style:?}: tight leading {tight} is not max(0.95 × {base}, 1.15 × {size}) \
-             = {expected_tight}",
+            "{style:?}: tight leading {tight} is not max(0.95 × {base}, \
+             {floor_ratio} × {size}) = {expected_tight}",
         );
         assert!(
             (loose - base * 1.15).abs() < LEADING_TOLERANCE,

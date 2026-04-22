@@ -51,7 +51,7 @@ use crate::components::menus_and_actions::context_menu::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle,
 };
 use crate::foundations::accessibility::{
-    AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel, TextContentType,
+    A11yTextContentType, AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
 };
 use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
 use crate::foundations::text_truncation::truncate_middle;
@@ -377,23 +377,22 @@ fn normalise(a: usize, b: usize) -> (usize, usize) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
-/// Debug-only guard against highlight ranges that would panic inside
+/// Guard against highlight ranges that would panic inside
 /// [`StyledText::with_highlights`] or silently truncate visible text:
 /// out-of-bounds endpoints, or endpoints that split a multi-byte UTF-8
-/// codepoint. Release builds skip the check entirely — the same
-/// contract GPUI itself documents on the `StyledText` API.
-fn debug_assert_highlight_ranges(text: &str, highlights: &[(Range<usize>, HighlightStyle)]) {
-    if cfg!(debug_assertions) {
-        for (range, _) in highlights {
-            debug_assert!(
-                range.start <= range.end
-                    && range.end <= text.len()
-                    && text.is_char_boundary(range.start)
-                    && text.is_char_boundary(range.end),
-                "TextView highlight range {range:?} invalid for text of length {}",
-                text.len(),
-            );
-        }
+/// codepoint. Runs in every build — release builds would otherwise
+/// paint garbled text or crash deep in GPUI, so the fail-fast check is
+/// cheap insurance against upstream invariants being broken.
+fn validate_highlight_ranges(text: &str, highlights: &[(Range<usize>, HighlightStyle)]) {
+    for (range, _) in highlights {
+        assert!(
+            range.start <= range.end
+                && range.end <= text.len()
+                && text.is_char_boundary(range.start)
+                && text.is_char_boundary(range.end),
+            "TextView highlight range {range:?} invalid for text of length {}",
+            text.len(),
+        );
     }
 }
 
@@ -437,7 +436,17 @@ impl TextViewContent {
         match self {
             Self::Plain(t) => StyledText::new(t.clone()),
             Self::Rich { text, highlights } => {
-                StyledText::new(text.clone()).with_highlights(highlights.to_vec())
+                let styled = StyledText::new(text.clone());
+                // Empty highlight vectors are the common "plain-inside-rich"
+                // case — skip the unconditional `to_vec()` copy entirely.
+                // The non-empty branch still copies because GPUI's
+                // `StyledText::with_highlights` takes an owned `Vec` and we
+                // can't hand the `Arc<[_]>` through directly.
+                if highlights.is_empty() {
+                    styled
+                } else {
+                    styled.with_highlights(highlights.to_vec())
+                }
             }
             // Markdown content renders through the embedded
             // `StreamingMarkdown` entity — the render path short-circuits
@@ -452,9 +461,17 @@ impl TextViewContent {
     /// case transform can alter UTF-8 byte length and would invalidate the
     /// stored `HighlightStyle` byte ranges (Rich) or require a re-parse
     /// of the markdown AST (Markdown).
+    ///
+    /// Uses the [`Cow`]-returning [`TextCase::apply`] to skip the
+    /// [`SharedString`] allocation when the string is already in the
+    /// target case — the hot render path just re-shares the existing
+    /// `Arc`.
     fn with_case(&self, case: TextCase) -> Self {
         match self {
-            Self::Plain(t) => Self::Plain(SharedString::from(case.apply(t))),
+            Self::Plain(t) => match case.apply(t) {
+                std::borrow::Cow::Borrowed(_) => Self::Plain(t.clone()),
+                std::borrow::Cow::Owned(s) => Self::Plain(SharedString::from(s)),
+            },
             Self::Rich { text, highlights } => Self::Rich {
                 text: text.clone(),
                 highlights: highlights.clone(),
@@ -472,7 +489,10 @@ impl TextViewContent {
     /// ranges (Rich) or drop markdown block structure (Markdown).
     fn truncate_middle_content(&self, max_chars: usize) -> Self {
         match self {
-            Self::Plain(t) => Self::Plain(SharedString::from(truncate_middle(t, max_chars))),
+            Self::Plain(t) => match truncate_middle(t, max_chars) {
+                std::borrow::Cow::Borrowed(_) => Self::Plain(t.clone()),
+                std::borrow::Cow::Owned(s) => Self::Plain(SharedString::from(s)),
+            },
             Self::Rich { text, highlights } => Self::Rich {
                 text: text.clone(),
                 highlights: highlights.clone(),
@@ -649,13 +669,13 @@ impl TextRuns {
 ///
 /// [`Self::max_lines`] and [`Self::scrollable`] are mutually exclusive:
 /// clamped content cannot scroll because its height is bounded by GPUI's
-/// `line_clamp`. Setting both trips a `debug_assert!` so the conflict
-/// panics in tests and debug builds; release builds silently prefer
-/// `max_lines`.
+/// `line_clamp`. Setting both panics so the conflict is caught in all
+/// builds; release builds silently prefer `max_lines`.
 pub struct TextView {
     focus_handle: FocusHandle,
     selection: TextViewSelection,
     element_id: ElementId,
+    custom_id: Option<ElementId>,
     content: TextViewContent,
     style: TextStyle,
     max_lines: Option<usize>,
@@ -699,7 +719,11 @@ pub struct TextView {
     // `accessibility_text_content_type` lets VoiceOver tune reading
     // cadence to the content kind (source code, file path, etc.).
     accessibility_heading: Option<HeadingLevel>,
-    accessibility_text_content_type: Option<TextContentType>,
+    accessibility_text_content_type: Option<A11yTextContentType>,
+    /// Last observed mouse-down position, cached so a keyboard-triggered
+    /// (Shift-F10) context-menu open can land near where the pointer was
+    /// last pressed instead of at the scroll viewport origin.
+    last_mouse_position: Option<Point<Pixels>>,
 }
 
 impl TextView {
@@ -710,10 +734,12 @@ impl TextView {
     /// [`gpui::Entity<TextView>`] is itself [`IntoElement`] so it slots
     /// directly into the parent element tree.
     pub fn new(cx: &mut Context<Self>, text: impl Into<SharedString>) -> Self {
+        let entity_u64 = cx.entity_id().as_u64();
         Self {
             focus_handle: cx.focus_handle(),
             selection: TextViewSelection::new(),
-            element_id: ElementId::NamedInteger("text-view-body".into(), cx.entity_id().as_u64()),
+            element_id: ElementId::NamedInteger("text-view-body".into(), entity_u64),
+            custom_id: None,
             content: TextViewContent::Plain(text.into()),
             style: TextStyle::Body,
             max_lines: None,
@@ -741,6 +767,7 @@ impl TextView {
             truncation_char_budget: None,
             accessibility_heading: None,
             accessibility_text_content_type: None,
+            last_mouse_position: None,
         }
     }
 
@@ -755,7 +782,7 @@ impl TextView {
         highlights: Vec<(Range<usize>, HighlightStyle)>,
     ) -> Self {
         let text = text.into();
-        debug_assert_highlight_ranges(&text, &highlights);
+        validate_highlight_ranges(&text, &highlights);
         let mut this = Self::new(cx, text.clone());
         this.content = TextViewContent::Rich {
             text,
@@ -834,6 +861,18 @@ impl TextView {
         Self::new(cx, SharedString::from(value.to_string()))
     }
 
+    /// Replace the inherited [`TextStyle`] baseline (default: `Body`).
+    /// Picks the HIG font size, weight, and standard leading for the
+    /// chosen ramp — e.g. `LargeTitle` → 34 pt / BOLD, `Caption1` → 12 pt.
+    ///
+    /// Interactions with other builders:
+    /// - [`Self::label_level`] drives the semantic color; `text_style`
+    ///   only sets typography, so both compose freely.
+    /// - [`Self::color`] still wins over the style's default color — the
+    ///   `TextStyle` contributes size/weight/leading, not color.
+    /// - [`Self::emphasize`] picks the style's emphasized weight variant
+    ///   (e.g. `Body` → SEMIBOLD).
+    /// - [`Self::weight`] overrides whichever weight this style picked.
     pub fn text_style(mut self, style: TextStyle) -> Self {
         self.style = style;
         self
@@ -853,7 +892,7 @@ impl TextView {
         highlights: Vec<(Range<usize>, HighlightStyle)>,
     ) -> Self {
         let text = text.into();
-        debug_assert_highlight_ranges(&text, &highlights);
+        validate_highlight_ranges(&text, &highlights);
         self.content = TextViewContent::Rich {
             text,
             highlights: Arc::from(highlights),
@@ -879,6 +918,18 @@ impl TextView {
     /// `SEMIBOLD`, `LargeTitle` to `BOLD`, and `Headline` to `BLACK`.
     pub fn emphasize(mut self, emphasize: bool) -> Self {
         self.emphasize = emphasize;
+        self
+    }
+
+    /// Set a custom element ID. Prevents `ElementId` collisions when two
+    /// `TextView` instances share the same host entity — the default ID is
+    /// keyed only on the entity ID, so a second `TextView` in the same
+    /// entity would clash. Both the inner `SelectableText` and the outer
+    /// focus-root div derive their IDs from the supplied value.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        let id = id.into();
+        self.element_id = id.clone();
+        self.custom_id = Some(id);
         self
     }
 
@@ -937,9 +988,9 @@ impl TextView {
     ///
     /// Must not be combined with [`Self::max_lines`] — clamped content
     /// cannot scroll because its height is already bounded by GPUI's
-    /// `line_clamp`. Combining the two trips a `debug_assert!` so the
-    /// conflict is caught in tests; release builds silently prefer
-    /// `max_lines`.
+    /// `line_clamp`. Combining the two panics so the conflict is caught
+    /// in all builds; release builds silently prefer `max_lines` when
+    /// both are set.
     pub fn scrollable(mut self, id: impl Into<ElementId>) -> Self {
         self.scroll_id = Some(id.into());
         self
@@ -1009,7 +1060,7 @@ impl TextView {
     /// output, …). Populates [`AccessibilityProps::content_type`] so
     /// that when GPUI lands an AX tree, VoiceOver will tune reading
     /// cadence and per-segment navigation to the content kind.
-    pub fn accessibility_text_content_type(mut self, kind: TextContentType) -> Self {
+    pub fn accessibility_text_content_type(mut self, kind: A11yTextContentType) -> Self {
         self.accessibility_text_content_type = Some(kind);
         self
     }
@@ -1289,35 +1340,42 @@ impl TextView {
 
     /// Right-click handler: rebuild the items against the current selection
     /// (so Copy's enabled-state tracks live selection) and open the menu at
-    /// the cursor position.
+    /// the cursor position. Also caches the pointer position so a
+    /// subsequent Shift-F10 activation anchors near the same spot.
     fn open_context_menu(
         &mut self,
         event: &MouseDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.last_mouse_position = Some(event.position);
         self.show_context_menu_at(event.position, window, cx);
     }
 
     /// Shift-F10 / Menu-key handler: opens the context menu without a
-    /// pointer event. No anchor rectangle is reachable from an action
-    /// listener (bounds() is only valid post-paint), so the menu opens
-    /// at the view's scroll-handle origin if available, otherwise at
-    /// the window origin. The user still gets the Copy / Select All
-    /// affordance; positioning polish can follow once GPUI exposes the
-    /// focused element's bounds in action context.
+    /// pointer event. Prefers the cached last mouse position so the menu
+    /// lands near where the user was last pointing. Falls back to the
+    /// scroll viewport origin, offset down by half a line-height when a
+    /// selection exists so the menu does not obscure the selected range.
     fn handle_show_context_menu(
         &mut self,
         _: &ShowContextMenu,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let bounds = self.scroll_handle.bounds();
-        let position = if bounds.size.width > px(0.) {
-            bounds.origin
-        } else {
-            point(px(0.), px(0.))
-        };
+        let position = self.last_mouse_position.unwrap_or_else(|| {
+            let bounds = self.scroll_handle.bounds();
+            let origin = if bounds.size.width > px(0.) {
+                bounds.origin
+            } else {
+                point(px(0.), px(0.))
+            };
+            if self.selection.has_selection() {
+                point(origin.x, origin.y + self.scroll_line_height(cx) * 0.5)
+            } else {
+                origin
+            }
+        });
         self.show_context_menu_at(position, window, cx);
     }
 
@@ -1417,9 +1475,9 @@ impl Render for TextView {
         let focused = self.focus_handle.is_focused(window);
 
         // max_lines + scrollable is undefined: clamped height short-circuits
-        // the scroll viewport. Assert in debug so the conflict is caught in
-        // tests; release silently prefers max_lines.
-        debug_assert!(
+        // the scroll viewport. Always assert so the conflict panics in all
+        // builds; release silently prefers max_lines when both are set.
+        assert!(
             !(self.max_lines.is_some() && self.scroll_id.is_some()),
             "TextView: max_lines() and scrollable() are mutually exclusive — \
              clamped content cannot scroll. Drop one of the two.",
@@ -1535,11 +1593,13 @@ impl Render for TextView {
             None => {}
         }
 
-        // A11y label falls back to effective text (post-case-transform).
+        // A11y label falls back to the original pre-transform text so
+        // VoiceOver reads the author's canonical string — not the
+        // case-folded or middle-truncated paint-time derivative.
         let label = self
             .accessibility_label
             .clone()
-            .unwrap_or_else(|| effective_content.text().clone());
+            .unwrap_or_else(|| self.content.text().clone());
         let role = match self.accessibility_heading {
             Some(level) => AccessibilityRole::Heading(level),
             None => AccessibilityRole::StaticText,
@@ -1604,9 +1664,9 @@ impl Render for TextView {
             .as_ref()
             .filter(|_| self.max_lines.is_none())
             .cloned();
-        let body = match scrollable {
+        let body = match &scrollable {
             Some(id) => div()
-                .id(id)
+                .id(id.clone())
                 .overflow_y_scroll()
                 .track_scroll(&self.scroll_handle)
                 .child(text_body)
@@ -1619,12 +1679,16 @@ impl Render for TextView {
         // capability (selection or scroll); purely decorative views fall
         // through to a plain div so they don't inject a silent tab stop
         // into the parent flow.
-        let attach_focus = self.selectable || self.scroll_id.is_some();
+        let attach_focus = self.selectable || scrollable.is_some();
         if attach_focus {
             let mut root = div()
-                .id(("text-view-root", cx.entity_id().as_u64() as usize))
+                .id(self.custom_id.as_ref().map_or_else(
+                    || ("text-view-root", cx.entity_id().as_u64() as usize).into(),
+                    |id| ElementId::from((id.clone(), "root")),
+                ))
                 .key_context(TEXT_VIEW_CONTEXT)
-                .track_focus(&self.focus_handle);
+                .track_focus(&self.focus_handle)
+                .tab_index(0);
             if self.selectable {
                 root = root
                     .on_action(cx.listener(Self::handle_copy))
@@ -1632,7 +1696,7 @@ impl Render for TextView {
                     .on_action(cx.listener(Self::handle_show_context_menu))
                     .on_mouse_down(MouseButton::Right, cx.listener(Self::open_context_menu));
             }
-            if self.scroll_id.is_some() {
+            if scrollable.is_some() {
                 root = root
                     .on_action(cx.listener(Self::handle_scroll_up))
                     .on_action(cx.listener(Self::handle_scroll_down))
@@ -2103,7 +2167,7 @@ mod gpui_tests {
     use gpui::{ElementId, HighlightStyle, TextAlign};
 
     use crate::components::content::selectable_text::SelectionCoordinator;
-    use crate::foundations::accessibility::{HeadingLevel, TextContentType};
+    use crate::foundations::accessibility::{A11yTextContentType, HeadingLevel};
     use crate::foundations::theme::{FontDesign, LabelLevel, LeadingStyle, TextStyle};
     use crate::test_helpers::helpers::setup_test_window;
 
@@ -2225,24 +2289,43 @@ mod gpui_tests {
         handle.update(cx, |tv, _| assert!(tv.disabled));
     }
 
-    #[cfg(debug_assertions)]
     #[gpui::test]
     #[should_panic(expected = "mutually exclusive")]
-    async fn text_view_max_lines_plus_scrollable_panics_in_debug(cx: &mut gpui::TestAppContext) {
-        // The mutual-exclusion contract is enforced by a `debug_assert!`
-        // fired during render. Combining both options panics in debug
-        // builds; release silently prefers `max_lines` (and the test
-        // compiles out entirely via `cfg(debug_assertions)` so
-        // `cargo nextest run --release` stays green). The panic
-        // substring check is stable against rewording of the full
-        // message.
+    async fn text_view_max_lines_plus_scrollable_panics(cx: &mut gpui::TestAppContext) {
+        // The mutual-exclusion contract is enforced by an `assert!` in
+        // render so release builds panic just like debug. The substring
+        // check stays stable against rewording of the full message.
         let (_handle, cx) = setup_test_window(cx, |_window, cx| {
             TextView::new(cx, "whoops")
                 .max_lines(3)
                 .scrollable("scroll-id")
         });
-        // Drive a render so the debug_assert trips.
         cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    async fn scrollable_text_view_is_focusable(cx: &mut gpui::TestAppContext) {
+        // A scrollable `TextView` needs its root div to carry
+        // `track_focus(&self.focus_handle).tab_index(0)` so keyboard
+        // users can land on it. GPUI ships no built-in Tab-to-next-stop
+        // handler at the unit-test layer (Tab navigation is driven by
+        // app-level keybindings or `FocusGroup::Trap` — neither present
+        // here), so the end-to-end Tab press cannot be simulated
+        // reliably. Settle for the load-bearing invariant: the view's
+        // focus handle accepts focus, which the outer app's Tab
+        // handler will route through in production.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "Scrolled").scrollable("scroll-id")
+        });
+        cx.run_until_parked();
+        handle.update_in(cx, |tv, window, cx| {
+            tv.focus_handle.clone().focus(window, cx);
+            assert!(
+                tv.focus_handle.is_focused(window),
+                "a scrollable TextView must accept focus so Tab / app-level \
+                 focus routing can reach its scroll shortcuts",
+            );
+        });
     }
 
     #[gpui::test]
@@ -2769,12 +2852,12 @@ mod gpui_tests {
     async fn text_view_accessibility_text_content_type_stored(cx: &mut gpui::TestAppContext) {
         let (handle, cx) = setup_test_window(cx, |_window, cx| {
             TextView::new(cx, "/usr/bin/env")
-                .accessibility_text_content_type(TextContentType::FileSystemPath)
+                .accessibility_text_content_type(A11yTextContentType::FileSystemPath)
         });
         handle.update(cx, |tv, _| {
             assert_eq!(
                 tv.accessibility_text_content_type,
-                Some(TextContentType::FileSystemPath),
+                Some(A11yTextContentType::FileSystemPath),
             );
         });
     }

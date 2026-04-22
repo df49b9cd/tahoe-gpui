@@ -16,13 +16,17 @@
 //! [`TextOverflow::Truncate`]: gpui::TextOverflow::Truncate
 //! [`TextOverflow::TruncateStart`]: gpui::TextOverflow::TruncateStart
 
+use std::borrow::Cow;
+
 const ELLIPSIS: &str = "…";
 
 /// Truncate `s` so that it fits within `max_chars` (counting the one-char
 /// ellipsis), keeping the head and tail of the string and replacing the
 /// middle with a single `…`.
 ///
-/// Returns `s` unchanged when its character length is `<= max_chars`.
+/// Returns `Cow::Borrowed(s)` unchanged when its character length is
+/// `<= max_chars`, so short strings incur no allocation on the hot
+/// render path.
 ///
 /// The split favours the tail when `max_chars - 1` is odd — this matches the
 /// convention used by macOS Finder and the AppKit truncation modes, where
@@ -36,17 +40,23 @@ const ELLIPSIS: &str = "…";
 /// assert_eq!(truncate_middle("short", 10), "short");
 /// assert_eq!(truncate_middle("a/long/path/to/file.rs", 12), "a/lo…ile.rs");
 /// ```
-pub fn truncate_middle(s: &str, max_chars: usize) -> String {
+pub fn truncate_middle(s: &str, max_chars: usize) -> Cow<'_, str> {
     // A zero-char budget can't fit even the ellipsis — degenerate, but the
     // caller would get a panic on the head+tail arithmetic below. Return
     // empty to mirror how GPUI's `TextOverflow` collapses to the ellipsis.
     if max_chars == 0 {
-        return String::new();
+        return Cow::Borrowed("");
+    }
+
+    // ASCII fast path: byte count == char count, so a cheap `s.len()`
+    // check avoids the `chars().count()` walk for path labels.
+    if s.is_ascii() && s.len() <= max_chars {
+        return Cow::Borrowed(s);
     }
 
     let char_count = s.chars().count();
     if char_count <= max_chars {
-        return s.to_string();
+        return Cow::Borrowed(s);
     }
 
     // Reserve one character for the ellipsis; split the remainder between
@@ -79,7 +89,7 @@ pub fn truncate_middle(s: &str, max_chars: usize) -> String {
         out.push_str(&s[tail_start..]);
     }
 
-    out
+    Cow::Owned(out)
 }
 
 #[cfg(test)]

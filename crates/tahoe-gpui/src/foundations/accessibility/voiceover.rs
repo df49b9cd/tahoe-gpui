@@ -18,7 +18,7 @@ pub struct HeadingLevel(u8);
 impl HeadingLevel {
     /// Returns `Some(level)` when `level` is in `1..=6`, `None` otherwise.
     pub const fn new(level: u8) -> Option<Self> {
-        if level >= 1 && level <= 6 {
+        if matches!(level, 1..=6) {
             Some(Self(level))
         } else {
             None
@@ -45,19 +45,22 @@ impl HeadingLevel {
     }
 }
 
-/// Semantic classification of text content. VoiceOver (and other
-/// assistive technologies) use the type to tune reading cadence,
+/// Semantic classification of text content for accessibility. VoiceOver
+/// (and other assistive technologies) use the type to tune reading cadence,
 /// pronunciation, and navigation — e.g. `ConsoleOutput` suppresses
 /// auto-capitalisation announcements, `FileSystemPath` enables
 /// per-segment navigation, and `SourceCode` switches to a code-reading
 /// voice that pauses on punctuation instead of eliding it.
+///
+/// Renamed from `TextContentType` to avoid collision with the autofill-
+/// oriented [`crate::components::selection_and_input::TextContentType`].
 ///
 /// GPUI does not yet expose an AX tree, so the value is currently held on
 /// [`AccessibilityProps::content_type`] and ignored at paint time. The
 /// enum exists today so that when GPUI lands the AX bridge, every call
 /// site is already annotated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum TextContentType {
+pub enum A11yTextContentType {
     /// Unclassified prose. Default.
     #[default]
     PlainText,
@@ -189,7 +192,7 @@ pub struct AccessibilityProps {
     /// [`AccessibilityRole::Heading`], lets VoiceOver tune reading
     /// cadence and navigation to the content kind (console output,
     /// file paths, source code, etc.).
-    pub content_type: Option<TextContentType>,
+    pub content_type: Option<A11yTextContentType>,
 }
 
 impl AccessibilityProps {
@@ -259,7 +262,7 @@ impl AccessibilityProps {
     }
 
     /// Set the text-content classification.
-    pub fn content_type(mut self, kind: TextContentType) -> Self {
+    pub fn content_type(mut self, kind: A11yTextContentType) -> Self {
         self.content_type = Some(kind);
         self
     }
@@ -333,7 +336,7 @@ fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel, TextContentType,
+        A11yTextContentType, AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
     };
     use core::prelude::v1::test;
 
@@ -508,7 +511,10 @@ mod tests {
 
     #[test]
     fn text_content_type_default_is_plain() {
-        assert_eq!(TextContentType::default(), TextContentType::PlainText);
+        assert_eq!(
+            A11yTextContentType::default(),
+            A11yTextContentType::PlainText
+        );
     }
 
     #[test]
@@ -518,15 +524,18 @@ mod tests {
 
     #[test]
     fn accessibility_props_content_type_builder_sets_field() {
-        let props = AccessibilityProps::new().content_type(TextContentType::FileSystemPath);
-        assert_eq!(props.content_type, Some(TextContentType::FileSystemPath));
+        let props = AccessibilityProps::new().content_type(A11yTextContentType::FileSystemPath);
+        assert_eq!(
+            props.content_type,
+            Some(A11yTextContentType::FileSystemPath)
+        );
     }
 
     #[test]
     fn accessibility_props_is_some_true_when_only_content_type() {
         assert!(
             AccessibilityProps::new()
-                .content_type(TextContentType::SourceCode)
+                .content_type(A11yTextContentType::SourceCode)
                 .is_some()
         );
     }

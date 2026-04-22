@@ -112,9 +112,15 @@ pub trait SelectionCoordinator: Clone + 'static {
     /// ([`crate::markdown::MarkdownSelection`]) override this to flush
     /// the per-frame registration list so paragraphs that no longer
     /// exist in the new frame drop out of the selection rect.
+    ///
     /// Single-paragraph coordinators (like
     /// [`crate::components::content::text_view::TextViewSelection`])
-    /// have nothing to reset and keep the empty default.
+    /// deliberately keep the empty default: they own exactly one
+    /// paragraph for their entire lifetime, so there is no list to
+    /// flush and no stale registration to clear — the one `register`
+    /// call per frame just re-pins the same `(element_id, text)`
+    /// binding. Overriding to a non-empty body would be a no-op at
+    /// best and risk dropping the only registration at worst.
     fn begin_frame(&self) {}
 }
 
@@ -265,6 +271,12 @@ impl<S: SelectionCoordinator> Element for SelectableText<S> {
         let text_string = self.text_string.clone();
         let selection = self.selection.clone();
         let selection_bg = self.selection_bg;
+        // `std::mem::take` is safe here because the element is
+        // consumed after this `paint()` — GPUI discards the element
+        // tree once the frame finishes, so the moved-out `Vec`s would
+        // be dropped regardless. Taking them lets the mouse closures
+        // own the data outright instead of holding a second Rc/Arc
+        // layer for the one-frame lifetime.
         let clickable_ranges = std::mem::take(&mut self.clickable_ranges);
         let link_urls = std::mem::take(&mut self.link_urls);
         let anchor_click = self.anchor_click.take();
@@ -318,6 +330,18 @@ impl<S: SelectionCoordinator> Element for SelectableText<S> {
             // Delegate the text paint.
             self.text
                 .paint(None, inspector_id, bounds, &mut (), &mut (), window, cx);
+
+            // Each paragraph installs its own MouseDown / MouseMove /
+            // MouseUp handlers at paint time. GPUI's `on_mouse_event`
+            // already dispatches every event to every registered
+            // handler, so each paragraph can hitbox-test itself in
+            // isolation — the alternative (one coordinator-level
+            // handler) would have to track every paragraph's
+            // `text_layout` + `element_id` + hitbox across frames,
+            // duplicating state the coordinator already normalises
+            // via `SelectionCoordinator`. Per-paragraph wiring keeps
+            // the layout / hitbox references local to the paint call
+            // that produced them.
 
             // MouseDown — select, word-select, paragraph-select,
             // shift-extend, or arm a link click, depending on
@@ -393,13 +417,15 @@ impl<S: SelectionCoordinator> Element for SelectableText<S> {
             }
 
             // MouseUp — finalise the drag or dispatch a link
-            // click when the gesture was a click (no drag).
+            // click when the gesture was a click (no drag). Moves
+            // `clickable_ranges` and `link_urls` straight into the
+            // closure — MouseUp is their only remaining consumer, so
+            // a defensive inner `.clone()` would just burn an alloc
+            // per paint.
             {
                 let mouse_down_index = state.mouse_down_index.clone();
                 let hitbox = hitbox.clone();
                 let text_layout = text_layout.clone();
-                let link_urls = link_urls.clone();
-                let clickable_ranges = clickable_ranges.clone();
                 let selection = selection.clone();
                 let anchor_click = anchor_click.clone();
                 window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {

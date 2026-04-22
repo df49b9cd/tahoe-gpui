@@ -34,16 +34,22 @@ follow SemVer once the crate reaches 1.0.
   `accessibility_mode.reduce_transparency()` is set, matching the opaque
   fallback fill that `glass_surface()` already swaps in.
 - `TextView` expanded from a minimal read-only display into a HIG-aligned
-  component with 11 new builders: `styled_text`, `max_lines`, `emphasize`,
-  `color`, `label_level`, `font_design`, `leading_style`, `text_align`,
-  `scrollable`, `readable_width`, and `accessibility_label`.
+  component with an extensive builder surface — see the `TextView` rustdoc
+  for the full list (color / typography / layout / decoration / truncation /
+  accessibility / selection / focus groups).
 - `TextView::styled_text(text, highlights)` — accepts a plain-text
   `SharedString` alongside `Vec<(Range<usize>, HighlightStyle)>` so
   VoiceOver has a label to announce without callers needing to restate
   the content via `.accessibility_label(...)`. Highlights that fall
   outside the text (start or end beyond `text.len()`, or a reversed
-  range) trip a `debug_assert!` so mismatches surface during tests
-  rather than silently rendering truncated runs at runtime.
+  range) panic in all builds so mismatches surface loudly rather than
+  silently rendering truncated runs at runtime.
+- `components::content::selectable_text::SelectionCoordinator` trait
+  and `components::content::text_view::TextViewSelection` struct —
+  the single-paragraph coordinator that `TextView` feeds to the shared
+  `SelectableText` primitive. Exposed so host apps can programmatically
+  clear the selection or query its state (e.g. to toggle Copy menu
+  items).
 - `TextView` keyboard scroll (scrollable views only): Up / Down move by one
   rendered line-height, Page Up / Page Down move by one viewport height,
   Home jumps to the start, End jumps to the end. Bound inside the new
@@ -80,8 +86,8 @@ follow SemVer once the crate reaches 1.0.
   the new default.
 - `TextView::max_lines(...)` and `TextView::scrollable(...)` are mutually
   exclusive: clamped height short-circuits GPUI's scroll viewport.
-  Setting both trips a `debug_assert!` so the conflict panics in tests;
-  release builds silently prefer `max_lines`.
+  Setting both panics so the conflict is caught in all builds; release
+  builds silently prefer `max_lines`.
 - `GlassIconTile` now declares its own glass surface scope via
   `GlassSurfaceScope`. The redundant explicit `.style(IconStyle::LiquidGlass)`
   on its inner `Icon` was removed — the scope drives resolution now.
@@ -104,6 +110,14 @@ follow SemVer once the crate reaches 1.0.
   startup so the raw Up / Down / Page / Home / End keys fire against the
   focused view. The gallery and all in-crate tests are migrated.
 
+  ```rust
+  // Before
+  TextView::new("Hello").text_style(TextStyle::Body)
+
+  // After
+  cx.new(|cx| TextView::new(cx, "Hello").text_style(TextStyle::Body))
+  ```
+
 ### Behavioural change (source-compatible but visible)
 
 - Apps that use `TahoeTheme::liquid_glass()` / `liquid_glass_light()` without
@@ -117,11 +131,16 @@ follow SemVer once the crate reaches 1.0.
   proportionally (`× 0.95` / `× 1.15`) instead of a flat ±2 pt offset.
   The proportional delta keeps tight/loose visually consistent across
   all [`TextStyle`] sizes — a 2 pt reduction on Body's 16 pt leading
-  was 12.5% but only 6.25% on LargeTitle's 32 pt. Tight is capped at
-  `× 0.95` rather than a larger reduction so SF Pro ascenders /
-  descenders never collide (at Body that is 15.2 pt against a 13 pt
-  size, ≈1.17×). Callers relying on the exact pt delta will see
-  different pixel values.
+  was 12.5% but only 6.25% on LargeTitle's 32 pt. Callers relying on
+  the exact pt delta will see different pixel values.
+- `LeadingStyle::Tight` floor is now tiered by size: body-scale styles
+  (size ≤ 15 pt — Body, Callout, Subheadline, Footnote, Caption1,
+  Caption2) clamp at `size × 1.5` so running paragraphs meet WCAG
+  1.4.12 (*Text Spacing*); display styles (Title*, LargeTitle,
+  Headline) keep the prior `size × 1.15` SF Pro ascender/descender
+  floor. Apps using `LeadingStyle::Tight` on Body copy will see
+  slightly taller line boxes than before; display styles are
+  unchanged.
 
 ### Known limitations
 

@@ -15,6 +15,7 @@
 //! participating in a document-wide selection.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -82,6 +83,20 @@ struct MarkdownSelectionState {
     /// [`MarkdownSelection::register`]; cleared by
     /// [`MarkdownSelection::begin_frame`].
     paragraphs: Vec<ParagraphInfo>,
+    /// `element_id → index` lookup into `paragraphs`. Kept in sync with
+    /// the vector so `range_for_element`, `selected_text`, and
+    /// drag-extend helpers can resolve a paragraph position in O(1)
+    /// instead of scanning the registration list on every paint.
+    paragraph_index: HashMap<ElementId, usize>,
+}
+
+impl MarkdownSelectionState {
+    /// O(1) lookup: returns the index into `paragraphs` of the paragraph
+    /// identified by `element_id`, or `None` when not registered in the
+    /// current frame.
+    fn paragraph_position(&self, element_id: &ElementId) -> Option<usize> {
+        self.paragraph_index.get(element_id).copied()
+    }
 }
 
 /// Shared selection coordinator. Cheap to clone — internally an
@@ -104,7 +119,9 @@ impl MarkdownSelection {
     /// parse) re-register in fresh order. Anchor / focus / pending
     /// state is preserved.
     pub fn begin_frame(&self) {
-        self.inner.borrow_mut().paragraphs.clear();
+        let mut state = self.inner.borrow_mut();
+        state.paragraphs.clear();
+        state.paragraph_index.clear();
     }
 
     /// Register a paragraph as part of the current frame. `element_id`
@@ -117,9 +134,11 @@ impl MarkdownSelection {
         // Guard against duplicate ids (shouldn't happen, but be
         // defensive so a caller bug doesn't produce confusing
         // selection coordinates).
-        if state.paragraphs.iter().any(|p| p.element_id == element_id) {
+        if state.paragraph_index.contains_key(&element_id) {
             return;
         }
+        let index = state.paragraphs.len();
+        state.paragraph_index.insert(element_id.clone(), index);
         state.paragraphs.push(ParagraphInfo { element_id, text });
     }
 
@@ -142,18 +161,9 @@ impl MarkdownSelection {
         let anchor = state.anchor.as_ref()?;
         let focus = state.focus.as_ref()?;
 
-        let anchor_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == anchor.element_id)?;
-        let focus_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == focus.element_id)?;
-        let my_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| &p.element_id == element_id)?;
+        let anchor_pos = state.paragraph_position(&anchor.element_id)?;
+        let focus_pos = state.paragraph_position(&focus.element_id)?;
+        let my_pos = state.paragraph_position(element_id)?;
 
         // Normalise anchor / focus into (start, end) by paragraph index
         // then character index within.
@@ -357,18 +367,10 @@ impl MarkdownSelection {
             return String::new();
         };
 
-        let Some(anchor_pos) = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == anchor.element_id)
-        else {
+        let Some(anchor_pos) = state.paragraph_position(&anchor.element_id) else {
             return String::new();
         };
-        let Some(focus_pos) = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == focus.element_id)
-        else {
+        let Some(focus_pos) = state.paragraph_position(&focus.element_id) else {
             return String::new();
         };
 
@@ -487,18 +489,10 @@ fn extend_with_range(
         return;
     };
 
-    let Some(anchor_pos) = state
-        .paragraphs
-        .iter()
-        .position(|p| p.element_id == orig_start.element_id)
-    else {
+    let Some(anchor_pos) = state.paragraph_position(&orig_start.element_id) else {
         return;
     };
-    let Some(head_pos) = state
-        .paragraphs
-        .iter()
-        .position(|p| p.element_id == head_start.element_id)
-    else {
+    let Some(head_pos) = state.paragraph_position(&head_start.element_id) else {
         return;
     };
 
