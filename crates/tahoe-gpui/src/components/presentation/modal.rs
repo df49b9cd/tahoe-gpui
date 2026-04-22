@@ -402,14 +402,16 @@ impl RenderOnce for Modal {
         // Build content container with optional focus tracking and escape key support
         let content_id =
             ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "content".into());
-        let mut content_div = crate::foundations::materials::glass_surface(
-            div()
-                .w(width)
-                .max_h(px(MODAL_MAX_HEIGHT))
-                .overflow_x_hidden(),
+        let modal_effect =
+            crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Large, theme);
+        let mut content_div = crate::foundations::materials::glass_lens_surface(
             theme,
+            &modal_effect,
             GlassSize::Large,
         )
+        .w(width)
+        .max_h(px(MODAL_MAX_HEIGHT))
+        .overflow_x_hidden()
         .id(content_id)
         .debug_selector(|| "modal-content".into());
 

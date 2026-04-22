@@ -24,7 +24,7 @@ use crate::foundations::accessibility::{
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, SPACING_4};
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use crate::ids::next_element_id;
 
@@ -773,22 +773,19 @@ impl Render for ContextMenu {
         );
 
         let theme_for_surface = cx.theme();
-        let menu = glass_surface(
-            div()
-                .flex()
-                .flex_col()
-                .min_w(px(MENU_MIN_WIDTH))
-                .max_w(px(MENU_MAX_WIDTH))
-                .py(spacing_xs)
-                .overflow_hidden(),
-            theme_for_surface,
-            GlassSize::Medium,
-        )
-        .debug_selector(|| "context-menu-content".into())
-        .children(top_children)
-        .on_mouse_down_out(cx.listener(|this, _event: &MouseDownEvent, _window, cx| {
-            this.close(cx);
-        }));
+        let menu_effect = LensEffect::liquid_glass(GlassSize::Medium, theme_for_surface);
+        let menu = glass_lens_surface(theme_for_surface, &menu_effect, GlassSize::Medium)
+            .flex()
+            .flex_col()
+            .min_w(px(MENU_MIN_WIDTH))
+            .max_w(px(MENU_MAX_WIDTH))
+            .py(spacing_xs)
+            .overflow_hidden()
+            .debug_selector(|| "context-menu-content".into())
+            .children(top_children)
+            .on_mouse_down_out(cx.listener(|this, _event: &MouseDownEvent, _window, cx| {
+                this.close(cx);
+            }));
 
         // Optional nested submenu overlay.
         let submenu_overlay = if let Some(parent_idx) = expanded {
@@ -814,19 +811,16 @@ impl Render for ContextMenu {
                     true,
                 );
                 let theme_for_sub = cx.theme();
-                let nested = glass_surface(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .min_w(px(MENU_MIN_WIDTH))
-                        .max_w(px(MENU_MAX_WIDTH))
-                        .py(spacing_xs)
-                        .overflow_hidden(),
-                    theme_for_sub,
-                    GlassSize::Medium,
-                )
-                .debug_selector(|| "context-submenu-content".into())
-                .children(rows);
+                let sub_effect = LensEffect::liquid_glass(GlassSize::Medium, theme_for_sub);
+                let nested = glass_lens_surface(theme_for_sub, &sub_effect, GlassSize::Medium)
+                    .flex()
+                    .flex_col()
+                    .min_w(px(MENU_MIN_WIDTH))
+                    .max_w(px(MENU_MAX_WIDTH))
+                    .py(spacing_xs)
+                    .overflow_hidden()
+                    .debug_selector(|| "context-submenu-content".into())
+                    .children(rows);
                 let row_top = parent_idx as f32 * row_h + f32::from(spacing_xs);
                 div()
                     .absolute()

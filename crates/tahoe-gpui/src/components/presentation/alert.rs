@@ -30,7 +30,9 @@ use crate::components::selection_and_input::checkbox::{Checkbox, CheckboxState};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::Icon;
 use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
-use crate::foundations::materials::{SurfaceContext, backdrop_overlay, glass_surface};
+use crate::foundations::materials::{
+    LensEffect, SurfaceContext, backdrop_overlay, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Maximum number of actions an alert may contain per HIG.
@@ -341,18 +343,17 @@ impl RenderOnce for Alert {
             .items_center()
             .justify_center();
 
-        // -- Content container (glass surface) --------------------------------
+        // -- Content container (Liquid Glass lens composite) ------------------
         let content_id = ElementId::from((self.id.clone(), "content"));
-        let mut content_div = glass_surface(
-            div().w(px(width)).overflow_hidden(),
-            theme,
-            GlassSize::Large,
-        )
-        .id(content_id)
-        .focusable()
-        .flex()
-        .flex_col()
-        .items_center();
+        let alert_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
+        let mut content_div = glass_lens_surface(theme, &alert_effect, GlassSize::Large)
+            .w(px(width))
+            .overflow_hidden()
+            .id(content_id)
+            .focusable()
+            .flex()
+            .flex_col()
+            .items_center();
 
         content_div = content_div
             .track_focus(&focus_handle)

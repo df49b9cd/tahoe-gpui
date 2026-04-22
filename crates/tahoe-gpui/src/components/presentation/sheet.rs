@@ -57,7 +57,7 @@ use gpui::{
 use crate::callback_types::OnMutCallback;
 use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::{backdrop_overlay, glass_surface};
+use crate::foundations::materials::{LensEffect, backdrop_overlay, glass_lens_surface};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
 
@@ -418,10 +418,13 @@ fn render_bottom_drawer(
             },
         );
 
-    // ── Sheet panel (glass surface) ─────────────────────────────────────
+    // ── Sheet panel (Liquid Glass lens composite) ───────────────────────
     let top_radius = theme.glass.radius(GlassSize::Large);
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
-    let mut panel = glass_surface(div().w_full().overflow_hidden(), theme, GlassSize::Large)
+    let mut effect = LensEffect::liquid_glass(GlassSize::Large, theme);
+    effect.blur.corner_radius = f32::from(top_radius);
+    let mut panel = glass_lens_surface(theme, &effect, GlassSize::Large)
+        .overflow_hidden()
         .rounded_t(top_radius)
         .rounded_b(px(0.0))
         .id(panel_id)
@@ -507,7 +510,10 @@ fn render_cardlike(
         );
 
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
-    let mut panel = glass_surface(div().w(width).overflow_hidden(), theme, GlassSize::Large)
+    let panel_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
+    let mut panel = glass_lens_surface(theme, &panel_effect, GlassSize::Large)
+        .w(width)
+        .overflow_hidden()
         .id(panel_id)
         .track_focus(&focus_handle)
         .flex()

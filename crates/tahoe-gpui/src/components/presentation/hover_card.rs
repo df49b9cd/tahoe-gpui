@@ -211,36 +211,28 @@ impl Render for HoverCard {
             // Hover cards share popover layering: mid-depth overlay surface,
             // not a sheet/modal. `GlassSize::Large` over-shadows the card
             // and breaks the HIG depth hierarchy — use `Medium` instead.
-            let mut card = crate::foundations::materials::glass_surface(
-                {
-                    let mut base = div().absolute().overflow_hidden().max_w(self.max_width);
-                    // Position by placement. `absolute + bottom_full /
-                    // top_full + left_0 / right_0` anchors to the
-                    // corresponding corner of the trigger.
-                    base = match self.placement {
-                        HoverCardPlacement::AboveLeft => {
-                            base.bottom_full().left_0().pb(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::AboveRight => {
-                            base.bottom_full().right_0().pb(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::BelowLeft => {
-                            base.top_full().left_0().pt(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::BelowRight => {
-                            base.top_full().right_0().pt(theme.spacing_xs)
-                        }
-                    };
-                    base
-                },
+            let card_effect =
+                crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut card = crate::foundations::materials::glass_lens_surface(
                 theme,
+                &card_effect,
                 GlassSize::Medium,
             )
-            .id(content_id)
-            .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
-                this.content_hovered = hovered;
-                this.update_visibility(cx);
-            }));
+            .absolute()
+            .overflow_hidden()
+            .max_w(self.max_width);
+            card = match self.placement {
+                HoverCardPlacement::AboveLeft => card.bottom_full().left_0().pb(theme.spacing_xs),
+                HoverCardPlacement::AboveRight => card.bottom_full().right_0().pb(theme.spacing_xs),
+                HoverCardPlacement::BelowLeft => card.top_full().left_0().pt(theme.spacing_xs),
+                HoverCardPlacement::BelowRight => card.top_full().right_0().pt(theme.spacing_xs),
+            };
+            let mut card =
+                card.id(content_id)
+                    .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
+                        this.content_hovered = hovered;
+                        this.update_visibility(cx);
+                    }));
 
             card = card.child(content);
             container = container.child(card);

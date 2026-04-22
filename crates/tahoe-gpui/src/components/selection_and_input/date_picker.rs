@@ -13,7 +13,9 @@ use gpui::{
 use crate::callback_types::{OnDateNavigate, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::CONTENT_MARGIN;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    LensEffect, apply_standard_control_styling, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Calendar day-cell size for the `Compact` popover style (in points).
@@ -795,18 +797,15 @@ impl RenderOnce for DatePicker {
                 .child(dow_row)
                 .child(grid);
 
-            let mut dropdown = glass_surface(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN)) // 7 cells + padding
-                    .overflow_hidden(),
-                theme,
-                GlassSize::Medium,
-            )
-            .id(ElementId::from((self.id.clone(), "dropdown")))
-            .focusable();
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .absolute()
+                .left_0()
+                .top(theme.dropdown_top())
+                .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN))
+                .overflow_hidden()
+                .id(ElementId::from((self.id.clone(), "dropdown")))
+                .focusable();
 
             // Keyboard nav: Arrow keys + Enter + Escape on calendar.
             let key_on_toggle = on_toggle.clone();

@@ -14,7 +14,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, Pixels, SharedString, Window, div, px};
 
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
 use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
@@ -126,15 +126,15 @@ impl RenderOnce for NavigationBarIOS {
             .child(leading_el)
             .child(trailing_el);
 
-        // ── Bar surface ───────────────────────────────────────────────────
-        glass_surface(
-            div().relative().h(bar_height).px(theme.spacing_md),
-            theme,
-            GlassSize::Small,
-        )
-        .id(self.id)
-        .child(title_layer)
-        .child(controls_layer)
+        // ── Bar surface — real Liquid Glass lens composite (subtle tier) ─
+        let effect = LensEffect::subtle(GlassSize::Small, theme);
+        glass_lens_surface(theme, &effect, GlassSize::Small)
+            .relative()
+            .h(bar_height)
+            .px(theme.spacing_md)
+            .id(self.id)
+            .child(title_layer)
+            .child(controls_layer)
     }
 }
 

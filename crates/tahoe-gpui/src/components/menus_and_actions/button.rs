@@ -4,7 +4,8 @@ use crate::callback_types::OnClick;
 use crate::components::menus_and_actions::button_like::ButtonLike;
 use crate::components::status::activity_indicator::ActivityIndicator;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::color::{darken, lighten, with_alpha};
+use crate::foundations::color::{compose_black_tint_linear, darken, lighten, with_alpha};
+use crate::foundations::materials::GLASS_LAYER_TINT_ALPHA;
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -546,10 +547,13 @@ impl RenderOnce for Button {
                 // fill, NEUTRAL `theme.text` label (not accent -- accent is for
                 // link-style buttons sitting on top of body copy). This keeps
                 // contrast high in both modes and preserves the low-emphasis
-                // affordance: Ghost is the "quiet" sibling of Primary.
+                // affordance: Ghost is the "quiet" sibling of Primary. The
+                // fill goes through the Layer-2 black-tint composite so the
+                // resting colour matches `glass_surface`.
                 let glass = &theme.glass;
+                let base = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
                 (
-                    glass.accessible_bg(GlassSize::Small, theme.accessibility_mode),
+                    compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA),
                     theme.text,
                     transparent_black(),
                     glass.hover_bg,
@@ -574,8 +578,11 @@ impl RenderOnce for Button {
                 (err, theme.text_on_accent, err, hovered)
             }
             ButtonVariant::Glass => {
+                // Layer-2 composite so the Glass variant matches the fill
+                // that `glass_surface` would produce at this size.
                 let glass = &theme.glass;
-                let fill = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let base = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let fill = compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA);
                 (fill, theme.text, transparent_black(), glass.hover_bg)
             }
             ButtonVariant::GlassProminent => {

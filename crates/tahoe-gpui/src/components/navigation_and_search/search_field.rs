@@ -46,7 +46,9 @@ use crate::components::selection_and_input::segmented_control::{SegmentItem, Seg
 use crate::components::selection_and_input::text_field::TextField;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{SurfaceContext, glass_surface, resolve_focused};
+use crate::foundations::materials::{
+    LensEffect, SurfaceContext, glass_lens_surface, glass_surface, resolve_focused,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// A controlled search field with suggestion dropdown per HIG.
@@ -589,7 +591,9 @@ impl RenderOnce for SearchField {
             let on_toggle = on_toggle_rc.clone();
             let list_suggestion_values = suggestion_values.clone();
 
-            let list_div = div()
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+
+            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
                 .absolute()
                 .left_0()
                 .top(theme.dropdown_top())
@@ -597,9 +601,7 @@ impl RenderOnce for SearchField {
                 .flex()
                 .flex_col()
                 .overflow_hidden()
-                .max_h(px(DROPDOWN_MAX_HEIGHT));
-
-            let mut list = glass_surface(list_div, theme, GlassSize::Medium)
+                .max_h(px(DROPDOWN_MAX_HEIGHT))
                 .id(suggestions_id)
                 .debug_selector(|| "search-field-suggestions".into())
                 .focusable();

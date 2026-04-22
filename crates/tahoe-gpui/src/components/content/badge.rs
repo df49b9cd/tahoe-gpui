@@ -14,7 +14,7 @@ use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, A
 use crate::foundations::color::text_on_background;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::BADGE_DOT_SIZE;
-use crate::foundations::theme::{ActiveTheme, GlassSize, GlassTintColor, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{App, SharedString, Window, div, px};
 
@@ -119,7 +119,6 @@ impl Badge {
 impl RenderOnce for Badge {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let glass = &theme.glass;
 
         // Derive display label from the variant's count when the caller used
         // `.variant(Notification { count })` directly (bypassing Badge::notification()).
@@ -157,58 +156,24 @@ impl RenderOnce for Badge {
             return el.into_any_element();
         }
 
-        let (bg, text_color, use_shadow, opaque) = match self.variant {
-            BadgeVariant::Default => (
-                glass.accessible_bg(GlassSize::Small, theme.accessibility_mode),
-                theme.text,
-                true,
-                false,
-            ),
-            BadgeVariant::Success => {
-                let bg = crate::foundations::materials::accessible_tint_bg(
-                    glass.tints.get(GlassTintColor::Green),
-                    theme.accessibility_mode,
-                );
-                (bg, text_on_background(bg), true, false)
-            }
-            BadgeVariant::Warning => {
-                let bg = crate::foundations::materials::accessible_tint_bg(
-                    glass.tints.get(GlassTintColor::Amber),
-                    theme.accessibility_mode,
-                );
-                (bg, text_on_background(bg), true, false)
-            }
-            BadgeVariant::Error => {
-                let bg = crate::foundations::materials::accessible_tint_bg(
-                    glass.tints.get(GlassTintColor::Red),
-                    theme.accessibility_mode,
-                );
-                (bg, text_on_background(bg), true, false)
-            }
-            BadgeVariant::Info => {
-                let bg = crate::foundations::materials::accessible_tint_bg(
-                    glass.tints.get(GlassTintColor::Blue),
-                    theme.accessibility_mode,
-                );
-                (bg, text_on_background(bg), true, false)
-            }
-            BadgeVariant::Muted => (
-                glass.accessible_bg(GlassSize::Small, theme.accessibility_mode),
-                theme.text_muted,
-                true,
-                false,
-            ),
+        // Badges are content-layer pills — HIG forbids Liquid Glass here.
+        // All variants render as opaque tinted pills with no glass shadow.
+        let (bg, text_color, opaque) = match self.variant {
+            BadgeVariant::Default => (theme.surface_muted(), theme.text, false),
+            BadgeVariant::Success => (theme.success, text_on_background(theme.success), false),
+            BadgeVariant::Warning => (theme.warning, text_on_background(theme.warning), false),
+            BadgeVariant::Error => (theme.error, text_on_background(theme.error), false),
+            BadgeVariant::Info => (theme.info, text_on_background(theme.info), false),
+            BadgeVariant::Muted => (theme.surface_muted(), theme.text_muted, false),
             BadgeVariant::Notification { .. } => {
-                // Opaque red pill per HIG notification guidance. Flat (no
-                // shadow) to distinguish content badges from interactive
-                // glass pills.
+                // Opaque red pill per HIG notification guidance.
                 let bg = theme.palette.red;
-                (bg, theme.text_on_accent, false, true)
+                (bg, theme.text_on_accent, true)
             }
             BadgeVariant::Dot => unreachable!("Dot variant handled by early return above"),
         };
 
-        // Empty-label semantic pills produce visible glass shapes with no
+        // Empty-label semantic pills produce visible pills with no
         // informational content. Skip rendering for those variants.
         if effective_label.is_empty()
             && !matches!(
@@ -233,9 +198,6 @@ impl RenderOnce for Badge {
             el = el.min_h(px(theme.min_target_size()));
         }
 
-        if use_shadow {
-            el = el.shadow(glass.shadows(GlassSize::Small).to_vec());
-        }
         if !opaque {
             el = crate::foundations::materials::apply_high_contrast_border(el, theme);
         }

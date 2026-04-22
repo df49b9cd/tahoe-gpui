@@ -3,7 +3,7 @@
 //! GPUI's `.tooltip()` requires `AnyView`, so we provide a small
 //! `TooltipView` Render impl and a convenience `Tooltip` wrapper.
 
-use crate::foundations::materials::{SurfaceContext, glass_or_surface};
+use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, AnyView, App, ElementId, SharedString, Window, div};
@@ -34,13 +34,13 @@ impl Render for TooltipView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        // Tooltips are Small-glass surfaces — relatively translucent,
+        // Tooltips are subtle-lens Small surfaces — relatively translucent,
         // so readability is most consistent when the label uses the
         // `GlassBright` vibrancy palette (primary level), which is
         // tuned for high contrast against translucent surfaces in both
-        // light and dark appearance. Previously we used `GlassDim`
-        // which could fail WCAG AA on dark backgrounds.
-        let mut el = div()
+        // light and dark appearance.
+        let effect = LensEffect::subtle(GlassSize::Small, theme);
+        let mut el = glass_lens_surface(theme, &effect, GlassSize::Small)
             .px(theme.spacing_sm)
             .py(theme.spacing_xs)
             .flex()
@@ -55,8 +55,7 @@ impl Render for TooltipView {
         if let Some(binding) = self.key_binding.clone() {
             // Keybinding chip uses the secondary label hierarchy so it
             // reads as an annotation rather than competing with the
-            // primary label. Matches Zed's visual weight: the chip
-            // appears quieter than the main text but stays legible.
+            // primary label.
             el = el.child(
                 div()
                     .text_color(crate::foundations::materials::resolve_label(
@@ -68,7 +67,7 @@ impl Render for TooltipView {
             );
         }
 
-        glass_or_surface(el, theme, GlassSize::Small)
+        el
     }
 }
 

@@ -14,9 +14,9 @@ use gpui::{
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::materials::apply_high_contrast_border;
-use crate::foundations::materials::glass_surface;
+use crate::foundations::materials::{
+    LensEffect, apply_focus_ring, apply_high_contrast_border, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Swatch size inside the dropdown grid (32x32pt).
@@ -453,21 +453,18 @@ impl RenderOnce for ColorWell {
             let grid_gap = theme.spacing_xs;
             let grid_padding = theme.spacing_sm;
 
-            let mut grid = glass_surface(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .flex()
-                    .flex_wrap()
-                    .gap(grid_gap)
-                    .p(grid_padding)
-                    .overflow_hidden(),
-                theme,
-                GlassSize::Small,
-            )
-            .id(ElementId::from((self.id.clone(), "palette")))
-            .focusable();
+            let grid_effect = LensEffect::liquid_glass(GlassSize::Small, theme);
+            let mut grid = glass_lens_surface(theme, &grid_effect, GlassSize::Small)
+                .absolute()
+                .left_0()
+                .top(theme.dropdown_top())
+                .flex()
+                .flex_wrap()
+                .gap(grid_gap)
+                .p(grid_padding)
+                .overflow_hidden()
+                .id(ElementId::from((self.id.clone(), "palette")))
+                .focusable();
 
             // Set a fixed width: 6 swatches + 5 gaps + 2*padding
             let grid_width = (SWATCH_SIZE * GRID_COLUMNS as f32)

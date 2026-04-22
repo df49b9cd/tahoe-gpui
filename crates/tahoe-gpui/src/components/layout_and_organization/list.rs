@@ -39,8 +39,10 @@ use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, 
 use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
 };
-use crate::foundations::color::with_alpha;
-use crate::foundations::materials::{apply_focus_ring, resolve_focused};
+use crate::foundations::color::{compose_black_tint_linear, with_alpha};
+use crate::foundations::materials::{
+    GLASS_LAYER_TINT_ALPHA, GlassRole, apply_focus_ring, resolve_focused,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`List`].
@@ -390,14 +392,20 @@ impl RenderOnce for List {
                 container = container.gap(theme.spacing_md);
             }
             ListStyle::Sidebar => {
-                // Liquid Glass source-list surface (`GlassSize::Medium`)
-                // — matches the HIG sidebar material. Applying the glass
-                // tokens inline (rather than via `glass_surface`) keeps
-                // the container's `Stateful<Div>` type without requiring
-                // a `Div -> Div` adapter.
-                let glass_bg = theme
+                // Liquid Glass source-list surface (`GlassRole::Navigation`,
+                // `GlassSize::Medium`) — matches the HIG sidebar material.
+                // Inline composition (rather than `glass_surface`) keeps the
+                // container's `Stateful<Div>` type, but still routes the base
+                // fill through the Layer-2 black-tint composite in linear-
+                // light so the visual result matches `glass_surface`.
+                debug_assert!(
+                    GlassRole::Navigation.permits_liquid_glass(),
+                    "source-list is navigation-layer — permitted"
+                );
+                let base_bg = theme
                     .glass
                     .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+                let glass_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
                 container = container
                     .bg(glass_bg)
                     .rounded(theme.glass.radius(GlassSize::Medium))

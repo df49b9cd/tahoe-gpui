@@ -15,7 +15,7 @@ use gpui::{App, Hsla, Pixels, SharedString, Window, div, px};
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{AnimatedIcon, Icon, IconAnimation, IconName};
-use crate::foundations::materials::{GlassSize, glass_surface};
+use crate::foundations::materials::{GlassSize, LensEffect, glass_lens_surface};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Default spin animation duration.
@@ -228,12 +228,11 @@ impl RenderOnce for ActivityIndicator {
         }
 
         if glass_enabled {
-            glass_surface(
-                div().p(theme.spacing_sm).child(container),
-                theme,
-                GlassSize::Small,
-            )
-            .into_any_element()
+            let effect = LensEffect::liquid_glass(GlassSize::Small, theme);
+            glass_lens_surface(theme, &effect, GlassSize::Small)
+                .p(theme.spacing_sm)
+                .child(container)
+                .into_any_element()
         } else {
             container.into_any_element()
         }

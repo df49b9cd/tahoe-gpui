@@ -9,6 +9,7 @@
 //! matches Freeform and Keynote's contextual-format toolbar, which
 //! reveals on hover without requiring a selection click first.
 
+use crate::foundations::materials::{LensEffect, glass_lens_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Window, div, px};
@@ -233,7 +234,6 @@ impl RenderOnce for NodeToolbar {
         }
 
         let theme = cx.theme();
-        let glass = &theme.glass;
 
         let (anchor_x, anchor_y) = compute_toolbar_position(
             self.position,
@@ -252,17 +252,16 @@ impl RenderOnce for NodeToolbar {
 
         // Match the NodeToolbar chrome to the rest of the canvas
         // (WorkflowControls already uses Liquid Glass). Size Small matches
-        // Apple's sizing for node-scoped contextual toolbars.
-        let bar_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
-        let mut bar = div()
+        // Apple's sizing for node-scoped contextual toolbars. Real lens
+        // composite so the refracted canvas reads through.
+        let mut effect = LensEffect::liquid_glass(GlassSize::Small, theme);
+        effect.blur.corner_radius = f32::from(theme.radius_sm);
+        let mut bar = glass_lens_surface(theme, &effect, GlassSize::Small)
             .flex()
             .items_center()
             .gap(theme.spacing_xs)
             .p(theme.spacing_sm)
-            .bg(bar_bg)
-            .rounded(theme.radius_sm)
-            .shadow(glass.shadows(GlassSize::Small).to_vec());
-        bar = crate::foundations::materials::apply_high_contrast_border(bar, theme);
+            .rounded(theme.radius_sm);
 
         if is_vertical {
             bar = bar.flex_col();

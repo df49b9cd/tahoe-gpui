@@ -49,8 +49,9 @@ use gpui::{
 use crate::callback_types::rc_wrap;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
-use crate::foundations::materials::glass_surface;
-use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::materials::{
+    LensEffect, apply_focus_ring, apply_high_contrast_border, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// A single menu in the menu bar.
@@ -337,13 +338,11 @@ impl RenderOnce for MenuBar {
             });
         }
 
-        // Glass surface
-        {
-            let glass = &theme.glass;
-            bar = bar.bg(glass.accessible_bg(GlassSize::Small, theme.accessibility_mode));
-            bar = apply_focus_ring(bar, theme, focused, glass.shadows(GlassSize::Small));
-            bar = apply_high_contrast_border(bar, theme);
-        }
+        // Focus ring + a11y border sit on the stateful bar; the Liquid
+        // Glass lens composite is layered behind the bar inside `container`
+        // below so the bar itself stays `Stateful<Div>` for focus handling.
+        bar = apply_focus_ring(bar, theme, focused, theme.glass.shadows(GlassSize::Small));
+        bar = apply_high_contrast_border(bar, theme);
 
         // Render menu titles
         let mut container = div().relative().w_full();
@@ -400,24 +399,34 @@ impl RenderOnce for MenuBar {
             }
         }
 
+        // Layer the bar's Liquid Glass lens composite *behind* the
+        // stateful bar so the titles render above the refractive surface.
+        // `subtle` keeps the render-pass cost bounded for always-visible
+        // chrome.
+        let bar_lens = LensEffect::subtle(GlassSize::Small, theme);
+        container = container.child(
+            glass_lens_surface(theme, &bar_lens, GlassSize::Small)
+                .absolute()
+                .left_0()
+                .top_0()
+                .w_full()
+                .h(px(theme.target_size())),
+        );
         container = container.child(bar);
 
         // Render open menu content as absolute overlay, positioned under
         // the activating title (macOS HIG requirement).
         if let Some(content) = open_content {
-            let dropdown = glass_surface(
-                div()
-                    .absolute()
-                    .left(open_offset)
-                    .top(px(theme.target_size()))
-                    .min_w(px(MENU_MIN_WIDTH))
-                    .max_h(px(DROPDOWN_MAX_HEIGHT))
-                    .flex()
-                    .flex_col(),
-                theme,
-                GlassSize::Medium,
-            )
-            .child(content);
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .absolute()
+                .left(open_offset)
+                .top(px(theme.target_size()))
+                .min_w(px(MENU_MIN_WIDTH))
+                .max_h(px(DROPDOWN_MAX_HEIGHT))
+                .flex()
+                .flex_col()
+                .child(content);
 
             container = container.child(deferred(dropdown).with_priority(1));
         }

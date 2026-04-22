@@ -28,7 +28,9 @@ use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    LensEffect, apply_standard_control_styling, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Callback invoked when keyboard highlight changes in a [`PopupButton`] dropdown.
@@ -289,21 +291,18 @@ impl RenderOnce for PopupButton {
                 .collect();
             let on_highlight = self.on_highlight.map(Rc::new);
 
-            let mut list = glass_surface(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .overflow_hidden()
-                    .max_h(px(DROPDOWN_MAX_HEIGHT)),
-                theme,
-                GlassSize::Medium,
-            )
-            .id(ElementId::from((self.id.clone(), "dropdown")))
-            .focusable();
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .absolute()
+                .left_0()
+                .top(theme.dropdown_top())
+                .w_full()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .max_h(px(DROPDOWN_MAX_HEIGHT))
+                .id(ElementId::from((self.id.clone(), "dropdown")))
+                .focusable();
 
             // Keyboard navigation: arrow keys, Home/End, Enter, Escape, type-ahead.
             let key_toggle = on_toggle.clone();

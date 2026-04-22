@@ -12,7 +12,7 @@ use crate::foundations::accessibility::{
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    apply_focus_ring, apply_standard_control_styling, glass_surface,
+    LensEffect, apply_focus_ring, apply_standard_control_styling, glass_lens_surface,
 };
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
@@ -973,23 +973,27 @@ impl RenderOnce for Picker {
             let item_values: Vec<SharedString> =
                 flat_items.iter().map(|i| i.value.clone()).collect();
 
-            // ── Dropdown list ───────────────────────────────────────────────
+            // ── Dropdown list (Liquid Glass lens) ───────────────────────────
             // Inline mode renders the list flow-positioned directly below
             // the trigger (no `.absolute()`, no max-height clamp). Menu
-            // mode keeps the floating glass dropdown positioned by
+            // mode keeps the floating lens dropdown positioned by
             // `theme.dropdown_top()`.
-            let mut list_container = div().flex().flex_col().overflow_hidden();
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .flex()
+                .flex_col()
+                .overflow_hidden();
             if style == PickerStyle::Inline {
-                list_container = list_container.w_full();
+                list = list.w_full();
             } else {
-                list_container = list_container
+                list = list
                     .absolute()
                     .left_0()
                     .top(theme.dropdown_top())
                     .w_full()
                     .max_h(px(DROPDOWN_MAX_HEIGHT));
             }
-            let mut list = glass_surface(list_container, theme, GlassSize::Medium)
+            let mut list = list
                 .id(ElementId::from((self.id.clone(), "dropdown")))
                 .focusable();
 

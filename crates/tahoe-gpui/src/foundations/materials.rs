@@ -164,10 +164,8 @@ pub enum MaterialThickness {
     /// HIG `.bar` / Chrome material — tuned for window toolbars, title
     /// bars, and tab bars where content scrolls beneath chrome. Slightly
     /// more opaque than `Thin` so labels stay legible while the tint of
-    /// the content under the chrome still reads through. Currently
-    /// routes to the same `thin_bg` fill as `Thin`; a dedicated
-    /// `chrome_bg` theme token is tracked as a future refinement once
-    /// toolbars consume this variant broadly.
+    /// the content under the chrome still reads through. Routes to the
+    /// dedicated `chrome_bg` theme token via [`GlassStyle::material_bg`].
     Chrome,
 }
 
@@ -917,6 +915,45 @@ pub fn glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     apply_glass_chrome(el, theme, bg, radius, size)
 }
 
+/// Role-aware variant of [`glass_surface`] that debug-asserts the caller is
+/// not applying Liquid Glass to a content-layer surface.
+///
+/// HIG forbids Liquid Glass on content surfaces
+/// (`foundations.md:1043-1045`). Pass the surface's [`GlassRole`] to this
+/// helper to catch misuse in debug builds; release builds fall through to
+/// the same rendering path as [`glass_surface`].
+pub fn glass_surface_for_role(
+    el: Div,
+    theme: &TahoeTheme,
+    size: GlassSize,
+    role: GlassRole,
+) -> Div {
+    debug_assert!(
+        role.permits_liquid_glass(),
+        "Liquid Glass forbidden in content layer; use theme.surface or a Standard Material"
+    );
+    glass_surface(el, theme, size)
+}
+
+/// Publicly expose `apply_glass_chrome` so callers composing their own
+/// shape (custom radius, no overflow clipping, per-variant bg) still go
+/// through the Layer-2 black-tint composite and the shared border contract.
+///
+/// Use this when [`glass_surface`] can't be used — typically because the
+/// caller needs a non-default radius (e.g. `radius_full` on a Floating tab
+/// bar) or needs to keep children un-clipped.
+///
+/// See [`glass_surface`] for the default-radius variant.
+pub fn glass_chrome(
+    el: Div,
+    theme: &TahoeTheme,
+    bg: gpui::Hsla,
+    radius: Pixels,
+    size: GlassSize,
+) -> Div {
+    apply_glass_chrome(el, theme, bg, radius, size)
+}
+
 /// Applies Liquid Glass at a specific material thickness level.
 ///
 /// Per HIG Materials: thickness controls the frosting intensity.
@@ -1322,11 +1359,14 @@ pub fn glass_interactive_hover(mut el: Div, theme: &TahoeTheme) -> Div {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// A container that applies glass surface to itself and renders children
-/// without glass, enforcing Apple's "no glass on glass" rule.
+/// without glass, as a convention around Apple's "no glass on glass" rule.
 ///
 /// Per HIG, glass elements should never be stacked on other glass
 /// elements. `GlassContainer` provides the single glass layer and renders
-/// all children as standard content within it.
+/// all children as standard content within it. The rule is *documented*
+/// here and honored by all in-tree components, but it is not enforced at
+/// render time — a caller that wraps a `glass_surface(...)` child inside
+/// a `GlassContainer` will silently nest.
 ///
 /// # Example
 /// ```ignore
@@ -1929,6 +1969,70 @@ mod tests {
         let theme = TahoeTheme::liquid_glass();
         let glass = super::glass_clear_surface(gpui::div(), &theme, GlassSize::Small);
         let _wrapped: gpui::Div = super::clear_glass_dimmed(glass);
+    }
+
+    // ─── GlassRole / glass_chrome Tests (Phase A) ────────────────────────────
+
+    #[test]
+    fn glass_role_permits_liquid_glass_except_content_layer() {
+        use super::GlassRole;
+        assert!(!GlassRole::ContentLayer.permits_liquid_glass());
+        assert!(GlassRole::Controls.permits_liquid_glass());
+        assert!(GlassRole::Navigation.permits_liquid_glass());
+        assert!(GlassRole::Overlay.permits_liquid_glass());
+    }
+
+    #[test]
+    fn glass_surface_for_role_accepts_navigation() {
+        let theme = TahoeTheme::liquid_glass();
+        let _: gpui::Div = super::glass_surface_for_role(
+            gpui::div(),
+            &theme,
+            GlassSize::Medium,
+            super::GlassRole::Navigation,
+        );
+    }
+
+    #[test]
+    fn glass_surface_for_role_accepts_controls_and_overlay() {
+        let theme = TahoeTheme::liquid_glass();
+        let _: gpui::Div = super::glass_surface_for_role(
+            gpui::div(),
+            &theme,
+            GlassSize::Small,
+            super::GlassRole::Controls,
+        );
+        let _: gpui::Div = super::glass_surface_for_role(
+            gpui::div(),
+            &theme,
+            GlassSize::Small,
+            super::GlassRole::Overlay,
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "Liquid Glass forbidden in content layer")]
+    fn glass_surface_for_role_rejects_content_layer() {
+        let theme = TahoeTheme::liquid_glass();
+        let _: gpui::Div = super::glass_surface_for_role(
+            gpui::div(),
+            &theme,
+            GlassSize::Medium,
+            super::GlassRole::ContentLayer,
+        );
+    }
+
+    #[test]
+    fn glass_chrome_accepts_custom_radius() {
+        // Smoke test — callers with bespoke radii (e.g. `radius_full` for a
+        // Floating tab bar) can still route through the Layer-2 composite.
+        let theme = TahoeTheme::liquid_glass();
+        let bg = theme
+            .glass
+            .accessible_bg(GlassSize::Small, theme.accessibility_mode);
+        let _: gpui::Div =
+            super::glass_chrome(gpui::div(), &theme, bg, theme.radius_full, GlassSize::Small);
     }
 
     // ─── Motion & Accessibility Tests ────────────────────────────────────────

@@ -10,7 +10,7 @@
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle};
 use gpui::prelude::*;
 use gpui::{App, Hsla, ObjectFit, Pixels, SharedString, SharedUri, Window, div, img, px};
 
@@ -256,14 +256,14 @@ impl RenderOnce for Avatar {
             .canonical_size
             .unwrap_or_else(|| AvatarSize::for_diameter(f32::from(size)));
         let font_size = canonical.initials_text_style().attrs().size;
-        let glass = &theme.glass;
 
-        // Pick background: explicit > monogram (non-empty fallback) > glass material.
+        // Avatars are content-layer — HIG forbids Liquid Glass here. Pick
+        // background: explicit > monogram (non-empty fallback) > theme surface.
         // Using monogram even when an image_url is set ensures the circle has
         // a colored background if the image fails to load.
         let bg = self.bg_color.unwrap_or_else(|| {
             if self.fallback.trim().is_empty() {
-                glass.accessible_bg(GlassSize::Small, theme.accessibility_mode)
+                theme.surface
             } else {
                 monogram_color(self.fallback.as_ref())
             }
@@ -294,7 +294,8 @@ impl RenderOnce for Avatar {
             .text_size(font_size)
             .text_color(text_color)
             .bg(bg)
-            .shadow(glass.shadows(GlassSize::Small).to_vec());
+            .border_1()
+            .border_color(theme.border);
 
         circle = crate::foundations::materials::apply_high_contrast_border(circle, theme);
 

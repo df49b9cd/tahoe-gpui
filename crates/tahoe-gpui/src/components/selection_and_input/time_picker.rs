@@ -13,7 +13,9 @@ use gpui::{
 use crate::callback_types::{OnTimeChange, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    LensEffect, apply_standard_control_styling, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
@@ -713,18 +715,15 @@ impl RenderOnce for TimePicker {
             // ── Dropdown ───────────────────────────────────────────────────
             let dropdown_content = div().flex().flex_col().p(theme.spacing_sm).child(columns);
 
-            let mut dropdown = glass_surface(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w(px(if use_24h { 136.0 } else { 188.0 }))
-                    .overflow_hidden(),
-                theme,
-                GlassSize::Medium,
-            )
-            .id(ElementId::from((self.id.clone(), "dropdown")))
-            .focusable();
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .absolute()
+                .left_0()
+                .top(theme.dropdown_top())
+                .w(px(if use_24h { 136.0 } else { 188.0 }))
+                .overflow_hidden()
+                .id(ElementId::from((self.id.clone(), "dropdown")))
+                .focusable();
 
             // Keyboard nav: Up/Down/Left/Right/Enter/Escape.
             let key_on_toggle = on_toggle.clone();

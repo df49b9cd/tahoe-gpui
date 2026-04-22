@@ -5,7 +5,10 @@
 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::color::compose_black_tint_linear;
+use crate::foundations::materials::{
+    GLASS_LAYER_TINT_ALPHA, apply_focus_ring, apply_high_contrast_border,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
@@ -165,7 +168,8 @@ impl RenderOnce for SegmentedControl {
         // about the "no valid selection" state.
         if self.items.is_empty() {
             let glass = &theme.glass;
-            let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+            let base_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+            let track_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
             let radius = glass.radius(GlassSize::Small);
             return div()
                 .id(self.id)
@@ -182,7 +186,11 @@ impl RenderOnce for SegmentedControl {
             .is_some_and(|h| h.is_focused(window));
 
         let glass = &theme.glass;
-        let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+        let base_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+        // Layer-2 black-tint composite in linear light so the track fill
+        // matches `glass_surface` bit-for-bit. Inline because the track is
+        // `Stateful<Div>` (has `.id()`) and glass helpers take `Div`.
+        let track_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
         // HIG Tahoe/Liquid Glass: selected segments use a distinct elevated
         // fill, not the hover background. Sharing `hover_bg` caused the
         // selection indicator to melt into hover state as soon as the

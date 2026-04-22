@@ -8,7 +8,9 @@ use crate::callback_types::{OnSharedStringChange, OnSharedStringRefChange, OnTog
 use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    LensEffect, apply_standard_control_styling, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -338,21 +340,18 @@ impl RenderOnce for ComboBox {
             let current_value = self.value.clone();
             let mouse_out_toggle = on_toggle.clone();
 
-            let mut list = glass_surface(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .overflow_hidden()
-                    .max_h(px(DROPDOWN_MAX_HEIGHT)),
-                theme,
-                GlassSize::Medium,
-            )
-            .id(ElementId::from((self.id.clone(), "dropdown")))
-            .focusable();
+            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
+                .absolute()
+                .left_0()
+                .top(theme.dropdown_top())
+                .w_full()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .max_h(px(DROPDOWN_MAX_HEIGHT))
+                .id(ElementId::from((self.id.clone(), "dropdown")))
+                .focusable();
 
             // Keyboard navigation + type-to-filter: up/down/enter/escape + printable chars.
             list = list.on_key_down(move |event: &KeyDownEvent, window, cx| {

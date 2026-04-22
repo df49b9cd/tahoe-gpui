@@ -173,11 +173,15 @@ impl RenderOnce for Popover {
             // applying it to a narrow popover bleeds the shadow into
             // adjacent content and flattens the depth hierarchy.
             let max_w = self.max_width.unwrap_or(px(POPOVER_MAX_WIDTH));
-            let mut content_div = crate::foundations::materials::glass_surface(
-                div().overflow_hidden().max_w(max_w),
+            let popover_effect =
+                crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Medium, theme);
+            let mut content_div = crate::foundations::materials::glass_lens_surface(
                 theme,
+                &popover_effect,
                 GlassSize::Medium,
             )
+            .overflow_hidden()
+            .max_w(max_w)
             .id(ElementId::Name("popover-content-surface".into()))
             .debug_selector(|| "popover-content".into());
 

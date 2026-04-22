@@ -23,8 +23,12 @@
 use crate::callback_types::{OnSharedStringChange, rc_wrap};
 use crate::components::content::badge::BadgeVariant;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::color::compose_black_tint_linear;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{SurfaceContext, apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::materials::{
+    GLASS_LAYER_TINT_ALPHA, LensEffect, SurfaceContext, apply_focus_ring,
+    apply_high_contrast_border, glass_lens_surface,
+};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -553,7 +557,7 @@ impl RenderOnce for TabBar {
             });
         }
 
-        match style {
+        let tab_bar_el: gpui::AnyElement = match style {
             TabBarStyle::Document => {
                 // Document tabs: flat row with a bottom hairline separator
                 // aligned with the inactive tabs' transparent underline.
@@ -561,24 +565,54 @@ impl RenderOnce for TabBar {
                     .border_b_1()
                     .border_color(crate::foundations::color::with_alpha(theme.border, 0.5));
                 tab_bar = apply_focus_ring(tab_bar, theme, focused, &[]);
+                tab_bar.into_any_element()
             }
-            TabBarStyle::Segmented | TabBarStyle::Floating => {
+            TabBarStyle::Segmented => {
+                // Segmented track: inline Layer-2 composited fill so the
+                // tint matches `glass_surface` without forcing a
+                // render-pass break (Phase B: the track is always-visible
+                // inline chrome, not a floating overlay).
                 let glass = &theme.glass;
+                let base_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let composited = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
                 tab_bar = tab_bar
-                    .bg(glass.accessible_bg(GlassSize::Small, theme.accessibility_mode))
-                    .rounded(if style == TabBarStyle::Floating {
-                        theme.radius_full
-                    } else {
-                        glass.radius(GlassSize::Small)
-                    })
+                    .bg(composited)
+                    .rounded(glass.radius(GlassSize::Small))
+                    .shadow(glass.shadows(GlassSize::Small).to_vec())
                     .overflow_hidden();
                 tab_bar =
                     apply_focus_ring(tab_bar, theme, focused, glass.shadows(GlassSize::Small));
                 tab_bar = apply_high_contrast_border(tab_bar, theme);
+                tab_bar.into_any_element()
             }
-        }
+            TabBarStyle::Floating => {
+                // Floating tabs: wrap the stateful bar in a relative parent
+                // that layers a real Liquid Glass lens composite behind the
+                // tabs so the content scrolling under the bar refracts
+                // through.
+                let mut effect = LensEffect::liquid_glass(GlassSize::Small, theme);
+                effect.blur.corner_radius = f32::from(theme.radius_full);
+                tab_bar = tab_bar.rounded(theme.radius_full).overflow_hidden();
+                tab_bar = apply_focus_ring(
+                    tab_bar,
+                    theme,
+                    focused,
+                    theme.glass.shadows(GlassSize::Small),
+                );
+                tab_bar = apply_high_contrast_border(tab_bar, theme);
+                div()
+                    .relative()
+                    .child(
+                        glass_lens_surface(theme, &effect, GlassSize::Small)
+                            .absolute()
+                            .inset_0(),
+                    )
+                    .child(tab_bar)
+                    .into_any_element()
+            }
+        };
 
-        let mut container = div().flex().flex_col().child(tab_bar);
+        let mut container = div().flex().flex_col().child(tab_bar_el);
 
         if let Some(body) = active_body {
             container = container.child(div().pt(theme.spacing_sm).child(body));

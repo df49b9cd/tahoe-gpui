@@ -70,7 +70,7 @@ use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
 };
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// How the toolbar is laid out against surrounding content.
@@ -302,26 +302,29 @@ impl RenderOnce for Toolbar {
             .gap(theme.spacing_sm)
             .children(trailing_children);
 
-        // Assemble the bar with glass surface. Floating style uses a
-        // deeper glass size (`Medium`) so the hover-above-content shadow
-        // reads; inline stays `Small`.
+        // Assemble the bar with a real Liquid Glass lens composite.
+        // Floating style uses a deeper glass size (`Medium`) with the full
+        // Figma lens params; Inline stays `Small` with a subtle lens so the
+        // render-pass cost of the always-visible chrome is bounded.
         let size = match self.style {
             ToolbarStyle::Inline => GlassSize::Small,
             ToolbarStyle::Floating => GlassSize::Medium,
         };
 
-        let mut bar_inner = div()
+        let mut effect = match self.style {
+            ToolbarStyle::Inline => LensEffect::subtle(size, theme),
+            ToolbarStyle::Floating => LensEffect::liquid_glass(size, theme),
+        };
+        if self.style == ToolbarStyle::Floating {
+            effect.blur.corner_radius = f32::from(theme.radius_full);
+        }
+
+        let mut bar = glass_lens_surface(theme, &effect, size)
             .min_h(px(theme.target_size()))
             .px(theme.spacing_md)
             .flex()
             .flex_row()
-            .items_center();
-
-        if self.style == ToolbarStyle::Floating {
-            bar_inner = bar_inner.rounded(theme.radius_full);
-        }
-
-        let mut bar = glass_surface(bar_inner, theme, size)
+            .items_center()
             .id(self.id)
             .child(leading_group)
             .child(title_el)
