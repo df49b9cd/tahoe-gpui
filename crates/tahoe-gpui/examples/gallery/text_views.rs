@@ -3,9 +3,9 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, StyledText, Window, div};
 
-use tahoe_gpui::components::content::text_view::{LabelLevel, TextView};
+use tahoe_gpui::components::content::text_view::TextView;
 use tahoe_gpui::foundations::theme::{
-    FontDesign, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
+    FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
 };
 
 use crate::ComponentGallery;
@@ -111,6 +111,7 @@ pub fn render(
                 .child("Styled text"),
         )
         .child(TextView::new("placeholder").styled_text(
+            "Bold and accent-colored text within a single view.",
             StyledText::new("Bold and accent-colored text within a single view.").with_highlights(
                 vec![(
                     0..4,
@@ -191,27 +192,38 @@ pub fn render(
                 .label_level(LabelLevel::Tertiary),
         )
         .child(
-            TextView::new("Quaternary text — watermark or placeholder-level content.")
-                .label_level(LabelLevel::Quaternary),
+            // Quaternary is HIG's watermark / empty-state tier — use it for
+            // background-style hints that should recede into the surface,
+            // not for running prose.
+            TextView::new("Drop a file here to start")
+                .label_level(LabelLevel::Quaternary)
+                .text_align(gpui::TextAlign::Center),
         )
         .child(
-            TextView::new("Quinary text — the lightest HIG label tier (macOS Tahoe).")
-                .label_level(LabelLevel::Quinary),
+            // Quinary (macOS Tahoe) is the lightest tier — reserved for
+            // decorative separators or timestamps that should not compete
+            // with nearby primary content.
+            TextView::new("Last updated 2 min ago")
+                .label_level(LabelLevel::Quinary)
+                .text_style(TextStyle::Caption2),
         )
-        // ── Disabled ───────────────────────────────────────────────────────
+        // ── Disabled look via explicit color ───────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
             div()
                 .text_style(TextStyle::Headline, theme)
                 .text_color(theme.text)
-                .child("Disabled"),
+                .child("Disabled look"),
         )
         .child(
+            // TextView has no .disabled() — it's read-only with no
+            // interactive state. For a disabled appearance, pass the
+            // disabled color directly.
             TextView::new(
-                "This text view is in a disabled state, rendered at reduced \
-                 opacity to signal it is inactive.",
+                "This text view uses theme.text_disabled() to signal that \
+                 the surrounding control is inactive.",
             )
-            .disabled(true),
+            .color(theme.text_disabled()),
         )
         // ── Readable width ─────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
@@ -229,7 +241,7 @@ pub fn render(
                  The quick brown fox jumps over the lazy dog. Pack my box with five \
                  dozen liquor jugs.",
             )
-            .readable_width(),
+            .readable_width(true),
         )
         // ── Scrollable ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))

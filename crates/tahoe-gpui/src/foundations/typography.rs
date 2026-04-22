@@ -3,7 +3,7 @@
 //! Provides text styles, font design variants, tracking utilities,
 //! and the `TextStyledExt` trait for applying HIG type scale to GPUI elements.
 
-use gpui::{DefiniteLength, FontWeight, Pixels, Styled, px};
+use gpui::{DefiniteLength, FontWeight, Hsla, Pixels, Styled, px};
 
 use super::theme::TahoeTheme;
 
@@ -414,15 +414,22 @@ impl TextStyle {
 impl TextStyleAttrs {
     /// Returns a copy with the leading adjusted per the given style.
     ///
-    /// Uses proportional multipliers (`× 0.85` for Tight, `× 1.15` for
+    /// Uses proportional multipliers (`× 0.95` for Tight, `× 1.15` for
     /// Loose) instead of flat offsets so the visual density stays
     /// consistent across all 11 text styles. A flat ±2 pt delta would land
     /// differently per size — 12.5% on Body's 16 pt leading but only 6.25%
     /// on LargeTitle's 32 pt — whereas a proportional factor produces the
     /// same perceived change everywhere.
+    ///
+    /// Tight is capped at `× 0.95` rather than a larger reduction so
+    /// SF Pro ascenders and descenders never collide — Body's 16 pt
+    /// standard leading drops to 15.2 pt (≈1.17× the 13 pt body size),
+    /// which still reads in compact list rows. A more aggressive 0.85
+    /// lands at 13.6 pt (1.05×), where letterforms start touching on
+    /// successive lines.
     pub fn with_leading(mut self, style: LeadingStyle) -> Self {
         match style {
-            LeadingStyle::Tight => self.leading = px(f32::from(self.leading) * 0.85),
+            LeadingStyle::Tight => self.leading = px(f32::from(self.leading) * 0.95),
             LeadingStyle::Standard => {}
             LeadingStyle::Loose => self.leading = px(f32::from(self.leading) * 1.15),
         }
@@ -442,9 +449,10 @@ impl TextStyleAttrs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LeadingStyle {
     /// Tighter line spacing for constrained areas (list rows, compact UI).
-    /// Scales leading by `0.85` (~15% tighter) so the delta stays
+    /// Scales leading by `0.95` (~5% tighter) so the delta stays
     /// proportional across all [`TextStyle`] sizes — see
-    /// [`TextStyleAttrs::with_leading`] for the rationale.
+    /// [`TextStyleAttrs::with_leading`] for the rationale and why the
+    /// multiplier is capped at 0.95 rather than something more aggressive.
     Tight,
     /// Default HIG leading for the text style.
     #[default]
@@ -453,6 +461,45 @@ pub enum LeadingStyle {
     /// Scales leading by `1.15` (~15% looser) so the delta stays
     /// proportional across all [`TextStyle`] sizes.
     Loose,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LabelLevel
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// HIG label-level color hierarchy.
+///
+/// The HIG defines four levels of label importance (Labels > Secondary >
+/// Tertiary > Quaternary) with a fifth quinary level added in macOS Tahoe.
+/// Components reach a semantic tier via [`Self::resolve`] rather than
+/// hardcoding theme tokens directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LabelLevel {
+    /// Primary text — `theme.text` (semantic `label`).
+    #[default]
+    Primary,
+    /// Secondary/supplemental text — `theme.text_muted` (semantic `secondaryLabel`).
+    Secondary,
+    /// Tertiary text — `theme.text_tertiary()` (semantic `tertiaryLabel`).
+    Tertiary,
+    /// Quaternary/watermark text — `theme.text_quaternary()` (semantic `quaternaryLabel`).
+    Quaternary,
+    /// Quinary text (macOS Tahoe; iOS equivalent where available) —
+    /// `theme.text_quinary()` (semantic `quinaryLabel`).
+    Quinary,
+}
+
+impl LabelLevel {
+    /// Resolve to the theme's semantic color for this level.
+    pub fn resolve(self, theme: &TahoeTheme) -> Hsla {
+        match self {
+            Self::Primary => theme.text,
+            Self::Secondary => theme.text_muted,
+            Self::Tertiary => theme.text_tertiary(),
+            Self::Quaternary => theme.text_quaternary(),
+            Self::Quinary => theme.text_quinary(),
+        }
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -34,17 +34,18 @@ follow SemVer once the crate reaches 1.0.
   `accessibility_mode.reduce_transparency()` is set, matching the opaque
   fallback fill that `glass_surface()` already swaps in.
 - `TextView` expanded from a minimal read-only display into a HIG-aligned
-  component with 11 new builders: `styled_text`, `selectable`, `max_lines`,
-  `emphasize`, `color`, `label_level`, `font_design`, `leading_style`,
-  `disabled`, `text_align`, `scrollable`, `readable_width`, and
-  `accessibility_label`.
-- `components::content::text_view::LabelLevel` — HIG semantic-tier enum
-  (`Primary` / `Secondary` / `Tertiary` / `Quaternary` / `Quinary`, the
-  last added in macOS Tahoe) resolving to the matching theme colour via
-  [`TextView::label_level`].
+  component with 11 new builders: `styled_text`, `max_lines`, `emphasize`,
+  `color`, `label_level`, `font_design`, `leading_style`, `text_align`,
+  `scrollable`, `readable_width`, and `accessibility_label`.
+- `foundations::theme::LabelLevel` — HIG semantic-tier enum (`Primary` /
+  `Secondary` / `Tertiary` / `Quaternary` / `Quinary`, the last added in
+  macOS Tahoe) resolving to the matching theme colour via
+  [`TextView::label_level`]. Lives in `foundations::typography` and is
+  re-exported through `foundations::theme` and `tahoe_gpui::prelude`.
 - `foundations::accessibility::AccessibilityProps::disabled: bool` + a
-  `.disabled(bool)` builder. `TextView::disabled(true)` now sets it so
-  VoiceOver will announce the dimmed state once GPUI lands an AX tree.
+  `.disabled(bool)` builder. Interactive components (Toggle, Checkbox,
+  Stepper, SegmentedControl, workflow controls) set it so VoiceOver will
+  announce the dimmed state once GPUI lands an AX tree.
 
 ### Changed
 
@@ -68,12 +69,15 @@ follow SemVer once the crate reaches 1.0.
   in-crate glass-surface components (`GlassIconTile`, `Button` with glass
   variants) which declare scope themselves. See the
   `liquid_glass_gallery` and `liquid_glass_interactive` examples.
-- `LeadingStyle::Tight` / `LeadingStyle::Loose` now scale leading by
-  ±15% proportionally (`× 0.85` / `× 1.15`) instead of a flat ±2 pt
-  offset. The proportional delta keeps tight/loose visually consistent
-  across all [`TextStyle`] sizes — a 2 pt reduction on Body's 16 pt
-  leading was 12.5% but only 6.25% on LargeTitle's 32 pt. Callers
-  relying on the exact pt delta will see different pixel values.
+- `LeadingStyle::Tight` / `LeadingStyle::Loose` now scale leading
+  proportionally (`× 0.95` / `× 1.15`) instead of a flat ±2 pt offset.
+  The proportional delta keeps tight/loose visually consistent across
+  all [`TextStyle`] sizes — a 2 pt reduction on Body's 16 pt leading
+  was 12.5% but only 6.25% on LargeTitle's 32 pt. Tight is capped at
+  `× 0.95` rather than a larger reduction so SF Pro ascenders /
+  descenders never collide (at Body that is 15.2 pt against a 13 pt
+  size, ≈1.17×). Callers relying on the exact pt delta will see
+  different pixel values.
 
 ### Known limitations
 
@@ -84,14 +88,12 @@ follow SemVer once the crate reaches 1.0.
   child through a deferred boundary must re-wrap the deferred content in
   `GlassSurfaceScope`, or hold a `GlassSurfaceGuard` across the boundary. See
   the module-level documentation in `foundations/surface_scope.rs`.
-- `TextView::selectable(true)` stores intent only — text selection is not
-  yet implemented (GPUI has no built-in selection API; the planned path
-  mirrors `markdown::selectable_text::SelectableText`'s raw mouse-event
-  approach). A one-shot `tracing::warn!` fires in debug when selection is
-  requested.
-- `TextView::styled_text(...)` renders rich content without a VoiceOver
-  label unless the caller also supplies `.accessibility_label("...")`.
-  A one-shot debug warning fires when this combination is missed.
+- `TextView::styled_text(text, styled)` now takes a plain-text argument
+  alongside the `StyledText` so VoiceOver has a label to announce without
+  callers needing to restate the content via `.accessibility_label(...)`.
 - `TextView::max_lines(...)` and `TextView::scrollable(...)` are mutually
-  exclusive: clamped height short-circuits GPUI's scroll viewport. When
-  both are set, `max_lines` wins and a one-shot debug warning fires.
+  exclusive: clamped height short-circuits GPUI's scroll viewport. Setting
+  both trips a `debug_assert!` so the conflict panics in tests; release
+  builds silently prefer `max_lines`. `TextView` has no `FocusHandle` (it
+  is a stateless `RenderOnce`), so the scroll container is not focusable —
+  keyboard users rely on a focused scroll container owned by the host app.

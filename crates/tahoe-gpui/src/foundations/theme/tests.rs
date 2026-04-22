@@ -1,7 +1,7 @@
 use super::{
     AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
-    macos_tracking, meets_contrast,
+    GlassVariant, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step,
+    contrast_ratio, macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
@@ -1410,7 +1410,7 @@ fn text_style_emphasized_preserves_size() {
 }
 
 /// Leading tolerance: allow ~100 ULPs of f32 multiplication error
-/// (≈1.19e-5). `0.85` / `1.15` are not exactly representable in f32, so the
+/// (≈1.19e-5). `0.95` / `1.15` are not exactly representable in f32, so the
 /// product drifts by a few ULPs from the arithmetic ideal — anything wider
 /// than this would hide a real bug in the multiplier.
 const LEADING_TOLERANCE: f32 = f32::EPSILON * 100.0;
@@ -1420,8 +1420,27 @@ fn leading_style_tight_reduces() {
     let standard = TextStyle::Body.attrs();
     let tight = standard.with_leading(LeadingStyle::Tight);
     assert!(f32::from(tight.leading) < f32::from(standard.leading));
-    let expected = f32::from(standard.leading) * 0.85;
+    let expected = f32::from(standard.leading) * 0.95;
     assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
+}
+
+#[test]
+fn leading_style_tight_stays_above_practical_floor() {
+    // Regression guard: a more aggressive Tight multiplier (e.g. the
+    // original 0.85) drops Body's 16 pt leading to 13.6 pt against a
+    // 13 pt body size — a 1.046× ratio where SF Pro's ascenders and
+    // descenders start colliding. Keep Tight ≥ 1.15× body size so
+    // compact list rows still read.
+    let body_tight = TextStyle::Body.attrs().with_leading(LeadingStyle::Tight);
+    let body_size = f32::from(TextStyle::Body.attrs().size);
+    let ratio = f32::from(body_tight.leading) / body_size;
+    assert!(
+        ratio >= 1.15,
+        "Body Tight leading {} / size {} = {ratio} fell below 1.15× — \
+         too tight for SF Pro ascenders/descenders",
+        f32::from(body_tight.leading),
+        body_size,
+    );
 }
 
 #[test]
@@ -1463,13 +1482,48 @@ fn leading_style_proportional_across_all_text_styles() {
         let tight = f32::from(style.attrs().with_leading(LeadingStyle::Tight).leading);
         let loose = f32::from(style.attrs().with_leading(LeadingStyle::Loose).leading);
         assert!(
-            (tight - base * 0.85).abs() < LEADING_TOLERANCE,
-            "{style:?}: tight leading {tight} is not 0.85 × {base}",
+            (tight - base * 0.95).abs() < LEADING_TOLERANCE,
+            "{style:?}: tight leading {tight} is not 0.95 × {base}",
         );
         assert!(
             (loose - base * 1.15).abs() < LEADING_TOLERANCE,
             "{style:?}: loose leading {loose} is not 1.15 × {base}",
         );
+    }
+}
+
+#[test]
+fn label_level_resolve_all_variants() {
+    let theme = TahoeTheme::dark();
+
+    assert_eq!(LabelLevel::Primary.resolve(&theme), theme.text);
+    assert_eq!(LabelLevel::Secondary.resolve(&theme), theme.text_muted);
+    assert_eq!(LabelLevel::Tertiary.resolve(&theme), theme.text_tertiary());
+    assert_eq!(
+        LabelLevel::Quaternary.resolve(&theme),
+        theme.text_quaternary(),
+    );
+    assert_eq!(LabelLevel::Quinary.resolve(&theme), theme.text_quinary());
+}
+
+#[test]
+fn label_level_resolve_variants_are_distinct() {
+    let theme = TahoeTheme::dark();
+    let colors = [
+        LabelLevel::Primary.resolve(&theme),
+        LabelLevel::Secondary.resolve(&theme),
+        LabelLevel::Tertiary.resolve(&theme),
+        LabelLevel::Quaternary.resolve(&theme),
+        LabelLevel::Quinary.resolve(&theme),
+    ];
+    // Each HIG tier resolves to a different color; if two collapse to
+    // the same value, the hierarchy has broken.
+    for (i, a) in colors.iter().enumerate() {
+        for (j, b) in colors.iter().enumerate() {
+            if i != j {
+                assert_ne!(a, b, "variants {i} and {j} collapsed");
+            }
+        }
     }
 }
 

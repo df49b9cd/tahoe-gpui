@@ -20,5 +20,5 @@ pub use badge::{Badge, BadgeVariant};
 pub use chart::{Chart, ChartDataSeries, ChartType};
 pub use image_view::{ContentMode, ImageView};
 pub use label::{Label, LabelVariant};
-pub use text_view::{LabelLevel, TextView};
+pub use text_view::TextView;
 pub use web_view::WebView;

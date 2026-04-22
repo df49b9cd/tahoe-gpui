@@ -20,60 +20,25 @@ use gpui::{App, ElementId, Hsla, SharedString, StyledText, TextAlign, Window, di
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
 use crate::foundations::theme::{
-    ActiveTheme, FontDesign, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
+    ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
 };
 
-/// Content held by a [`TextView`] — either a plain string or rich text with
-/// mixed formatting via [`StyledText`].
+/// Content held by a [`TextView`] — either a plain string or rich text
+/// with mixed formatting via [`StyledText`]. Rich content carries the
+/// plain-text equivalent alongside the styled element so VoiceOver has
+/// something to announce without callers re-supplying the text via
+/// [`TextView::accessibility_label`].
 enum TextViewContent {
     Plain(SharedString),
-    Rich(StyledText),
-}
-
-/// HIG label-level color hierarchy.
-///
-/// The HIG defines four levels of label importance (Labels > Secondary >
-/// Tertiary > Quaternary) with a fifth quinary level added in macOS Tahoe.
-/// Use [`TextView::label_level`] to apply the correct semantic color without
-/// reaching into the theme tokens directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum LabelLevel {
-    /// Primary text — `theme.text` (semantic `label`).
-    #[default]
-    Primary,
-    /// Secondary/supplemental text — `theme.text_muted` (semantic `secondaryLabel`).
-    Secondary,
-    /// Tertiary text — `theme.text_tertiary()` (semantic `tertiaryLabel`).
-    Tertiary,
-    /// Quaternary/watermark text — `theme.text_quaternary()` (semantic `quaternaryLabel`).
-    Quaternary,
-    /// Quinary text (macOS Tahoe; iOS equivalent where available) —
-    /// `theme.text_quinary()` (semantic `quinaryLabel`).
-    Quinary,
-}
-
-impl LabelLevel {
-    /// Resolve to the theme's semantic color for this level.
-    pub fn resolve(self, theme: &TahoeTheme) -> Hsla {
-        match self {
-            Self::Primary => theme.text,
-            Self::Secondary => theme.text_muted,
-            Self::Tertiary => theme.text_tertiary(),
-            Self::Quaternary => theme.text_quaternary(),
-            Self::Quinary => theme.text_quinary(),
-        }
-    }
+    Rich {
+        text: SharedString,
+        styled: StyledText,
+    },
 }
 
 /// A read-only text display view per HIG.
 ///
-/// Shows one or more paragraphs of styled text. Text selection is off by
-/// default; the [`Self::selectable`] builder stores intent so callers can opt
-/// in. When wired up in the future, selection will follow the same pattern as
-/// [`crate::markdown::selectable_text::SelectableText`] — GPUI does not
-/// provide a built-in selection API, but the crate implements it from scratch
-/// using raw mouse events, `TextLayout` hit-testing, and `window.paint_quad`,
-/// matching the approach Zed's editor uses.
+/// Shows one or more paragraphs of styled text.
 ///
 /// # Capabilities
 ///
@@ -84,36 +49,42 @@ impl LabelLevel {
 /// - Layout: [`Self::max_lines`] (line-clamp),
 ///   [`Self::readable_width`] (544 pt cap scaled by Dynamic Type),
 ///   [`Self::scrollable`] (vertical scroll), [`Self::text_align`].
-/// - State / color: [`Self::disabled`], [`Self::color`] (explicit),
-///   [`Self::label_level`] (semantic HIG hierarchy).
-/// - Accessibility: [`Self::accessibility_label`] override for rich-text
-///   content.
+/// - Color: [`Self::color`] (explicit) or [`Self::label_level`] (semantic
+///   HIG hierarchy).
+/// - Accessibility: [`Self::accessibility_label`] override.
 ///
 /// # Color precedence
 ///
-/// `disabled()` > `color()` > `label_level()` > default `theme.text`.
-/// The first set wins — e.g. `disabled(true).color(red)` still renders
-/// with `theme.text_disabled()`.
+/// `color()` > `label_level()` > default `theme.text`. An explicit
+/// `color()` wins over any semantic tier. For a disabled look, pass
+/// `color(theme.text_disabled())` directly — `TextView` does not carry a
+/// `disabled` flag because it has no interactive state.
 ///
 /// # Layout precedence
 ///
-/// `max_lines()` and `scrollable()` are mutually exclusive: clamped content
-/// cannot scroll because its height is already bounded by GPUI's
-/// `line_clamp`. When both are set, `max_lines()` wins and a one-shot
-/// debug-build warning fires via `tracing`.
+/// [`Self::max_lines`] and [`Self::scrollable`] are mutually exclusive:
+/// clamped content cannot scroll because its height is bounded by GPUI's
+/// `line_clamp`. Setting both trips a `debug_assert!` so the conflict
+/// panics in tests and debug builds; release builds silently prefer
+/// `max_lines`.
+///
+/// # Keyboard accessibility
+///
+/// [`Self::scrollable`] wraps the view in a non-focusable
+/// `overflow_y_scroll` container. Keyboard-only users cannot drive the
+/// scroll directly because `TextView` is a stateless `RenderOnce` without
+/// a [`gpui::FocusHandle`] — if keyboard scrolling matters, nest the
+/// `TextView` inside a focused scroll container owned by the host app.
 #[derive(IntoElement)]
 pub struct TextView {
     content: TextViewContent,
     style: TextStyle,
-    /// Text selection intent. See struct-level doc for the implementation path.
-    selectable: bool,
     max_lines: Option<usize>,
     emphasize: bool,
     color: Option<Hsla>,
     label_level: Option<LabelLevel>,
     font_design: Option<FontDesign>,
     leading_style: LeadingStyle,
-    disabled: bool,
     text_align: Option<TextAlign>,
     scroll_id: Option<ElementId>,
     readable_width: bool,
@@ -125,14 +96,12 @@ impl TextView {
         Self {
             content: TextViewContent::Plain(text.into()),
             style: TextStyle::Body,
-            selectable: false,
             max_lines: None,
             emphasize: false,
             color: None,
             label_level: None,
             font_design: None,
             leading_style: LeadingStyle::default(),
-            disabled: false,
             text_align: None,
             scroll_id: None,
             readable_width: false,
@@ -145,31 +114,35 @@ impl TextView {
         self
     }
 
-    /// Display rich text with mixed formatting (bold spans, color runs, etc.)
-    /// via GPUI's [`StyledText`].
+    /// Display rich text with mixed formatting (bold spans, color runs,
+    /// etc.) via GPUI's [`StyledText`]. `text` is the plain-text
+    /// equivalent and is used as the VoiceOver label when
+    /// [`Self::accessibility_label`] is not set — this keeps rich content
+    /// accessible without forcing callers to restate the text twice.
     ///
     /// Callers needing interactive text (click/hover on spans) should wrap
-    /// their `StyledText` in GPUI's `InteractiveText` before passing it,
-    /// rather than relying on `TextView` to provide interactivity.
-    /// `InteractiveText` requires an [`ElementId`] and its own event handlers,
-    /// which would change the stateless architecture of this component.
-    pub fn styled_text(mut self, text: StyledText) -> Self {
-        self.content = TextViewContent::Rich(text);
-        self
-    }
-
-    /// Opt into text selection. Stored but not yet enforced — see the
-    /// struct-level doc for the implementation path using
-    /// [`crate::markdown::selectable_text::SelectableText`].
-    pub fn selectable(mut self, selectable: bool) -> Self {
-        self.selectable = selectable;
+    /// their `StyledText` in GPUI's `InteractiveText` before passing it —
+    /// `InteractiveText` requires an [`ElementId`] and its own event
+    /// handlers, which would change the stateless architecture of this
+    /// component.
+    pub fn styled_text(mut self, text: impl Into<SharedString>, styled: StyledText) -> Self {
+        self.content = TextViewContent::Rich {
+            text: text.into(),
+            styled,
+        };
         self
     }
 
     /// Clamp the rendered text to `max` lines using GPUI's native
     /// `line-clamp`. Overflowing content is hidden.
+    ///
+    /// `max_lines(0)` is ignored: `line_clamp(0)` would hide every line,
+    /// which is almost never what a caller building the value dynamically
+    /// wants. Pass `max_lines(1)` to keep a single line.
     pub fn max_lines(mut self, max: usize) -> Self {
-        self.max_lines = Some(max);
+        if max > 0 {
+            self.max_lines = Some(max);
+        }
         self
     }
 
@@ -181,7 +154,8 @@ impl TextView {
         self
     }
 
-    /// Override the text color (default: `theme.text`).
+    /// Override the text color (default: `theme.text`). Wins over
+    /// [`Self::label_level`].
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
         self
@@ -189,32 +163,28 @@ impl TextView {
 
     /// Set the text color via the HIG label-level hierarchy.
     ///
-    /// Resolves to the correct semantic color (e.g. `theme.text_muted` for
-    /// [`LabelLevel::Secondary`]). If both `color()` and `label_level()` are
-    /// set, the explicit `color()` value wins.
+    /// Resolves to the correct semantic color (e.g. `theme.text_muted`
+    /// for [`LabelLevel::Secondary`]). If both `color()` and
+    /// `label_level()` are set, the explicit `color()` value wins.
     pub fn label_level(mut self, level: LabelLevel) -> Self {
         self.label_level = Some(level);
         self
     }
 
-    /// Override the font design (default: SF Pro). Use [`FontDesign::Serif`]
-    /// for editorial content, [`FontDesign::Monospaced`] for code, or
-    /// [`FontDesign::Rounded`] for a friendlier tone.
+    /// Override the font design (default: SF Pro). Use
+    /// [`FontDesign::Serif`] for editorial content,
+    /// [`FontDesign::Monospaced`] for code, or [`FontDesign::Rounded`]
+    /// for a friendlier tone.
     pub fn font_design(mut self, design: FontDesign) -> Self {
         self.font_design = Some(design);
         self
     }
 
-    /// Adjust the line-height: [`LeadingStyle::Tight`], [`Standard`](LeadingStyle::Standard),
-    /// or [`Loose`](LeadingStyle::Loose).
+    /// Adjust the line-height: [`LeadingStyle::Tight`],
+    /// [`Standard`](LeadingStyle::Standard), or
+    /// [`Loose`](LeadingStyle::Loose).
     pub fn leading_style(mut self, style: LeadingStyle) -> Self {
         self.leading_style = style;
-        self
-    }
-
-    /// Render in a disabled/muted state using `theme.text_disabled()`.
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
         self
     }
 
@@ -225,9 +195,9 @@ impl TextView {
     ///
     /// Prefer leading alignment for running paragraphs — centered or
     /// right-aligned body copy breaks scanning rhythm. Reserve
-    /// [`TextAlign::Center`] for short decorative labels (a single headline
-    /// over a hero image) and [`TextAlign::Right`] for tabular right-aligned
-    /// numerics.
+    /// [`TextAlign::Center`] for short decorative labels (a single
+    /// headline over a hero image) and [`TextAlign::Right`] for tabular
+    /// right-aligned numerics.
     pub fn text_align(mut self, align: TextAlign) -> Self {
         self.text_align = Some(align);
         self
@@ -237,10 +207,15 @@ impl TextView {
     /// view. Requires an [`ElementId`] because GPUI tracks scroll state
     /// per-element.
     ///
-    /// No-op when [`Self::max_lines`] is also set — clamped content cannot
-    /// scroll because its height is already bounded by GPUI's `line_clamp`.
-    /// Combining the two emits a one-shot `tracing::warn!` in debug builds
-    /// so the silent no-op is visible.
+    /// Must not be combined with [`Self::max_lines`] — clamped content
+    /// cannot scroll because its height is already bounded by GPUI's
+    /// `line_clamp`. Combining the two trips a `debug_assert!` so the
+    /// conflict is caught in tests; release builds silently prefer
+    /// `max_lines`.
+    ///
+    /// # Keyboard limitation
+    ///
+    /// The scroll container is not focusable — see the struct-level doc.
     pub fn scrollable(mut self, id: impl Into<ElementId>) -> Self {
         self.scroll_id = Some(id.into());
         self
@@ -252,19 +227,32 @@ impl TextView {
     /// [`TahoeTheme::effective_font_scale_factor`] so the column widens
     /// proportionally when the user enables a Larger Text accessibility
     /// mode.
-    pub fn readable_width(mut self) -> Self {
-        self.readable_width = true;
+    pub fn readable_width(mut self, readable: bool) -> Self {
+        self.readable_width = readable;
         self
     }
 
     /// Override the VoiceOver label. Defaults to the plain-text content
-    /// for views built via [`Self::new`]; views built via [`Self::styled_text`]
-    /// have no automatic label and rely on this override to stay accessible
-    /// (a one-shot `tracing::warn!` fires in debug builds if rich content
-    /// renders without a label).
+    /// for both [`Self::new`] and [`Self::styled_text`] views — rich
+    /// content carries its plain-text equivalent alongside the styled
+    /// element.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
+    }
+}
+
+/// Resolve the final text color from the three inputs.
+///
+/// Precedence (first set wins): explicit [`TextView::color`] > semantic
+/// [`LabelLevel`] > default `theme.text`.
+fn resolve_color(color: Option<Hsla>, level: Option<LabelLevel>, theme: &TahoeTheme) -> Hsla {
+    if let Some(color) = color {
+        color
+    } else if let Some(level) = level {
+        level.resolve(theme)
+    } else {
+        theme.text
     }
 }
 
@@ -287,9 +275,14 @@ impl RenderOnce for TextView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        if self.selectable {
-            warn_selectable_unimplemented_once();
-        }
+        // max_lines + scrollable is undefined: clamped height short-circuits
+        // the scroll viewport. Assert in debug so the conflict is caught in
+        // tests; release silently prefers max_lines.
+        debug_assert!(
+            !(self.max_lines.is_some() && self.scroll_id.is_some()),
+            "TextView: max_lines() and scrollable() are mutually exclusive — \
+             clamped content cannot scroll. Drop one of the two.",
+        );
 
         let mut el = apply_typography(div(), self.style, theme, self.emphasize, self.font_design);
 
@@ -308,17 +301,7 @@ impl RenderOnce for TextView {
             el = el.line_height(gpui::px(f32::from(attrs.leading) * scale));
         }
 
-        // Text color: disabled > explicit override > label_level > default theme.text.
-        let text_color = if self.disabled {
-            theme.text_disabled()
-        } else if let Some(color) = self.color {
-            color
-        } else if let Some(level) = self.label_level {
-            level.resolve(theme)
-        } else {
-            theme.text
-        };
-        el = el.text_color(text_color);
+        el = el.text_color(resolve_color(self.color, self.label_level, theme));
 
         if let Some(align) = self.text_align {
             el = el.text_align(align);
@@ -335,41 +318,22 @@ impl RenderOnce for TextView {
             el = el.max_w(gpui::px(READABLE_OPTIMAL_WIDTH * scale));
         }
 
-        // Accessibility. Role defaults to StaticText. Label resolves to
-        // explicit override > plain-text content; rich content renders
-        // without an auto-derived label and emits a one-shot debug warning
-        // if `accessibility_label` was not supplied.
-        let mut a11y = AccessibilityProps::new().role(AccessibilityRole::StaticText);
-        if self.disabled {
-            a11y = a11y.disabled(true);
-        }
-        if let Some(ref label) = self.accessibility_label {
-            a11y = a11y.label(label.clone());
-        } else {
-            match &self.content {
-                TextViewContent::Plain(text) => {
-                    a11y = a11y.label(text.clone());
-                }
-                TextViewContent::Rich(_) => {
-                    warn_rich_without_accessibility_label_once();
-                }
-            }
-        }
+        // A11y label falls back to plain-text (both content variants carry one).
+        let label = self
+            .accessibility_label
+            .clone()
+            .unwrap_or_else(|| match &self.content {
+                TextViewContent::Plain(text) => text.clone(),
+                TextViewContent::Rich { text, .. } => text.clone(),
+            });
+        let a11y = AccessibilityProps::new()
+            .role(AccessibilityRole::StaticText)
+            .label(label);
 
         let el = match self.content {
             TextViewContent::Plain(text) => el.child(text),
-            TextViewContent::Rich(styled) => el.child(styled),
+            TextViewContent::Rich { styled, .. } => el.child(styled),
         };
-
-        // Scrollable + max_lines is undefined: clamped height short-circuits
-        // the scroll viewport. Warn once in debug so the silent no-op is
-        // visible, then drop the scroll id.
-        if self.scroll_id.is_some() && self.max_lines.is_some() {
-            warn_scrollable_with_max_lines_once();
-        }
-
-        // Attach a11y to the inner element so the VoiceOver role/label
-        // follows the text regardless of whether a scroll wrapper is added.
         let el = el.with_accessibility(&a11y);
 
         match self.scroll_id.filter(|_| self.max_lines.is_none()) {
@@ -383,76 +347,15 @@ impl RenderOnce for TextView {
     }
 }
 
-/// Emits at most one `tracing::warn!` per process when `.selectable(true)` is
-/// called on a `TextView`, reminding developers that selection is not yet
-/// implemented. Debug builds only — the body compiles out in release.
-fn warn_selectable_unimplemented_once() {
-    #[cfg(debug_assertions)]
-    {
-        use std::sync::OnceLock;
-        static WARNED: OnceLock<()> = OnceLock::new();
-        WARNED.get_or_init(|| {
-            tracing::warn!(
-                target: "tahoe_gpui::text_view",
-                "TextView::selectable(true) — text selection is not yet \
-                 implemented; the field is stored for future use. See the \
-                 TextView struct-level doc for the implementation path. \
-                 Fires once per process."
-            );
-        });
-    }
-}
-
-/// Emits at most one `tracing::warn!` per process when both
-/// [`TextView::max_lines`] and [`TextView::scrollable`] are set on the same
-/// view. `max_lines` wins; the scroll id is ignored. Debug builds only.
-fn warn_scrollable_with_max_lines_once() {
-    #[cfg(debug_assertions)]
-    {
-        use std::sync::OnceLock;
-        static WARNED: OnceLock<()> = OnceLock::new();
-        WARNED.get_or_init(|| {
-            tracing::warn!(
-                target: "tahoe_gpui::text_view",
-                "TextView::scrollable() is a no-op when max_lines() is also \
-                 set — clamped content cannot scroll. Drop one of the two to \
-                 silence this warning. Fires once per process."
-            );
-        });
-    }
-}
-
-/// Emits at most one `tracing::warn!` per process when a `TextView` built
-/// via [`TextView::styled_text`] renders without an explicit
-/// [`TextView::accessibility_label`]. Rich content has no text to derive
-/// an auto-label from, so VoiceOver would read nothing. Debug builds only.
-fn warn_rich_without_accessibility_label_once() {
-    #[cfg(debug_assertions)]
-    {
-        use std::sync::OnceLock;
-        static WARNED: OnceLock<()> = OnceLock::new();
-        WARNED.get_or_init(|| {
-            tracing::warn!(
-                target: "tahoe_gpui::text_view",
-                "TextView::styled_text() was used without \
-                 .accessibility_label() — rich content has no plain-text \
-                 fallback, so VoiceOver will announce nothing. Pass \
-                 .accessibility_label(\"...\") with the plain-text \
-                 equivalent. Fires once per process."
-            );
-        });
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use core::prelude::v1::test;
 
     use gpui::{ElementId, StyledText, TextAlign};
 
-    use crate::foundations::theme::{FontDesign, LeadingStyle, TextStyle};
+    use crate::foundations::theme::{FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle};
 
-    use super::{LabelLevel, TextView, TextViewContent};
+    use super::{TextView, TextViewContent, resolve_color};
 
     #[test]
     fn text_view_new() {
@@ -462,14 +365,12 @@ mod tests {
             TextViewContent::Plain(ref s) if s.as_ref() == "Hello world"
         ));
         assert_eq!(tv.style, TextStyle::Body);
-        assert!(!tv.selectable);
         assert!(tv.max_lines.is_none());
         assert!(!tv.emphasize);
         assert!(tv.color.is_none());
         assert!(tv.label_level.is_none());
         assert!(tv.font_design.is_none());
         assert_eq!(tv.leading_style, LeadingStyle::Standard);
-        assert!(!tv.disabled);
         assert!(tv.text_align.is_none());
         assert!(tv.scroll_id.is_none());
         assert!(!tv.readable_width);
@@ -489,9 +390,13 @@ mod tests {
     }
 
     #[test]
-    fn text_view_selectable_builder() {
-        let tv = TextView::new("x").selectable(true);
-        assert!(tv.selectable);
+    fn text_view_max_lines_zero_is_ignored() {
+        // line_clamp(0) would hide every line — almost never what a
+        // caller computing the value dynamically wants. The builder
+        // silently drops a zero so callers do not accidentally erase
+        // their text.
+        let tv = TextView::new("keep me").max_lines(0);
+        assert_eq!(tv.max_lines, None);
     }
 
     #[test]
@@ -520,12 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn text_view_disabled() {
-        let tv = TextView::new("Off").disabled(true);
-        assert!(tv.disabled);
-    }
-
-    #[test]
     fn text_view_text_align() {
         let tv = TextView::new("Center").text_align(TextAlign::Center);
         assert_eq!(tv.text_align, Some(TextAlign::Center));
@@ -541,65 +440,31 @@ mod tests {
 
     #[test]
     fn text_view_readable_width() {
-        let tv = TextView::new("Long form").readable_width();
+        let tv = TextView::new("Long form").readable_width(true);
         assert!(tv.readable_width);
     }
 
     #[test]
-    fn text_view_styled_text() {
-        let styled = StyledText::new("Hello rich text");
-        let tv = TextView::new("placeholder").styled_text(styled);
-        assert!(matches!(tv.content, TextViewContent::Rich(_)));
+    fn text_view_readable_width_can_be_disabled() {
+        let tv = TextView::new("Long form")
+            .readable_width(true)
+            .readable_width(false);
+        assert!(!tv.readable_width);
+    }
+
+    #[test]
+    fn text_view_styled_text_stores_plain_text() {
+        let styled = StyledText::new("Bold hello");
+        let tv = TextView::new("placeholder").styled_text("Bold hello", styled);
+        match &tv.content {
+            TextViewContent::Rich { text, .. } => assert_eq!(text.as_ref(), "Bold hello"),
+            TextViewContent::Plain(_) => panic!("expected Rich content"),
+        }
     }
 
     #[test]
     fn text_view_label_level() {
         let tv = TextView::new("Secondary").label_level(LabelLevel::Secondary);
-        assert_eq!(tv.label_level, Some(LabelLevel::Secondary));
-    }
-
-    #[test]
-    fn text_view_label_level_all_variants() {
-        assert_eq!(
-            TextView::new("a")
-                .label_level(LabelLevel::Primary)
-                .label_level,
-            Some(LabelLevel::Primary),
-        );
-        assert_eq!(
-            TextView::new("b")
-                .label_level(LabelLevel::Secondary)
-                .label_level,
-            Some(LabelLevel::Secondary),
-        );
-        assert_eq!(
-            TextView::new("c")
-                .label_level(LabelLevel::Tertiary)
-                .label_level,
-            Some(LabelLevel::Tertiary),
-        );
-        assert_eq!(
-            TextView::new("d")
-                .label_level(LabelLevel::Quaternary)
-                .label_level,
-            Some(LabelLevel::Quaternary),
-        );
-        assert_eq!(
-            TextView::new("e")
-                .label_level(LabelLevel::Quinary)
-                .label_level,
-            Some(LabelLevel::Quinary),
-        );
-    }
-
-    #[test]
-    fn text_view_color_wins_over_label_level() {
-        let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
-        let tv = TextView::new("x")
-            .label_level(LabelLevel::Secondary)
-            .color(color);
-        // Both are stored; the render method resolves color > label_level.
-        assert_eq!(tv.color, Some(color));
         assert_eq!(tv.label_level, Some(LabelLevel::Secondary));
     }
 
@@ -613,49 +478,35 @@ mod tests {
     }
 
     #[test]
-    fn label_level_resolve_all_variants() {
-        use crate::foundations::theme::TahoeTheme;
+    fn resolve_color_defaults_to_theme_text() {
         let theme = TahoeTheme::dark();
+        assert_eq!(resolve_color(None, None, &theme), theme.text);
+    }
 
-        assert_eq!(LabelLevel::Primary.resolve(&theme), theme.text);
-        assert_eq!(LabelLevel::Secondary.resolve(&theme), theme.text_muted);
-        assert_eq!(LabelLevel::Tertiary.resolve(&theme), theme.text_tertiary());
+    #[test]
+    fn resolve_color_label_level_resolves_to_theme_tier() {
+        let theme = TahoeTheme::dark();
         assert_eq!(
-            LabelLevel::Quaternary.resolve(&theme),
-            theme.text_quaternary(),
+            resolve_color(None, Some(LabelLevel::Secondary), &theme),
+            theme.text_muted,
         );
-        assert_eq!(LabelLevel::Quinary.resolve(&theme), theme.text_quinary());
     }
 
     #[test]
-    fn label_level_resolve_variants_are_distinct() {
-        use crate::foundations::theme::TahoeTheme;
+    fn resolve_color_explicit_wins_over_label_level() {
         let theme = TahoeTheme::dark();
-        let colors = [
-            LabelLevel::Primary.resolve(&theme),
-            LabelLevel::Secondary.resolve(&theme),
-            LabelLevel::Tertiary.resolve(&theme),
-            LabelLevel::Quaternary.resolve(&theme),
-            LabelLevel::Quinary.resolve(&theme),
-        ];
-        // Each HIG tier resolves to a different color; if two collapse to
-        // the same value, the hierarchy has broken.
-        for (i, a) in colors.iter().enumerate() {
-            for (j, b) in colors.iter().enumerate() {
-                if i != j {
-                    assert_ne!(a, b, "variants {i} and {j} collapsed");
-                }
-            }
-        }
+        let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
+        assert_eq!(
+            resolve_color(Some(color), Some(LabelLevel::Secondary), &theme),
+            color,
+            "explicit color() must win over label_level()",
+        );
     }
 
     #[test]
-    fn text_view_scrollable_and_max_lines_both_stored() {
-        // Contract: the render method prefers max_lines over scrollable when
-        // both are set. Both fields remain populated on the builder so
-        // introspection tools can detect the combination.
-        let tv = TextView::new("x").scrollable("id").max_lines(3);
-        assert!(tv.scroll_id.is_some());
-        assert_eq!(tv.max_lines, Some(3));
+    fn resolve_color_explicit_wins_over_default() {
+        let theme = TahoeTheme::dark();
+        let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
+        assert_eq!(resolve_color(Some(color), None, &theme), color);
     }
 }

@@ -25,14 +25,14 @@ pub use crate::foundations::layout::{
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
 pub use crate::foundations::theme::{
-    ActiveTheme, GlassSize, SurfaceContext, TahoeTheme, TextStyle, TextStyledExt,
+    ActiveTheme, GlassSize, LabelLevel, SurfaceContext, TahoeTheme, TextStyle, TextStyledExt,
 };
 
 // ── Components > Content ───────────────────────────────────────────────────
 
 pub use crate::components::content::{
-    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelLevel,
-    LabelVariant, TextView,
+    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelVariant,
+    TextView,
 };
 
 // ── Components > Layout and organization ───────────────────────────────────
