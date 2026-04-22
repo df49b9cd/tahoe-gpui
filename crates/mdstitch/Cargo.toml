@@ -1,11 +1,15 @@
 [package]
 name = "mdstitch"
+version = "0.1.0"
 description = "Streaming markdown preprocessor that closes unterminated syntax token-by-token."
 readme = "README.md"
+homepage = "https://github.com/df49b9cd/tahoe-gpui/tree/main/crates/mdstitch"
+documentation = "https://docs.rs/mdstitch"
 keywords = ["markdown", "streaming", "pulldown-cmark", "commonmark"]
 categories = ["text-processing", "parser-implementations"]
-version.workspace = true
+exclude = ["proptest-regressions/**"]
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
