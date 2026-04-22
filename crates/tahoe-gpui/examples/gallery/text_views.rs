@@ -240,14 +240,14 @@ pub fn render(
                 .child("Scrollable"),
         )
         .child(
-            div().max_h(gpui::px(80.0)).child(
+            div().max_h(gpui::px(120.0)).child(
                 TextView::new(
                     "This is a scrollable text view. When the content exceeds the \
-                         visible area, the text scrolls vertically. This matches the HIG \
-                         requirement that text views support scrolling when content is \
-                         taller than the view. The quick brown fox jumps over the lazy dog. \
-                         Pack my box with five dozen liquor jugs. How vexingly quick daft \
-                         zebras jump. The five boxing wizards jump quickly.",
+                     visible area, the text scrolls vertically. This matches the HIG \
+                     requirement that text views support scrolling when content is \
+                     taller than the view. The quick brown fox jumps over the lazy dog. \
+                     Pack my box with five dozen liquor jugs. How vexingly quick daft \
+                     zebras jump. The five boxing wizards jump quickly.",
                 )
                 .scrollable("scrollable-demo"),
             ),

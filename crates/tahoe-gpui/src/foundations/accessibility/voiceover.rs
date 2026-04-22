@@ -144,6 +144,12 @@ pub struct AccessibilityProps {
     /// [`AccessibilityRole::AlertDialog`], or [`AccessibilityRole::Alert`] so
     /// VoiceOver announces "modal dialog" once GPUI lands an AX tree.
     pub modal: bool,
+    /// Marks the element as disabled (WAI-ARIA `aria-disabled` /
+    /// NSAccessibility `AXEnabled = false`). Visual dimming alone does not
+    /// tell VoiceOver the control is inactive; components that render a
+    /// disabled visual state should also set this flag so the AX wiring
+    /// announces "dimmed" once GPUI lands an AX tree.
+    pub disabled: bool,
 }
 
 impl AccessibilityProps {
@@ -194,6 +200,12 @@ impl AccessibilityProps {
         self
     }
 
+    /// Mark this element as disabled / inactive.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     /// Set the 1-based position within a group (WAI-ARIA `aria-posinset`).
     pub fn posinset(mut self, pos: usize) -> Self {
         self.posinset = Some(pos);
@@ -212,6 +224,7 @@ impl AccessibilityProps {
             || self.role.is_some()
             || self.value.is_some()
             || self.modal
+            || self.disabled
             || self.posinset.is_some()
             || self.setsize.is_some()
     }
@@ -426,5 +439,21 @@ mod tests {
     #[test]
     fn accessibility_props_is_some_true_when_only_setsize() {
         assert!(AccessibilityProps::new().setsize(3).is_some());
+    }
+
+    #[test]
+    fn accessibility_props_disabled_defaults_false() {
+        assert!(!AccessibilityProps::new().disabled);
+    }
+
+    #[test]
+    fn accessibility_props_disabled_builder_sets_flag() {
+        let props = AccessibilityProps::new().disabled(true);
+        assert!(props.disabled);
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_disabled() {
+        assert!(AccessibilityProps::new().disabled(true).is_some());
     }
 }

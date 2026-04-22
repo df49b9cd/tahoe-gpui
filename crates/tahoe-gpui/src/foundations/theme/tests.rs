@@ -1409,15 +1409,19 @@ fn text_style_emphasized_preserves_size() {
     assert_eq!(normal.leading, emph.leading);
 }
 
+/// Leading tolerance: allow ~100 ULPs of f32 multiplication error
+/// (≈1.19e-5). `0.85` / `1.15` are not exactly representable in f32, so the
+/// product drifts by a few ULPs from the arithmetic ideal — anything wider
+/// than this would hide a real bug in the multiplier.
+const LEADING_TOLERANCE: f32 = f32::EPSILON * 100.0;
+
 #[test]
 fn leading_style_tight_reduces() {
     let standard = TextStyle::Body.attrs();
     let tight = standard.with_leading(LeadingStyle::Tight);
     assert!(f32::from(tight.leading) < f32::from(standard.leading));
-    // Proportional 0.85x: Body leading 16pt -> 13.6pt. Tolerance is loose
-    // enough (0.01pt) to survive any future pixel-align rounding.
     let expected = f32::from(standard.leading) * 0.85;
-    assert!((f32::from(tight.leading) - expected).abs() < 0.01);
+    assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
 }
 
 #[test]
@@ -1425,10 +1429,8 @@ fn leading_style_loose_increases() {
     let standard = TextStyle::Body.attrs();
     let loose = standard.with_leading(LeadingStyle::Loose);
     assert!(f32::from(loose.leading) > f32::from(standard.leading));
-    // Proportional 1.15x: Body leading 16pt -> 18.4pt. See tight test for
-    // the 0.01pt tolerance rationale.
     let expected = f32::from(standard.leading) * 1.15;
-    assert!((f32::from(loose.leading) - expected).abs() < 0.01);
+    assert!((f32::from(loose.leading) - expected).abs() < LEADING_TOLERANCE);
 }
 
 #[test]
@@ -1436,6 +1438,39 @@ fn leading_style_standard_unchanged() {
     let attrs = TextStyle::Body.attrs();
     let standard = attrs.with_leading(LeadingStyle::Standard);
     assert_eq!(attrs.leading, standard.leading);
+}
+
+#[test]
+fn leading_style_proportional_across_all_text_styles() {
+    // Regression coverage: a flat ±pt offset landed differently per style
+    // (12.5% on Body's 16pt, 6.25% on LargeTitle's 32pt). The proportional
+    // multiplier keeps the relative delta identical across every style;
+    // this sweep catches any future regression that breaks that contract.
+    for style in [
+        TextStyle::LargeTitle,
+        TextStyle::Title1,
+        TextStyle::Title2,
+        TextStyle::Title3,
+        TextStyle::Headline,
+        TextStyle::Body,
+        TextStyle::Callout,
+        TextStyle::Subheadline,
+        TextStyle::Footnote,
+        TextStyle::Caption1,
+        TextStyle::Caption2,
+    ] {
+        let base = f32::from(style.attrs().leading);
+        let tight = f32::from(style.attrs().with_leading(LeadingStyle::Tight).leading);
+        let loose = f32::from(style.attrs().with_leading(LeadingStyle::Loose).leading);
+        assert!(
+            (tight - base * 0.85).abs() < LEADING_TOLERANCE,
+            "{style:?}: tight leading {tight} is not 0.85 × {base}",
+        );
+        assert!(
+            (loose - base * 1.15).abs() < LEADING_TOLERANCE,
+            "{style:?}: loose leading {loose} is not 1.15 × {base}",
+        );
+    }
 }
 
 #[test]

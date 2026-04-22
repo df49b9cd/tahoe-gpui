@@ -414,12 +414,12 @@ impl TextStyle {
 impl TextStyleAttrs {
     /// Returns a copy with the leading adjusted per the given style.
     ///
-    /// Uses proportional multipliers (~0.85x for Tight, ~1.15x for Loose)
-    /// instead of flat offsets so the visual density stays consistent across
-    /// all 11 text styles. The macOS symbolic trait system adjusts leading
-    /// proportionally; flat offsets produce inconsistent results (e.g. a 2pt
-    /// reduction on Body's 16pt leading is 12.5%, but only 6.25% on
-    /// LargeTitle's 32pt leading).
+    /// Uses proportional multipliers (`× 0.85` for Tight, `× 1.15` for
+    /// Loose) instead of flat offsets so the visual density stays
+    /// consistent across all 11 text styles. A flat ±2 pt delta would land
+    /// differently per size — 12.5% on Body's 16 pt leading but only 6.25%
+    /// on LargeTitle's 32 pt — whereas a proportional factor produces the
+    /// same perceived change everywhere.
     pub fn with_leading(mut self, style: LeadingStyle) -> Self {
         match style {
             LeadingStyle::Tight => self.leading = px(f32::from(self.leading) * 0.85),

@@ -91,7 +91,7 @@ impl LabelLevel {
 ///
 /// # Color precedence
 ///
-/// `disabled()` &gt; `color()` &gt; `label_level()` &gt; default `theme.text`.
+/// `disabled()` > `color()` > `label_level()` > default `theme.text`.
 /// The first set wins — e.g. `disabled(true).color(red)` still renders
 /// with `theme.text_disabled()`.
 ///
@@ -258,12 +258,28 @@ impl TextView {
     }
 
     /// Override the VoiceOver label. Defaults to the plain-text content
-    /// for [`TextViewContent::Plain`]; [`TextViewContent::Rich`] content
-    /// has no automatic label and relies on this override to stay
-    /// accessible.
+    /// for views built via [`Self::new`]; views built via [`Self::styled_text`]
+    /// have no automatic label and rely on this override to stay accessible
+    /// (a one-shot `tracing::warn!` fires in debug builds if rich content
+    /// renders without a label).
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
+    }
+}
+
+fn apply_typography(
+    el: gpui::Div,
+    style: TextStyle,
+    theme: &TahoeTheme,
+    emphasize: bool,
+    font_design: Option<FontDesign>,
+) -> gpui::Div {
+    match (emphasize, font_design) {
+        (false, None) => el.text_style(style, theme),
+        (true, None) => el.text_style_emphasized(style, theme),
+        (false, Some(design)) => el.text_style_with_design(style, design, theme),
+        (true, Some(design)) => el.text_style_emphasized_with_design(style, design, theme),
     }
 }
 
@@ -275,25 +291,7 @@ impl RenderOnce for TextView {
             warn_selectable_unimplemented_once();
         }
 
-        // Pick the correct TextStyledExt method based on emphasize × font_design.
-        let apply_typography = |el: gpui::Div,
-                                style: TextStyle,
-                                theme: &crate::foundations::theme::TahoeTheme,
-                                emphasize: bool,
-                                font_design: Option<FontDesign>| {
-            match (emphasize, font_design) {
-                (false, None) => el.text_style(style, theme),
-                (true, None) => el.text_style_emphasized(style, theme),
-                (false, Some(design)) => el.text_style_with_design(style, design, theme),
-                (true, Some(design)) => el.text_style_emphasized_with_design(style, design, theme),
-            }
-        };
-
-        // Always start with a plain div. If scrolling is requested, we wrap
-        // the content in an id-bearing scrollable div at the end instead.
-        let mut el = div();
-
-        el = apply_typography(el, self.style, theme, self.emphasize, self.font_design);
+        let mut el = apply_typography(div(), self.style, theme, self.emphasize, self.font_design);
 
         // Only override line_height when leading_style differs from Standard.
         // apply_typography already sets the correct scaled leading for the
@@ -337,83 +335,114 @@ impl RenderOnce for TextView {
             el = el.max_w(gpui::px(READABLE_OPTIMAL_WIDTH * scale));
         }
 
-        // Accessibility role — currently a no-op in GPUI but declares intent.
-        // Label resolution: explicit override > plain-text content > none
-        // (rich content has no reliable auto-label; see the Rich arm of
-        // TextViewContent).
+        // Accessibility. Role defaults to StaticText. Label resolves to
+        // explicit override > plain-text content; rich content renders
+        // without an auto-derived label and emits a one-shot debug warning
+        // if `accessibility_label` was not supplied.
         let mut a11y = AccessibilityProps::new().role(AccessibilityRole::StaticText);
+        if self.disabled {
+            a11y = a11y.disabled(true);
+        }
         if let Some(ref label) = self.accessibility_label {
             a11y = a11y.label(label.clone());
-        } else if let TextViewContent::Plain(ref text) = self.content {
-            a11y = a11y.label(text.clone());
+        } else {
+            match &self.content {
+                TextViewContent::Plain(text) => {
+                    a11y = a11y.label(text.clone());
+                }
+                TextViewContent::Rich(_) => {
+                    warn_rich_without_accessibility_label_once();
+                }
+            }
         }
 
-        el = match self.content {
+        let el = match self.content {
             TextViewContent::Plain(text) => el.child(text),
             TextViewContent::Rich(styled) => el.child(styled),
         };
 
-        // Wrap in a scrollable container when an id is provided and no
-        // line_clamp is active (clamped content cannot scroll). Attach a11y
-        // to the outermost element so VoiceOver reports the full bounding
-        // region, including the scroll viewport.
-        match (self.scroll_id, self.max_lines.is_some()) {
-            (Some(id), false) => div()
+        // Scrollable + max_lines is undefined: clamped height short-circuits
+        // the scroll viewport. Warn once in debug so the silent no-op is
+        // visible, then drop the scroll id.
+        if self.scroll_id.is_some() && self.max_lines.is_some() {
+            warn_scrollable_with_max_lines_once();
+        }
+
+        // Attach a11y to the inner element so the VoiceOver role/label
+        // follows the text regardless of whether a scroll wrapper is added.
+        let el = el.with_accessibility(&a11y);
+
+        match self.scroll_id.filter(|_| self.max_lines.is_none()) {
+            Some(id) => div()
                 .id(id)
                 .overflow_y_scroll()
                 .child(el)
-                .with_accessibility(&a11y)
                 .into_any_element(),
-            (Some(_), true) => {
-                warn_scrollable_with_max_lines_once();
-                el.with_accessibility(&a11y).into_any_element()
-            }
-            (None, _) => el.with_accessibility(&a11y).into_any_element(),
+            None => el.into_any_element(),
         }
     }
 }
 
 /// Emits at most one `tracing::warn!` per process when `.selectable(true)` is
 /// called on a `TextView`, reminding developers that selection is not yet
-/// implemented. Debug builds only — the `cfg(not(debug_assertions))` stub
-/// compiles out in release.
-#[cfg(debug_assertions)]
+/// implemented. Debug builds only — the body compiles out in release.
 fn warn_selectable_unimplemented_once() {
-    use std::sync::OnceLock;
-    static WARNED: OnceLock<()> = OnceLock::new();
-    WARNED.get_or_init(|| {
-        tracing::warn!(
-            target: "tahoe_gpui::text_view",
-            "TextView::selectable(true) — text selection is not yet \
-             implemented; the field is stored for future use. See the \
-             TextView struct-level doc for the implementation path. \
-             Fires once per process."
-        );
-    });
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::OnceLock;
+        static WARNED: OnceLock<()> = OnceLock::new();
+        WARNED.get_or_init(|| {
+            tracing::warn!(
+                target: "tahoe_gpui::text_view",
+                "TextView::selectable(true) — text selection is not yet \
+                 implemented; the field is stored for future use. See the \
+                 TextView struct-level doc for the implementation path. \
+                 Fires once per process."
+            );
+        });
+    }
 }
-
-#[cfg(not(debug_assertions))]
-fn warn_selectable_unimplemented_once() {}
 
 /// Emits at most one `tracing::warn!` per process when both
 /// [`TextView::max_lines`] and [`TextView::scrollable`] are set on the same
 /// view. `max_lines` wins; the scroll id is ignored. Debug builds only.
-#[cfg(debug_assertions)]
 fn warn_scrollable_with_max_lines_once() {
-    use std::sync::OnceLock;
-    static WARNED: OnceLock<()> = OnceLock::new();
-    WARNED.get_or_init(|| {
-        tracing::warn!(
-            target: "tahoe_gpui::text_view",
-            "TextView::scrollable() is a no-op when max_lines() is also \
-             set — clamped content cannot scroll. Drop one of the two to \
-             silence this warning. Fires once per process."
-        );
-    });
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::OnceLock;
+        static WARNED: OnceLock<()> = OnceLock::new();
+        WARNED.get_or_init(|| {
+            tracing::warn!(
+                target: "tahoe_gpui::text_view",
+                "TextView::scrollable() is a no-op when max_lines() is also \
+                 set — clamped content cannot scroll. Drop one of the two to \
+                 silence this warning. Fires once per process."
+            );
+        });
+    }
 }
 
-#[cfg(not(debug_assertions))]
-fn warn_scrollable_with_max_lines_once() {}
+/// Emits at most one `tracing::warn!` per process when a `TextView` built
+/// via [`TextView::styled_text`] renders without an explicit
+/// [`TextView::accessibility_label`]. Rich content has no text to derive
+/// an auto-label from, so VoiceOver would read nothing. Debug builds only.
+fn warn_rich_without_accessibility_label_once() {
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::OnceLock;
+        static WARNED: OnceLock<()> = OnceLock::new();
+        WARNED.get_or_init(|| {
+            tracing::warn!(
+                target: "tahoe_gpui::text_view",
+                "TextView::styled_text() was used without \
+                 .accessibility_label() — rich content has no plain-text \
+                 fallback, so VoiceOver will announce nothing. Pass \
+                 .accessibility_label(\"...\") with the plain-text \
+                 equivalent. Fires once per process."
+            );
+        });
+    }
+}
 
 #[cfg(test)]
 mod tests {
