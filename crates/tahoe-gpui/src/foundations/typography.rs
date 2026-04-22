@@ -480,6 +480,54 @@ pub enum LeadingStyle {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TextCase
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Case transform applied to rendered text — mirrors SwiftUI's `Text.Case`.
+///
+/// Applied at paint time to the string that reaches the layout engine. The
+/// transformed string is what selection, copy, and the VoiceOver label all
+/// observe, matching SwiftUI's contract: the user sees X, selects X, copies
+/// X, hears X.
+///
+/// # Rich content
+///
+/// Case transforms can alter UTF-8 byte length (for example `'ß'.to_uppercase()
+/// == "SS"`), which would invalidate the byte ranges stored on a rich
+/// `HighlightStyle` span. Components that support both plain and rich content
+/// typically only apply the transform when no highlights are present and
+/// fall back to the original string otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextCase {
+    /// Uppercase via [`str::to_uppercase`].
+    Uppercase,
+    /// Lowercase via [`str::to_lowercase`].
+    Lowercase,
+    /// Capitalise the first character of the string, leave the rest
+    /// unchanged. SwiftUI's `.sentenceCase` follows the same rule: only
+    /// the first grapheme of the string is capitalised; subsequent
+    /// sentence boundaries are not inferred.
+    SentenceCase,
+}
+
+impl TextCase {
+    /// Apply the case transform, returning a freshly allocated [`String`].
+    pub fn apply(self, s: &str) -> String {
+        match self {
+            Self::Uppercase => s.to_uppercase(),
+            Self::Lowercase => s.to_lowercase(),
+            Self::SentenceCase => {
+                let mut chars = s.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LabelLevel
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -780,5 +828,52 @@ pub fn bold_step(w: FontWeight) -> FontWeight {
         650..750 => FontWeight::EXTRA_BOLD,
         // EXTRA_BOLD (800) and BLACK (900) both saturate at BLACK.
         _ => FontWeight::BLACK,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::prelude::v1::test;
+
+    use super::TextCase;
+
+    #[test]
+    fn text_case_uppercase_uppercases_the_whole_string() {
+        assert_eq!(TextCase::Uppercase.apply("Hello World"), "HELLO WORLD");
+    }
+
+    #[test]
+    fn text_case_lowercase_lowercases_the_whole_string() {
+        assert_eq!(TextCase::Lowercase.apply("Hello World"), "hello world");
+    }
+
+    #[test]
+    fn text_case_sentence_case_capitalises_only_the_first_char() {
+        // SwiftUI's `.sentenceCase` capitalises the first grapheme and
+        // leaves the remainder unchanged — it does not infer subsequent
+        // sentence boundaries, and it preserves case in trailing words.
+        assert_eq!(
+            TextCase::SentenceCase.apply("hello WORLD"),
+            "Hello WORLD",
+            "only first char is touched — trailing 'WORLD' stays uppercase",
+        );
+    }
+
+    #[test]
+    fn text_case_sentence_case_is_a_noop_for_an_already_capital_leading_char() {
+        assert_eq!(TextCase::SentenceCase.apply("Hello"), "Hello");
+    }
+
+    #[test]
+    fn text_case_sentence_case_empty_string_stays_empty() {
+        assert_eq!(TextCase::SentenceCase.apply(""), "");
+    }
+
+    #[test]
+    fn text_case_uppercase_handles_multi_byte_expansion() {
+        // `'ß'.to_uppercase() == "SS"` — the transform can grow the
+        // string in bytes, which is why `TextView` only applies case
+        // transforms to plain (un-highlighted) content.
+        assert_eq!(TextCase::Uppercase.apply("straße"), "STRASSE");
     }
 }

@@ -38,9 +38,10 @@ use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
-    App, ClipboardItem, Context, ElementId, Entity, FocusHandle, Focusable, HighlightStyle, Hsla,
-    MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle, SharedString, StyledText, TextAlign,
-    Window, div, point, px,
+    App, ClipboardItem, Context, ElementId, Entity, FocusHandle, Focusable, FontFeatures,
+    FontWeight, HighlightStyle, Hsla, MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle,
+    SharedString, StrikethroughStyle, StyledText, TextAlign, UnderlineStyle, Window, div, point,
+    px,
 };
 
 use crate::components::content::selectable_text::{
@@ -52,7 +53,8 @@ use crate::components::menus_and_actions::context_menu::{
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
 use crate::foundations::theme::{
-    ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
+    ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle,
+    TextStyledExt,
 };
 use crate::text_actions::{
     Copy, Down, End, Home, PageDown, PageUp, SelectAll, ShowContextMenu, Up,
@@ -418,6 +420,20 @@ impl TextViewContent {
             }
         }
     }
+
+    /// Returns a clone of `self` with the case transform applied to the
+    /// underlying text. Rich content is returned unchanged — a case
+    /// transform can alter UTF-8 byte length and would invalidate the
+    /// stored `HighlightStyle` byte ranges.
+    fn with_case(&self, case: TextCase) -> Self {
+        match self {
+            Self::Plain(t) => Self::Plain(SharedString::from(case.apply(t))),
+            Self::Rich { text, highlights } => Self::Rich {
+                text: text.clone(),
+                highlights: highlights.clone(),
+            },
+        }
+    }
 }
 
 /// A read-only text display view per HIG.
@@ -474,6 +490,20 @@ pub struct TextView {
     disabled: bool,
     accessibility_label: Option<SharedString>,
     context_menu: Entity<ContextMenu>,
+    // Phase A — SwiftUI `Text` parity: per-view decorations / weight /
+    // italic / font features / case transform. Each is `None` or the
+    // "identity" value so the defaults preserve the pre-phase-A behaviour
+    // of the existing `TextStyle` + `emphasize` path.
+    weight_override: Option<FontWeight>,
+    italic: bool,
+    underline: Option<UnderlineStyle>,
+    strikethrough: Option<StrikethroughStyle>,
+    monospaced_digit: bool,
+    /// `None` keeps GPUI's default (`calt=1`), `Some(false)` switches
+    /// `calt=0` to disable contextual alternates (e.g. programming
+    /// ligatures like `=>`, `!=`).
+    ligatures_enabled: Option<bool>,
+    text_case: Option<TextCase>,
 }
 
 impl TextView {
@@ -504,6 +534,13 @@ impl TextView {
             disabled: false,
             accessibility_label: None,
             context_menu: cx.new(ContextMenu::new),
+            weight_override: None,
+            italic: false,
+            underline: None,
+            strikethrough: None,
+            monospaced_digit: false,
+            ligatures_enabled: None,
+            text_case: None,
         }
     }
 
@@ -681,6 +718,108 @@ impl TextView {
         self
     }
 
+    // ── Phase A — SwiftUI `Text` parity ───────────────────────────────
+    //
+    // Builders mirror SwiftUI's `Text` modifiers so callers reaching for
+    // the Apple docs land on a familiar method name. These compose on top
+    // of the existing `text_style` / `emphasize` / `font_design` path:
+    // `weight`/`bold` override the weight the `TextStyle` would pick,
+    // `italic` sets the font style, `underline`/`strikethrough` pass a
+    // fully-configured decoration struct straight into GPUI's
+    // `TextStyle.underline` / `TextStyle.strikethrough`, and
+    // `monospaced_digit` / `ligatures` map to OpenType features.
+
+    /// Override the font weight picked by [`Self::text_style`] /
+    /// [`Self::emphasize`]. Matches SwiftUI's `.fontWeight(_:)`.
+    ///
+    /// Precedence (highest first):
+    /// 1. `.weight(w)` (this method)
+    /// 2. `.emphasize(true)` — resolves to the emphasized weight of the
+    ///    current [`TextStyle`]
+    /// 3. `TextStyle` baseline (e.g. `Body` → `NORMAL`,
+    ///    `Headline` → `SEMIBOLD`).
+    pub fn weight(mut self, weight: FontWeight) -> Self {
+        self.weight_override = Some(weight);
+        self
+    }
+
+    /// Alias for `.weight(FontWeight::BOLD)`. Matches SwiftUI's `.bold()`
+    /// modifier. Use [`Self::emphasize`] instead when you want each
+    /// [`TextStyle`]'s semantic emphasis (e.g. `Headline` emphasizes to
+    /// `BLACK`, not `BOLD`) rather than a flat BOLD across all styles.
+    pub fn bold(self) -> Self {
+        self.weight(FontWeight::BOLD)
+    }
+
+    /// Toggle italic. Matches SwiftUI's `.italic(_:)`. Pass `false` as a
+    /// no-op helper for call sites that compute the flag dynamically —
+    /// the default is already non-italic.
+    pub fn italic(mut self, italic: bool) -> Self {
+        self.italic = italic;
+        self
+    }
+
+    /// Draw an underline with the given [`UnderlineStyle`]. Matches
+    /// SwiftUI's `.underline(_:pattern:color:)`. Call with
+    /// `UnderlineStyle::default()` for the 1 pt solid default, or
+    /// construct a custom struct (`thickness`, `color`, `wavy`) for
+    /// finer control.
+    pub fn underline(mut self, style: UnderlineStyle) -> Self {
+        self.underline = Some(style);
+        self
+    }
+
+    /// Draw a strikethrough with the given [`StrikethroughStyle`].
+    /// Matches SwiftUI's `.strikethrough(_:pattern:color:)`. Call with
+    /// `StrikethroughStyle::default()` for the 1 pt solid default.
+    pub fn strikethrough(mut self, style: StrikethroughStyle) -> Self {
+        self.strikethrough = Some(style);
+        self
+    }
+
+    /// Alias for `.font_design(FontDesign::Monospaced)`. Matches
+    /// SwiftUI's `.monospaced(_:)` modifier.
+    pub fn monospaced(self) -> Self {
+        self.font_design(FontDesign::Monospaced)
+    }
+
+    /// Enable monospaced digits (OpenType `tnum`). Matches SwiftUI's
+    /// `.monospacedDigit()` modifier — keeps digits the same width so
+    /// numerics in running text (timestamps, counters) do not jitter
+    /// between frames.
+    pub fn monospaced_digit(mut self, enabled: bool) -> Self {
+        self.monospaced_digit = enabled;
+        self
+    }
+
+    /// Enable or disable contextual alternates / programming ligatures
+    /// (OpenType `calt`). Pass `false` to suppress ligatures like `=>`
+    /// or `!=` in code snippets. Default (no call) keeps GPUI's
+    /// system default (`calt=1`).
+    pub fn ligatures(mut self, enabled: bool) -> Self {
+        self.ligatures_enabled = Some(enabled);
+        self
+    }
+
+    /// Apply a case transform to the rendered text. Matches SwiftUI's
+    /// `.textCase(_:)`.
+    ///
+    /// The transform runs at paint time on the string that reaches the
+    /// layout engine. The transformed string is also what the selection
+    /// coordinator and the VoiceOver label observe — the user sees X,
+    /// selects X, copies X, hears X.
+    ///
+    /// **Rich content**: a case change can alter UTF-8 byte length
+    /// (e.g. `'ß'.to_uppercase() == "SS"`), which would invalidate the
+    /// byte ranges carried by [`Self::styled_text`]. When the view holds
+    /// rich content, the transform is silently ignored so existing
+    /// highlights stay aligned. Transform the string yourself before
+    /// feeding it to `styled_text` if you need both.
+    pub fn text_case(mut self, case: TextCase) -> Self {
+        self.text_case = Some(case);
+        self
+    }
+
     /// Immutable access to the underlying selection coordinator.
     /// Exposed so host apps can programmatically clear the selection or
     /// inspect its state (e.g. to enable/disable a Copy menu item).
@@ -851,6 +990,18 @@ impl TextView {
         self.show_context_menu_at(position, window, cx);
     }
 
+    /// Test-only helper that mirrors the render-path case-transform
+    /// logic without running a paint. Returns the string the view would
+    /// hand to [`SelectableText`] / [`StyledText`] given the current
+    /// [`Self::text_case`] setting.
+    #[cfg(test)]
+    fn effective_text_for_test(&self) -> SharedString {
+        match self.text_case {
+            Some(case) => self.content.with_case(case).text().clone(),
+            None => self.content.text().clone(),
+        }
+    }
+
     fn show_context_menu_at(
         &mut self,
         position: Point<Pixels>,
@@ -974,11 +1125,64 @@ impl Render for TextView {
             typography = typography.max_w(gpui::px(READABLE_OPTIMAL_WIDTH * scale));
         }
 
-        // A11y label falls back to plain-text (both content variants carry one).
+        // Phase A — decoration / weight / italic / font-features wiring.
+        // Applied after `apply_typography` so these settings win against
+        // the `TextStyle` baseline (e.g. `weight_override` beats the
+        // emphasized weight). Decorations use the GPUI `TextStyleRefinement`
+        // directly rather than the `.underline()` / `.line_through()`
+        // helpers, because the helpers install a 1 pt default — our
+        // builders carry a caller-constructed `UnderlineStyle` /
+        // `StrikethroughStyle` verbatim.
+        if let Some(weight) = self.weight_override {
+            typography = typography.font_weight(weight);
+        }
+        if self.italic {
+            typography = typography.italic();
+        }
+        if let Some(underline) = self.underline {
+            <gpui::Div as gpui::Styled>::text_style(&mut typography).underline = Some(underline);
+        }
+        if let Some(strikethrough) = self.strikethrough {
+            <gpui::Div as gpui::Styled>::text_style(&mut typography).strikethrough =
+                Some(strikethrough);
+        }
+        // Combine `tnum` / `calt` into a single `FontFeatures` when either
+        // flag is active — GPUI's `.font_features(...)` replaces the full
+        // feature list, so the tnum and calt-disable settings cannot be
+        // threaded through separate calls.
+        let needs_features = self.monospaced_digit || matches!(self.ligatures_enabled, Some(false));
+        if needs_features {
+            let mut features: Vec<(String, u32)> = Vec::with_capacity(2);
+            if self.monospaced_digit {
+                features.push(("tnum".into(), 1));
+            }
+            if matches!(self.ligatures_enabled, Some(false)) {
+                features.push(("calt".into(), 0));
+            }
+            typography = typography.font_features(FontFeatures(Arc::new(features)));
+        }
+
+        // Resolve the rendered content: apply the case transform for
+        // plain content, leave rich content untouched (see docs on
+        // `TextView::text_case`). `effective_content` flows to both the
+        // a11y label and the styled child, so every downstream consumer
+        // sees the same string.
+        let effective_content = match self.text_case {
+            Some(case) => self.content.with_case(case),
+            None => match &self.content {
+                TextViewContent::Plain(t) => TextViewContent::Plain(t.clone()),
+                TextViewContent::Rich { text, highlights } => TextViewContent::Rich {
+                    text: text.clone(),
+                    highlights: highlights.clone(),
+                },
+            },
+        };
+
+        // A11y label falls back to effective text (post-case-transform).
         let label = self
             .accessibility_label
             .clone()
-            .unwrap_or_else(|| self.content.text().clone());
+            .unwrap_or_else(|| effective_content.text().clone());
         let a11y = AccessibilityProps::new()
             .role(AccessibilityRole::StaticText)
             .label(label)
@@ -995,8 +1199,8 @@ impl Render for TextView {
             typography
                 .child(SelectableText::new(
                     self.element_id.clone(),
-                    self.content.text().clone(),
-                    self.content.styled(),
+                    effective_content.text().clone(),
+                    effective_content.styled(),
                     selection_bg,
                     self.selection.clone(),
                 ))
@@ -1005,7 +1209,7 @@ impl Render for TextView {
             // Non-selectable view: render the plain-text child directly
             // so there are no mouse handlers / hitboxes.
             typography
-                .child(self.content.styled())
+                .child(effective_content.styled())
                 .with_accessibility(&a11y)
         };
 
@@ -1474,6 +1678,15 @@ mod gpui_tests {
             assert!(tv.selectable);
             assert!(!tv.disabled);
             assert!(tv.accessibility_label.is_none());
+            // Phase A defaults — each new builder resolves to the
+            // baseline `TextStyle` behaviour when not called.
+            assert!(tv.weight_override.is_none());
+            assert!(!tv.italic);
+            assert!(tv.underline.is_none());
+            assert!(tv.strikethrough.is_none());
+            assert!(!tv.monospaced_digit);
+            assert!(tv.ligatures_enabled.is_none());
+            assert!(tv.text_case.is_none());
         });
     }
 
@@ -1813,6 +2026,116 @@ mod gpui_tests {
             tv.selection.select_all();
             tv.open_context_menu(&event, window, cx);
             assert!(tv.context_menu.read(cx).is_open());
+        });
+    }
+
+    // ── Phase A — SwiftUI `Text` parity ───────────────────────────────
+
+    #[gpui::test]
+    async fn text_view_decorations_builders_set_fields(cx: &mut gpui::TestAppContext) {
+        // One end-to-end assertion per builder. Render wiring is covered
+        // via behaviour checks (`text_case_*`, `*_affects_effective_content`)
+        // below — this is the "did the builder actually flip the bit"
+        // smoke test so a stray typo in the setter is caught fast.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "text")
+                .weight(gpui::FontWeight::THIN)
+                .italic(true)
+                .underline(gpui::UnderlineStyle {
+                    thickness: gpui::px(1.0),
+                    ..Default::default()
+                })
+                .strikethrough(gpui::StrikethroughStyle {
+                    thickness: gpui::px(1.0),
+                    ..Default::default()
+                })
+                .monospaced_digit(true)
+                .ligatures(false)
+                .text_case(crate::foundations::theme::TextCase::Uppercase)
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(tv.weight_override, Some(gpui::FontWeight::THIN));
+            assert!(tv.italic);
+            assert!(tv.underline.is_some());
+            assert!(tv.strikethrough.is_some());
+            assert!(tv.monospaced_digit);
+            assert_eq!(tv.ligatures_enabled, Some(false));
+            assert_eq!(
+                tv.text_case,
+                Some(crate::foundations::theme::TextCase::Uppercase),
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_bold_aliases_weight_bold(cx: &mut gpui::TestAppContext) {
+        // `.bold()` is a convenience wrapper that must resolve to the
+        // same `FontWeight::BOLD` override as `.weight(BOLD)`.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::new(cx, "heavy").bold());
+        handle.update(cx, |tv, _| {
+            assert_eq!(tv.weight_override, Some(gpui::FontWeight::BOLD));
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_monospaced_aliases_font_design_monospaced(cx: &mut gpui::TestAppContext) {
+        // `.monospaced()` must set `font_design` to `Monospaced` — it's
+        // a SwiftUI-compatibility alias for
+        // `.font_design(FontDesign::Monospaced)`.
+        let (handle, cx) =
+            setup_test_window(cx, |_window, cx| TextView::new(cx, "code").monospaced());
+        handle.update(cx, |tv, _| {
+            assert_eq!(tv.font_design, Some(FontDesign::Monospaced));
+        });
+    }
+
+    #[gpui::test]
+    async fn text_case_uppercase_transforms_plain_content_at_render_time(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        // `text_case` runs at render time — the struct field preserves
+        // the original string so callers can inspect raw input post-
+        // construction. `effective_text_for_test` returns the rendered
+        // string so the transform path is covered without a paint.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "hello").text_case(crate::foundations::theme::TextCase::Uppercase)
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(
+                tv.content.text().as_ref(),
+                "hello",
+                "raw content is unchanged by the builder",
+            );
+            assert_eq!(tv.effective_text_for_test().as_ref(), "HELLO");
+        });
+    }
+
+    #[gpui::test]
+    async fn text_case_is_noop_for_rich_content(cx: &mut gpui::TestAppContext) {
+        // A case transform can alter UTF-8 byte length (e.g. 'ß' -> "SS"),
+        // which would invalidate `HighlightStyle` byte ranges. `TextView`
+        // silently ignores the transform for rich content so existing
+        // highlights stay aligned.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::styled(
+                cx,
+                "Hello",
+                vec![(
+                    0..5,
+                    HighlightStyle {
+                        font_weight: Some(gpui::FontWeight::BOLD),
+                        ..Default::default()
+                    },
+                )],
+            )
+            .text_case(crate::foundations::theme::TextCase::Uppercase)
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(
+                tv.effective_text_for_test().as_ref(),
+                "Hello",
+                "rich content must not be case-transformed",
+            );
         });
     }
 }

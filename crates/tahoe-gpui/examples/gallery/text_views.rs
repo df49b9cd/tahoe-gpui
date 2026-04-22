@@ -1,11 +1,11 @@
 //! Text Views demo for the primitive gallery.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, HighlightStyle, Window, div};
+use gpui::{AnyElement, Context, HighlightStyle, StrikethroughStyle, UnderlineStyle, Window, div};
 
 use tahoe_gpui::components::content::text_view::TextView;
 use tahoe_gpui::foundations::theme::{
-    FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
+    FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle, TextStyledExt,
 };
 
 use crate::ComponentGallery;
@@ -97,6 +97,112 @@ pub fn render(
                  Useful for lead paragraphs or standout content blocks.",
             )
             .emphasize(true)
+        }))
+        // ── Bold / weight override ─────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Bold (SwiftUI parity)"),
+        )
+        .child(cx.new(|cx| {
+            // `.bold()` is an alias for `.weight(FontWeight::BOLD)` —
+            // matches SwiftUI's `Text.bold()` modifier. Prefer
+            // `.emphasize(true)` when the surrounding text style already
+            // carries its own emphasized weight (e.g. Headline → BLACK).
+            TextView::new(cx, "Bold body text via `.bold()`.").bold()
+        }))
+        // ── Italic ─────────────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Italic"),
+        )
+        .child(cx.new(|cx| TextView::new(cx, "Italic body text via `.italic(true)`.").italic(true)))
+        // ── Underline ──────────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Underline"),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "Underlined text via `.underline(UnderlineStyle::default())`.",
+            )
+            .underline(UnderlineStyle::default())
+        }))
+        // ── Strikethrough ──────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Strikethrough"),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "Struck-through text via `.strikethrough(StrikethroughStyle::default())`.",
+            )
+            .strikethrough(StrikethroughStyle::default())
+        }))
+        // ── Monospaced digits ──────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Monospaced digits (tnum)"),
+        )
+        .child(cx.new(|cx| {
+            // Constant-width digits — counters and timestamps don't
+            // jitter between frames when a proportional "1" widens into
+            // a "0". OpenType feature `tnum` is enabled.
+            TextView::new(cx, "00:12:34  00:12:35  00:12:36").monospaced_digit(true)
+        }))
+        // ── Ligatures disabled ─────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Ligatures disabled (calt=0)"),
+        )
+        .child(cx.new(|cx| {
+            // Disable contextual alternates so programming ligatures
+            // like `=>` and `!=` render as individual glyphs. Useful
+            // inside code-style snippets where the compiler token
+            // matters more than prose typography.
+            TextView::new(cx, "fn compare() { a != b && c => d }")
+                .font_design(FontDesign::Monospaced)
+                .ligatures(false)
+        }))
+        // ── Text case ──────────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Text case transform"),
+        )
+        .child(
+            cx.new(|cx| {
+                TextView::new(cx, "Uppercase via text_case").text_case(TextCase::Uppercase)
+            }),
+        )
+        .child(
+            cx.new(|cx| {
+                TextView::new(cx, "Lowercase VIA text_case").text_case(TextCase::Lowercase)
+            }),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(cx, "sentence case via text_case").text_case(TextCase::SentenceCase)
         }))
         // ── max_lines ──────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
