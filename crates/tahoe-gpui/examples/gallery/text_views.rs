@@ -3,7 +3,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, StrikethroughStyle, UnderlineStyle, Window, div};
 
-use tahoe_gpui::components::content::text_view::TextView;
+use tahoe_gpui::components::content::text_view::{TextRuns, TextView};
 use tahoe_gpui::foundations::theme::{
     FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle, TextStyledExt,
     TruncationMode,
@@ -239,6 +239,30 @@ pub fn render(
                         ..Default::default()
                     },
                 )],
+            )
+        }))
+        // ── TextRuns composition (SwiftUI `Text + Text`) ───────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("TextRuns composition"),
+        )
+        .child(cx.new(|cx| {
+            // Build a single view from an ordered sequence of runs.
+            // Matches SwiftUI's `Text("a") + Text("b").bold()` idiom and
+            // keeps selection / copy / VoiceOver seeing one merged string.
+            TextView::from_runs(
+                cx,
+                TextRuns::new()
+                    .plain("Visit the ")
+                    .bold("Human Interface Guidelines")
+                    .plain(" to read more about ")
+                    .italic("typography")
+                    .plain(" and ")
+                    .underline("accessibility")
+                    .plain("."),
             )
         }))
         // ── Font design ────────────────────────────────────────────────────

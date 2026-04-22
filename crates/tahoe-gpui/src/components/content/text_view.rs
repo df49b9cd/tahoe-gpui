@@ -457,6 +457,140 @@ impl TextViewContent {
     }
 }
 
+/// Builder for composing styled text from a sequence of runs.
+///
+/// Mirrors SwiftUI's `Text + Text` concatenation — each call to
+/// [`Self::plain`] / [`Self::styled`] / [`Self::bold`] / [`Self::italic`] /
+/// [`Self::underline`] / [`Self::strikethrough`] appends one run. Feed the
+/// completed builder to [`TextView::from_runs`] to materialise a view.
+///
+/// Runs flow through the same
+/// [`TextViewContent::Rich { text, highlights }`](TextViewContent::Rich)
+/// path as [`TextView::styled_text`]: the per-run strings are
+/// concatenated into one [`SharedString`] for selection, copy, and
+/// VoiceOver, while the per-run styles map to `(byte_range,
+/// HighlightStyle)` pairs for the renderer.
+///
+/// # Example
+///
+/// ```ignore
+/// use tahoe_gpui::components::content::text_view::{TextRuns, TextView};
+///
+/// cx.new(|cx| {
+///     TextView::from_runs(
+///         cx,
+///         TextRuns::new()
+///             .plain("Hello ")
+///             .bold("world")
+///             .plain(" — welcome!"),
+///     )
+/// })
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct TextRuns {
+    runs: Vec<(SharedString, HighlightStyle)>,
+}
+
+impl TextRuns {
+    /// Construct a fresh builder with no runs.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Append a plain (baseline-styled) run. Equivalent to
+    /// `.styled(text, HighlightStyle::default())`.
+    pub fn plain(mut self, text: impl Into<SharedString>) -> Self {
+        self.runs.push((text.into(), HighlightStyle::default()));
+        self
+    }
+
+    /// Append a run with a caller-constructed [`HighlightStyle`] — the
+    /// low-level primitive underpinning the typed [`Self::bold`],
+    /// [`Self::italic`], [`Self::underline`], and
+    /// [`Self::strikethrough`] aliases.
+    pub fn styled(mut self, text: impl Into<SharedString>, style: HighlightStyle) -> Self {
+        self.runs.push((text.into(), style));
+        self
+    }
+
+    /// Append a bold run. Equivalent to a `HighlightStyle` with
+    /// `font_weight = Some(FontWeight::BOLD)`.
+    pub fn bold(self, text: impl Into<SharedString>) -> Self {
+        self.styled(
+            text,
+            HighlightStyle {
+                font_weight: Some(FontWeight::BOLD),
+                ..HighlightStyle::default()
+            },
+        )
+    }
+
+    /// Append an italic run.
+    pub fn italic(self, text: impl Into<SharedString>) -> Self {
+        self.styled(
+            text,
+            HighlightStyle {
+                font_style: Some(gpui::FontStyle::Italic),
+                ..HighlightStyle::default()
+            },
+        )
+    }
+
+    /// Append an underlined run (1 pt solid, theme default color).
+    pub fn underline(self, text: impl Into<SharedString>) -> Self {
+        self.styled(
+            text,
+            HighlightStyle {
+                underline: Some(UnderlineStyle::default()),
+                ..HighlightStyle::default()
+            },
+        )
+    }
+
+    /// Append a strikethrough run (1 pt solid, theme default color).
+    pub fn strikethrough(self, text: impl Into<SharedString>) -> Self {
+        self.styled(
+            text,
+            HighlightStyle {
+                strikethrough: Some(StrikethroughStyle::default()),
+                ..HighlightStyle::default()
+            },
+        )
+    }
+
+    /// Number of runs appended so far. Useful for tests and debug prints.
+    pub fn len(&self) -> usize {
+        self.runs.len()
+    }
+
+    /// Whether the builder holds no runs.
+    pub fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
+
+    /// Consume the builder into a `(text, highlights)` pair:
+    /// - `text` is the concatenation of every run's string.
+    /// - `highlights` is a `(byte_range, style)` vector aligned to the
+    ///   concatenated text, skipping runs whose style is the default
+    ///   (plain runs do not need a highlight entry).
+    fn into_text_and_highlights(self) -> (SharedString, Vec<(Range<usize>, HighlightStyle)>) {
+        // Pre-size the string so we avoid a reallocation on every push.
+        let total_len: usize = self.runs.iter().map(|(t, _)| t.len()).sum();
+        let mut combined = String::with_capacity(total_len);
+        let mut highlights = Vec::with_capacity(self.runs.len());
+        let default = HighlightStyle::default();
+        for (text, style) in self.runs {
+            let start = combined.len();
+            combined.push_str(&text);
+            let end = combined.len();
+            if style != default && start != end {
+                highlights.push((start..end, style));
+            }
+        }
+        (SharedString::from(combined), highlights)
+    }
+}
+
 /// A read-only text display view per HIG.
 ///
 /// Shows one or more paragraphs of styled text.
@@ -588,6 +722,21 @@ impl TextView {
     ) -> Self {
         let text = text.into();
         debug_assert_highlight_ranges(&text, &highlights);
+        let mut this = Self::new(cx, text.clone());
+        this.content = TextViewContent::Rich {
+            text,
+            highlights: Arc::from(highlights),
+        };
+        this
+    }
+
+    /// Construct a rich-text view from a [`TextRuns`] builder. Matches
+    /// SwiftUI's `Text + Text` concatenation — the per-run strings
+    /// collapse into one `SharedString` for selection and VoiceOver,
+    /// while the per-run styles map to byte-ranged
+    /// [`HighlightStyle`] spans.
+    pub fn from_runs(cx: &mut Context<Self>, runs: TextRuns) -> Self {
+        let (text, highlights) = runs.into_text_and_highlights();
         let mut this = Self::new(cx, text.clone());
         this.content = TextViewContent::Rich {
             text,
@@ -1753,6 +1902,83 @@ mod tests {
             }
         }
     }
+
+    // ── TextRuns (Phase C) ────────────────────────────────────────
+
+    use super::TextRuns;
+    use gpui::{FontWeight, HighlightStyle};
+
+    #[test]
+    fn text_runs_new_is_empty() {
+        let runs = TextRuns::new();
+        assert!(runs.is_empty());
+        assert_eq!(runs.len(), 0);
+    }
+
+    #[test]
+    fn text_runs_concatenate_to_single_string() {
+        let runs = TextRuns::new().plain("Hello ").bold("world").plain("!");
+        let (text, highlights) = runs.into_text_and_highlights();
+        assert_eq!(text.as_ref(), "Hello world!");
+        // Only the bold run gets a highlight entry — plain runs skip it.
+        assert_eq!(highlights.len(), 1);
+        assert_eq!(highlights[0].0, 6..11);
+        assert_eq!(highlights[0].1.font_weight, Some(FontWeight::BOLD));
+    }
+
+    #[test]
+    fn text_runs_styled_preserves_caller_style() {
+        let custom = HighlightStyle {
+            font_weight: Some(FontWeight::THIN),
+            ..HighlightStyle::default()
+        };
+        let (text, highlights) = TextRuns::new()
+            .plain("A")
+            .styled("B", custom)
+            .into_text_and_highlights();
+        assert_eq!(text.as_ref(), "AB");
+        assert_eq!(highlights.len(), 1);
+        assert_eq!(highlights[0].0, 1..2);
+        assert_eq!(highlights[0].1.font_weight, Some(FontWeight::THIN));
+    }
+
+    #[test]
+    fn text_runs_empty_run_is_skipped() {
+        // A zero-byte run contributes no highlight even when styled.
+        let (text, highlights) = TextRuns::new()
+            .bold("")
+            .plain("hi")
+            .into_text_and_highlights();
+        assert_eq!(text.as_ref(), "hi");
+        assert!(highlights.is_empty());
+    }
+
+    #[test]
+    fn text_runs_italic_underline_strikethrough_aliases() {
+        let (_, highlights) = TextRuns::new()
+            .italic("a")
+            .underline("b")
+            .strikethrough("c")
+            .into_text_and_highlights();
+        assert_eq!(highlights.len(), 3);
+        assert_eq!(highlights[0].1.font_style, Some(gpui::FontStyle::Italic));
+        assert!(highlights[1].1.underline.is_some());
+        assert!(highlights[2].1.strikethrough.is_some());
+    }
+
+    #[test]
+    fn text_runs_multibyte_byte_ranges_align_with_utf8() {
+        // "こんにちは " is 3 bytes × 5 chars + 1 space = 16 bytes.
+        // The bold run must start at the correct UTF-8 boundary.
+        let (text, highlights) = TextRuns::new()
+            .plain("こんにちは ")
+            .bold("world")
+            .into_text_and_highlights();
+        let prefix_len = "こんにちは ".len();
+        assert_eq!(text.as_ref(), "こんにちは world");
+        assert_eq!(highlights.len(), 1);
+        assert_eq!(highlights[0].0, prefix_len..prefix_len + "world".len());
+    }
 }
 
 #[cfg(test)]
@@ -2327,6 +2553,43 @@ mod gpui_tests {
         handle.update(cx, |tv, _| {
             // Falls back to DEFAULT_MIDDLE_TRUNCATION_CHARS (32).
             assert_eq!(tv.effective_text_for_test().chars().count(), 32);
+        });
+    }
+
+    // ── Phase C — TextRuns composition ────────────────────────────
+
+    #[gpui::test]
+    async fn text_view_from_runs_stores_rich_content(cx: &mut gpui::TestAppContext) {
+        use super::TextRuns;
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::from_runs(cx, TextRuns::new().plain("Hello ").bold("world").plain("!"))
+        });
+        handle.update(cx, |tv, _| match &tv.content {
+            TextViewContent::Rich { text, highlights } => {
+                assert_eq!(text.as_ref(), "Hello world!");
+                assert_eq!(highlights.len(), 1);
+                assert_eq!(highlights[0].0, 6..11);
+            }
+            TextViewContent::Plain(_) => panic!("expected Rich content from TextRuns"),
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_from_empty_runs_is_empty_rich_content(cx: &mut gpui::TestAppContext) {
+        use super::TextRuns;
+        let (handle, cx) =
+            setup_test_window(cx, |_window, cx| TextView::from_runs(cx, TextRuns::new()));
+        handle.update(cx, |tv, _| {
+            // Empty builder still collapses to Rich("") — `from_runs`
+            // always emits Rich content so the styled_text semantics are
+            // consistent, even on the edge case.
+            match &tv.content {
+                TextViewContent::Rich { text, highlights } => {
+                    assert_eq!(text.as_ref(), "");
+                    assert!(highlights.is_empty());
+                }
+                TextViewContent::Plain(_) => panic!("expected Rich content from empty TextRuns"),
+            }
         });
     }
 }
