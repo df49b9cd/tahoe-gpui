@@ -45,6 +45,44 @@ impl HeadingLevel {
     }
 }
 
+/// Semantic classification of text content — mirrors SwiftUI's
+/// [`AccessibilityTextContentType`][swiftui]. VoiceOver (and other assistive
+/// technologies) use the type to tune reading cadence, pronunciation, and
+/// navigation — e.g. `ConsoleOutput` suppresses auto-capitalisation
+/// announcements, `FileSystemPath` enables per-segment navigation, and
+/// `SourceCode` switches to a code-reading voice that pauses on punctuation
+/// instead of eliding it.
+///
+/// GPUI does not yet expose an AX tree, so the value is currently held on
+/// [`AccessibilityProps::content_type`] and ignored at paint time. The
+/// enum exists today so that when GPUI lands the AX bridge, every call
+/// site is already annotated.
+///
+/// [swiftui]: https://developer.apple.com/documentation/swiftui/accessibilitytextcontenttype
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TextContentType {
+    /// Unclassified prose — SwiftUI's `.plain`. Default.
+    #[default]
+    PlainText,
+    /// Line-oriented console output (stdout, stderr). SwiftUI's `.consoleOutput`.
+    ConsoleOutput,
+    /// Path-like content (`/Users/…`, `C:\…`). SwiftUI's `.fileSystemPath`.
+    FileSystemPath,
+    /// Email address — VoiceOver reads the local-part and domain distinctly.
+    /// SwiftUI's `.emailAddress`.
+    EmailAddress,
+    /// Source code (any language). SwiftUI's `.sourceCode`.
+    SourceCode,
+    /// Spreadsheet cell content — enables cell-aware navigation. SwiftUI's `.spreadsheet`.
+    SpreadsheetCell,
+    /// Long-form word-processing body copy. SwiftUI's `.wordProcessing`.
+    WordProcessing,
+    /// Message recipient (chat, email To:). SwiftUI's `.messaging`.
+    MessageRecipient,
+    /// Narrative prose (articles, documentation). SwiftUI's `.narrative`.
+    Narrative,
+}
+
 /// Semantic role of an accessibility-labelled element — mirrors the subset of
 /// `NSAccessibilityRole` / UIAccessibilityTraits that the crate's components
 /// expose. Used by [`AccessibilityProps::role`].
@@ -150,6 +188,14 @@ pub struct AccessibilityProps {
     /// disabled visual state should also set this flag so the AX wiring
     /// announces "dimmed" once GPUI lands an AX tree.
     pub disabled: bool,
+    /// Semantic classification of the element's text content (SwiftUI's
+    /// [`AccessibilityTextContentType`][swiftui]). When populated alongside
+    /// [`AccessibilityRole::StaticText`] or [`AccessibilityRole::Heading`],
+    /// lets VoiceOver tune reading cadence and navigation to the content
+    /// kind (console output, file paths, source code, etc.).
+    ///
+    /// [swiftui]: https://developer.apple.com/documentation/swiftui/accessibilitytextcontenttype
+    pub content_type: Option<TextContentType>,
 }
 
 impl AccessibilityProps {
@@ -218,6 +264,13 @@ impl AccessibilityProps {
         self
     }
 
+    /// Set the text-content classification (SwiftUI's
+    /// `.accessibilityTextContentType(_:)`).
+    pub fn content_type(mut self, kind: TextContentType) -> Self {
+        self.content_type = Some(kind);
+        self
+    }
+
     /// Returns true when at least one field carries information.
     pub fn is_some(&self) -> bool {
         self.label.is_some()
@@ -227,6 +280,7 @@ impl AccessibilityProps {
             || self.disabled
             || self.posinset.is_some()
             || self.setsize.is_some()
+            || self.content_type.is_some()
     }
 }
 
@@ -285,7 +339,9 @@ fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel};
+    use super::{
+        AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel, TextContentType,
+    };
     use core::prelude::v1::test;
 
     #[test]
@@ -455,5 +511,41 @@ mod tests {
     #[test]
     fn accessibility_props_is_some_true_when_only_disabled() {
         assert!(AccessibilityProps::new().disabled(true).is_some());
+    }
+
+    #[test]
+    fn text_content_type_default_is_plain() {
+        assert_eq!(TextContentType::default(), TextContentType::PlainText);
+    }
+
+    #[test]
+    fn accessibility_props_content_type_defaults_none() {
+        assert!(AccessibilityProps::new().content_type.is_none());
+    }
+
+    #[test]
+    fn accessibility_props_content_type_builder_sets_field() {
+        let props = AccessibilityProps::new().content_type(TextContentType::FileSystemPath);
+        assert_eq!(props.content_type, Some(TextContentType::FileSystemPath));
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_content_type() {
+        assert!(
+            AccessibilityProps::new()
+                .content_type(TextContentType::SourceCode)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn accessibility_role_heading_carries_level() {
+        let h3 = HeadingLevel::new(3).expect("3 is in range");
+        let role = AccessibilityRole::Heading(h3);
+        if let AccessibilityRole::Heading(level) = role {
+            assert_eq!(level.get(), 3);
+        } else {
+            panic!("expected Heading role");
+        }
     }
 }

@@ -50,7 +50,9 @@ use crate::components::content::selectable_text::{
 use crate::components::menus_and_actions::context_menu::{
     ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle,
 };
-use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::accessibility::{
+    AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel, TextContentType,
+};
 use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
 use crate::foundations::text_truncation::truncate_middle;
 use crate::foundations::theme::{
@@ -668,6 +670,12 @@ pub struct TextView {
     /// Character budget used by [`TruncationMode::Middle`]. Falls back to
     /// a conservative default when the caller does not supply one.
     truncation_char_budget: Option<usize>,
+    // Phase E — SwiftUI accessibility enrichments. `accessibility_heading`
+    // promotes the element's role from `StaticText` to `Heading(level)`.
+    // `accessibility_text_content_type` lets VoiceOver tune reading
+    // cadence to the content kind (source code, file path, etc.).
+    accessibility_heading: Option<HeadingLevel>,
+    accessibility_text_content_type: Option<TextContentType>,
 }
 
 impl TextView {
@@ -707,6 +715,8 @@ impl TextView {
             text_case: None,
             truncation_mode: None,
             truncation_char_budget: None,
+            accessibility_heading: None,
+            accessibility_text_content_type: None,
         }
     }
 
@@ -917,6 +927,35 @@ impl TextView {
     /// element.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
+        self
+    }
+
+    /// Promote the view's accessibility role from
+    /// [`AccessibilityRole::StaticText`] to
+    /// [`AccessibilityRole::Heading`] at the given depth. Matches
+    /// SwiftUI's `.accessibilityHeading(_:)`.
+    ///
+    /// VoiceOver's "next heading" and "headings at level N" rotor
+    /// gestures land on these elements, letting a screen-reader user
+    /// skim the document outline without reading every paragraph.
+    ///
+    /// GPUI does not yet expose an AX tree, so today this populates
+    /// [`AccessibilityProps::role`] for a future forward-compatible
+    /// wiring — see [`crate::foundations::accessibility`] for the
+    /// upstream status.
+    pub fn accessibility_heading(mut self, level: HeadingLevel) -> Self {
+        self.accessibility_heading = Some(level);
+        self
+    }
+
+    /// Classify the text content kind (file path, source code, console
+    /// output, …). Matches SwiftUI's
+    /// `.accessibilityTextContentType(_:)`. Populates
+    /// [`AccessibilityProps::content_type`] so that when GPUI lands an
+    /// AX tree, VoiceOver will tune reading cadence and per-segment
+    /// navigation to the content kind.
+    pub fn accessibility_text_content_type(mut self, kind: TextContentType) -> Self {
+        self.accessibility_text_content_type = Some(kind);
         self
     }
 
@@ -1463,10 +1502,17 @@ impl Render for TextView {
             .accessibility_label
             .clone()
             .unwrap_or_else(|| effective_content.text().clone());
-        let a11y = AccessibilityProps::new()
-            .role(AccessibilityRole::StaticText)
+        let role = match self.accessibility_heading {
+            Some(level) => AccessibilityRole::Heading(level),
+            None => AccessibilityRole::StaticText,
+        };
+        let mut a11y = AccessibilityProps::new()
+            .role(role)
             .label(label)
             .disabled(self.disabled);
+        if let Some(kind) = self.accessibility_text_content_type {
+            a11y = a11y.content_type(kind);
+        }
 
         let text_body = if self.selectable {
             // macOS NSTextView selection tint: accent color at ~28% alpha.
@@ -2007,6 +2053,7 @@ mod gpui_tests {
     use gpui::{ElementId, HighlightStyle, TextAlign};
 
     use crate::components::content::selectable_text::SelectionCoordinator;
+    use crate::foundations::accessibility::{HeadingLevel, TextContentType};
     use crate::foundations::theme::{FontDesign, LabelLevel, LeadingStyle, TextStyle};
     use crate::test_helpers::helpers::setup_test_window;
 
@@ -2619,8 +2666,7 @@ mod gpui_tests {
     #[gpui::test]
     async fn text_view_formatted_renders_display_impl(cx: &mut gpui::TestAppContext) {
         // Any Display-implementing value: integer, float, bool, custom.
-        let (handle, cx) =
-            setup_test_window(cx, |_window, cx| TextView::formatted(cx, 99.5_f64));
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::formatted(cx, 99.5_f64));
         handle.update(cx, |tv, _| {
             assert!(matches!(
                 &tv.content,
@@ -2642,6 +2688,45 @@ mod gpui_tests {
                 &tv.content,
                 TextViewContent::Plain(s) if s.as_ref() == "42%"
             ));
+        });
+    }
+
+    // ── Phase E — accessibility heading + content type ────────────
+
+    #[gpui::test]
+    async fn text_view_accessibility_heading_stored(cx: &mut gpui::TestAppContext) {
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "Chapter 1").accessibility_heading(HeadingLevel::new_clamped(2))
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(
+                tv.accessibility_heading.map(|h| h.get()),
+                Some(2),
+                "heading level should round-trip through the builder"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_accessibility_heading_defaults_none(cx: &mut gpui::TestAppContext) {
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::new(cx, "not a heading"));
+        handle.update(cx, |tv, _| {
+            assert!(tv.accessibility_heading.is_none());
+            assert!(tv.accessibility_text_content_type.is_none());
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_accessibility_text_content_type_stored(cx: &mut gpui::TestAppContext) {
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "/usr/bin/env")
+                .accessibility_text_content_type(TextContentType::FileSystemPath)
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(
+                tv.accessibility_text_content_type,
+                Some(TextContentType::FileSystemPath),
+            );
         });
     }
 }

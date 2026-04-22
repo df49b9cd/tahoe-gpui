@@ -4,6 +4,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, HighlightStyle, StrikethroughStyle, UnderlineStyle, Window, div};
 
 use tahoe_gpui::components::content::text_view::{TextRuns, TextView};
+use tahoe_gpui::foundations::accessibility::{HeadingLevel, TextContentType};
 use tahoe_gpui::foundations::theme::{
     FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle, TextStyledExt,
     TruncationMode,
@@ -513,6 +514,40 @@ pub fn render(
             // a separate VoiceOver label so screen-reader users hear the
             // full meaning without cluttering the on-screen copy.
             TextView::new(cx, "⌘⇧N").accessibility_label("Keyboard shortcut: Command Shift N")
+        }))
+        // ── Accessibility heading + content type ──────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Accessibility heading & content type"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption1, theme)
+                .text_color(theme.text_muted)
+                .child(
+                    "Promoting the AX role to Heading lets VoiceOver's \
+                     next-heading rotor gesture skip to this element. \
+                     Classifying the content type tunes reading cadence \
+                     for file paths, source code, console output, etc. \
+                     No-op today; wired as soon as GPUI exposes an AX tree.",
+                ),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Release notes")
+                .text_style(TextStyle::Title2)
+                .accessibility_heading(HeadingLevel::new_clamped(2))
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(cx, "/Users/example/Documents/report.pdf")
+                .accessibility_text_content_type(TextContentType::FileSystemPath)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(cx, "error: cannot find function `foo` in this scope")
+                .font_design(FontDesign::Monospaced)
+                .accessibility_text_content_type(TextContentType::ConsoleOutput)
         }))
         // ── Scrollable ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
