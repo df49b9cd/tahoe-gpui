@@ -25,6 +25,7 @@ use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::{MENU_MAX_WIDTH, MENU_MIN_WIDTH, SPACING_4};
 use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor, OverlayLayer};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use crate::ids::next_element_id;
 
@@ -838,23 +839,48 @@ impl Render for ContextMenu {
             None
         };
 
-        let mut menu_container = div().absolute().top(pos.y).left(pos.x).child(menu);
-        if let Some(sub) = submenu_overlay {
-            menu_container = menu_container.child(sub);
-        }
-
-        let overlay = div()
+        // The wrapped content is what `AnchoredOverlay` positions at the
+        // window-absolute point. Keep the submenu positioned relative to
+        // the wrapper (relative() parent) so its `.absolute().left(...).
+        // top(row_top)` offset still resolves against the menu's origin.
+        // Focus handle + key listener live on this wrapper so keyboard
+        // events fire after `AnchoredOverlay` hands focus here.
+        let mut content_wrapper = div()
             .id(self.element_id.clone())
             .debug_selector(|| "context-menu-overlay".into())
             .track_focus(&self.focus_handle)
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .child(menu_container)
+            .relative()
+            .child(menu)
             .on_key_down(cx.listener(Self::handle_key_down));
+        if let Some(sub) = submenu_overlay {
+            content_wrapper = content_wrapper.child(sub);
+        }
 
-        overlay.into_any_element()
+        // Route through `AnchoredOverlay::WindowPoint`: the event-supplied
+        // point is in window-absolute coordinates (`MouseDownEvent::position`),
+        // which matches `WindowPoint`'s coordinate space exactly. This
+        // also drops the overlay out of the normal layout tree via
+        // `deferred()`, so opening or closing the menu no longer shifts
+        // siblings below its host. `OverlayLayer::CONTEXT_MENU` stacks
+        // the menu above tooltips and dropdowns so it reads as the
+        // active input surface.
+        //
+        // Trigger is an empty `div()` because context menus have no
+        // visible trigger of their own — the consumer handles the
+        // right-click on whatever container is appropriate and calls
+        // `menu.open(event.position, ..)`. The trigger renders at
+        // zero size and is invisible.
+        AnchoredOverlay::new(
+            ElementId::NamedChild(
+                std::sync::Arc::new(self.element_id.clone()),
+                "ctx-overlay".into(),
+            ),
+            div(),
+        )
+        .anchor(OverlayAnchor::WindowPoint(pos))
+        .priority(OverlayLayer::CONTEXT_MENU)
+        .content(content_wrapper)
+        .into_any_element()
     }
 }
 
@@ -1570,5 +1596,134 @@ mod interaction_tests {
         menu.update_in(cx, |menu, _window, _cx| {
             assert!(menu.is_open(), "Space must not close on a plain item");
         });
+    }
+}
+
+#[cfg(test)]
+mod positioning_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, Entity, IntoElement, Render, TestAppContext, div, point, px};
+
+    use super::{ContextMenu, ContextMenuEntry, ContextMenuItem};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Harness that mimics the gallery pane: the context-menu entity is
+    /// nested inside a PADDED flex column so its layout container has a
+    /// non-zero window offset. This reproduces the bug where the menu
+    /// rendered offset from the pointer because the old code's
+    /// `.absolute().top(pos.y).left(pos.x)` was interpreted relative to
+    /// the pane rather than the window.
+    struct OffsetHarness {
+        menu: Entity<ContextMenu>,
+    }
+
+    impl Render for OffsetHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div()
+                .pt(px(200.0))
+                .pl(px(80.0))
+                .debug_selector(|| "offset-host".into())
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .debug_selector(|| "sibling-below".into())
+                        .h(px(40.0))
+                        .w(px(240.0))
+                        .child("sibling below the menu host"),
+                )
+                .child(self.menu.clone())
+        }
+    }
+
+    #[gpui::test]
+    async fn menu_content_lands_at_window_absolute_point(cx: &mut TestAppContext) {
+        // Bug: the menu used `div().absolute().top(pos.y).left(pos.x)`
+        // nested inside a padded pane. That made `pos` resolve against
+        // the pane's local origin instead of the window root, so the
+        // menu appeared offset by roughly (pane.origin.x, pane.origin.y)
+        // from the cursor. Fix: `AnchoredOverlay::WindowPoint(pos)` uses
+        // `anchored().position()` which is window-absolute, matching the
+        // coordinate space of `MouseDownEvent::position`.
+        let menu_entity = cx.update(|cx| cx.new(ContextMenu::new));
+        let (_host, cx) = setup_test_window(cx, {
+            let menu = menu_entity.clone();
+            move |_window, _cx| OffsetHarness { menu }
+        });
+
+        let click_at = point(px(400.0), px(300.0));
+        menu_entity.update_in(cx, |menu, window, cx| {
+            menu.set_items(vec![
+                ContextMenuEntry::Item(ContextMenuItem::new("Cut")),
+                ContextMenuEntry::Item(ContextMenuItem::new("Copy")),
+                ContextMenuEntry::Item(ContextMenuItem::new("Paste")),
+            ]);
+            menu.open(click_at, window, cx);
+        });
+
+        let content = cx.get_element("context-menu-content");
+
+        // Anchored overlay places the content's top-left at the anchor
+        // point (modulo snap-margin clamping, which shouldn't fire near
+        // the middle of the viewport). Allow a small tolerance for the
+        // wrapper's own padding / border geometry — the check is that
+        // the menu landed near the click, not hundreds of pixels away
+        // (which is the regression before the fix).
+        let dx = (f32::from(content.bounds.origin.x) - f32::from(click_at.x)).abs();
+        let dy = (f32::from(content.bounds.origin.y) - f32::from(click_at.y)).abs();
+        assert!(
+            dx < 8.0 && dy < 8.0,
+            "menu content origin {:?} should be within ~8pt of click point {:?}; \
+             delta = ({dx}, {dy}). A larger delta means the overlay is resolving \
+             against a local (pane-relative) coordinate system instead of \
+             window-absolute — the exact bug AnchoredOverlay::WindowPoint fixes.",
+            content.bounds.origin,
+            click_at,
+        );
+    }
+
+    #[gpui::test]
+    async fn opening_menu_does_not_shift_sibling_below(cx: &mut TestAppContext) {
+        // Bug: the menu's render subtree contributed to the host's
+        // layout (the outer `.absolute().size_full()` wrapper added
+        // layout footprint to the gallery pane's flex column), so
+        // siblings rendered AFTER the menu entity were shifted down
+        // when the menu opened. Fix: `AnchoredOverlay` wraps the
+        // overlay in `deferred()`, taking it out of the parent's
+        // layout tree — siblings never see a size change.
+        let menu_entity = cx.update(|cx| cx.new(ContextMenu::new));
+        let (_host, cx) = setup_test_window(cx, {
+            let menu = menu_entity.clone();
+            move |_window, _cx| OffsetHarness { menu }
+        });
+
+        // Capture the sibling's position while the menu is closed.
+        let closed_top = cx.get_element("sibling-below").bounds.top();
+
+        // Open the menu and let layout settle.
+        menu_entity.update_in(cx, |menu, window, cx| {
+            menu.set_items(vec![
+                ContextMenuEntry::Item(ContextMenuItem::new("Cut")),
+                ContextMenuEntry::Item(ContextMenuItem::new("Copy")),
+                ContextMenuEntry::Item(ContextMenuItem::new("Paste")),
+                ContextMenuEntry::Separator,
+                ContextMenuEntry::Item(ContextMenuItem::new("Delete")),
+            ]);
+            menu.open(point(px(400.0), px(300.0)), window, cx);
+        });
+
+        let opened_top = cx.get_element("sibling-below").bounds.top();
+
+        assert_eq!(
+            opened_top, closed_top,
+            "opening the context menu must not shift siblings in the host's \
+             layout tree. The `deferred()` wrapper inside AnchoredOverlay \
+             moves the overlay out of flow, so the sibling's layout position \
+             is invariant across open/close transitions."
+        );
     }
 }

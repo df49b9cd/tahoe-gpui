@@ -6,14 +6,14 @@
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, FontWeight, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    App, ElementId, FontWeight, KeyDownEvent, MouseDownEvent, SharedString, Window, div, px,
 };
 
 use crate::callback_types::{OnDateNavigate, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::CONTENT_MARGIN;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Calendar day-cell size for the `Compact` popover style (in points).
@@ -509,8 +509,19 @@ impl RenderOnce for DatePicker {
             return div().child(calendar).into_any_element();
         }
 
+        // Compact style defers the trigger into an `AnchoredOverlay` at
+        // the end (so the calendar popover escapes parent overflow-hidden).
+        // Other styles consume the trigger into their `container_root` as
+        // before. `trigger_opt.take()` lets the branches below steal
+        // ownership exactly once; Compact leaves it behind for the final
+        // assembly to pick up.
+        let mut trigger_opt = Some(trigger);
+
         // StepperField variant: wrap the text field in a row with ± buttons.
         let container_root = if matches!(style, DatePickerStyle::StepperField) {
+            let t = trigger_opt
+                .take()
+                .expect("trigger available for StepperField");
             let selected = self.selected;
             let on_change_dec = on_change.clone();
             let on_change_inc = on_change.clone();
@@ -541,14 +552,25 @@ impl RenderOnce for DatePicker {
                 .flex_row()
                 .items_center()
                 .gap(theme.spacing_sm)
-                .child(div().flex_grow().child(trigger))
+                .child(div().flex_grow().child(t))
                 .child(dec_btn)
                 .child(inc_btn)
+        } else if matches!(style, DatePickerStyle::Compact) {
+            // Trigger stays in `trigger_opt` for the AnchoredOverlay
+            // assembly at the end; this placeholder is a `Div` to keep
+            // the `if/else if/else` chain's types matching.
+            div()
         } else {
-            div().relative().child(trigger)
+            // Field
+            let t = trigger_opt.take().expect("trigger available for Field");
+            div().relative().child(t)
         };
 
-        let mut container = container_root;
+        let container = container_root;
+        // Dropdown is only built for Compact + is_open; holding it in an
+        // Option lets us pass it into `AnchoredOverlay::content` at the
+        // end without mutating a partial container during build.
+        let mut dropdown_el: Option<gpui::AnyElement> = None;
 
         // Field / StepperField don't have a popover — the field itself
         // is the value-entry surface. Callers supply an on_change hook
@@ -797,15 +819,13 @@ impl RenderOnce for DatePicker {
 
             let mut dropdown = glass_surface(
                 div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
                     .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN)) // 7 cells + padding
                     .overflow_hidden(),
                 theme,
                 GlassSize::Medium,
             )
             .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "date-picker-dropdown".into())
             .focusable();
 
             // Keyboard nav: Arrow keys + Enter + Escape on calendar.
@@ -891,11 +911,27 @@ impl RenderOnce for DatePicker {
             }
 
             dropdown = dropdown.child(dropdown_content);
-
-            container = container.child(deferred(dropdown).with_priority(1));
+            dropdown_el = Some(dropdown.into_any_element());
         }
 
-        container.into_any_element()
+        // Assemble: Compact uses `AnchoredOverlay` so the calendar popover
+        // escapes parent `overflow_hidden()`; Field and StepperField just
+        // render the container_root (no popover surface).
+        if matches!(style, DatePickerStyle::Compact) {
+            let trigger = trigger_opt
+                .take()
+                .expect("trigger reserved for Compact AnchoredOverlay");
+            let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+            let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+                .anchor(OverlayAnchor::BelowLeft)
+                .gap(theme.dropdown_offset);
+            if let Some(dropdown) = dropdown_el {
+                overlay = overlay.content(dropdown);
+            }
+            overlay.into_any_element()
+        } else {
+            container.into_any_element()
+        }
     }
 }
 
@@ -1522,5 +1558,54 @@ mod tests {
     fn shift_days_leap_year() {
         let d = shift_days(SimpleDate::new(2024, 2, 28), 1);
         assert_eq!((d.year, d.month, d.day), (2024, 2, 29));
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{DatePicker, DatePickerStyle};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Compact date picker with an open calendar must anchor the popover
+    /// outside its parent's clip region.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(120.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        DatePicker::new("date-picker")
+                            .style(DatePickerStyle::Compact)
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn compact_calendar_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("date-picker-dropdown");
+
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

@@ -618,7 +618,7 @@ impl ComponentGallery {
                 menu
             }),
             context_menu_status: SharedString::from("Right-click the target area above"),
-            hover_card: cx.new(|_cx| HoverCard::new("gallery-hover-card")),
+            hover_card: cx.new(|cx| HoverCard::new("gallery-hover-card", cx)),
             page_current: 0,
             sheet_open: false,
             modal_open: false,

@@ -18,8 +18,7 @@
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, div, px,
 };
 
 use std::rc::Rc;
@@ -29,6 +28,7 @@ use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Callback invoked when keyboard highlight changes in a [`PopupButton`] dropdown.
@@ -273,8 +273,15 @@ impl RenderOnce for PopupButton {
             });
         }
 
-        // ── Container (trigger + optional dropdown) ─────────────────────────
-        let mut container = div().relative().child(trigger);
+        // ── Overlay-anchored dropdown ───────────────────────────────────────
+        // `AnchoredOverlay` floats the dropdown outside any parent
+        // `overflow_hidden()` so a popup inside a scrolling container
+        // isn't clipped at the edge. It also picks up the platform snap
+        // margin + flip-on-overflow logic for free.
+        let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+            .anchor(OverlayAnchor::BelowLeft)
+            .gap(theme.dropdown_offset);
 
         if self.is_open {
             // ── Dropdown list ───────────────────────────────────────────────
@@ -291,10 +298,6 @@ impl RenderOnce for PopupButton {
 
             let mut list = glass_surface(
                 div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w_full()
                     .flex()
                     .flex_col()
                     .overflow_hidden()
@@ -303,6 +306,7 @@ impl RenderOnce for PopupButton {
                 GlassSize::Medium,
             )
             .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "popup-button-dropdown".into())
             .focusable();
 
             // Keyboard navigation: arrow keys, Home/End, Enter, Escape, type-ahead.
@@ -477,10 +481,10 @@ impl RenderOnce for PopupButton {
                 list = list.child(row);
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            overlay = overlay.content(list);
         }
 
-        container
+        overlay
     }
 }
 
@@ -578,5 +582,70 @@ mod tests {
         let item = PopupItem::new(label, value);
         assert_eq!(item.label.as_ref(), "Shared");
         assert_eq!(item.value.as_ref(), "v");
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{PopupButton, PopupItem};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Nest the popup button inside a narrow `overflow_hidden()`
+    /// container so we can verify that `AnchoredOverlay` anchors the
+    /// dropdown's layout rectangle outside the parent clip region.
+    ///
+    /// Mirrors the `AnchoredPastParentHarness` pattern in
+    /// `crates/tahoe-gpui/src/components/presentation/popover.rs`. The
+    /// assertion targets taffy layout bounds, not post-paint pixels —
+    /// see the popover harness docstring for the limitation.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(80.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        PopupButton::new("popup")
+                            .items(vec![
+                                PopupItem::new("First option label", "a"),
+                                PopupItem::new("Second option label", "b"),
+                                PopupItem::new("Third option label", "c"),
+                            ])
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn dropdown_layout_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("popup-button-dropdown");
+
+        // The clip region is 32pt tall; the dropdown lays out below the
+        // trigger, so a correctly-anchored overlay has its top at or
+        // below the clip's bottom edge. If `AnchoredOverlay` regresses
+        // back to inline `.absolute()` positioning inside the parent,
+        // the dropdown would lay out inside the clip and this check
+        // would fail.
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

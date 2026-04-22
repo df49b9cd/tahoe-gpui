@@ -1633,7 +1633,7 @@ pub fn glass_morph(
             }
         },
     ))
-    .with_priority(2)
+    .with_priority(crate::foundations::overlay::OverlayLayer::GLASS_MORPH)
 }
 
 /// Cross-fade a glass surface between two tiers when its `GlassSize` changes.

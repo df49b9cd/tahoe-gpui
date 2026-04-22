@@ -24,6 +24,7 @@ pub mod keyboard_shortcuts;
 pub mod layout;
 pub mod materials;
 pub mod motion;
+pub mod overlay;
 pub mod privacy;
 pub mod right_to_left;
 pub mod sf_symbols;
@@ -34,6 +35,7 @@ pub mod theme;
 pub mod typography;
 pub mod writing;
 
+pub use overlay::{AnchoredOverlay, OverlayAnchor, OverlayLayer};
 pub use surface_scope::{
     GlassSurfaceGuard, GlassSurfaceScope, GlassSurfaceScopeElement, is_on_glass_surface,
 };

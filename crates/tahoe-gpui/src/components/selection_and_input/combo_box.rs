@@ -9,11 +9,11 @@ use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, deferred, div,
-    px,
+    App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, div, px,
 };
 use std::rc::Rc;
 
@@ -326,8 +326,11 @@ impl RenderOnce for ComboBox {
             }
         }
 
-        // ── Container (trigger + optional dropdown) ────────────────────────
-        let mut container = div().relative().child(trigger);
+        // ── Overlay-anchored dropdown ───────────────────────────────────────
+        let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+            .anchor(OverlayAnchor::BelowLeft)
+            .gap(theme.dropdown_offset);
 
         if is_open {
             let key_toggle = on_toggle.clone();
@@ -338,20 +341,29 @@ impl RenderOnce for ComboBox {
             let current_value = self.value.clone();
             let mouse_out_toggle = on_toggle.clone();
 
+            // `overflow_y_scroll()` makes items past `DROPDOWN_MAX_HEIGHT`
+            // reachable via wheel / trackpad; the previous
+            // `.overflow_hidden()` just clipped them out of sight with no
+            // recourse. It's called after `.id(...)` because
+            // `overflow_y_scroll` is a `StatefulInteractiveElement`
+            // method — the id upgrade is what makes it available.
+            //
+            // `py(spacing_xs)` gives the first/last rows a small gap
+            // from the glass surface's rounded corners so the row-level
+            // inset-pill hover background doesn't visually run into
+            // the rounded edge.
             let mut list = glass_surface(
                 div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w_full()
                     .flex()
                     .flex_col()
-                    .overflow_hidden()
+                    .py(theme.spacing_xs)
                     .max_h(px(DROPDOWN_MAX_HEIGHT)),
                 theme,
                 GlassSize::Medium,
             )
             .id(ElementId::from((self.id.clone(), "dropdown")))
+            .overflow_y_scroll()
+            .debug_selector(|| "combo-box-dropdown".into())
             .focusable();
 
             // Keyboard navigation + type-to-filter: up/down/enter/escape + printable chars.
@@ -471,12 +483,20 @@ impl RenderOnce for ComboBox {
                     let on_select_r = on_select.clone();
                     let on_toggle_r = on_toggle.clone();
                     let item_value = item.clone();
+                    // HIG inset-pill hover background: the row is
+                    // horizontally inset from the glass surface edge
+                    // (`mx(menu_inset)`) and rounds its own corners so
+                    // the hover highlight never touches the surface's
+                    // rounded edges. Matches the context-menu / picker
+                    // pattern used elsewhere in this crate.
                     let row = div()
                         .id(ElementId::NamedInteger("combo-recent".into(), ridx as u64))
                         .min_h(px(theme.target_size()))
                         .flex()
                         .items_center()
                         .px(theme.spacing_md)
+                        .mx(theme.menu_inset)
+                        .rounded(theme.radius_md)
                         .cursor_pointer()
                         .hover(|style| style.bg(hover_bg))
                         .child(
@@ -512,12 +532,18 @@ impl RenderOnce for ComboBox {
                 let item_label = item.clone();
                 let is_highlighted = highlighted_index == Some(idx);
 
+                // HIG inset-pill hover background (see Recent section for
+                // the rationale) — `mx(menu_inset)` + `rounded(radius_md)`
+                // keep the hover/highlight highlight contained within the
+                // glass surface's rounded edges.
                 let mut row = div()
                     .id(ElementId::NamedInteger("combo-item".into(), idx as u64))
                     .min_h(px(theme.target_size()))
                     .flex()
                     .items_center()
                     .px(theme.spacing_md)
+                    .mx(theme.menu_inset)
+                    .rounded(theme.radius_md)
                     .cursor_pointer()
                     .hover(|style| style.bg(hover_bg));
 
@@ -545,10 +571,10 @@ impl RenderOnce for ComboBox {
                 list = list.child(row);
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            overlay = overlay.content(list);
         }
 
-        container
+        overlay
     }
 }
 
@@ -682,5 +708,60 @@ mod tests {
         let filtered = cb.filtered_items();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].as_ref(), "Banana");
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, SharedString, TestAppContext, div, px};
+
+    use super::ComboBox;
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Mirrors the `PopupButton` clip-escape pattern: nest the combo
+    /// box inside a small `overflow_hidden()` container and verify
+    /// `AnchoredOverlay` lays out the dropdown past the parent's bottom
+    /// edge.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(120.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        ComboBox::new("combo")
+                            .items(vec![
+                                SharedString::from("Alpha"),
+                                SharedString::from("Beta"),
+                                SharedString::from("Gamma"),
+                            ])
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn dropdown_layout_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("combo-box-dropdown");
+
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }
