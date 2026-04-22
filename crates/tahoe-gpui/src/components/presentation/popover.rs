@@ -712,15 +712,9 @@ mod interaction_tests {
     /// verifies the layout-level contract that `AnchoredOverlay` routed
     /// the overlay through `deferred(anchored(...))` — if `anchored()`
     /// is removed, the content lays out inside the parent and the
-    /// assertion below fails. A true paint-clip verification (pixel
-    /// diff after clipping is applied) requires visual-regression
-    /// infrastructure (`RenderImage`-based golden diffing) that this
-    /// crate does not yet ship. `TODO(overlay-paint-golden)`: once
-    /// `test-support` exposes post-clip paint geometry or golden-image
-    /// diffing, add a true pixel-level clip test alongside this
-    /// structural one. Tracked alongside the overlay migration work
-    /// (see `TODO(overlay-migration)` call sites in menus_and_actions
-    /// and selection_and_input).
+    /// assertion below fails. Pixel-level clip coverage belongs to the
+    /// visual-regression workstream (render-to-buffer + golden files);
+    /// that infrastructure does not exist in this crate today.
     struct AnchoredPastParentHarness {
         is_open: bool,
     }
