@@ -24,6 +24,7 @@ pub mod keyboard_shortcuts;
 pub mod layout;
 pub mod materials;
 pub mod motion;
+pub mod overlay;
 pub mod privacy;
 pub mod right_to_left;
 pub mod sf_symbols;

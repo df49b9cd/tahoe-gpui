@@ -7,14 +7,25 @@
 //! (HIG: "Make sure a popover's arrow points as directly as possible
 //! to the element that revealed it") and caps its width at
 //! [`POPOVER_MAX_WIDTH`] so it stays within the HIG sizing envelope.
+//!
+//! # Accessibility
+//!
+//! The glyph arrow is purely decorative — it has no accessibility
+//! label because VoiceOver already announces "popover" as a role hint
+//! when the focused content surface is acquired. Consumers should
+//! supply semantic labeling on the `content` they pass in; the popover
+//! shell adds no announceable text of its own. VoiceOver behaviour is
+//! not yet verified end-to-end in automated tests, so manual AX passes
+//! on macOS remain the source of truth for this surface.
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
 use crate::foundations::motion::accessible_transition_animation;
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor, child_id};
+use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Window,
-    div, px,
+    div, point, px,
 };
 
 /// Arrow width in points. Chosen to match macOS popover callouts
@@ -43,11 +54,6 @@ impl PopoverPlacement {
     /// Whether this placement renders the popover above the trigger.
     fn is_above(self) -> bool {
         matches!(self, Self::AboveLeft | Self::AboveRight)
-    }
-
-    /// Whether this placement aligns the popover to the left edge.
-    fn aligns_left(self) -> bool {
-        matches!(self, Self::BelowLeft | Self::AboveLeft)
     }
 }
 
@@ -125,16 +131,6 @@ impl Popover {
 
 impl RenderOnce for Popover {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let mut container = div()
-            .id(self.id)
-            .debug_selector(|| "popover-root".into())
-            .relative()
-            .child(
-                div()
-                    .debug_selector(|| "popover-trigger".into())
-                    .child(self.trigger),
-            );
-
         if self.is_open
             && let Some(ref handle) = self.focus_handle
             && !handle.is_focused(window)
@@ -148,25 +144,30 @@ impl RenderOnce for Popover {
 
         let theme = cx.theme();
 
-        if self.is_open {
-            // Wrapper uses padding instead of margin to keep the hover zone
-            // contiguous between trigger and content (prevents flicker).
-            let mut wrapper = div().absolute();
-            match self.placement {
-                PopoverPlacement::BelowLeft => {
-                    wrapper = wrapper.top_full().left_0().pt(theme.spacing_xs);
-                }
-                PopoverPlacement::BelowRight => {
-                    wrapper = wrapper.top_full().right_0().pt(theme.spacing_xs);
-                }
-                PopoverPlacement::AboveLeft => {
-                    wrapper = wrapper.bottom_full().left_0().pb(theme.spacing_xs);
-                }
-                PopoverPlacement::AboveRight => {
-                    wrapper = wrapper.bottom_full().right_0().pb(theme.spacing_xs);
-                }
-            }
+        let trigger = div()
+            .debug_selector(|| "popover-trigger".into())
+            .child(self.trigger);
 
+        let overlay_id = child_id(&self.id, "overlay");
+
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger).anchor(match self.placement {
+            PopoverPlacement::BelowLeft => OverlayAnchor::BelowLeft,
+            PopoverPlacement::BelowRight => OverlayAnchor::BelowRight,
+            PopoverPlacement::AboveLeft => OverlayAnchor::AboveLeft,
+            PopoverPlacement::AboveRight => OverlayAnchor::AboveRight,
+        });
+
+        // Gap between trigger edge and popover body. For below-placements
+        // the anchored positioner offsets the content downward; for
+        // above-placements upward. We key the direction off the preferred
+        // placement; if `AnchoredOverlay` later flips the realised anchor
+        // in prepaint, the offset still points in the right general
+        // direction because the `anchored()` corner flips with it.
+        let gap: gpui::Pixels = theme.spacing_xs;
+        let gap_y = if self.placement.is_above() { -gap } else { gap };
+        overlay = overlay.offset(point(px(0.0), gap_y));
+
+        if self.is_open {
             // Popovers are mid-layer overlay surfaces: one depth level above
             // content, one below sheets/modals. `Large` (34pt radius, 40pt
             // shadow blur) is reserved for full-screen sheets and alerts;
@@ -202,84 +203,99 @@ impl RenderOnce for Popover {
                     });
             }
 
-            // HIG: "Make sure a popover's arrow points as directly as
-            // possible to the element that revealed it." The arrow is
-            // drawn as a diamond (rotated square) clipped by a
-            // containing div so only one triangular half is visible on
-            // the edge adjacent to the trigger.
-            let arrow_el = if self.arrow {
-                Some(build_arrow(theme, self.placement))
-            } else {
-                None
-            };
-
-            // Layout order: arrow above content for below-placement,
-            // below content for above-placement.
-            let mut content_col = div().flex().flex_col();
-            if !self.placement.is_above() {
-                if let Some(arrow) = arrow_el {
-                    content_col = content_col.child(arrow);
-                }
-                content_col = content_col.child(content_div);
-            } else {
-                content_col = content_col.child(content_div);
-                if let Some(arrow) = build_arrow_if(self.arrow, theme, self.placement) {
-                    content_col = content_col.child(arrow);
-                }
-            }
-
-            // Present-transition: HIG calls for popovers to scale from the
-            // anchor. GPUI's style API doesn't yet expose a transform-origin
-            // scale, so we approximate with a short fade plus a small
-            // vertical translate toward the anchor. Under Reduce Motion or
-            // Prefer Cross-Fade we drop the translate per
-            // `foundations.md:1100`.
+            // Snapshot theme-sourced values into owned data so the
+            // content-builder closure (invoked later from `prepaint`) has
+            // no lingering borrow on `cx`.
+            let arrow_enabled = self.arrow;
+            let arrow_bg = theme
+                .glass
+                .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+            let spacing_sm = theme.spacing_sm;
             let accessibility = theme.accessibility_mode;
-            let translate_px =
-                if accessibility.reduce_motion() || accessibility.prefer_cross_fade_transitions() {
+            let motion = theme.glass.motion.clone();
+            let natural_duration = std::time::Duration::from_millis(motion.lift_duration_ms);
+
+            // Defer the arrow-rendering decision to the realised anchor.
+            // `AnchoredOverlay` flips Below↔Above when the preferred side
+            // has materially less room than the opposite side; the arrow
+            // and animation translate both track the realised side so the
+            // HIG "arrow points at the trigger" invariant holds regardless
+            // of whether the original placement survived.
+            overlay = overlay.content_fn(true, move |realised| {
+                let realised_is_above = matches!(
+                    realised,
+                    OverlayAnchor::AboveLeft | OverlayAnchor::AboveRight
+                );
+                let realised_aligns_left = matches!(
+                    realised,
+                    OverlayAnchor::BelowLeft | OverlayAnchor::AboveLeft
+                );
+
+                let arrow_el = if arrow_enabled {
+                    Some(build_arrow_from_values(
+                        arrow_bg,
+                        spacing_sm,
+                        realised_is_above,
+                        realised_aligns_left,
+                    ))
+                } else {
+                    None
+                };
+
+                // Layout order: arrow above content for below-placement,
+                // below content for above-placement.
+                let mut content_col = div().flex().flex_col();
+                if !realised_is_above {
+                    if let Some(arrow) = arrow_el {
+                        content_col = content_col.child(arrow);
+                    }
+                    content_col = content_col.child(content_div);
+                } else {
+                    content_col = content_col.child(content_div);
+                    if let Some(arrow) = arrow_el {
+                        content_col = content_col.child(arrow);
+                    }
+                }
+
+                // Present-transition: HIG calls for popovers to scale from the
+                // anchor. GPUI's style API doesn't yet expose a transform-origin
+                // scale, so we approximate with a short fade plus a small
+                // vertical translate toward the anchor. Under Reduce Motion or
+                // Prefer Cross-Fade we drop the translate per
+                // `foundations.md:1100`.
+                let translate_px = if accessibility.reduce_motion()
+                    || accessibility.prefer_cross_fade_transitions()
+                {
                     0.0
                 } else {
                     6.0
                 };
-            let is_above = self.placement.is_above();
-            let anim_id = ElementId::Name("popover-present".into());
-            let natural_duration =
-                std::time::Duration::from_millis(theme.glass.motion.lift_duration_ms);
-            let populated_wrapper = wrapper.child(content_col);
-            let animated_wrapper = populated_wrapper.with_animation(
-                anim_id,
-                accessible_transition_animation(
-                    &theme.glass.motion,
-                    natural_duration,
-                    accessibility,
-                ),
-                move |el, delta| {
-                    let offset = translate_px * (1.0 - delta);
-                    let signed = if is_above { offset } else { -offset };
-                    el.opacity(delta).mt(gpui::px(signed))
-                },
-            );
-
-            container = container.child(animated_wrapper);
+                let anim_id = ElementId::Name("popover-present".into());
+                content_col
+                    .with_animation(
+                        anim_id,
+                        accessible_transition_animation(&motion, natural_duration, accessibility),
+                        move |el, delta| {
+                            let offset = translate_px * (1.0 - delta);
+                            let signed = if realised_is_above { offset } else { -offset };
+                            el.opacity(delta).mt(gpui::px(signed))
+                        },
+                    )
+                    .into_any_element()
+            });
         }
 
-        container
+        div()
+            .id(self.id)
+            .debug_selector(|| "popover-root".into())
+            .child(overlay)
     }
 }
 
-fn build_arrow_if(
-    enabled: bool,
-    theme: &TahoeTheme,
-    placement: PopoverPlacement,
-) -> Option<gpui::Div> {
-    if enabled {
-        Some(build_arrow(theme, placement))
-    } else {
-        None
-    }
-}
-
-/// Render a directional callout arrow pointing at the trigger.
+/// Render a directional callout arrow pointing at the trigger. Takes
+/// raw theme-sourced values (rather than a `&TahoeTheme` borrow) so it
+/// can be called from a captured closure inside the overlay's content
+/// builder without lingering borrow of `cx`.
 ///
 /// GPUI does not yet expose per-side border colors (required for the
 /// classic CSS "triangle via borders" trick) nor transform-origin
@@ -288,11 +304,13 @@ fn build_arrow_if(
 /// ▲ when the popover is below the trigger (arrow points up). The
 /// glyph takes the glass surface color so it reads as an extension of
 /// the panel rather than a free-floating mark.
-fn build_arrow(theme: &TahoeTheme, placement: PopoverPlacement) -> gpui::Div {
-    let arrow_bg = theme
-        .glass
-        .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
-    let glyph = if placement.is_above() { "▼" } else { "▲" };
+fn build_arrow_from_values(
+    arrow_bg: gpui::Hsla,
+    spacing_sm: gpui::Pixels,
+    is_above: bool,
+    aligns_left: bool,
+) -> gpui::Div {
+    let glyph = if is_above { "▼" } else { "▲" };
 
     let pointer = div()
         .w(px(ARROW_WIDTH))
@@ -305,10 +323,10 @@ fn build_arrow(theme: &TahoeTheme, placement: PopoverPlacement) -> gpui::Div {
         .child(glyph.to_string());
 
     let mut wrapper = div().w_full().flex();
-    if placement.aligns_left() {
-        wrapper = wrapper.justify_start().pl(theme.spacing_sm);
+    if aligns_left {
+        wrapper = wrapper.justify_start().pl(spacing_sm);
     } else {
-        wrapper = wrapper.justify_end().pr(theme.spacing_sm);
+        wrapper = wrapper.justify_end().pr(spacing_sm);
     }
     wrapper.child(pointer)
 }
@@ -385,14 +403,6 @@ mod tests {
         assert!(!PopoverPlacement::BelowLeft.is_above());
         assert!(!PopoverPlacement::BelowRight.is_above());
     }
-
-    #[test]
-    fn popover_aligns_left_classifies_placements() {
-        assert!(PopoverPlacement::AboveLeft.aligns_left());
-        assert!(PopoverPlacement::BelowLeft.aligns_left());
-        assert!(!PopoverPlacement::AboveRight.aligns_left());
-        assert!(!PopoverPlacement::BelowRight.aligns_left());
-    }
 }
 
 #[cfg(test)]
@@ -401,12 +411,20 @@ mod interaction_tests {
     use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext, div, px};
 
     use super::{Popover, PopoverPlacement};
+    use crate::foundations::layout::DROPDOWN_SNAP_MARGIN;
     use crate::test_helpers::helpers::{
         InteractionExt, LocatorExt, assert_element_absent, assert_element_exists, setup_test_window,
     };
 
     const POPOVER_TRIGGER: &str = "popover-trigger";
     const POPOVER_CONTENT: &str = "popover-content";
+
+    // Trigger and content sizes used by the harness. Kept as named
+    // constants so the padding derivation below stays readable.
+    const TRIGGER_W: f32 = 80.0;
+    const TRIGGER_H: f32 = 32.0;
+    const CONTENT_W: f32 = 120.0;
+    const CONTENT_H: f32 = 60.0;
 
     struct PopoverHarness {
         focus_handle: FocusHandle,
@@ -433,21 +451,39 @@ mod interaction_tests {
             cx: &mut Context<Self>,
         ) -> impl IntoElement {
             let entity = cx.entity().clone();
-            Popover::new(
-                "popover",
-                div().w(px(80.0)).h(px(32.0)).child("Trigger"),
-                div().w(px(120.0)).h(px(60.0)).child("Content"),
+            // Pad the trigger away from the window edges for two reasons:
+            //
+            // 1. `snap_to_window_with_margin` must not clamp "above"
+            //    placements into the viewport (which would invert the
+            //    expected ordering).
+            // 2. `AnchoredOverlay::realise_anchor` must not flip
+            //    Above→Below. The flip fires when the opposite side has
+            //    >2× the space of the preferred side. The default test
+            //    display is 1920×1080 (see `TestDisplay::new`), so
+            //    `trigger.origin.y >= (1080 - TRIGGER_H) / 3 ≈ 349pt`
+            //    keeps the preferred anchor stable.
+            //
+            // 400pt covers both constraints with headroom; left padding
+            // leaves room for the "Right"-aligned content surface.
+            let top_pad = px(400.0);
+            let left_pad = DROPDOWN_SNAP_MARGIN + px(CONTENT_W - TRIGGER_W + 4.0);
+            div().pt(top_pad).pl(left_pad).child(
+                Popover::new(
+                    "popover",
+                    div().w(px(TRIGGER_W)).h(px(TRIGGER_H)).child("Trigger"),
+                    div().w(px(CONTENT_W)).h(px(CONTENT_H)).child("Content"),
+                )
+                .open(self.is_open)
+                .placement(self.placement)
+                .focus_handle(self.focus_handle.clone())
+                .on_dismiss(move |_, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.dismiss_count += 1;
+                        this.is_open = false;
+                        cx.notify();
+                    });
+                }),
             )
-            .open(self.is_open)
-            .placement(self.placement)
-            .focus_handle(self.focus_handle.clone())
-            .on_dismiss(move |_, cx| {
-                entity.update(cx, |this, cx| {
-                    this.dismiss_count += 1;
-                    this.is_open = false;
-                    cx.notify();
-                });
-            })
         }
     }
 
@@ -498,5 +534,72 @@ mod interaction_tests {
             assert!(!host.is_open);
         });
         assert_element_absent(cx, POPOVER_CONTENT);
+    }
+
+    /// Regression harness: nest the popover inside a small
+    /// `overflow_hidden()` container and verify the floating content is
+    /// painted at window-absolute coordinates that fall OUTSIDE the
+    /// clipping container's bounds. This is the primary invariant
+    /// `AnchoredOverlay` was introduced to provide.
+    struct ClippedPopoverHarness {
+        is_open: bool,
+    }
+
+    impl Render for ClippedPopoverHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            // Outer wrapper adds a debug selector so we can read the
+            // clip region's bounds in the assertion. The inner container
+            // is 80x40 with `overflow_hidden` — content is 120pt wide, so
+            // without the overlay escape it would be clipped horizontally
+            // AND vertically (content lives below the trigger).
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(TRIGGER_W))
+                    .h(px(TRIGGER_H))
+                    .overflow_hidden()
+                    .child(
+                        Popover::new(
+                            "popover",
+                            div().w(px(TRIGGER_W)).h(px(TRIGGER_H)).child("Trigger"),
+                            div().w(px(CONTENT_W)).h(px(CONTENT_H)).child("Content"),
+                        )
+                        .open(self.is_open)
+                        .placement(PopoverPlacement::BelowLeft),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn overlay_content_escapes_parent_overflow_hidden_clip(cx: &mut TestAppContext) {
+        let (_host, cx) =
+            setup_test_window(cx, |_window, _cx| ClippedPopoverHarness { is_open: true });
+
+        let clip = cx.get_element("clip-region");
+        let content = cx.get_element(POPOVER_CONTENT);
+
+        // Content is wider than the 80pt clip region — if it weren't
+        // escaping via `deferred(anchored(...))`, its painted right edge
+        // would be clamped to the clip's right edge. We assert it
+        // extends past.
+        assert!(
+            content.bounds.right() > clip.bounds.right(),
+            "content.right() {:?} should exceed clip.right() {:?}",
+            content.bounds.right(),
+            clip.bounds.right(),
+        );
+        // Content starts below the trigger (clip is trigger-sized); its
+        // top should be at or past the clip's bottom edge.
+        assert!(
+            content.bounds.top() >= clip.bounds.bottom(),
+            "content.top() {:?} should be at or below clip.bottom() {:?}",
+            content.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

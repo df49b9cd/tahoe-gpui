@@ -12,9 +12,10 @@
 use std::time::{Duration, Instant};
 
 use crate::foundations::layout::HOVER_CARD_MAX_WIDTH;
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, ElementId, Window, div, px};
+use gpui::{AnyElement, App, Context, ElementId, Window, div, point, px};
 
 /// Default hover-in delay (300 ms). Matches HIG guidance that
 /// rich hover surfaces should not appear during pointer traversal.
@@ -179,6 +180,7 @@ impl HoverCard {
 impl Render for HoverCard {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let spacing_xs = theme.spacing_xs;
 
         let trigger_el = self.trigger.as_ref().map(|b| b(cx));
         let content_el = if self.is_open {
@@ -191,48 +193,47 @@ impl Render for HoverCard {
             ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-trigger".into());
         let content_id =
             ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-content".into());
+        let overlay_id =
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-overlay".into());
 
-        let mut container = div().relative().child(
-            div()
-                .id(trigger_id)
-                .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
-                    this.trigger_hovered = hovered;
-                    if hovered {
-                        this.trigger_entered_at = Some(Instant::now());
-                    } else {
-                        this.trigger_entered_at = None;
-                    }
-                    this.update_visibility(cx);
-                }))
-                .children(trigger_el),
-        );
+        let trigger_div = div()
+            .id(trigger_id)
+            .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
+                this.trigger_hovered = hovered;
+                if hovered {
+                    this.trigger_entered_at = Some(Instant::now());
+                } else {
+                    this.trigger_entered_at = None;
+                }
+                this.update_visibility(cx);
+            }))
+            .children(trigger_el);
+
+        let anchor = match self.placement {
+            HoverCardPlacement::AboveLeft => OverlayAnchor::AboveLeft,
+            HoverCardPlacement::AboveRight => OverlayAnchor::AboveRight,
+            HoverCardPlacement::BelowLeft => OverlayAnchor::BelowLeft,
+            HoverCardPlacement::BelowRight => OverlayAnchor::BelowRight,
+        };
+        // Gap between trigger and card. Anchored positions the attach
+        // corner at the trigger corner, then adds this offset. Above
+        // placements shift upward, below placements shift downward.
+        let gap_y = if self.placement.is_above() {
+            -spacing_xs
+        } else {
+            spacing_xs
+        };
+
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger_div)
+            .anchor(anchor)
+            .offset(point(px(0.0), gap_y));
 
         if let Some(content) = content_el {
             // Hover cards share popover layering: mid-depth overlay surface,
             // not a sheet/modal. `GlassSize::Large` over-shadows the card
             // and breaks the HIG depth hierarchy — use `Medium` instead.
-            let mut card = crate::foundations::materials::glass_surface(
-                {
-                    let mut base = div().absolute().overflow_hidden().max_w(self.max_width);
-                    // Position by placement. `absolute + bottom_full /
-                    // top_full + left_0 / right_0` anchors to the
-                    // corresponding corner of the trigger.
-                    base = match self.placement {
-                        HoverCardPlacement::AboveLeft => {
-                            base.bottom_full().left_0().pb(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::AboveRight => {
-                            base.bottom_full().right_0().pb(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::BelowLeft => {
-                            base.top_full().left_0().pt(theme.spacing_xs)
-                        }
-                        HoverCardPlacement::BelowRight => {
-                            base.top_full().right_0().pt(theme.spacing_xs)
-                        }
-                    };
-                    base
-                },
+            let card = crate::foundations::materials::glass_surface(
+                div().overflow_hidden().max_w(self.max_width),
                 theme,
                 GlassSize::Medium,
             )
@@ -240,13 +241,12 @@ impl Render for HoverCard {
             .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                 this.content_hovered = hovered;
                 this.update_visibility(cx);
-            }));
-
-            card = card.child(content);
-            container = container.child(card);
+            }))
+            .child(content);
+            overlay = overlay.content(card);
         }
 
-        container
+        overlay
     }
 }
 
