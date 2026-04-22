@@ -1282,7 +1282,7 @@ fn render_bars(
                 .w(px(bar_w))
                 .h(px(bar_h))
                 .bg(color)
-                .rounded(theme.radius_sm);
+                .rounded_t(theme.radius_sm);
             if dwc {
                 bar = bar.border_1().border_color(theme.text);
             }
@@ -1492,7 +1492,7 @@ fn render_horizontal_bars(
                 .w(px(bar_w))
                 .h(px(bar_thickness))
                 .bg(color)
-                .rounded(theme.radius_sm);
+                .rounded_r(theme.radius_sm);
             if dwc {
                 bar = bar.border_1().border_color(theme.text);
             }
