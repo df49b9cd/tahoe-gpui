@@ -20,7 +20,7 @@
 //! - a [`gpui::ScrollHandle`] wired to the keyboard-scroll action set
 //!   when [`TextView::scrollable`] is on;
 //! - an [`Entity<ContextMenu>`] rendered as a fullscreen overlay on
-//!   right-click. See [`Self::open_context_menu`].
+//!   right-click, opened by the view's context-menu handlers.
 //!
 //! # Dynamic Type
 //!
@@ -492,12 +492,11 @@ impl TextViewContent {
 /// appends one run. Feed the completed builder to
 /// [`TextView::from_runs`] to materialise a view.
 ///
-/// Runs flow through the same
-/// [`TextViewContent::Rich { text, highlights }`](TextViewContent::Rich)
-/// path as [`TextView::styled_text`]: the per-run strings are
-/// concatenated into one [`SharedString`] for selection, copy, and
-/// VoiceOver, while the per-run styles map to `(byte_range,
-/// HighlightStyle)` pairs for the renderer.
+/// Runs flow through the same rich-text path as
+/// [`TextView::styled_text`]: the per-run strings are concatenated into
+/// one [`SharedString`] for selection, copy, and VoiceOver, while the
+/// per-run styles map to `(byte_range, HighlightStyle)` pairs for the
+/// renderer.
 ///
 /// # Example
 ///
