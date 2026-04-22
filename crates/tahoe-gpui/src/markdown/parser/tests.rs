@@ -372,10 +372,10 @@ fn parse_empty() {
 }
 
 #[test]
-fn parse_with_remend() {
-    let mut p = IncrementalMarkdownParser::with_remend(remend::RemendOptions::default());
+fn parse_with_stitch() {
+    let mut p = IncrementalMarkdownParser::with_stitch(mdstitch::StitchOptions::default());
     p.push_delta("```rust\nfn main() {");
-    // With remend, incomplete code fence should still parse
+    // With mdstitch, incomplete code fence should still parse
     let blocks = p.parse();
     assert!(!blocks.is_empty());
 }

@@ -26,7 +26,7 @@ plan within **30 days** for valid reports. Anonymous reports are welcome.
 In scope:
 
 - Memory-safety issues (unsoundness in `unsafe` blocks).
-- Input-handling bugs in the streaming markdown / code / remend parsers that
+- Input-handling bugs in the streaming markdown / code / mdstitch parsers that
   could cause panics or unbounded resource use on attacker-controlled input.
 - Any vulnerability in the dependency tree that `tahoe-gpui` re-exposes.
 

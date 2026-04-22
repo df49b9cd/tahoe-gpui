@@ -15,7 +15,7 @@ Thanks for your interest in contributing! This document covers the development w
 tahoe-gpui/
 ├── crates/
 │   ├── tahoe-gpui/   # Main UI component library
-│   └── remend/       # Streaming Markdown preprocessor (internal)
+│   └── mdstitch/     # Streaming Markdown preprocessor (internal)
 ├── rustfmt.toml      # Formatter config (edition 2024, max_width 100)
 ├── clippy.toml       # Linter config (MSRV 1.95.0 — see AGENTS.md)
 ├── deny.toml         # Dependency audit policy
@@ -86,7 +86,7 @@ test(alert): cover destructive action-sheet variant
 docs(hig): sync Presentation page against the Apr 2026 HIG revision
 ```
 
-Common scopes: `foundations`, `components`, `markdown`, `code`, `theme`, `materials`, `voice`, `workflow`, `remend`.
+Common scopes: `foundations`, `components`, `markdown`, `code`, `theme`, `materials`, `voice`, `workflow`, `mdstitch`.
 
 ## Pull requests
 

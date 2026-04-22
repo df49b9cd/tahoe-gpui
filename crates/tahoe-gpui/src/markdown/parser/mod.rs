@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 /// Incremental markdown parser that accumulates text deltas and produces blocks.
 ///
-/// Optionally uses [`remend`] to auto-complete incomplete markdown syntax
+/// Optionally uses [`mdstitch`] to auto-complete incomplete markdown syntax
 /// during streaming, ensuring content renders correctly token-by-token.
 ///
 /// Inline citation splitting (`[N]` → [`InlineContent::Citation`]) is enabled
@@ -26,8 +26,8 @@ use std::rc::Rc;
 pub struct IncrementalMarkdownParser {
     /// Accumulated raw markdown text.
     source: String,
-    /// Remend options for preprocessing (None = disabled).
-    remend_options: Option<remend::RemendOptions>,
+    /// Stitch options for preprocessing (None = disabled).
+    stitch_options: Option<mdstitch::StitchOptions>,
     /// When `true`, bracketed digit sequences in inline text are split into
     /// [`InlineContent::Citation`] variants. Mirrored by the accessor
     /// [`Self::citations_enabled`].
@@ -37,7 +37,7 @@ pub struct IncrementalMarkdownParser {
     /// Whether the current text contains a table.
     has_table: bool,
     /// Detected text direction.
-    text_direction: remend::TextDirection,
+    text_direction: mdstitch::TextDirection,
     /// Whether the stream is still active.
     is_streaming: bool,
     /// Cached parsed blocks to avoid re-parsing on every render frame.
@@ -53,11 +53,11 @@ impl IncrementalMarkdownParser {
     pub fn new() -> Self {
         Self {
             source: String::new(),
-            remend_options: None,
+            stitch_options: None,
             citations_enabled: true,
             has_incomplete_code_fence: false,
             has_table: false,
-            text_direction: remend::TextDirection::default(),
+            text_direction: mdstitch::TextDirection::default(),
             is_streaming: false,
             cached_blocks: Rc::new(Vec::new()),
             blocks_dirty: true,
@@ -65,10 +65,10 @@ impl IncrementalMarkdownParser {
         }
     }
 
-    /// Creates a parser with remend preprocessing enabled.
-    pub fn with_remend(options: remend::RemendOptions) -> Self {
+    /// Creates a parser with mdstitch preprocessing enabled.
+    pub fn with_stitch(options: mdstitch::StitchOptions) -> Self {
         let mut s = Self::new();
-        s.remend_options = Some(options);
+        s.stitch_options = Some(options);
         s
     }
 
@@ -103,10 +103,10 @@ impl IncrementalMarkdownParser {
         // Update code fence / table state incrementally:
         // Only re-scan if the delta could have changed the state.
         if delta.contains('`') || delta.contains('~') {
-            self.has_incomplete_code_fence = remend::has_incomplete_code_fence(&self.source);
+            self.has_incomplete_code_fence = mdstitch::has_incomplete_code_fence(&self.source);
         }
         if delta.contains('|') {
-            self.has_table = remend::has_table(&self.source);
+            self.has_table = mdstitch::has_table(&self.source);
         }
 
         // Detect text direction once the first alphabetic character arrives
@@ -119,9 +119,9 @@ impl IncrementalMarkdownParser {
                 .char_indices()
                 .nth(200)
                 .map_or(self.source.len(), |(idx, _)| idx);
-            let dir = remend::detect_text_direction(&self.source[..dir_end]);
+            let dir = mdstitch::detect_text_direction(&self.source[..dir_end]);
             self.text_direction = dir;
-            if dir == remend::TextDirection::Rtl
+            if dir == mdstitch::TextDirection::Rtl
                 || self.source[..dir_end].chars().any(|c| c.is_alphabetic())
             {
                 self.direction_detected = true;
@@ -131,14 +131,14 @@ impl IncrementalMarkdownParser {
 
     /// Marks the stream as finished.
     ///
-    /// Performs one final parse without remend preprocessing so the cache
+    /// Performs one final parse without mdstitch preprocessing so the cache
     /// reflects a clean, authoritative tree even when `push_delta` arrives
     /// in the same frame as `finish` (in which case the cache is still
     /// dirty from the pending delta and must be rebuilt from the raw
     /// source before it is dropped).
     pub fn finish(&mut self) {
         self.is_streaming = false;
-        // Force a final reparse without remend so any incomplete-syntax
+        // Force a final reparse without mdstitch so any incomplete-syntax
         // repairs from the last streaming parse are dropped in favour of
         // the raw final source.
         self.blocks_dirty = true;
@@ -161,14 +161,14 @@ impl IncrementalMarkdownParser {
     }
 
     /// Returns the detected text direction.
-    pub fn text_direction(&self) -> remend::TextDirection {
+    pub fn text_direction(&self) -> mdstitch::TextDirection {
         self.text_direction
     }
 
     /// Parse the full source into blocks. Call after `push_delta`.
     ///
     /// Returns cached blocks if the source hasn't changed since the last parse.
-    /// When remend is enabled and the stream is active, the source text is
+    /// When mdstitch is enabled and the stream is active, the source text is
     /// preprocessed to auto-complete incomplete markdown syntax before parsing.
     pub fn parse(&mut self) -> Rc<Vec<MarkdownBlock>> {
         if !self.blocks_dirty {
@@ -187,10 +187,10 @@ impl IncrementalMarkdownParser {
             | Options::ENABLE_FOOTNOTES
             | Options::ENABLE_HEADING_ATTRIBUTES;
 
-        // Apply remend preprocessing if enabled and still streaming.
+        // Apply mdstitch preprocessing if enabled and still streaming.
         let preprocessed: std::borrow::Cow<'_, str> = if self.is_streaming {
-            if let Some(ref remend_opts) = self.remend_options {
-                remend::remend(&self.source, remend_opts)
+            if let Some(ref stitch_opts) = self.stitch_options {
+                mdstitch::stitch(&self.source, stitch_opts)
             } else {
                 std::borrow::Cow::Borrowed(&self.source)
             }

@@ -684,6 +684,13 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
         if ends_with_odd_backslashes(text) {
             return Cow::Borrowed(text);
         }
+        // A trailing `***` run already contains a `*` that can serve as the
+        // italic closer. Appending another `*` extends the run; the new byte
+        // has `prev == '*'` so the counter ignores it, the count stays odd,
+        // and the next pass appends again — violating idempotency.
+        if text.ends_with("***") {
+            return Cow::Borrowed(text);
+        }
         return cow_append(text, "*");
     }
 

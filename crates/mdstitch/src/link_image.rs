@@ -66,7 +66,7 @@ fn handle_incomplete_url<'a>(
             result.push_str(before);
             result.push('[');
             result.push_str(link_text);
-            result.push_str("](streamdown:incomplete-link)");
+            result.push_str("](stitch:incomplete-link)");
             Some(Cow::Owned(result))
         }
     }
@@ -234,7 +234,7 @@ fn make_incomplete_link<'a>(text: &str, link_mode: LinkMode) -> Cow<'a, str> {
                 current.remove(first);
             }
             // Stripping can expose a lone trailing space (e.g. ``[ [` ->
-            // `` `). The top-level `remend()` applies the same rule before
+            // `` `). The top-level `stitch()` applies the same rule before
             // any handler runs, so match it here to stay idempotent in one pass.
             if current.ends_with(' ') && !current.ends_with("  ") {
                 current.pop();
@@ -242,7 +242,7 @@ fn make_incomplete_link<'a>(text: &str, link_mode: LinkMode) -> Cow<'a, str> {
             Cow::Owned(current)
         }
         LinkMode::Protocol => {
-            const MARKER: &str = "](streamdown:incomplete-link)";
+            const MARKER: &str = "](stitch:incomplete-link)";
             // Don't re-append: the only unmatched `[` is a prefix to an
             // already-completed link, and appending would break idempotency.
             if text.ends_with(MARKER) {
@@ -359,7 +359,7 @@ mod tests {
     fn completes_incomplete_link_url() {
         assert_eq!(
             h("[Click here](http://exam").as_ref(),
-            "[Click here](streamdown:incomplete-link)"
+            "[Click here](stitch:incomplete-link)"
         );
     }
 
@@ -367,7 +367,7 @@ mod tests {
     fn completes_incomplete_link_text() {
         assert_eq!(
             h("[Click here").as_ref(),
-            "[Click here](streamdown:incomplete-link)"
+            "[Click here](stitch:incomplete-link)"
         );
     }
 
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn completes_real_link_in_list_item() {
-        assert_eq!(h("- [foo").as_ref(), "- [foo](streamdown:incomplete-link)");
+        assert_eq!(h("- [foo").as_ref(), "- [foo](stitch:incomplete-link)");
     }
 
     #[test]
@@ -454,7 +454,7 @@ mod tests {
     fn task_list_marker_then_incomplete_link_later() {
         assert_eq!(
             h("- [x] prefix [link").as_ref(),
-            "- [x] prefix [link](streamdown:incomplete-link)"
+            "- [x] prefix [link](stitch:incomplete-link)"
         );
     }
 
@@ -486,7 +486,7 @@ mod tests {
     fn completes_incomplete_url_with_crlf_trailing() {
         assert_eq!(
             h("[text](http://exam\r\n").as_ref(),
-            "[text](streamdown:incomplete-link)"
+            "[text](stitch:incomplete-link)"
         );
     }
 
@@ -494,7 +494,7 @@ mod tests {
     fn completes_incomplete_url_with_lone_cr() {
         assert_eq!(
             h("[text](http://exam\r").as_ref(),
-            "[text](streamdown:incomplete-link)"
+            "[text](stitch:incomplete-link)"
         );
     }
 
@@ -515,7 +515,7 @@ mod tests {
         // The ] inside backticks should not close the link; the [ is still incomplete.
         assert_eq!(
             h("[text `code]more`").as_ref(),
-            "[text `code]more`](streamdown:incomplete-link)"
+            "[text `code]more`](stitch:incomplete-link)"
         );
     }
 
@@ -530,7 +530,7 @@ mod tests {
         // Inline code brackets should not prevent detecting a real incomplete link.
         assert_eq!(
             h("`[code]` [link](url").as_ref(),
-            "`[code]` [link](streamdown:incomplete-link)"
+            "`[code]` [link](stitch:incomplete-link)"
         );
     }
 
@@ -543,10 +543,7 @@ mod tests {
     #[test]
     fn close_paren_on_next_line_does_not_complete_link() {
         // `)` on line 2 must not close the URL -- the link is incomplete.
-        assert_eq!(
-            h("[a](url\nother)").as_ref(),
-            "[a](streamdown:incomplete-link)"
-        );
+        assert_eq!(h("[a](url\nother)").as_ref(), "[a](stitch:incomplete-link)");
     }
 
     #[test]

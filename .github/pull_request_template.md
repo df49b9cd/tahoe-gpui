@@ -4,7 +4,7 @@
 
 ## Scope
 
-<!-- Scope label from CLAUDE.md: foundations / components / markdown / code / theme / materials / voice / workflow / remend -->
+<!-- Scope label from CLAUDE.md: foundations / components / markdown / code / theme / materials / voice / workflow / mdstitch -->
 
 ## Breaking changes
 
