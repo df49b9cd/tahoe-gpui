@@ -1,7 +1,7 @@
 use super::{
     AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
-    macos_tracking, meets_contrast,
+    GlassVariant, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step,
+    contrast_ratio, macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
@@ -1409,12 +1409,76 @@ fn text_style_emphasized_preserves_size() {
     assert_eq!(normal.leading, emph.leading);
 }
 
+/// Leading tolerance: allow ~100 ULPs of f32 multiplication error
+/// (≈1.19e-5). `0.95` / `1.15` are not exactly representable in f32, so the
+/// product drifts by a few ULPs from the arithmetic ideal — anything wider
+/// than this would hide a real bug in the multiplier.
+const LEADING_TOLERANCE: f32 = f32::EPSILON * 100.0;
+
 #[test]
-fn leading_style_tight_reduces() {
-    let standard = TextStyle::Body.attrs();
+fn leading_style_tight_reduces_on_display_sizes() {
+    // Display-size styles (LargeTitle: 32 pt leading, 26 pt size) have
+    // enough headroom above the 1.15× SF Pro floor that the 0.95
+    // multiplier wins outright — Tight genuinely reduces. Body-scale
+    // styles are now clamped at the 1.5× WCAG floor and therefore
+    // *increase* under Tight; that contract is covered by
+    // `leading_style_tight_clamps_body_to_wcag_floor`.
+    let standard = TextStyle::LargeTitle.attrs();
     let tight = standard.with_leading(LeadingStyle::Tight);
     assert!(f32::from(tight.leading) < f32::from(standard.leading));
-    assert!((f32::from(standard.leading) - f32::from(tight.leading) - 2.0).abs() < f32::EPSILON);
+    let expected = f32::from(standard.leading) * 0.95;
+    assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
+}
+
+#[test]
+fn leading_style_tight_clamps_body_to_wcag_floor() {
+    // Body-scale styles (size ≤ 15 pt) clamp Tight to `size × 1.5` so
+    // running paragraphs meet WCAG 1.4.12 (Text Spacing). Body is
+    // 13 pt × 1.5 = 19.5 pt, which is *above* the 16 pt standard
+    // leading — Tight on body copy actually opens the line box to
+    // the accessibility floor rather than compressing below it.
+    let standard = TextStyle::Body.attrs();
+    let tight = standard.with_leading(LeadingStyle::Tight);
+    let size = f32::from(standard.size);
+    let expected = size * 1.5;
+    assert!((f32::from(tight.leading) - expected).abs() < LEADING_TOLERANCE);
+    assert!(f32::from(tight.leading) >= f32::from(standard.leading));
+}
+
+#[test]
+fn leading_style_tight_stays_above_practical_floor() {
+    // Regression guard: a more aggressive Tight multiplier (e.g. the
+    // original 0.85) drops Body's 16 pt leading to 13.6 pt against a
+    // 13 pt body size — a 1.046× ratio where SF Pro's ascenders and
+    // descenders start colliding. Tight must never land below 1.15×
+    // the style's size for any HIG text style. Sweeping every
+    // variant guards the clamp in `with_leading` against a future
+    // style (or multiplier adjustment) that would push a smaller
+    // style below the floor.
+    for style in [
+        TextStyle::LargeTitle,
+        TextStyle::Title1,
+        TextStyle::Title2,
+        TextStyle::Title3,
+        TextStyle::Headline,
+        TextStyle::Body,
+        TextStyle::Callout,
+        TextStyle::Subheadline,
+        TextStyle::Footnote,
+        TextStyle::Caption1,
+        TextStyle::Caption2,
+    ] {
+        let attrs = style.attrs();
+        let tight = attrs.with_leading(LeadingStyle::Tight);
+        let size = f32::from(attrs.size);
+        let ratio = f32::from(tight.leading) / size;
+        assert!(
+            ratio >= 1.15 - LEADING_TOLERANCE,
+            "{style:?}: Tight leading {} / size {size} = {ratio} fell below 1.15× — \
+             too tight for SF Pro ascenders/descenders",
+            f32::from(tight.leading),
+        );
+    }
 }
 
 #[test]
@@ -1422,7 +1486,8 @@ fn leading_style_loose_increases() {
     let standard = TextStyle::Body.attrs();
     let loose = standard.with_leading(LeadingStyle::Loose);
     assert!(f32::from(loose.leading) > f32::from(standard.leading));
-    assert!((f32::from(loose.leading) - f32::from(standard.leading) - 2.0).abs() < f32::EPSILON);
+    let expected = f32::from(standard.leading) * 1.15;
+    assert!((f32::from(loose.leading) - expected).abs() < LEADING_TOLERANCE);
 }
 
 #[test]
@@ -1430,6 +1495,94 @@ fn leading_style_standard_unchanged() {
     let attrs = TextStyle::Body.attrs();
     let standard = attrs.with_leading(LeadingStyle::Standard);
     assert_eq!(attrs.leading, standard.leading);
+}
+
+#[test]
+fn leading_style_proportional_across_all_text_styles() {
+    // Regression coverage: a flat ±pt offset landed differently per style
+    // (12.5% on Body's 16pt, 6.25% on LargeTitle's 32pt). The proportional
+    // multiplier keeps the relative delta identical across every style;
+    // this sweep catches any future regression that breaks that contract.
+    //
+    // Tight is `max(leading × 0.95, size × floor_ratio)` where
+    // `floor_ratio` is 1.5 for body-scale styles (size ≤ 15 pt, per
+    // WCAG 1.4.12) and 1.15 for display styles (SF Pro
+    // ascender/descender floor).
+    // Loose is a pure multiplier with no floor, so the assertion there
+    // stays exact.
+    for style in [
+        TextStyle::LargeTitle,
+        TextStyle::Title1,
+        TextStyle::Title2,
+        TextStyle::Title3,
+        TextStyle::Headline,
+        TextStyle::Body,
+        TextStyle::Callout,
+        TextStyle::Subheadline,
+        TextStyle::Footnote,
+        TextStyle::Caption1,
+        TextStyle::Caption2,
+    ] {
+        let attrs = style.attrs();
+        let base = f32::from(attrs.leading);
+        let size = f32::from(attrs.size);
+        let tight = f32::from(attrs.with_leading(LeadingStyle::Tight).leading);
+        let loose = f32::from(attrs.with_leading(LeadingStyle::Loose).leading);
+        let floor_ratio = if size <= 15.0 { 1.5 } else { 1.15 };
+        let expected_tight = (base * 0.95).max(size * floor_ratio);
+        assert!(
+            (tight - expected_tight).abs() < LEADING_TOLERANCE,
+            "{style:?}: tight leading {tight} is not max(0.95 × {base}, \
+             {floor_ratio} × {size}) = {expected_tight}",
+        );
+        assert!(
+            (loose - base * 1.15).abs() < LEADING_TOLERANCE,
+            "{style:?}: loose leading {loose} is not 1.15 × {base}",
+        );
+    }
+}
+
+#[test]
+fn label_level_resolve_all_variants() {
+    // Resolution contract must hold for every built-in theme — the
+    // dark / light / liquid-glass tokens share the same semantic
+    // hierarchy, so [`LabelLevel::resolve`] must map each tier to the
+    // matching theme accessor regardless of which palette is active.
+    for theme in [
+        TahoeTheme::dark(),
+        TahoeTheme::light(),
+        TahoeTheme::liquid_glass(),
+    ] {
+        assert_eq!(LabelLevel::Primary.resolve(&theme), theme.text);
+        assert_eq!(LabelLevel::Secondary.resolve(&theme), theme.text_muted);
+        assert_eq!(LabelLevel::Tertiary.resolve(&theme), theme.text_tertiary());
+        assert_eq!(
+            LabelLevel::Quaternary.resolve(&theme),
+            theme.text_quaternary(),
+        );
+        assert_eq!(LabelLevel::Quinary.resolve(&theme), theme.text_quinary());
+    }
+}
+
+#[test]
+fn label_level_resolve_variants_are_distinct() {
+    let theme = TahoeTheme::dark();
+    let colors = [
+        LabelLevel::Primary.resolve(&theme),
+        LabelLevel::Secondary.resolve(&theme),
+        LabelLevel::Tertiary.resolve(&theme),
+        LabelLevel::Quaternary.resolve(&theme),
+        LabelLevel::Quinary.resolve(&theme),
+    ];
+    // Each HIG tier resolves to a different color; if two collapse to
+    // the same value, the hierarchy has broken.
+    for (i, a) in colors.iter().enumerate() {
+        for (j, b) in colors.iter().enumerate() {
+            if i != j {
+                assert_ne!(a, b, "variants {i} and {j} collapsed");
+            }
+        }
+    }
 }
 
 #[test]

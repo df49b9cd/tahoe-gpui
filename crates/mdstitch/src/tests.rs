@@ -1730,6 +1730,20 @@ fn idempotency_seeds_pipeline() {
                 o.inline_katex = true;
             }),
         ),
+        (
+            "A* **_0A*",
+            only(|o| {
+                o.bold = true;
+                o.italic = true;
+            }),
+        ),
+        (
+            "[ ](",
+            only(|o| {
+                o.links = true;
+                o.link_mode = LinkMode::TextOnly;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {

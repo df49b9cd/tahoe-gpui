@@ -58,6 +58,12 @@ fn handle_incomplete_url<'a>(
             let mut result = String::with_capacity(before.len() + link_text.len());
             result.push_str(before);
             result.push_str(link_text);
+            // `stitch()` strips a lone trailing space before any handler runs;
+            // match it here so a link text like `[ ](` stays stable across
+            // passes (idempotency).
+            if result.ends_with(' ') && !result.ends_with("  ") {
+                result.pop();
+            }
             Some(Cow::Owned(result))
         }
         LinkMode::Protocol => {

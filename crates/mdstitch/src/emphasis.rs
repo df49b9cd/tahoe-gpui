@@ -693,6 +693,31 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
         if text.ends_with("***") {
             return Cow::Borrowed(text);
         }
+        // When text ends with `**` that closes a balanced bold pair AND the
+        // orphan `*` is right-flanking only (prev=non-ws, next=ws/EOF — it
+        // can close but not open emphasis), appending `*` at EOF would turn
+        // the bold closer into `***` with no opener to pair with. On the
+        // next pass italic-underscore may insert `_` before the `**`,
+        // restoring a trailing `**` that re-triggers this branch and
+        // appends again — breaking idempotency. Leave literal `*` alone.
+        if text.ends_with("**") && count_double_asterisks(text).is_multiple_of(2) {
+            let bytes = text.as_bytes();
+            let prev = if first_idx > 0 {
+                bytes[first_idx - 1]
+            } else {
+                0
+            };
+            let next = if first_idx + 1 < bytes.len() {
+                bytes[first_idx + 1]
+            } else {
+                0
+            };
+            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+            let next_ws = next == 0 || matches!(next, b' ' | b'\t' | b'\n' | b'\r');
+            if !prev_ws && next_ws {
+                return Cow::Borrowed(text);
+            }
+        }
         return cow_append(text, "*");
     }
 

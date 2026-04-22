@@ -3,7 +3,9 @@
 //! Provides text styles, font design variants, tracking utilities,
 //! and the `TextStyledExt` trait for applying HIG type scale to GPUI elements.
 
-use gpui::{DefiniteLength, FontWeight, Pixels, Styled, px};
+use std::borrow::Cow;
+
+use gpui::{DefiniteLength, FontWeight, Hsla, Pixels, Styled, px};
 
 use super::theme::TahoeTheme;
 
@@ -413,11 +415,44 @@ impl TextStyle {
 
 impl TextStyleAttrs {
     /// Returns a copy with the leading adjusted per the given style.
+    ///
+    /// Uses proportional multipliers (`× 0.95` for Tight, `× 1.15` for
+    /// Loose) instead of flat offsets so the visual density stays
+    /// consistent across all 11 text styles. A flat ±2 pt delta would land
+    /// differently per size — 12.5% on Body's 16 pt leading but only 6.25%
+    /// on LargeTitle's 32 pt — whereas a proportional factor produces the
+    /// same perceived change everywhere.
+    ///
+    /// Tight is capped at `× 0.95` rather than a larger reduction so
+    /// SF Pro ascenders and descenders never collide — Body's 16 pt
+    /// standard leading drops to 15.2 pt (≈1.17× the 13 pt body size),
+    /// which still reads in compact list rows. A more aggressive 0.85
+    /// lands at 13.6 pt (1.05×), where letterforms start touching on
+    /// successive lines.
     pub fn with_leading(mut self, style: LeadingStyle) -> Self {
         match style {
-            LeadingStyle::Tight => self.leading = px((f32::from(self.leading) - 2.0).max(0.0)),
+            LeadingStyle::Tight => {
+                // Tier the floor against the size tier: body-scale
+                // styles (size ≤ 15 pt — Body, Callout, Subheadline,
+                // Footnote, Caption1, Caption2) stay at ≥ 1.5× leading
+                // so running paragraphs meet WCAG 1.4.12 (Text Spacing),
+                // which requires line-height ≥ 1.5× the font size for
+                // body copy. Display styles (Title*, LargeTitle,
+                // Headline) only need the 1.15× SF Pro
+                // ascender/descender floor — they typically sit on a
+                // single line, so the stricter body-copy ratio would
+                // add visible whitespace above headings.
+                let size = f32::from(self.size);
+                let scaled = f32::from(self.leading) * 0.95;
+                let floor = if size <= 15.0 {
+                    size * 1.5
+                } else {
+                    size * 1.15
+                };
+                self.leading = px(scaled.max(floor));
+            }
             LeadingStyle::Standard => {}
-            LeadingStyle::Loose => self.leading = px(f32::from(self.leading) + 2.0),
+            LeadingStyle::Loose => self.leading = px(f32::from(self.leading) * 1.15),
         }
         self
     }
@@ -435,14 +470,165 @@ impl TextStyleAttrs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LeadingStyle {
     /// Tighter line spacing for constrained areas (list rows, compact UI).
-    /// Reduces leading by ~2pt.
+    /// Scales leading by `0.95` (~5% tighter), then clamps so the
+    /// resulting ratio never drops below a size-tiered floor:
+    /// `size × 1.5` for body-scale styles (size ≤ 15 pt, matching WCAG
+    /// 1.4.12 *Text Spacing*) and `size × 1.15` for display styles — see
+    /// [`TextStyleAttrs::with_leading`] for the per-tier rationale.
     Tight,
     /// Default HIG leading for the text style.
     #[default]
     Standard,
     /// Looser line spacing for wide columns and long passages.
-    /// Increases leading by ~2pt.
+    /// Scales leading by `1.15` (~15% looser) so the delta stays
+    /// proportional across all [`TextStyle`] sizes.
     Loose,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TextCase
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Case transform applied to rendered text.
+///
+/// Applied at paint time to the string that reaches the layout engine. The
+/// transformed string is what selection, copy, and the VoiceOver label all
+/// observe — the user sees X, selects X, copies X, hears X.
+///
+/// # Rich content
+///
+/// Case transforms can alter UTF-8 byte length (for example `'ß'.to_uppercase()
+/// == "SS"`), which would invalidate the byte ranges stored on a rich
+/// `HighlightStyle` span. Components that support both plain and rich content
+/// typically only apply the transform when no highlights are present and
+/// fall back to the original string otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextCase {
+    /// Uppercase via [`str::to_uppercase`].
+    Uppercase,
+    /// Lowercase via [`str::to_lowercase`].
+    Lowercase,
+    /// Capitalise the first character of the string, leave the rest
+    /// unchanged. Subsequent sentence boundaries are not inferred —
+    /// only the first grapheme of the string is capitalised.
+    SentenceCase,
+}
+
+impl TextCase {
+    /// Apply the case transform, borrowing the input when the string is
+    /// already in the target case. On the typical render path — text
+    /// authored in the desired case — this avoids the
+    /// [`str::to_uppercase`] / [`str::to_lowercase`] allocation every
+    /// frame.
+    pub fn apply(self, s: &str) -> Cow<'_, str> {
+        match self {
+            Self::Uppercase => {
+                if s.chars().all(|c| !c.is_lowercase()) {
+                    Cow::Borrowed(s)
+                } else {
+                    Cow::Owned(s.to_uppercase())
+                }
+            }
+            Self::Lowercase => {
+                if s.chars().all(|c| !c.is_uppercase()) {
+                    Cow::Borrowed(s)
+                } else {
+                    Cow::Owned(s.to_lowercase())
+                }
+            }
+            Self::SentenceCase => match s.chars().next() {
+                None => Cow::Borrowed(s),
+                Some(first) if !first.is_lowercase() => Cow::Borrowed(s),
+                Some(first) => {
+                    let rest = &s[first.len_utf8()..];
+                    Cow::Owned(first.to_uppercase().collect::<String>() + rest)
+                }
+            },
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TruncationMode
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Where to place the ellipsis when text overflows its container.
+///
+/// All variants use the horizontal ellipsis character `…` (`U+2026`),
+/// matching AppKit's `NSLineBreakMode` truncation glyphs. Truncation is
+/// **visual only** — assistive technologies (VoiceOver) read the full,
+/// untruncated text so the author's canonical content remains
+/// accessible. `TextView` enforces this by feeding the a11y label from
+/// the pre-truncation content.
+///
+/// Head and tail map directly to GPUI's [`TextOverflow::TruncateStart`]
+/// and [`TextOverflow::Truncate`]. Middle has no native GPUI primitive,
+/// so the render path emulates it by replacing the string with a
+/// head+ellipsis+tail form via
+/// [`foundations::text_truncation::truncate_middle`].
+///
+/// [`foundations::text_truncation::truncate_middle`]: crate::foundations::text_truncation::truncate_middle
+/// [`TextOverflow::Truncate`]: gpui::TextOverflow::Truncate
+/// [`TextOverflow::TruncateStart`]: gpui::TextOverflow::TruncateStart
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TruncationMode {
+    /// Truncate at the end, appending `…` (`U+2026`): `"long text h…"`.
+    /// Visual only — a11y reads the full text.
+    #[default]
+    Tail,
+    /// Truncate at the start, prepending `…` (`U+2026`): `"…ext here"`.
+    /// Typical for file paths where the trailing name is more
+    /// informative than the leading directories. Visual only — a11y
+    /// reads the full text.
+    Head,
+    /// Truncate in the middle with `…` (`U+2026`): `"long…here"`.
+    /// Useful for breadcrumb labels and file paths that want to show
+    /// both ends. Visual only — a11y reads the full text.
+    Middle,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LabelLevel
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// HIG label-level color hierarchy.
+///
+/// The HIG defines four levels of label importance (Labels > Secondary >
+/// Tertiary > Quaternary) with a fifth quinary level added in macOS Tahoe.
+/// Components reach a semantic tier via [`Self::resolve`] rather than
+/// hardcoding theme tokens directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LabelLevel {
+    /// Primary text — `theme.text` (semantic `label`).
+    #[default]
+    Primary,
+    /// Secondary/supplemental text — `theme.text_muted` (semantic `secondaryLabel`).
+    Secondary,
+    /// Tertiary text — `theme.text_tertiary()` (semantic `tertiaryLabel`).
+    Tertiary,
+    /// Quaternary/watermark text — `theme.text_quaternary()` (semantic `quaternaryLabel`).
+    Quaternary,
+    /// Quinary text (macOS Tahoe; iOS equivalent where available) —
+    /// `theme.text_quinary()` (semantic `quinaryLabel`). The lightest
+    /// tier in the HIG hierarchy: reserve for decorative separators,
+    /// timestamps, and trailing metadata that must recede so it does
+    /// not compete with nearby primary content. Not appropriate for
+    /// running prose — contrast is below WCAG AA for body text and
+    /// readers with mild vision impairment will struggle.
+    Quinary,
+}
+
+impl LabelLevel {
+    /// Resolve to the theme's semantic color for this level.
+    pub fn resolve(self, theme: &TahoeTheme) -> Hsla {
+        match self {
+            Self::Primary => theme.text,
+            Self::Secondary => theme.text_muted,
+            Self::Tertiary => theme.text_tertiary(),
+            Self::Quaternary => theme.text_quaternary(),
+            Self::Quinary => theme.text_quinary(),
+        }
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -451,9 +637,8 @@ pub enum LeadingStyle {
 
 /// HIG font design variants.
 ///
-/// Corresponds to `Font.Design` in SwiftUI. Use `.Default` for the system font
-/// (SF Pro), `.Serif` for New York, `.Rounded` for SF Pro Rounded,
-/// and `.Monospaced` for SF Mono.
+/// Use `.Default` for the system font (SF Pro), `.Serif` for New York,
+/// `.Rounded` for SF Pro Rounded, and `.Monospaced` for SF Mono.
 ///
 /// Apply to an element via [`TextStyledExt::text_style_with_design`] or
 /// [`TextStyledExt::text_style_emphasized_with_design`]. The plain
@@ -702,5 +887,52 @@ pub fn bold_step(w: FontWeight) -> FontWeight {
         650..750 => FontWeight::EXTRA_BOLD,
         // EXTRA_BOLD (800) and BLACK (900) both saturate at BLACK.
         _ => FontWeight::BLACK,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::prelude::v1::test;
+
+    use super::TextCase;
+
+    #[test]
+    fn text_case_uppercase_uppercases_the_whole_string() {
+        assert_eq!(TextCase::Uppercase.apply("Hello World"), "HELLO WORLD");
+    }
+
+    #[test]
+    fn text_case_lowercase_lowercases_the_whole_string() {
+        assert_eq!(TextCase::Lowercase.apply("Hello World"), "hello world");
+    }
+
+    #[test]
+    fn text_case_sentence_case_capitalises_only_the_first_char() {
+        // Sentence case capitalises the first grapheme and leaves the
+        // remainder unchanged — it does not infer subsequent sentence
+        // boundaries, and it preserves case in trailing words.
+        assert_eq!(
+            TextCase::SentenceCase.apply("hello WORLD"),
+            "Hello WORLD",
+            "only first char is touched — trailing 'WORLD' stays uppercase",
+        );
+    }
+
+    #[test]
+    fn text_case_sentence_case_is_a_noop_for_an_already_capital_leading_char() {
+        assert_eq!(TextCase::SentenceCase.apply("Hello"), "Hello");
+    }
+
+    #[test]
+    fn text_case_sentence_case_empty_string_stays_empty() {
+        assert_eq!(TextCase::SentenceCase.apply(""), "");
+    }
+
+    #[test]
+    fn text_case_uppercase_handles_multi_byte_expansion() {
+        // `'ß'.to_uppercase() == "SS"` — the transform can grow the
+        // string in bytes, which is why `TextView` only applies case
+        // transforms to plain (un-highlighted) content.
+        assert_eq!(TextCase::Uppercase.apply("straße"), "STRASSE");
     }
 }

@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="mdstitch — streaming markdown preprocessor">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0D1117"/>
+      <stop offset="1" stop-color="#010409"/>
+    </linearGradient>
+    <linearGradient id="stitchGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#F85149"/>
+      <stop offset=".5"  stop-color="#D29922"/>
+      <stop offset="1"   stop-color="#3FB950"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#161B22" stroke-width="1"/>
+    </pattern>
+    <pattern id="gridHero" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M 64 0 L 0 0 0 64" fill="none" stroke="#1C2128" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity=".4"/>
+  <rect width="1280" height="640" fill="url(#gridHero)" opacity=".6"/>
+
+  <!-- ===== TOP META RULE ===== -->
+  <g font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="11" letter-spacing="2" fill="#6E7681">
+    <text x="56"   y="44">MDSTITCH · v0.1 · CRATE</text>
+    <text x="1224" y="44" text-anchor="end">STREAMING · MARKDOWN · PREPROCESSOR</text>
+  </g>
+  <line x1="56" y1="56" x2="1224" y2="56" stroke="#21262D"/>
+
+  <!-- ===== WORDMARK + SUBTITLE (left column) ===== -->
+  <g transform="translate(56,178)">
+    <text font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="11" letter-spacing="3" fill="#6E7681" y="-18">
+      ZERO-ALLOC FAST PATH · COMMONMARK · NO_STD
+    </text>
+
+    <g font-family="'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="132" font-weight="800" letter-spacing="-6">
+      <text x="0"   y="96" fill="#F0F6FC">md</text>
+      <text x="180" y="96" fill="#7EE787">stitch</text>
+    </g>
+
+    <text x="0" y="158" font-family="'Inter', system-ui, sans-serif" font-size="23" font-weight="400" fill="#8B949E" letter-spacing="-0.2">
+      Auto-completes incomplete syntax
+    </text>
+    <text x="0" y="190" font-family="'Inter', system-ui, sans-serif" font-size="23" font-weight="400" fill="#8B949E" letter-spacing="-0.2">
+      during token-by-token streaming.
+    </text>
+
+    <!-- accent rule under subtitle -->
+    <line x1="0" y1="226" x2="72" y2="226" stroke="#3FB950" stroke-width="3" stroke-linecap="round"/>
+    <text x="88" y="232" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="11" letter-spacing="3" fill="#6E7681">
+      cargo add mdstitch
+    </text>
+  </g>
+
+  <!-- ===== CODE FRAME (right column) ===== -->
+  <g transform="translate(720,140)">
+    <!-- window -->
+    <rect x="0" y="0" width="504" height="360" rx="14" fill="#161B22" stroke="#30363D"/>
+    <g transform="translate(18,22)">
+      <circle cx="0"  cy="0" r="6" fill="#F85149"/>
+      <circle cx="20" cy="0" r="6" fill="#D29922"/>
+      <circle cx="40" cy="0" r="6" fill="#3FB950"/>
+    </g>
+    <text x="252" y="26" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="11" fill="#6E7681" letter-spacing="1">
+      stream.rs — token delta
+    </text>
+    <line x1="0" y1="44" x2="504" y2="44" stroke="#30363D"/>
+
+    <!-- code body -->
+    <g font-family="ui-monospace, 'JetBrains Mono', 'Menlo', monospace" font-size="14.5">
+      <!-- gutter -->
+      <g fill="#484F58" text-anchor="end">
+        <text x="34" y="80">1</text>
+        <text x="34" y="108">2</text>
+        <text x="34" y="136">3</text>
+        <text x="34" y="164">4</text>
+        <text x="34" y="192">5</text>
+        <text x="34" y="220">6</text>
+        <text x="34" y="248">7</text>
+        <text x="34" y="276">8</text>
+      </g>
+
+      <!-- incoming stream (broken markers in red, dim cursor) -->
+      <text x="54" y="80" fill="#6E7681">// incoming stream</text>
+
+      <text x="54" y="108">
+        <tspan fill="#F85149">**</tspan><tspan fill="#C9D1D9">bold</tspan><tspan fill="#484F58">…</tspan>
+      </text>
+      <text x="54" y="136">
+        <tspan fill="#F85149">[</tspan><tspan fill="#C9D1D9">text</tspan><tspan fill="#F85149">](http</tspan><tspan fill="#484F58">…</tspan>
+      </text>
+      <text x="54" y="164">
+        <tspan fill="#F85149">$$</tspan><tspan fill="#79C0FF">\frac{a}{b}</tspan><tspan fill="#484F58">…</tspan>
+      </text>
+
+      <text x="54" y="200" fill="#6E7681">// stitched → well-formed</text>
+
+      <text x="54" y="228">
+        <tspan fill="#7EE787">**</tspan><tspan fill="#C9D1D9">bold</tspan><tspan fill="#7EE787">**</tspan>
+      </text>
+      <text x="54" y="256">
+        <tspan fill="#7EE787">[</tspan><tspan fill="#C9D1D9">text</tspan><tspan fill="#7EE787">](</tspan><tspan fill="#D2A8FF">stitch:incomplete-link</tspan><tspan fill="#7EE787">)</tspan>
+      </text>
+      <text x="54" y="284">
+        <tspan fill="#7EE787">$$</tspan><tspan fill="#79C0FF">\frac{a}{b}</tspan><tspan fill="#7EE787">$$</tspan>
+      </text>
+    </g>
+
+    <!-- divider between before/after with subtle arrow -->
+    <g opacity=".6">
+      <line x1="56" y1="180" x2="448" y2="180" stroke="#21262D" stroke-dasharray="2 4"/>
+    </g>
+
+    <!-- stitch thread crossing from broken → closed, right margin -->
+    <g fill="none" stroke="url(#stitchGrad)" stroke-width="2.5" stroke-linecap="round" opacity=".85">
+      <path d="M 380 108 Q 448 164 380 228"/>
+      <path d="M 380 136 Q 456 180 380 256"/>
+      <path d="M 380 164 Q 448 200 380 284"/>
+    </g>
+    <g fill="#3FB950">
+      <circle cx="380" cy="108" r="2.5"/><circle cx="380" cy="136" r="2.5"/><circle cx="380" cy="164" r="2.5"/>
+      <circle cx="380" cy="228" r="2.5"/><circle cx="380" cy="256" r="2.5"/><circle cx="380" cy="284" r="2.5"/>
+    </g>
+
+    <!-- footer status row inside the window -->
+    <line x1="0" y1="316" x2="504" y2="316" stroke="#30363D"/>
+    <g font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="10" letter-spacing="1.5" fill="#6E7681">
+      <circle cx="20" cy="338" r="3" fill="#3FB950"/>
+      <text x="32" y="342">STITCH · OK</text>
+      <text x="488" y="342" text-anchor="end">Cow::Borrowed · 0 alloc</text>
+    </g>
+  </g>
+
+  <!-- ===== BOTTOM FEATURE RULE ===== -->
+  <g transform="translate(56,540)" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="12" letter-spacing="1.5">
+    <line x1="0" y1="-22" x2="1168" y2="-22" stroke="#21262D"/>
+    <g fill="#8B949E">
+      <circle cx="6"   cy="-4" r="3" fill="#3FB950"/>
+      <text   x="22"   y="0">PRE-PARSER FOR PULLDOWN-CMARK</text>
+
+      <circle cx="346" cy="-4" r="3" fill="#3FB950"/>
+      <text   x="362"  y="0">COW::BORROWED FAST PATH</text>
+
+      <circle cx="626" cy="-4" r="3" fill="#3FB950"/>
+      <text   x="642"  y="0">EVERY FRAME WELL-FORMED</text>
+
+      <circle cx="906" cy="-4" r="3" fill="#3FB950"/>
+      <text   x="922"  y="0">TOKEN-BY-TOKEN SAFE</text>
+    </g>
+  </g>
+</svg>
