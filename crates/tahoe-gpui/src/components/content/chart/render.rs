@@ -1239,25 +1239,21 @@ fn render_bars(
     let max_points = data_set.max_points().max(1);
     let slot_width = f32::from(width) / max_points as f32;
 
-    let bar_count_per_slot = n_series.max(1);
-    let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1) as f32;
     let bar_w = bar_width(slot_width, n_series);
-    let group_width = bar_w * bar_count_per_slot as f32 + total_bar_gap;
-    let group_pad = (slot_width - group_width) / 2.0;
 
     let mut row = div()
         .flex()
         .flex_row()
         .items_end()
         .w(width)
-        .h(height)
-        .px(px(group_pad));
+        .h(height);
 
     for (slot_i, _point) in (0..max_points).enumerate() {
         let mut group = div()
             .flex()
             .flex_row()
             .items_end()
+            .justify_center()
             .w(px(slot_width))
             .h(height)
             .gap(px(BAR_GAP));
@@ -1453,25 +1449,21 @@ fn render_horizontal_bars(
     let h_f = f32::from(height);
     let slot_height = h_f / max_points as f32;
 
-    let bar_count_per_slot = n_series.max(1);
-    let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1) as f32;
     let bar_thickness = bar_width(slot_height, n_series);
-    let group_height = bar_thickness * bar_count_per_slot as f32 + total_bar_gap;
-    let group_pad = (slot_height - group_height) / 2.0;
 
     let mut col = div()
         .flex()
         .flex_col()
         .items_start()
         .w(width)
-        .h(height)
-        .py(px(group_pad));
+        .h(height);
 
     for slot_i in 0..max_points {
         let mut group = div()
             .flex()
             .flex_col()
             .items_start()
+            .justify_center()
             .w(width)
             .h(px(slot_height))
             .gap(px(BAR_GAP));
