@@ -13,6 +13,8 @@ use crate::foundations::typography::{TextStyle, TextStyledExt};
 
 use super::accessibility::{FkaAttachContext, attach_fka};
 use super::marks::canvas_paint_callback;
+#[allow(unused_imports)] // Used in doc links.
+use super::types::ChartDataSeries;
 use super::types::{
     AxisConfig, BAR_GAP, BAR_WIDTH_RATIO, ChartDataSet, ChartType, GridlineConfig, MAX_POINT_SIZE,
     MIN_POINT_SIZE, TITLE_GAP,
@@ -656,7 +658,7 @@ fn render_bars(
     let slot_width = f32::from(width) / max_points as f32;
 
     let bar_count_per_slot = n_series.max(1);
-    let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1).max(0) as f32;
+    let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1) as f32;
     let bar_width =
         ((slot_width * BAR_WIDTH_RATIO - total_bar_gap) / bar_count_per_slot as f32).max(1.0);
     let group_width = bar_width * bar_count_per_slot as f32 + total_bar_gap;
