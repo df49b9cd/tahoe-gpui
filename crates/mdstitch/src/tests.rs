@@ -1773,6 +1773,18 @@ fn idempotency_seeds_pipeline() {
                 o.link_mode = LinkMode::TextOnly;
             }),
         ),
+        // Regression 0149: link unwrapping in TextOnly mode exposed an
+        // incomplete HTML tag (`[<a](` → `<a`) that the first html_tags pass
+        // had rejected as implausible. Pipeline now re-runs html_tags after
+        // links when both are enabled.
+        (
+            "[<a](",
+            only(|o| {
+                o.links = true;
+                o.html_tags = true;
+                o.link_mode = LinkMode::TextOnly;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {

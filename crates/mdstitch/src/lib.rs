@@ -157,6 +157,18 @@ pub fn stitch<'a>(text: &'a str, options: &StitchOptions) -> Cow<'a, str> {
             early_return,
             mutates_mid_text,
         });
+        // Unwrapping a bracket (e.g. `[<a](` → `<a`) can expose an incomplete
+        // HTML tag that the first `html_tags` pass rejected as implausible
+        // because of the trailing `](`. Re-run `html_tags` on the unwrapped
+        // residue so the pipeline reaches its fixed point in one call.
+        if options.html_tags {
+            entries.push(HandlerEntry::BuiltIn {
+                handler: BuiltInHandler::WithRanges(Box::new(html_tags::handle_with_ranges)),
+                priority: priority::LINKS + 1,
+                early_return: false,
+                mutates_mid_text: false,
+            });
+        }
     }
     if options.bold_italic {
         entries.push(HandlerEntry::BuiltIn {
@@ -338,6 +350,15 @@ fn run_builtin_pipeline<'a>(mut result: Cow<'a, str>, options: &StitchOptions) -
         // later byte; rebuild ranges so downstream handlers see correct offsets.
         if !std::ptr::eq(result.as_ref().as_ptr(), before_ptr) {
             ranges = Some(ranges::CodeBlockRanges::new(&result));
+            // Unwrapping a bracket (e.g. `[<a](` → `<a`) can expose an incomplete
+            // HTML tag that the first `html_tags` pass rejected as implausible
+            // because of the trailing `](`. Re-run `html_tags` on the unwrapped
+            // residue so the pipeline reaches its fixed point in one call.
+            if options.html_tags
+                && let Some(ref r) = ranges
+            {
+                result = apply_with(result, |text| html_tags::handle_with_ranges(text, r));
+            }
         }
     }
     if let Some(ref r) = ranges {
