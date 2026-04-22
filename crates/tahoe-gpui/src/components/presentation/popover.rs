@@ -139,6 +139,13 @@ impl Popover {
         self
     }
 
+    /// Attach a focus handle to the content surface. When set, the popover
+    /// auto-focuses the surface on open so Escape fires without a prior click.
+    ///
+    /// Focus restoration on dismiss is the consumer's responsibility: call
+    /// `trigger_handle.focus(window, cx)` inside the `on_dismiss` callback
+    /// to return focus to the triggering element. Popover is stateless
+    /// (`RenderOnce`) and cannot store the previously-focused element.
     pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
         self.focus_handle = Some(handle);
         self
@@ -224,11 +231,12 @@ impl RenderOnce for Popover {
                 let handler = std::rc::Rc::new(handler);
                 let key_handler = handler.clone();
                 // Bubble-phase Escape handler, same convention as Alert
-                // and Modal. A child that calls `cx.stop_propagation()` on
-                // Escape would suppress this — the crate's own components
-                // don't, and the docblock above ("Escape-dismiss
-                // contract") makes this a documented contract for
-                // consumer-authored content.
+                // and Modal. "Bubble-phase" means children receive the
+                // event first; if a child calls `cx.stop_propagation()`
+                // the popover's handler is suppressed. The crate's own
+                // components don't stop-propagate Escape, and the
+                // docblock above ("Escape-dismiss contract") makes this a
+                // documented contract for consumer-authored content.
                 content_div = content_div.on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if crate::foundations::keyboard::is_escape_key(event) {
                         key_handler(window, cx);
@@ -437,8 +445,10 @@ mod tests {
 
 #[cfg(test)]
 mod interaction_tests {
-    use gpui::prelude::*;
-    use gpui::{Context, FocusHandle, IntoElement, Render, TestAppContext, div, px};
+    use gpui::{
+        Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled,
+        TestAppContext, div, px,
+    };
 
     use super::{Popover, PopoverPlacement};
     use crate::foundations::layout::DROPDOWN_SNAP_MARGIN;
@@ -448,6 +458,16 @@ mod interaction_tests {
 
     const POPOVER_TRIGGER: &str = "popover-trigger";
     const POPOVER_CONTENT: &str = "popover-content";
+
+    // Assumed test viewport dimensions (matches `TestDisplay::new`'s
+    // default 1920×1080). Padding values below are tuned against these
+    // so `realise_anchor` doesn't flip or clamp unexpectedly. Kept as
+    // named constants so the coupling is grep-friendly and future tests
+    // that need to assert against the viewport can reference them.
+    #[expect(dead_code, reason = "documenting viewport coupling; used by comments")]
+    const VIEWPORT_W: f32 = 1920.0;
+    #[expect(dead_code, reason = "documenting viewport coupling; used by comments")]
+    const VIEWPORT_H: f32 = 1080.0;
 
     // Trigger and content sizes used by the harness. Kept as named
     // constants so the padding derivation below stays readable.
@@ -489,8 +509,8 @@ mod interaction_tests {
             // 2. `AnchoredOverlay::realise_anchor` must not flip
             //    Above→Below. The flip fires when the opposite side has
             //    >2× the space of the preferred side. The default test
-            //    display is 1920×1080 (see `TestDisplay::new`), so
-            //    `trigger.origin.y >= (1080 - TRIGGER_H) / 3 ≈ 349pt`
+            //    display is VIEWPORT_W×VIEWPORT_H, so
+            //    `trigger.origin.y >= (VIEWPORT_H - TRIGGER_H) / 3 ≈ 349pt`
             //    keeps the preferred anchor stable.
             //
             // 400pt covers both constraints with headroom; left padding
@@ -566,8 +586,8 @@ mod interaction_tests {
         assert_element_absent(cx, POPOVER_CONTENT);
     }
 
-    /// Harness that pins the trigger near the bottom of the 1920x1080
-    /// test window so [`crate::foundations::overlay::realise_anchor`] is
+    /// Harness that pins the trigger near the bottom of the
+    /// VIEWPORT_W×VIEWPORT_H test window so [`crate::foundations::overlay::realise_anchor`] is
     /// forced to flip a preferred `Below*` placement to `Above*`. Used to
     /// verify the full pipeline (`.gap()` sign flip + arrow orientation
     /// swap) end-to-end, not just the pure-function level covered by the
@@ -633,11 +653,13 @@ mod interaction_tests {
     ///
     /// Harness limitation: `VisualTestContext::debug_bounds` returns taffy
     /// layout bounds, not post-clip paint bounds. A true paint-clip
-    /// verification (pixel diff after clipping is applied) requires a
-    /// visual-regression harness that this crate doesn't ship; the
-    /// structural assertion below fails if someone removes `anchored()`
-    /// from `AnchoredOverlay`, which is the only way the overlay would
-    /// fall back into the parent's clip chain.
+    /// verification (pixel diff after clipping is applied) requires
+    /// visual-regression infrastructure (`RenderImage`-based golden
+    /// diffing) that this crate does not yet ship. The `test-support`
+    /// feature only provides layout bounds via `debug_bounds()`, not
+    /// post-paint pixel data. The structural assertion below fails if
+    /// someone removes `anchored()` from `AnchoredOverlay`, which is the
+    /// only way the overlay would fall back into the parent's clip chain.
     struct ClippedPopoverHarness {
         is_open: bool,
     }

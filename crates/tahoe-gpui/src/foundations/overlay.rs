@@ -29,6 +29,27 @@
 //!     .offset(point(px(0.0), px(4.0)))
 //!     .content_when(is_open, || div().child("Floating panel").into_any_element());
 //! ```
+//!
+//! When the content depends on the realised (post-flip) anchor — e.g. a
+//! directional arrow glyph that must flip orientation — use
+//! [`AnchoredOverlay::content_fn`]:
+//!
+//! ```ignore
+//! let overlay = AnchoredOverlay::new("my-overlay", div().child("Trigger"))
+//!     .anchor(OverlayAnchor::BelowLeft)
+//!     .content_fn(is_open, |realised| {
+//!         let arrow = if realised.is_above() { "▲" } else { "▼" };
+//!         div().child(arrow).child("Body").into_any_element()
+//!     });
+//! ```
+//!
+//! # Notes
+//!
+//! When both [`.content()`](AnchoredOverlay::content) and
+//! [`.content_fn()`](AnchoredOverlay::content_fn) are set, `content`
+//! takes precedence; `content_fn` is only invoked when `content` is
+//! `None`. This mirrors the `raw_content.take().or_else(content_fn)`
+//! drain order inside `prepaint`.
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Corner, Element, ElementId, GlobalElementId,
@@ -228,6 +249,14 @@ impl AnchoredOverlay {
     }
 
     /// Placement relative to the trigger. Defaults to [`OverlayAnchor::BelowLeft`].
+    ///
+    /// # Flipping
+    ///
+    /// `prepaint` may flip the preferred side when the opposite side has
+    /// strictly more than twice the available space. Callers that need
+    /// the actual side the overlay landed on (e.g. to orient an arrow
+    /// glyph) should use [`Self::content_fn`], which receives the
+    /// realised anchor. See [`OverlayAnchor`] docs for the flip threshold.
     pub fn anchor(mut self, anchor: OverlayAnchor) -> Self {
         self.anchor = anchor;
         self
@@ -457,17 +486,17 @@ impl Element for AnchoredOverlay {
                 trigger_bounds,
             );
 
-            // Lay the overlay content out as an independent subtree
-            // against the full window — `anchored()` repositions the
-            // result to window-absolute coordinates inside its own
-            // prepaint. Offering the full viewport as available space is
-            // conservative; a tighter budget (e.g. trigger-relative
-            // remaining space) could shave some taffy work on huge
-            // viewports, but the win is negligible for current consumers.
+            // Use `MinContent` so the overlay sizes to its intrinsic
+            // content rather than filling the viewport. `anchored()`
+            // repositions the result to window-absolute coordinates inside
+            // its own prepaint.
             let available = Size {
-                width: AvailableSpace::Definite(window_size.width),
-                height: AvailableSpace::Definite(window_size.height),
+                width: AvailableSpace::MinContent,
+                height: AvailableSpace::MinContent,
             };
+            // TODO(perf): cache the layout pass keyed by
+            // `(trigger_bounds, content_id)` so repeated frames with
+            // identical inputs skip the taffy traversal.
             anchored_content.layout_as_root(available, window, cx);
             anchored_content.prepaint(window, cx);
 
@@ -1296,5 +1325,15 @@ mod tests {
         let configured = px(8.0);
         let window = size(px(0.0), px(0.0));
         assert_eq!(clamp_snap_margin(configured, window), configured);
+    }
+
+    #[test]
+    fn clamp_snap_margin_at_exact_ceiling() {
+        // 300 pt viewport: shorter side 300, ceiling = 300 * 0.03 = 9.0.
+        // Configured == ceiling must return the ceiling (the `else` branch
+        // where configured >= ceiling).
+        let configured = px(9.0);
+        let window = size(px(300.0), px(300.0));
+        assert_eq!(clamp_snap_margin(configured, window), px(9.0));
     }
 }

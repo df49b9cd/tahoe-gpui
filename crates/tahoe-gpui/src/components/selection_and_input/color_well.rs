@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
+use crate::foundations::OverlayLayer;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::materials::apply_high_contrast_border;
@@ -905,7 +906,7 @@ impl RenderOnce for ColorWell {
             };
             grid = grid.child(alpha_row);
 
-            container = container.child(deferred(grid).with_priority(1));
+            container = container.child(deferred(grid).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container

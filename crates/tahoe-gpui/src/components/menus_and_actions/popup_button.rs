@@ -25,6 +25,7 @@ use gpui::{
 use std::rc::Rc;
 
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
+use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
@@ -477,7 +478,7 @@ impl RenderOnce for PopupButton {
                 list = list.child(row);
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container

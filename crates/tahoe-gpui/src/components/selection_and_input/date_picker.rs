@@ -11,6 +11,7 @@ use gpui::{
 };
 
 use crate::callback_types::{OnDateNavigate, OnToggle, rc_wrap};
+use crate::foundations::OverlayLayer;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::CONTENT_MARGIN;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
@@ -892,7 +893,7 @@ impl RenderOnce for DatePicker {
 
             dropdown = dropdown.child(dropdown_content);
 
-            container = container.child(deferred(dropdown).with_priority(1));
+            container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container.into_any_element()

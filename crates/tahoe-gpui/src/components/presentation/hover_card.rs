@@ -86,8 +86,17 @@ pub struct HoverCard {
     /// surface the card's contents; mirrors the hover-in path,
     /// including `open_delay` and close debounce.
     trigger_focused: bool,
-    /// Unique id for element identification.
+    /// Unique id for element identification. Kept for structural identity
+    /// even though render uses the cached child IDs; removing it would
+    /// lose the HoverCard's canonical id.
+    #[expect(dead_code)]
     id: ElementId,
+    /// Cached child-element IDs computed once in `new()` so `render()`
+    /// only does a cheap `Arc` refcount bump instead of allocating a new
+    /// `Arc<SharedString>` on each frame.
+    trigger_id: ElementId,
+    content_id: ElementId,
+    overlay_id: ElementId,
     /// Builder for the trigger element.
     trigger: AppElementBuilder,
     /// Builder for the card content.
@@ -126,12 +135,22 @@ pub struct HoverCard {
 
 impl HoverCard {
     pub fn new(id: impl Into<ElementId>, cx: &mut Context<Self>) -> Self {
+        let id = id.into();
+        let trigger_id =
+            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-trigger".into());
+        let content_id =
+            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-content".into());
+        let overlay_id =
+            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-overlay".into());
         Self {
             is_open: false,
             trigger_hovered: false,
             content_hovered: false,
             trigger_focused: false,
-            id: id.into(),
+            id,
+            trigger_id,
+            content_id,
+            overlay_id,
             trigger: None,
             content: None,
             placement: HoverCardPlacement::default(),
@@ -190,6 +209,10 @@ impl HoverCard {
     /// `Context::on_focus_in` / `on_focus_out` require a `&mut Window`
     /// which isn't available inside [`Self::new`], so the subscriptions
     /// are wired lazily from [`Render::render`] on the first frame.
+    /// This is a GPUI API constraint, not a design choice. The practical
+    /// risk is minimal: the first render runs in the same event-loop turn
+    /// as construction, so the window between `new()` and the first
+    /// `render()` is never observable by user interaction.
     fn install_focus_subscriptions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self._focus_subscriptions.is_some() {
             return;
@@ -236,9 +259,11 @@ impl HoverCard {
                     this.update(cx, |this, cx| {
                         this.pending_close = None;
                         // Re-check: the user may have re-entered either
-                        // region during the debounce window.
-                        let still_hovered = this.trigger_hovered || this.content_hovered;
-                        if !still_hovered && this.is_open {
+                        // region or re-focused the trigger during the
+                        // debounce window.
+                        let still_active =
+                            this.trigger_hovered || this.content_hovered || this.trigger_focused;
+                        if !still_active && this.is_open {
                             this.is_open = false;
                             cx.notify();
                         }
@@ -263,15 +288,11 @@ impl HoverCard {
         // this, a user who enters the trigger and holds still for longer
         // than `open_delay` would never see the card open.
         //
-        // Under Reduce Motion, the HIG-adjacent "prefer reduced
-        // transitions" signal collapses decorative motion-in-time —
-        // including hover dwell delays — to an immediate state change.
-        // Skip the delay so the card appears without a 300 ms kinetic
-        // pause. The close debounce is about pointer-traversal bridging,
-        // not motion, and is not affected.
-        let reduce_motion = cx.theme().accessibility_mode.reduce_motion();
-        if !reduce_motion
-            && self.open_delay > Duration::ZERO
+        // Reduce-motion suppresses decorative transitions at the
+        // material/overlay level; the dwell delay is about preventing
+        // accidental opens during pointer traversal, not about animation,
+        // so it is always honoured.
+        if self.open_delay > Duration::ZERO
             && let Some(entered_at) = self.trigger_entered_at
         {
             let elapsed = entered_at.elapsed();
@@ -323,24 +344,31 @@ impl Render for HoverCard {
             None
         };
 
-        let trigger_id =
-            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-trigger".into());
-        let content_id =
-            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-content".into());
-        let overlay_id =
-            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "hc-overlay".into());
-
         let trigger_div = div()
-            .id(trigger_id)
+            .id(self.trigger_id.clone())
             // Keyboard-focusable so Tab reaches the card. `.focusable()`
             // plus `.track_focus(&handle)` is the crate's canonical
             // tabbable-trigger pattern (see popup_button.rs).
             .focusable()
             .track_focus(&self.focus_handle)
+            .on_key_down(
+                cx.listener(|this, event: &gpui::KeyDownEvent, _window, cx| {
+                    if this.is_open && crate::foundations::keyboard::is_escape_key(event) {
+                        this.is_open = false;
+                        this.trigger_focused = false;
+                        this.trigger_entered_at = None;
+                        this.pending_open = None;
+                        this.pending_close = None;
+                        cx.notify();
+                    }
+                }),
+            )
             .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                 this.trigger_hovered = hovered;
                 if hovered {
-                    this.trigger_entered_at = Some(Instant::now());
+                    if this.trigger_entered_at.is_none() {
+                        this.trigger_entered_at = Some(Instant::now());
+                    }
                 } else if !this.trigger_focused {
                     // Keep the entered-at stamp while focus is still on
                     // the trigger — hover-out shouldn't erase the timer
@@ -354,7 +382,7 @@ impl Render for HoverCard {
         // `AnchoredOverlay::gap` signs the gap against the realised anchor,
         // so if `realise_anchor` flips the preferred side in prepaint the
         // gap lands on the side the card actually renders on.
-        let mut overlay = AnchoredOverlay::new(overlay_id, trigger_div)
+        let mut overlay = AnchoredOverlay::new(self.overlay_id.clone(), trigger_div)
             .anchor(self.placement.into())
             .gap(spacing_xs);
 
@@ -367,7 +395,7 @@ impl Render for HoverCard {
                 theme,
                 GlassSize::Medium,
             )
-            .id(content_id)
+            .id(self.content_id.clone())
             .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                 this.content_hovered = hovered;
                 this.update_visibility(cx);
@@ -538,28 +566,51 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn reduce_motion_skips_open_delay(cx: &mut TestAppContext) {
+    async fn reduce_motion_still_respects_open_delay(cx: &mut TestAppContext) {
         let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
 
         // Swap in a theme with REDUCE_MOTION so `update_visibility` sees it.
-        cx.update(|_window, cx| {
+        // Save the original theme to restore after assertions.
+        let original_theme = cx.update(|_window, cx| {
+            let original = cx.global::<TahoeTheme>().clone();
             let mut theme = TahoeTheme::dark();
             theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
             cx.set_global(theme);
+            original
         });
 
         hc.update(cx, |hc, cx| {
             hc.trigger_hovered = true;
             hc.trigger_entered_at = Some(Instant::now());
             hc.update_visibility(cx);
-            assert!(hc.is_open, "reduce_motion must collapse open_delay");
-            assert!(hc.pending_open.is_none());
+            // Reduce-motion no longer collapses the delay — it only
+            // suppresses decorative transitions at the material/overlay
+            // level. The card must still wait for the open delay.
+            assert!(!hc.is_open, "reduce_motion must still respect open_delay");
+            assert!(hc.pending_open.is_some(), "open timer must be scheduled");
+        });
+
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS + 20));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(hc.is_open, "card must open after delay elapses");
+        });
+
+        // Restore original theme so subsequent tests aren't affected.
+        cx.update(|_window, cx| {
+            cx.set_global(original_theme);
         });
     }
 
     #[gpui::test]
     async fn focus_in_opens_card_after_delay(cx: &mut TestAppContext) {
         let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        // Run until parked so the first render fires and focus
+        // subscriptions are installed via `install_focus_subscriptions`.
+        cx.run_until_parked();
 
         hc.update(cx, |hc, cx| {
             hc.trigger_focused = true;

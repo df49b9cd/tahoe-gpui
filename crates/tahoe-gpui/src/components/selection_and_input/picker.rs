@@ -6,6 +6,7 @@
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::components::selection_and_input::segmented_control::{SegmentItem, SegmentedControl};
+use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
 };
@@ -1160,7 +1161,7 @@ impl RenderOnce for Picker {
                 // the trigger — no deferred layer, no absolute positioning.
                 container = container.child(list);
             } else {
-                container = container.child(deferred(list).with_priority(1));
+                container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
             }
         }
 

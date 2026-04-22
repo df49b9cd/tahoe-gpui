@@ -17,6 +17,7 @@ use gpui::{
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
+use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
@@ -602,7 +603,7 @@ impl RenderOnce for PulldownButton {
                 let _ = &action_handlers;
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container

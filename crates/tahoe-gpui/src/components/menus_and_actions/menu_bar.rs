@@ -47,6 +47,7 @@ use gpui::{
 };
 
 use crate::callback_types::rc_wrap;
+use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
 use crate::foundations::materials::glass_surface;
@@ -419,7 +420,7 @@ impl RenderOnce for MenuBar {
             )
             .child(content);
 
-            container = container.child(deferred(dropdown).with_priority(1));
+            container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container

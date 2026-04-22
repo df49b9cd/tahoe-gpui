@@ -34,6 +34,7 @@ pub mod theme;
 pub mod typography;
 pub mod writing;
 
+pub use overlay::{AnchoredOverlay, OverlayAnchor, OverlayLayer};
 pub use surface_scope::{
     GlassSurfaceGuard, GlassSurfaceScope, GlassSurfaceScopeElement, is_on_glass_surface,
 };

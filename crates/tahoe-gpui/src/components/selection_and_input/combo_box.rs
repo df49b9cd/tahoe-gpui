@@ -6,6 +6,7 @@
 
 use crate::callback_types::{OnSharedStringChange, OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::components::menus_and_actions::popup_button::OnHighlight;
+use crate::foundations::OverlayLayer;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
@@ -545,7 +546,7 @@ impl RenderOnce for ComboBox {
                 list = list.child(row);
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
         }
 
         container
