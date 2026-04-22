@@ -4,7 +4,6 @@
 )]
 //! Streaming markdown preprocessor that auto-completes incomplete syntax.
 //!
-//! A Rust port of Vercel's [remend](https://github.com/vercel/streamdown/tree/main/packages/remend).
 //! Runs on raw markdown strings **before** the pulldown-cmark parser, detecting
 //! and closing unterminated formatting markers so content renders correctly
 //! during token-by-token streaming.
@@ -29,7 +28,7 @@ mod detect_direction;
 mod incomplete_code;
 mod preprocess;
 
-pub use options::{LinkMode, RemendHandler, RemendOptions, priority};
+pub use options::{LinkMode, StitchHandler, StitchOptions, priority};
 pub use ranges::CodeBlockRanges;
 
 // Re-export public items from internal modules.
@@ -40,7 +39,7 @@ pub use preprocess::{
 };
 
 // Re-export utility functions for use by custom handlers.
-// These four are the most commonly needed when implementing `RemendHandler`:
+// These four are the most commonly needed when implementing `StitchHandler`:
 // code block detection, link/image URL detection, math block detection, and
 // word character classification.
 pub use utils::{
@@ -49,7 +48,7 @@ pub use utils::{
 
 use std::borrow::Cow;
 
-const INCOMPLETE_LINK_MARKER: &str = "](streamdown:incomplete-link)";
+const INCOMPLETE_LINK_MARKER: &str = "](stitch:incomplete-link)";
 
 /// A built-in handler, either plain or taking pre-computed code-block ranges.
 enum BuiltInHandler<'a> {
@@ -74,7 +73,7 @@ enum HandlerEntry<'a> {
         mutates_mid_text: bool,
     },
     /// A custom handler (trait object).
-    Custom(&'a dyn RemendHandler),
+    Custom(&'a dyn StitchHandler),
 }
 
 impl HandlerEntry<'_> {
@@ -89,7 +88,7 @@ impl HandlerEntry<'_> {
 /// Preprocesses streaming markdown text, auto-completing any incomplete syntax.
 ///
 /// Returns `Cow::Borrowed` when no changes are needed (zero-allocation fast path).
-pub fn remend<'a>(text: &'a str, options: &RemendOptions) -> Cow<'a, str> {
+pub fn stitch<'a>(text: &'a str, options: &StitchOptions) -> Cow<'a, str> {
     if text.is_empty() {
         return Cow::Borrowed(text);
     }
@@ -289,7 +288,7 @@ pub fn remend<'a>(text: &'a str, options: &RemendOptions) -> Cow<'a, str> {
 }
 
 /// Fast path: fixed-order pipeline with no dynamic dispatch (used when no custom handlers).
-fn run_builtin_pipeline<'a>(mut result: Cow<'a, str>, options: &RemendOptions) -> Cow<'a, str> {
+fn run_builtin_pipeline<'a>(mut result: Cow<'a, str>, options: &StitchOptions) -> Cow<'a, str> {
     if options.single_tilde {
         result = apply(result, single_tilde::handle);
     }

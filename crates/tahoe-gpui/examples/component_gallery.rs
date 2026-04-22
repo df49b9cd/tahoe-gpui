@@ -36,6 +36,7 @@ mod gallery {
     pub mod forms;
     pub mod gauges;
     pub mod hover_cards;
+    pub mod image_views;
     pub mod image_wells;
     pub mod labels;
     pub mod liquid_glass;
@@ -78,6 +79,7 @@ mod gallery {
     pub mod toolbars_and_titlebars;
     pub mod tooltips;
     pub mod typography;
+    pub mod web_views;
     pub mod welcome;
     pub mod windows;
 }
@@ -242,6 +244,10 @@ const DEMOS: &[Demo] = &[
         render: gallery::hover_cards::render,
     },
     Demo {
+        label: "Image Views",
+        render: gallery::image_views::render,
+    },
+    Demo {
         label: "Image Wells",
         render: gallery::image_wells::render,
     },
@@ -393,6 +399,10 @@ const DEMOS: &[Demo] = &[
     Demo {
         label: "Tooltips",
         render: gallery::tooltips::render,
+    },
+    Demo {
+        label: "Web Views",
+        render: gallery::web_views::render,
     },
     Demo {
         label: "Windows",
