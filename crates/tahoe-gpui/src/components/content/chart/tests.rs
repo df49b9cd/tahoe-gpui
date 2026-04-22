@@ -1008,19 +1008,22 @@ fn paint_callback_empty_rule_returns_none() {
 
     use gpui::point;
 
+    use super::interpolation::InterpolationMethod;
     use super::marks::canvas_paint_callback;
+    use super::scales::{LinearScale, Scale};
+    use super::types::ChartPoint;
 
-    let empty: Arc<[f32]> = Arc::from(Vec::<f32>::new());
+    let empty: Arc<[ChartPoint]> = Arc::from(Vec::<ChartPoint>::new());
+    let scale: Arc<dyn Scale> = Arc::new(LinearScale::new(0.0, 100.0));
     let callback = canvas_paint_callback(
         ChartType::Rule,
         point(px(0.0), px(0.0)),
         100.0,
         50.0,
         empty,
-        None,
-        0.0,
-        100.0,
+        scale,
         hsla(0.0, 0.0, 0.0, 1.0),
+        InterpolationMethod::default(),
     );
     assert!(callback.is_none(), "empty Rule must not register a paint");
 }
@@ -1031,19 +1034,22 @@ fn paint_callback_rule_with_value_returns_some() {
 
     use gpui::point;
 
+    use super::interpolation::InterpolationMethod;
     use super::marks::canvas_paint_callback;
+    use super::scales::{LinearScale, Scale};
+    use super::types::ChartPoint;
 
-    let values: Arc<[f32]> = Arc::from(vec![50.0]);
+    let points: Arc<[ChartPoint]> = Arc::from(vec![ChartPoint::new(0, 50.0f32)]);
+    let scale: Arc<dyn Scale> = Arc::new(LinearScale::new(0.0, 100.0));
     let callback = canvas_paint_callback(
         ChartType::Rule,
         point(px(0.0), px(0.0)),
         100.0,
         50.0,
-        values,
-        None,
-        0.0,
-        100.0,
+        points,
+        scale,
         hsla(0.0, 0.0, 0.0, 1.0),
+        InterpolationMethod::default(),
     );
     assert!(callback.is_some(), "Rule with value must register a paint");
 }
@@ -1056,24 +1062,36 @@ fn paint_callback_bar_and_point_return_none() {
 
     use gpui::point;
 
+    use super::interpolation::InterpolationMethod;
     use super::marks::canvas_paint_callback;
+    use super::scales::{LinearScale, Scale};
+    use super::types::ChartPoint;
 
-    let values: Arc<[f32]> = Arc::from(vec![10.0, 20.0, 30.0]);
-    for chart_type in [ChartType::Bar, ChartType::Point] {
+    let points: Arc<[ChartPoint]> = Arc::from(vec![
+        ChartPoint::new(0, 10.0f32),
+        ChartPoint::new(1, 20.0f32),
+        ChartPoint::new(2, 30.0f32),
+    ]);
+    let scale: Arc<dyn Scale> = Arc::new(LinearScale::new(0.0, 30.0));
+    for chart_type in [
+        ChartType::Bar,
+        ChartType::Point,
+        ChartType::Sector,
+        ChartType::Rectangle,
+    ] {
         let callback = canvas_paint_callback(
             chart_type,
             point(px(0.0), px(0.0)),
             100.0,
             50.0,
-            values.clone(),
-            None,
-            0.0,
-            30.0,
+            points.clone(),
+            scale.clone(),
             hsla(0.0, 0.0, 0.0, 1.0),
+            InterpolationMethod::default(),
         );
         assert!(
             callback.is_none(),
-            "{chart_type:?} must not register a canvas paint — div fallback handles it"
+            "{chart_type:?} must not register a canvas paint — div fallback or custom geometry handles it"
         );
     }
 }
@@ -1165,5 +1183,922 @@ async fn chart_view_renders_without_panic(cx: &mut TestAppContext) {
         }
     }
     let (host, _vcx) = setup_test_window(cx, |_, _| ChartViewHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── AxisConfig scale hookup ───────────────────────────────────────
+//
+// Phase 1 adds `x_scale` / `y_scale` overrides on `AxisConfig` and uses the
+// scale's `project` / `ticks` instead of the legacy `(v - min) / range`
+// projection. Without these tests the builder + render path could silently
+// fall back to the default `LinearScale` and nobody would notice.
+
+#[test]
+fn axis_config_stores_y_scale_override() {
+    use super::scales::LogScale;
+
+    let axis = AxisConfig::new().y_scale(LogScale::new(1.0, 1000.0));
+    assert!(
+        axis.y_scale.is_some(),
+        "y_scale builder must populate the field"
+    );
+}
+
+#[test]
+fn axis_config_stores_x_scale_override() {
+    use super::scales::CategoryScale;
+
+    let axis = AxisConfig::new().x_scale(CategoryScale::new(vec!["a", "b", "c"]));
+    assert!(
+        axis.x_scale.is_some(),
+        "x_scale builder must populate the field"
+    );
+}
+
+#[test]
+fn axis_config_ticks_come_from_scale_when_provided() {
+    use std::sync::Arc;
+
+    use super::scales::{LogScale, Scale};
+    use super::types::PlottableValue;
+
+    // A LogScale over 1..=1e6 produces ticks at powers of 10, not the
+    // evenly-spaced ticks `nice_ticks` would emit for the same domain.
+    let scale: Arc<dyn Scale> = Arc::new(LogScale::new(1.0, 1.0e6));
+    let ticks = scale.ticks(6);
+    assert!(!ticks.is_empty());
+    for (v, _label) in &ticks {
+        let n = match v {
+            PlottableValue::Number(n) => *n,
+            _ => panic!("LogScale must emit numeric ticks"),
+        };
+        let log = n.log10();
+        assert!(
+            (log.round() - log).abs() < 1e-6,
+            "LogScale tick {n} is not a power of 10"
+        );
+    }
+}
+
+#[gpui::test]
+async fn chart_with_log_y_scale_renders_without_panic(cx: &mut TestAppContext) {
+    struct LogHarness;
+    impl Render for LogHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            use super::scales::LogScale;
+
+            let series = ChartDataSeries::new("exp", vec![1.0, 10.0, 100.0, 1_000.0, 10_000.0]);
+            Chart::new(series)
+                .id("log-chart")
+                .chart_type(ChartType::Line)
+                .size(px(200.0), px(100.0))
+                .axis(AxisConfig::new().y_scale(LogScale::new(1.0, 10_000.0)))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| LogHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_with_linear_y_scale_override_renders_without_panic(cx: &mut TestAppContext) {
+    struct LinearHarness;
+    impl Render for LinearHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            use super::scales::LinearScale;
+
+            // User-forced domain larger than the data so the chart leaves
+            // headroom above the data instead of tight-fitting.
+            Chart::new(series())
+                .id("linear-override")
+                .chart_type(ChartType::Bar)
+                .size(px(200.0), px(100.0))
+                .axis(AxisConfig::new().y_scale(LinearScale::new(0.0, 100.0)))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| LinearHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn pie_chart_renders_without_panic(cx: &mut TestAppContext) {
+    struct PieHarness;
+    impl Render for PieHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let set = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("a", vec![10.0])),
+                ChartSeries::new(ChartDataSeries::new("b", vec![25.0])),
+                ChartSeries::new(ChartDataSeries::new("c", vec![15.0])),
+                ChartSeries::new(ChartDataSeries::new("d", vec![50.0])),
+            ]);
+            Chart::new(set)
+                .id("pie-chart")
+                .chart_type(ChartType::Sector)
+                .size(px(200.0), px(200.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| PieHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn donut_chart_renders_without_panic(cx: &mut TestAppContext) {
+    struct DonutHarness;
+    impl Render for DonutHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let set = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("a", vec![30.0])),
+                ChartSeries::new(ChartDataSeries::new("b", vec![70.0])),
+            ]);
+            Chart::new(set)
+                .id("donut-chart")
+                .chart_type(ChartType::Sector)
+                .inner_radius_ratio(0.6)
+                .size(px(200.0), px(200.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| DonutHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn rectangle_chart_renders_without_panic(cx: &mut TestAppContext) {
+    struct HeatHarness;
+    impl Render for HeatHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            use super::types::ChartPoint;
+
+            // 3×3 heatmap with z magnitudes.
+            let mut points = Vec::new();
+            for x in 0..3 {
+                for y in 0..3 {
+                    points.push(ChartPoint::new(x as f32, y as f32).with_z((x + y) as f32));
+                }
+            }
+            let series = ChartDataSeries::from_points("heat", points);
+            Chart::new(series)
+                .id("heat-chart")
+                .chart_type(ChartType::Rectangle)
+                .size(px(200.0), px(200.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| HeatHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[test]
+fn sector_with_no_positive_weights_does_not_render() {
+    use super::sector::sector_weights;
+    let set = ChartDataSet::multi(vec![
+        ChartSeries::new(ChartDataSeries::new("zero", vec![0.0])),
+        ChartSeries::new(ChartDataSeries::new("neg", vec![-1.0])),
+    ]);
+    let pairs = sector_weights(&set, |_| hsla(0.0, 0.0, 0.0, 1.0));
+    assert!(
+        pairs.is_empty(),
+        "sectors should reject non-positive weights so the slice ratio stays meaningful"
+    );
+}
+
+#[test]
+fn chart_type_uses_custom_plot_geometry_for_sector_and_rectangle() {
+    assert!(ChartType::Sector.uses_custom_plot_geometry());
+    assert!(ChartType::Rectangle.uses_custom_plot_geometry());
+    assert!(!ChartType::Bar.uses_custom_plot_geometry());
+    assert!(!ChartType::Line.uses_custom_plot_geometry());
+}
+
+#[test]
+fn voice_label_for_sector_and_rectangle() {
+    assert_eq!(ChartType::Sector.voice_label(), "sector");
+    assert_eq!(ChartType::Rectangle.voice_label(), "heatmap");
+}
+
+#[gpui::test]
+async fn stacked_bar_chart_renders_without_panic(cx: &mut TestAppContext) {
+    use super::MarkStackingMethod;
+
+    struct StackHarness;
+    impl Render for StackHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let set = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("a", vec![10.0, 20.0, 15.0])),
+                ChartSeries::new(ChartDataSeries::new("b", vec![30.0, 40.0, 25.0])),
+                ChartSeries::new(ChartDataSeries::new("c", vec![5.0, 10.0, 20.0])),
+            ]);
+            Chart::new(set)
+                .id("stacked-bar-chart")
+                .chart_type(ChartType::Bar)
+                .stacking(MarkStackingMethod::Standard)
+                .size(px(300.0), px(180.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| StackHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn stacked_area_chart_renders_without_panic(cx: &mut TestAppContext) {
+    use super::MarkStackingMethod;
+
+    struct StackAreaHarness;
+    impl Render for StackAreaHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let set = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("a", vec![10.0, 20.0, 15.0, 30.0])),
+                ChartSeries::new(ChartDataSeries::new("b", vec![30.0, 40.0, 25.0, 20.0])),
+            ]);
+            Chart::new(set)
+                .id("stacked-area-chart")
+                .chart_type(ChartType::Area)
+                .stacking(MarkStackingMethod::Normalized)
+                .size(px(300.0), px(180.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| StackAreaHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[test]
+fn stacking_is_active_reflects_method() {
+    use super::MarkStackingMethod;
+
+    assert!(!MarkStackingMethod::Unstacked.is_active());
+    assert!(MarkStackingMethod::Standard.is_active());
+    assert!(MarkStackingMethod::Normalized.is_active());
+    assert!(MarkStackingMethod::Center.is_active());
+}
+
+#[test]
+fn bar_orientation_defaults_to_vertical() {
+    use super::types::BarOrientation;
+
+    assert_eq!(BarOrientation::default(), BarOrientation::Vertical);
+}
+
+#[test]
+fn chart_builder_sets_bar_orientation() {
+    use super::types::BarOrientation;
+
+    let chart = Chart::new(series()).bar_orientation(BarOrientation::Horizontal);
+    assert_eq!(chart.bar_orientation, BarOrientation::Horizontal);
+}
+
+#[gpui::test]
+async fn horizontal_bar_chart_renders_without_panic(cx: &mut TestAppContext) {
+    use super::types::BarOrientation;
+
+    struct HorizontalHarness;
+    impl Render for HorizontalHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("horizontal-bar")
+                .chart_type(ChartType::Bar)
+                .bar_orientation(BarOrientation::Horizontal)
+                .size(px(300.0), px(180.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| HorizontalHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn stacked_horizontal_bar_renders_without_panic(cx: &mut TestAppContext) {
+    use super::MarkStackingMethod;
+    use super::types::BarOrientation;
+
+    struct StackedHorizontalHarness;
+    impl Render for StackedHorizontalHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let set = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("a", vec![10.0, 20.0, 15.0])),
+                ChartSeries::new(ChartDataSeries::new("b", vec![30.0, 40.0, 25.0])),
+                ChartSeries::new(ChartDataSeries::new("c", vec![5.0, 10.0, 20.0])),
+            ]);
+            Chart::new(set)
+                .id("stacked-horizontal")
+                .chart_type(ChartType::Bar)
+                .bar_orientation(BarOrientation::Horizontal)
+                .stacking(MarkStackingMethod::Standard)
+                .size(px(300.0), px(180.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| StackedHorizontalHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn scatter_with_x_scale_renders_without_panic(cx: &mut TestAppContext) {
+    struct ScatterHarness;
+    impl Render for ScatterHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            use super::scales::LinearScale;
+            use super::types::ChartPoint;
+
+            // 2D scatter: arbitrary (x, y) points, not index-based.
+            let points = vec![
+                ChartPoint::new(0.5f32, 2.3f32),
+                ChartPoint::new(3.8f32, 7.1f32),
+                ChartPoint::new(9.2f32, 4.6f32),
+            ];
+            let series = ChartDataSeries::from_points("scatter", points);
+            Chart::new(series)
+                .id("scatter-2d")
+                .chart_type(ChartType::Point)
+                .size(px(300.0), px(180.0))
+                .axis(
+                    AxisConfig::new()
+                        .x_scale(LinearScale::new(0.0, 10.0))
+                        .y_scale(LinearScale::new(0.0, 10.0)),
+                )
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| ScatterHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[test]
+fn chart_builder_sets_annotations() {
+    use super::annotation::{
+        AnnotationContent, AnnotationPosition, AnnotationTarget, ChartAnnotation,
+    };
+
+    let chart = Chart::new(series()).annotations(vec![ChartAnnotation::text(
+        AnnotationTarget::DataPoint {
+            series_idx: 0,
+            point_idx: 3,
+        },
+        AnnotationPosition::Top,
+        "peak",
+    )]);
+    assert_eq!(chart.annotations.len(), 1);
+    assert!(matches!(
+        chart.annotations[0].content,
+        AnnotationContent::Text(_)
+    ));
+}
+
+#[gpui::test]
+async fn line_chart_with_annotation_renders_without_panic(cx: &mut TestAppContext) {
+    use super::annotation::{AnnotationPosition, AnnotationTarget, ChartAnnotation};
+
+    struct AnnotatedHarness;
+    impl Render for AnnotatedHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("annotated-line")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(180.0))
+                .annotations(vec![ChartAnnotation::text(
+                    AnnotationTarget::DataPoint {
+                        series_idx: 0,
+                        point_idx: 3,
+                    },
+                    AnnotationPosition::Top,
+                    "Record high",
+                )])
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| AnnotatedHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn annotation_at_upper_edge_flips_below_without_panic(cx: &mut TestAppContext) {
+    use super::annotation::{AnnotationPosition, AnnotationTarget, ChartAnnotation};
+
+    struct EdgeAnnotationHarness;
+    impl Render for EdgeAnnotationHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            // The third point sits at the top of the plot, so a Top
+            // annotation should overflow-flip to Bottom. We don't
+            // introspect the resolution here (unit tests already cover
+            // that); this just guarantees the render path handles the
+            // flip without panicking.
+            let points = vec![5.0, 10.0, 99.0, 30.0];
+            Chart::new(ChartDataSeries::new("edge", points))
+                .id("edge-annotation")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(180.0))
+                .annotations(vec![ChartAnnotation::text(
+                    AnnotationTarget::DataPoint {
+                        series_idx: 0,
+                        point_idx: 2,
+                    },
+                    AnnotationPosition::Top,
+                    "Peak",
+                )])
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| EdgeAnnotationHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[test]
+fn chart_builder_defaults_to_catmull_rom_interpolation() {
+    use super::interpolation::InterpolationMethod;
+
+    let chart = Chart::new(series());
+    assert_eq!(chart.interpolation, InterpolationMethod::CatmullRom);
+}
+
+#[test]
+fn chart_builder_sets_interpolation() {
+    use super::interpolation::InterpolationMethod;
+
+    let chart = Chart::new(series()).interpolation(InterpolationMethod::Monotone);
+    assert_eq!(chart.interpolation, InterpolationMethod::Monotone);
+
+    let stepped = Chart::new(series()).interpolation(InterpolationMethod::StepEnd);
+    assert_eq!(stepped.interpolation, InterpolationMethod::StepEnd);
+
+    let cardinal = Chart::new(series()).interpolation(InterpolationMethod::Cardinal(0.5));
+    assert_eq!(cardinal.interpolation, InterpolationMethod::Cardinal(0.5));
+}
+
+#[gpui::test]
+async fn line_chart_cycles_through_every_interpolation(cx: &mut TestAppContext) {
+    use super::interpolation::InterpolationMethod;
+
+    // Render a Line chart once per method to confirm the dispatch path
+    // keeps all variants alive (no dead arms, no panics from control
+    // point overflow on a representative data set).
+    struct InterpHarness(InterpolationMethod);
+    impl Render for InterpHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("interp-line")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(160.0))
+                .interpolation(self.0)
+        }
+    }
+    for method in [
+        InterpolationMethod::Linear,
+        InterpolationMethod::CatmullRom,
+        InterpolationMethod::Cardinal(0.5),
+        InterpolationMethod::Cardinal(1.0),
+        InterpolationMethod::Monotone,
+        InterpolationMethod::StepStart,
+        InterpolationMethod::StepEnd,
+        InterpolationMethod::StepCenter,
+    ] {
+        let (host, _vcx) = setup_test_window(cx, move |_, _| InterpHarness(method));
+        host.update(_vcx, |_h, _cx| {});
+    }
+}
+
+#[gpui::test]
+async fn area_chart_with_monotone_renders_without_panic(cx: &mut TestAppContext) {
+    use super::interpolation::InterpolationMethod;
+
+    struct MonotoneAreaHarness;
+    impl Render for MonotoneAreaHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("monotone-area")
+                .chart_type(ChartType::Area)
+                .size(px(320.0), px(180.0))
+                .interpolation(InterpolationMethod::Monotone)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| MonotoneAreaHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── Phase 7: Axis customisation ────────────────────────────────────
+
+#[test]
+fn axis_marks_default_values() {
+    use super::types::{AxisMarks, AxisPosition, AxisTickStyle, GridLineStyle};
+
+    let marks = AxisMarks::default();
+    assert_eq!(marks.position, AxisPosition::Automatic);
+    assert!(matches!(marks.tick_style, AxisTickStyle::Automatic));
+    assert_eq!(marks.grid_line_style, GridLineStyle::Solid);
+    assert!(marks.value_label_formatter.is_none());
+}
+
+#[test]
+fn axis_config_effective_positions_resolve_automatic() {
+    use super::types::{AxisPosition, GridLineStyle};
+
+    let cfg = AxisConfig::new();
+    assert_eq!(cfg.effective_y_position(), AxisPosition::Leading);
+    assert_eq!(cfg.effective_x_position(), AxisPosition::Bottom);
+    assert_eq!(cfg.y_marks.grid_line_style, GridLineStyle::Solid);
+
+    let trailing = AxisConfig::new().y_position(AxisPosition::Trailing);
+    assert_eq!(trailing.effective_y_position(), AxisPosition::Trailing);
+
+    // Mismatched values (e.g. Top on a Y axis) collapse to the HIG default
+    // so callers that pass the wrong enum by mistake still render.
+    let weird = AxisConfig::new().y_position(AxisPosition::Top);
+    assert_eq!(weird.effective_y_position(), AxisPosition::Leading);
+}
+
+#[test]
+fn axis_config_builders_write_into_marks() {
+    use std::sync::Arc;
+
+    use super::types::{AxisPosition, AxisTickStyle, GridLineStyle, PlottableValue};
+    use gpui::SharedString;
+
+    let cfg = AxisConfig::new()
+        .y_position(AxisPosition::Trailing)
+        .y_tick_style(AxisTickStyle::Manual(vec![0.0, 10.0, 20.0]))
+        .y_grid_line_style(GridLineStyle::Dashed)
+        .y_value_label_formatter(|v: &PlottableValue| {
+            SharedString::from(format!("${}", v.as_number_f32().unwrap_or(0.0) as i64))
+        });
+
+    assert_eq!(cfg.y_marks.position, AxisPosition::Trailing);
+    assert!(matches!(cfg.y_marks.tick_style, AxisTickStyle::Manual(_)));
+    assert_eq!(cfg.y_marks.grid_line_style, GridLineStyle::Dashed);
+    // Formatter round-trips through the marks struct.
+    let fmt = cfg.y_marks.value_label_formatter.as_ref().expect("fmt");
+    let label = fmt(&PlottableValue::Number(42.0));
+    assert_eq!(label.as_ref(), "$42");
+
+    // y_tick_style(Manual(...)) also mirrors into the legacy `y_ticks`
+    // field so direct readers keep seeing the manual override.
+    assert_eq!(cfg.y_ticks, Some(vec![0.0, 10.0, 20.0]));
+
+    // Formatter stays Arc-cloneable (no &self capture).
+    let _clone: Arc<_> = fmt.clone();
+}
+
+#[test]
+fn axis_tick_style_hidden_yields_no_ticks() {
+    use super::types::AxisTickStyle;
+
+    let cfg = AxisConfig::new().y_tick_style(AxisTickStyle::Hidden);
+    assert!(cfg.compute_y_ticks(0.0, 100.0).is_empty());
+}
+
+#[test]
+fn axis_tick_style_manual_overrides_nice_ticks() {
+    use super::types::AxisTickStyle;
+
+    let cfg = AxisConfig::new()
+        .y_tick_count(5)
+        .y_tick_style(AxisTickStyle::Manual(vec![0.0, 25.0, 50.0, 75.0, 100.0]));
+    let ticks = cfg.compute_y_ticks(10.0, 90.0);
+    assert_eq!(ticks, vec![0.0, 25.0, 50.0, 75.0, 100.0]);
+}
+
+#[test]
+fn gridline_config_style_builder() {
+    use super::types::{GridLineStyle, GridlineConfig};
+
+    let cfg = GridlineConfig::horizontal().style(GridLineStyle::Dashed);
+    assert!(cfg.horizontal);
+    assert_eq!(cfg.style, GridLineStyle::Dashed);
+    assert!(cfg.is_active());
+
+    // Hidden style collapses is_active even when h/v flags are set so
+    // render.rs doesn't allocate a canvas layer for invisible gridlines.
+    let hidden = GridlineConfig::horizontal().style(GridLineStyle::Hidden);
+    assert!(!hidden.is_active());
+}
+
+#[gpui::test]
+async fn chart_renders_with_trailing_y_axis(cx: &mut TestAppContext) {
+    use super::types::AxisPosition;
+
+    struct TrailingAxisHarness;
+    impl Render for TrailingAxisHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("trailing-y")
+                .chart_type(ChartType::Bar)
+                .size(px(280.0), px(140.0))
+                .axis(AxisConfig::new().y_position(AxisPosition::Trailing))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| TrailingAxisHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_dashed_gridlines_and_formatter(cx: &mut TestAppContext) {
+    use super::types::{GridLineStyle, PlottableValue};
+    use gpui::SharedString;
+
+    struct DashedFormatterHarness;
+    impl Render for DashedFormatterHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("dashed-fmt")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(180.0))
+                .axis(
+                    AxisConfig::new().y_value_label_formatter(|v: &PlottableValue| {
+                        SharedString::from(format!("${}", v.as_number_f32().unwrap_or(0.0) as i64))
+                    }),
+                )
+                .gridlines(GridlineConfig::horizontal().style(GridLineStyle::Dashed))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| DashedFormatterHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_hidden_ticks(cx: &mut TestAppContext) {
+    use super::types::AxisTickStyle;
+
+    struct HiddenTicksHarness;
+    impl Render for HiddenTicksHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("hidden-ticks")
+                .chart_type(ChartType::Bar)
+                .size(px(260.0), px(140.0))
+                .axis(AxisConfig::new().y_tick_style(AxisTickStyle::Hidden))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| HiddenTicksHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[test]
+fn legend_position_default_is_automatic() {
+    use super::types::LegendPosition;
+
+    let chart = Chart::new(series());
+    assert_eq!(chart.legend_position, LegendPosition::Automatic);
+}
+
+#[test]
+fn legend_position_builder_sets_position() {
+    use super::types::LegendPosition;
+
+    let chart = Chart::new(series()).legend_position(LegendPosition::Top);
+    assert_eq!(chart.legend_position, LegendPosition::Top);
+}
+
+fn two_series() -> ChartDataSet {
+    ChartDataSet::multi(vec![
+        ChartSeries::new(ChartDataSeries::new(
+            "Sales",
+            vec![10.0, 20.0, 15.0, 30.0, 25.0],
+        )),
+        ChartSeries::new(ChartDataSeries::new(
+            "Target",
+            vec![12.0, 18.0, 22.0, 25.0, 22.0],
+        )),
+    ])
+}
+
+#[gpui::test]
+async fn chart_renders_with_top_legend(cx: &mut TestAppContext) {
+    use super::types::LegendPosition;
+
+    struct TopLegendHarness;
+    impl Render for TopLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(two_series())
+                .id("top-legend")
+                .chart_type(ChartType::Bar)
+                .size(px(320.0), px(160.0))
+                .legend_position(LegendPosition::Top)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| TopLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_trailing_legend(cx: &mut TestAppContext) {
+    use super::types::LegendPosition;
+
+    struct TrailingLegendHarness;
+    impl Render for TrailingLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(two_series())
+                .id("trailing-legend")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(160.0))
+                .legend_position(LegendPosition::Trailing)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| TrailingLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_leading_legend(cx: &mut TestAppContext) {
+    use super::types::LegendPosition;
+
+    struct LeadingLegendHarness;
+    impl Render for LeadingLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(two_series())
+                .id("leading-legend")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(160.0))
+                .legend_position(LegendPosition::Leading)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| LeadingLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_hidden_legend(cx: &mut TestAppContext) {
+    use super::types::LegendPosition;
+
+    // `LegendPosition::Hidden` must win even if the caller also forces
+    // `show_legend(true)` on a multi-series chart.
+    struct HiddenLegendHarness;
+    impl Render for HiddenLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(two_series())
+                .id("hidden-legend")
+                .chart_type(ChartType::Bar)
+                .size(px(320.0), px(160.0))
+                .show_legend(true)
+                .legend_position(LegendPosition::Hidden)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| HiddenLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── Phase 10: scroll / zoom ─────────────────────────────────────────────
+
+#[test]
+fn chart_scroll_builder_stores_config() {
+    use super::scroll::ChartScrollConfig;
+
+    let chart = Chart::new(series()).scroll(
+        ChartScrollConfig::new()
+            .x_visible_domain(0.0, 2.0)
+            .x_scroll_position(1.0),
+    );
+    assert!(chart.scroll.is_some());
+    let scroll = chart.scroll.as_ref().unwrap();
+    assert_eq!(
+        scroll
+            .x_visible_domain
+            .as_ref()
+            .and_then(|(lo, hi)| Some((lo.as_number()?, hi.as_number()?))),
+        Some((0.0, 2.0))
+    );
+    assert_eq!(
+        scroll
+            .x_scroll_position
+            .as_ref()
+            .and_then(|v| v.as_number()),
+        Some(1.0)
+    );
+}
+
+#[gpui::test]
+async fn chart_renders_with_visible_domain_subset(cx: &mut TestAppContext) {
+    use super::scroll::ChartScrollConfig;
+
+    // 100-point dataset with a 10-point visible window — the render path
+    // should filter the data to the first 10 points and lay them out across
+    // the full plot width.
+    struct ScrollHarness;
+    impl Render for ScrollHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let values: Vec<f32> = (0..100).map(|i| (i as f32 * 0.37).sin()).collect();
+            Chart::new(ChartDataSeries::new("Signal", values))
+                .id("scroll-domain")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(160.0))
+                .scroll(ChartScrollConfig::new().x_visible_domain(0.0, 9.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| ScrollHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_renders_with_scroll_position(cx: &mut TestAppContext) {
+    use super::scroll::ChartScrollConfig;
+
+    // Same dataset but anchored partway through — the visible slice should
+    // be points 40..49 rather than 0..9.
+    struct ScrollPosHarness;
+    impl Render for ScrollPosHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let values: Vec<f32> = (0..100).map(|i| (i as f32 * 0.37).sin()).collect();
+            Chart::new(ChartDataSeries::new("Signal", values))
+                .id("scroll-pos")
+                .chart_type(ChartType::Line)
+                .size(px(320.0), px(160.0))
+                .scroll(
+                    ChartScrollConfig::new()
+                        .x_visible_domain(0.0, 9.0)
+                        .x_scroll_position(40.0),
+                )
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| ScrollPosHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── Phase 11: Audio Graphs accessibility ───────────────────────────────
+
+#[test]
+fn chart_audio_graph_builder_stores_descriptor() {
+    use super::audio_graph::{AxisDescriptor, ChartDescriptor, SeriesDescriptor};
+
+    let desc = ChartDescriptor::new(
+        "Quarterly sales",
+        "Sales peak in Q4 around $30",
+        AxisDescriptor::new("Quarter", (0.0, 4.0)),
+        AxisDescriptor::new("USD", (0.0, 30.0)),
+    )
+    .series(vec![SeriesDescriptor::new(
+        "Sales",
+        [(0.0, 10.0), (1.0, 20.0), (2.0, 15.0), (3.0, 30.0)],
+    )]);
+
+    let chart = Chart::new(series()).audio_graph(desc);
+    let stored = chart.audio_graph.as_ref().expect("descriptor stored");
+    assert_eq!(stored.title.as_ref(), "Quarterly sales");
+    assert_eq!(stored.summary.as_ref(), "Sales peak in Q4 around $30");
+    assert_eq!(stored.series.len(), 1);
+    assert_eq!(stored.y_axis.range, (0.0, 30.0));
+}
+
+#[test]
+fn chart_audio_graph_summary_replaces_default_label() {
+    use super::audio_graph::{AxisDescriptor, ChartDescriptor};
+
+    let summary = "Weekly temperature trends upward from 18 to 27 degrees";
+    let desc = ChartDescriptor::new(
+        "Weekly temperature",
+        summary,
+        AxisDescriptor::new("Day", (0.0, 6.0)),
+        AxisDescriptor::new("°C", (18.0, 27.0)),
+    );
+    let chart = Chart::new(series()).audio_graph(desc);
+    // accessibility_label precedence chain: no explicit label set → summary
+    // wins over the auto-generated default.
+    assert!(chart.accessibility_label.is_none());
+    assert_eq!(
+        chart
+            .audio_graph
+            .as_ref()
+            .map(|d| d.summary.as_ref())
+            .unwrap_or(""),
+        summary
+    );
+    // Confirm the default generator is different from the summary so the
+    // replace-with-summary test is actually meaningful.
+    let default_label = chart.default_accessibility_label();
+    assert_ne!(default_label, summary);
+}
+
+#[test]
+fn chart_audio_graph_explicit_label_still_wins() {
+    use super::audio_graph::{AxisDescriptor, ChartDescriptor};
+
+    let desc = ChartDescriptor::new(
+        "T",
+        "Summary from descriptor",
+        AxisDescriptor::new("X", (0.0, 1.0)),
+        AxisDescriptor::new("Y", (0.0, 1.0)),
+    );
+    let chart = Chart::new(series())
+        .audio_graph(desc)
+        .accessibility_label("Explicit override");
+    // Explicit accessibility_label wins over the descriptor's summary.
+    assert_eq!(
+        chart.accessibility_label.as_ref().map(|s| s.as_ref()),
+        Some("Explicit override")
+    );
+}
+
+#[gpui::test]
+async fn chart_renders_with_audio_graph_descriptor(cx: &mut TestAppContext) {
+    use super::audio_graph::{AxisDescriptor, ChartDescriptor, SeriesDescriptor};
+
+    struct AudioHarness;
+    impl Render for AudioHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let desc = ChartDescriptor::new(
+                "Quarterly sales",
+                "Sales rise through Q4",
+                AxisDescriptor::new("Quarter", (0.0, 4.0)),
+                AxisDescriptor::new("USD", (0.0, 30.0)),
+            )
+            .series(vec![SeriesDescriptor::new(
+                "Sales",
+                [(0.0, 10.0), (1.0, 20.0), (2.0, 15.0), (3.0, 30.0)],
+            )]);
+            Chart::new(ChartDataSeries::new("Sales", vec![10.0, 20.0, 15.0, 30.0]))
+                .id("audio-chart")
+                .chart_type(ChartType::Bar)
+                .size(px(320.0), px(160.0))
+                .audio_graph(desc)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| AudioHarness);
     host.update(_vcx, |_h, _cx| {});
 }

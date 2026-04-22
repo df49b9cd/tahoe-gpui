@@ -18,8 +18,12 @@ pub mod web_view;
 pub use avatar::{Avatar, AvatarSize, AvatarStatus};
 pub use badge::{Badge, BadgeVariant};
 pub use chart::{
-    AxisConfig, Chart, ChartDataSeries, ChartDataSet, ChartSeries, ChartType, ChartView,
-    GridlineConfig,
+    AnnotationContent, AnnotationPosition, AnnotationTarget, AxisConfig, AxisDescriptor, AxisMarks,
+    AxisPosition, AxisTickStyle, AxisValueFormatter, BarOrientation, CategoryScale, Chart,
+    ChartAnnotation, ChartDataSeries, ChartDataSet, ChartDescriptor, ChartPoint, ChartScrollConfig,
+    ChartSeries, ChartType, ChartView, DateScale, GridLineStyle, GridlineConfig,
+    InterpolationMethod, LegendPosition, LinearScale, LogScale, MarkStackingMethod, PlottableValue,
+    Scale, SelectedPoint, SelectionBinding, SeriesDescriptor,
 };
 pub use image_view::{ContentMode, ImageView};
 pub use label::{Label, LabelVariant};

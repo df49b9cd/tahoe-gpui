@@ -1,6 +1,7 @@
 //! Chart data types.
 
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use gpui::{Hsla, SharedString};
 
@@ -10,9 +11,9 @@ use gpui::{Hsla, SharedString};
 
 /// Chart mark type.
 ///
-/// Mirrors Swift Charts' `Mark` vocabulary. All six mark types render
-/// natively via GPUI canvas (Line, Area, Range, Rule) or div-based
-/// primitives (Bar, Point).
+/// Mirrors Swift Charts' `Mark` vocabulary. Render backends:
+/// - Bar, Point: div-based primitives.
+/// - Line, Area, Range, Rule, Sector, Rectangle: canvas paint callbacks.
 ///
 /// `voice_label()` returns the static lowercase mark-type name so the
 /// VoiceOver announcement is always honest about the caller's intent.
@@ -34,6 +35,53 @@ pub enum ChartType {
     /// values are ignored. In debug builds a `debug_assert!` surfaces calls
     /// that pass more than one value so the misuse is caught in tests.
     Rule,
+    /// Pie / donut sectors. Each series contributes one slice sized by the
+    /// first point's `y` value. Pair with
+    /// [`Chart::inner_radius_ratio`](super::render::Chart::inner_radius_ratio)
+    /// to turn a pie into a donut.
+    Sector,
+    /// Heatmap cells. Each point's `x` and `y` select a cell in the grid
+    /// and the magnitude comes from the point's `z` channel (fall back to
+    /// `y` when `z` is absent).
+    Rectangle,
+}
+
+/// Orientation of Bar marks.
+///
+/// Mirrors Swift Charts' default vs. flipped bar layout. `Vertical` is the
+/// classic column chart; `Horizontal` pivots the axes so bars grow
+/// left-to-right from a Y-aligned baseline and slots distribute
+/// top-to-bottom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum BarOrientation {
+    /// Bars grow upwards from the baseline; slots run left-to-right.
+    #[default]
+    Vertical,
+    /// Bars grow rightwards from the Y-axis; slots run top-to-bottom.
+    Horizontal,
+}
+
+/// Legend placement relative to the plot area.
+///
+/// Mirrors Swift Charts' `.chartLegend(position:)` surface. `Automatic`
+/// (default) resolves to the historical behaviour: bottom for multi-
+/// series charts, hidden for single-series charts unless
+/// [`Chart::show_legend`](super::render::Chart::show_legend)` forces it on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LegendPosition {
+    /// HIG default: bottom for multi-series, hidden for single-series.
+    #[default]
+    Automatic,
+    /// Legend row above the plot area.
+    Top,
+    /// Legend row below the plot area.
+    Bottom,
+    /// Legend column to the left of the plot area.
+    Leading,
+    /// Legend column to the right of the plot area.
+    Trailing,
+    /// Suppress the legend regardless of `show_legend`.
+    Hidden,
 }
 
 impl ChartType {
@@ -47,6 +95,8 @@ impl ChartType {
             ChartType::Point => "point",
             ChartType::Range => "range",
             ChartType::Rule => "rule",
+            ChartType::Sector => "sector",
+            ChartType::Rectangle => "heatmap",
         }
     }
 
@@ -54,6 +104,153 @@ impl ChartType {
     /// for bar charts so relative heights remain comparable).
     pub(crate) fn anchors_at_zero(self) -> bool {
         matches!(self, Self::Bar | Self::Area | Self::Range)
+    }
+
+    /// Whether this chart type uses its own plot geometry (polar for
+    /// Sector, grid for Rectangle) and therefore should skip the standard
+    /// linear axis / gridline overlay pipeline.
+    pub(crate) fn uses_custom_plot_geometry(self) -> bool {
+        matches!(self, Self::Sector | Self::Rectangle)
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PlottableValue / ChartPoint
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// A value that can be placed on a chart axis.
+///
+/// Mirrors Swift Charts' `Plottable` protocol: a number (continuous),
+/// a date (time-series), or a category (discrete ordinal). A [`Scale`]
+/// converts these to normalised plot-area coordinates; the categorical
+/// colour palette and per-mark painters read them via [`as_number_f32`]
+/// when a numeric fallback is useful.
+///
+/// [`Scale`]: crate::components::content::chart
+/// [`as_number_f32`]: PlottableValue::as_number_f32
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlottableValue {
+    /// A continuous numeric value (integers, floats, percentages).
+    Number(f64),
+    /// A calendar/clock instant. Paired with a `DateScale` to get
+    /// locale-aware tick labels and granularity-aware grid stepping.
+    Date(SystemTime),
+    /// A discrete category label. Paired with a `CategoryScale` that
+    /// gives each unique value its own slot.
+    Category(SharedString),
+}
+
+impl PlottableValue {
+    /// Extract the number when this is `Number(_)`, else `None`. Date
+    /// and Category variants return `None` — their projection needs
+    /// a `Scale` for context.
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            PlottableValue::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    /// Same as [`as_number`] but returns `f32` for convenience in paint
+    /// callbacks that already work in pixel-space `f32`.
+    ///
+    /// [`as_number`]: PlottableValue::as_number
+    pub fn as_number_f32(&self) -> Option<f32> {
+        self.as_number().map(|n| n as f32)
+    }
+}
+
+impl From<f32> for PlottableValue {
+    fn from(n: f32) -> Self {
+        Self::Number(n as f64)
+    }
+}
+
+impl From<f64> for PlottableValue {
+    fn from(n: f64) -> Self {
+        Self::Number(n)
+    }
+}
+
+impl From<i32> for PlottableValue {
+    fn from(n: i32) -> Self {
+        Self::Number(n as f64)
+    }
+}
+
+impl From<usize> for PlottableValue {
+    fn from(n: usize) -> Self {
+        Self::Number(n as f64)
+    }
+}
+
+impl From<SystemTime> for PlottableValue {
+    fn from(t: SystemTime) -> Self {
+        Self::Date(t)
+    }
+}
+
+impl From<SharedString> for PlottableValue {
+    fn from(s: SharedString) -> Self {
+        Self::Category(s)
+    }
+}
+
+impl From<&str> for PlottableValue {
+    fn from(s: &str) -> Self {
+        Self::Category(SharedString::from(s.to_string()))
+    }
+}
+
+/// A single `(x, y)` data point plus optional channels.
+///
+/// `y_high` carries the upper bound for Range marks (with `y` as the
+/// lower bound). `z` carries a magnitude channel for Rectangle/heatmap
+/// marks so they can encode a third dimension without a second series.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartPoint {
+    /// X position. Index-like by default (`Number(0)`, `Number(1)`, …)
+    /// so existing sparkline call sites render identically; a
+    /// `CategoryScale` or `DateScale` can take over in Phase 1.
+    pub x: PlottableValue,
+    /// Y position — the primary value for most mark types. For Range
+    /// marks this is the lower bound.
+    pub y: PlottableValue,
+    /// Upper bound for Range marks. `None` for every other mark type.
+    pub y_high: Option<PlottableValue>,
+    /// Magnitude channel for Rectangle/heatmap marks.
+    pub z: Option<PlottableValue>,
+}
+
+impl ChartPoint {
+    /// Create a `(x, y)` point with no range or magnitude channel.
+    pub fn new(x: impl Into<PlottableValue>, y: impl Into<PlottableValue>) -> Self {
+        Self {
+            x: x.into(),
+            y: y.into(),
+            y_high: None,
+            z: None,
+        }
+    }
+
+    /// Create a Range point: `(x, y_low .. y_high)`.
+    pub fn range(
+        x: impl Into<PlottableValue>,
+        y_low: impl Into<PlottableValue>,
+        y_high: impl Into<PlottableValue>,
+    ) -> Self {
+        Self {
+            x: x.into(),
+            y: y_low.into(),
+            y_high: Some(y_high.into()),
+            z: None,
+        }
+    }
+
+    /// Attach a magnitude channel for Rectangle/heatmap marks.
+    pub fn with_z(mut self, z: impl Into<PlottableValue>) -> Self {
+        self.z = Some(z.into());
+        self
     }
 }
 
@@ -63,61 +260,100 @@ impl ChartType {
 
 /// A single named data series.
 ///
-/// Values are stored in `Arc<[f32]>` so the canvas render path can
-/// refcount-clone instead of deep-copying the sample buffer into each
-/// paint closure. `Vec<f32>` callers continue to work via
-/// `From<Vec<T>> for Arc<[T]>`.
+/// Points are stored in `Arc<[ChartPoint]>` so the canvas render path
+/// can refcount-clone instead of deep-copying the buffer into each
+/// paint closure. [`ChartDataSeries::new`] and [`ChartDataSeries::range`]
+/// remain the common-case constructors for `Vec<f32>` call sites so the
+/// refactor doesn't ripple through simple sparkline code.
 #[derive(Debug, Clone)]
 pub struct ChartDataSeries {
     /// Display name — shown in legends, FKA labels, and the default
     /// VoiceOver announcement.
     pub name: SharedString,
-    /// Data samples. For Range charts this is the upper bound; see
-    /// [`range_low`](Self::range_low).
-    pub values: Arc<[f32]>,
-    /// Lower-bound values for Range charts. When `None`, the series is
-    /// treated as a simple value series (Bar, Line, Area, Point, Rule).
-    pub range_low: Option<Arc<[f32]>>,
+    /// `(x, y, …)` data points. For Range marks each point carries a
+    /// `y_high`; for Rectangle marks each point carries a `z` magnitude.
+    pub points: Arc<[ChartPoint]>,
 }
 
 impl ChartDataSeries {
-    /// Create a single-value series.
-    pub fn new(name: impl Into<SharedString>, values: impl Into<Arc<[f32]>>) -> Self {
+    /// Create a single-value series from a `Vec<f32>`.
+    ///
+    /// Each value `v_i` is paired with its index: `ChartPoint { x:
+    /// Number(i), y: Number(v_i) }`. Matches the v2 API so existing
+    /// call sites compile unchanged; pair with a [`CategoryScale`] or
+    /// [`DateScale`] at the chart level to drive X from real values.
+    ///
+    /// [`CategoryScale`]: crate::components::content::chart
+    /// [`DateScale`]: crate::components::content::chart
+    pub fn new(name: impl Into<SharedString>, values: Vec<f32>) -> Self {
+        let points: Vec<ChartPoint> = values
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| ChartPoint::new(i, v))
+            .collect();
         Self {
             name: name.into(),
-            values: values.into(),
-            range_low: None,
+            points: points.into(),
         }
     }
 
-    /// Create a Range series with separate lower and upper bound arrays.
+    /// Create a Range series from parallel lower- and upper-bound arrays.
     ///
-    /// `values` is the upper bound, `low` is the lower bound.
-    pub fn range(
+    /// Each point becomes `ChartPoint { y: low[i], y_high: Some(high[i])
+    /// }`. Truncates to the shorter array so mismatched inputs don't
+    /// panic — mirrors the prior `paint_range` contract.
+    pub fn range(name: impl Into<SharedString>, low: Vec<f32>, high: Vec<f32>) -> Self {
+        let count = low.len().min(high.len());
+        let points: Vec<ChartPoint> = (0..count)
+            .map(|i| ChartPoint::range(i, low[i], high[i]))
+            .collect();
+        Self {
+            name: name.into(),
+            points: points.into(),
+        }
+    }
+
+    /// Create a series from explicit [`ChartPoint`]s.
+    pub fn from_points(
         name: impl Into<SharedString>,
-        low: impl Into<Arc<[f32]>>,
-        high: impl Into<Arc<[f32]>>,
+        points: impl Into<Arc<[ChartPoint]>>,
     ) -> Self {
         Self {
             name: name.into(),
-            values: high.into(),
-            range_low: Some(low.into()),
+            points: points.into(),
         }
     }
 
+    /// Minimum Y value across the series, honouring Range bounds.
+    ///
+    /// Non-Number Y values (Date/Category) are skipped — they have no
+    /// numeric meaning without a [`Scale`]. Phase 1 will route axis
+    /// extent through the scale and retire this helper.
     pub(crate) fn min_value(&self) -> f32 {
-        let v_min = self.values.iter().copied().fold(f32::INFINITY, f32::min);
-        match &self.range_low {
-            Some(low) => low.iter().copied().fold(v_min, f32::min),
-            None => v_min,
+        let mut m = f32::INFINITY;
+        for p in self.points.iter() {
+            if let Some(y) = p.y.as_number_f32() {
+                m = m.min(y);
+            }
+            if let Some(yh) = p.y_high.as_ref().and_then(|v| v.as_number_f32()) {
+                m = m.min(yh);
+            }
         }
+        m
     }
 
+    /// Maximum Y value across the series, honouring Range bounds.
     pub(crate) fn max_value(&self) -> f32 {
-        self.values
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max)
+        let mut m = f32::NEG_INFINITY;
+        for p in self.points.iter() {
+            if let Some(y) = p.y.as_number_f32() {
+                m = m.max(y);
+            }
+            if let Some(yh) = p.y_high.as_ref().and_then(|v| v.as_number_f32()) {
+                m = m.max(yh);
+            }
+        }
+        m
     }
 }
 
@@ -179,7 +415,7 @@ impl ChartDataSet {
     pub(crate) fn max_points(&self) -> usize {
         self.series
             .iter()
-            .map(|s| s.inner.values.len())
+            .map(|s| s.inner.points.len())
             .max()
             .unwrap_or(0)
     }
@@ -236,6 +472,147 @@ pub(crate) fn point_size(slot_width: f32) -> f32 {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AxisPosition / AxisTickStyle / GridLineStyle / AxisMarks
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Where an axis renders relative to the plot area.
+///
+/// Mirrors Swift Charts' `AxisMarkPosition`. `Automatic` picks the HIG
+/// default per axis — leading Y and bottom X, matching what most
+/// dashboards show today. `Leading` / `Trailing` only apply to the Y
+/// axis; `Top` / `Bottom` only apply to the X axis. A mismatched value
+/// (e.g. `Leading` on an X axis) is treated as `Automatic`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AxisPosition {
+    /// HIG default: Leading Y, Bottom X.
+    #[default]
+    Automatic,
+    /// Y axis on the leading (left) edge.
+    Leading,
+    /// Y axis on the trailing (right) edge — Swift Charts' common pairing
+    /// with a leading-aligned layout so the chart's left edge aligns with
+    /// surrounding interface elements.
+    Trailing,
+    /// X axis on the top edge.
+    Top,
+    /// X axis on the bottom edge.
+    Bottom,
+}
+
+/// How tick marks and value labels are generated.
+///
+/// Mirrors Swift Charts' `AxisMarkValues`. `Manual` supplies explicit
+/// tick positions; `Hidden` suppresses both the tick mark and the value
+/// label while leaving gridlines controlled separately by
+/// [`GridLineStyle`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum AxisTickStyle {
+    /// Tick count + `nice_ticks` rounding (the historical default).
+    #[default]
+    Automatic,
+    /// Explicit tick positions. Numeric values only — Date/Category
+    /// ticks come from the scale itself.
+    Manual(Vec<f32>),
+    /// Suppress the tick marks and value labels for this axis.
+    Hidden,
+}
+
+/// How gridlines render at tick positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GridLineStyle {
+    /// Continuous 1px line across the plot area (current default).
+    #[default]
+    Solid,
+    /// Dashed line — hand-rolled via short `move_to`/`line_to` pairs so
+    /// the effect works through GPUI's `PathBuilder` without a native
+    /// line-dash primitive.
+    Dashed,
+    /// Suppress gridlines without touching the tick labels themselves.
+    Hidden,
+}
+
+/// Format callback converting a tick value into a display label.
+///
+/// Wrapped in `Arc<dyn Fn + Send + Sync>` so `AxisConfig` remains
+/// `Clone` — every chart re-render clones the axis config into the paint
+/// closure, and a naked closure type would make the field un-Clone.
+pub type AxisValueFormatter = Arc<dyn Fn(&PlottableValue) -> SharedString + Send + Sync + 'static>;
+
+/// Unified axis configuration knob. One [`AxisConfig`] owns two of these:
+/// one for the X axis and one for the Y axis.
+///
+/// Mirrors Swift Charts' `AxisMarks` builder — position, tick style,
+/// gridline style, and an optional value label formatter. Defaults match
+/// the HIG: automatic placement, automatic ticks, solid gridlines, and
+/// the legacy format (`0`, `42`, `1.5`) from
+/// [`super::render::format_y_tick`].
+#[derive(Clone, Default)]
+pub struct AxisMarks {
+    /// Where the axis renders relative to the plot area.
+    pub position: AxisPosition,
+    /// How tick positions and labels are generated.
+    pub tick_style: AxisTickStyle,
+    /// How the gridline at each tick is drawn.
+    pub grid_line_style: GridLineStyle,
+    /// Override the default tick label formatter. Receives the
+    /// [`PlottableValue`] at each tick position and returns the visible
+    /// label. `None` falls back to the default numeric formatter.
+    pub value_label_formatter: Option<AxisValueFormatter>,
+}
+
+impl AxisMarks {
+    /// Create a default axis-marks configuration (automatic on every knob).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the axis position.
+    pub fn position(mut self, position: AxisPosition) -> Self {
+        self.position = position;
+        self
+    }
+
+    /// Set the tick style. See [`AxisTickStyle`] for the vocabulary.
+    pub fn tick_style(mut self, style: AxisTickStyle) -> Self {
+        self.tick_style = style;
+        self
+    }
+
+    /// Set the gridline style.
+    pub fn grid_line_style(mut self, style: GridLineStyle) -> Self {
+        self.grid_line_style = style;
+        self
+    }
+
+    /// Override the tick label formatter. Pass `|v| v.as_number().map(...)`
+    /// (or similar) to produce custom strings like `$42` or `1.2K`.
+    pub fn value_label_formatter<F>(mut self, formatter: F) -> Self
+    where
+        F: Fn(&PlottableValue) -> SharedString + Send + Sync + 'static,
+    {
+        self.value_label_formatter = Some(Arc::new(formatter));
+        self
+    }
+}
+
+// Axis marks can't derive Debug because `AxisValueFormatter` is a
+// trait object. Emit a stable summary that includes the other knobs
+// plus "formatter: Some/None" so chart tests can still assert on it.
+impl std::fmt::Debug for AxisMarks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AxisMarks")
+            .field("position", &self.position)
+            .field("tick_style", &self.tick_style)
+            .field("grid_line_style", &self.grid_line_style)
+            .field(
+                "value_label_formatter",
+                &self.value_label_formatter.as_ref().map(|_| "<fn>"),
+            )
+            .finish()
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AxisConfig
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -259,6 +636,19 @@ pub struct AxisConfig {
     pub show_y_line: bool,
     /// Show the X-axis baseline.
     pub x_baseline: bool,
+    /// Override the auto-inferred X-axis scale (Linear/Log/Category/Date).
+    /// `None` means the chart infers a scale from the data's
+    /// [`PlottableValue`] variant.
+    pub x_scale: Option<Arc<dyn super::scales::Scale>>,
+    /// Override the auto-inferred Y-axis scale.
+    pub y_scale: Option<Arc<dyn super::scales::Scale>>,
+    /// Unified Y-axis behaviour (position, tick style, gridline style,
+    /// label formatter). Defaults to `AxisMarks::default()` which keeps
+    /// the leading Y-axis + solid gridlines + numeric labels of prior
+    /// releases.
+    pub y_marks: AxisMarks,
+    /// Unified X-axis behaviour. Same defaults as `y_marks`.
+    pub x_marks: AxisMarks,
 }
 
 impl Default for AxisConfig {
@@ -269,6 +659,10 @@ impl Default for AxisConfig {
             x_labels: None,
             show_y_line: false,
             x_baseline: false,
+            x_scale: None,
+            y_scale: None,
+            y_marks: AxisMarks::default(),
+            x_marks: AxisMarks::default(),
         }
     }
 }
@@ -325,6 +719,132 @@ impl AxisConfig {
         self
     }
 
+    /// Override the X-axis scale. Accepts any implementation of [`Scale`]
+    /// (typically [`LinearScale`], [`LogScale`], [`CategoryScale`], or
+    /// [`DateScale`]).
+    ///
+    /// [`Scale`]: crate::components::content::chart::Scale
+    /// [`LinearScale`]: crate::components::content::chart::LinearScale
+    /// [`LogScale`]: crate::components::content::chart::LogScale
+    /// [`CategoryScale`]: crate::components::content::chart::CategoryScale
+    /// [`DateScale`]: crate::components::content::chart::DateScale
+    pub fn x_scale<S: super::scales::Scale>(mut self, scale: S) -> Self {
+        self.x_scale = Some(Arc::new(scale));
+        self
+    }
+
+    /// Override the Y-axis scale. See [`x_scale`] for the scale vocabulary.
+    ///
+    /// [`x_scale`]: AxisConfig::x_scale
+    pub fn y_scale<S: super::scales::Scale>(mut self, scale: S) -> Self {
+        self.y_scale = Some(Arc::new(scale));
+        self
+    }
+
+    /// Replace the full Y-axis marks configuration in one call.
+    pub fn y_marks(mut self, marks: AxisMarks) -> Self {
+        self.y_marks = marks;
+        self
+    }
+
+    /// Replace the full X-axis marks configuration in one call.
+    pub fn x_marks(mut self, marks: AxisMarks) -> Self {
+        self.x_marks = marks;
+        self
+    }
+
+    /// Place the Y-axis on the leading (left) or trailing (right) edge.
+    ///
+    /// `Automatic` (the default) matches the HIG — leading Y. Use
+    /// `Trailing` to align the chart's leading edge with surrounding
+    /// interface elements.
+    pub fn y_position(mut self, position: AxisPosition) -> Self {
+        self.y_marks.position = position;
+        self
+    }
+
+    /// Place the X-axis labels on the top or bottom edge.
+    pub fn x_position(mut self, position: AxisPosition) -> Self {
+        self.x_marks.position = position;
+        self
+    }
+
+    /// Choose the Y-axis tick generator. `Automatic` uses
+    /// [`nice_ticks`], `Manual(Vec<f32>)` pins explicit positions, and
+    /// `Hidden` suppresses both the tick labels and the gutter reserved
+    /// for them.
+    pub fn y_tick_style(mut self, style: AxisTickStyle) -> Self {
+        self.y_marks.tick_style = style.clone();
+        // Keep the legacy `y_ticks` field in sync so existing call-sites
+        // that read it directly (tests, subclassed builders) observe the
+        // manual override too.
+        self.y_ticks = match style {
+            AxisTickStyle::Manual(ref v) => Some(v.clone()),
+            _ => self.y_ticks,
+        };
+        self
+    }
+
+    /// Choose the X-axis tick generator. Same vocabulary as
+    /// [`y_tick_style`](Self::y_tick_style).
+    pub fn x_tick_style(mut self, style: AxisTickStyle) -> Self {
+        self.x_marks.tick_style = style;
+        self
+    }
+
+    /// Override the Y-axis gridline style (`Solid` / `Dashed` / `Hidden`).
+    pub fn y_grid_line_style(mut self, style: GridLineStyle) -> Self {
+        self.y_marks.grid_line_style = style;
+        self
+    }
+
+    /// Override the X-axis gridline style.
+    pub fn x_grid_line_style(mut self, style: GridLineStyle) -> Self {
+        self.x_marks.grid_line_style = style;
+        self
+    }
+
+    /// Install a custom Y-axis label formatter. The closure receives the
+    /// [`PlottableValue`] at each tick position.
+    pub fn y_value_label_formatter<F>(mut self, formatter: F) -> Self
+    where
+        F: Fn(&PlottableValue) -> SharedString + Send + Sync + 'static,
+    {
+        self.y_marks.value_label_formatter = Some(Arc::new(formatter));
+        self
+    }
+
+    /// Install a custom X-axis label formatter.
+    pub fn x_value_label_formatter<F>(mut self, formatter: F) -> Self
+    where
+        F: Fn(&PlottableValue) -> SharedString + Send + Sync + 'static,
+    {
+        self.x_marks.value_label_formatter = Some(Arc::new(formatter));
+        self
+    }
+
+    /// Resolve the Y-axis `AxisPosition::Automatic` to the HIG default
+    /// (`Leading`). Any other value passes through unchanged.
+    pub(crate) fn effective_y_position(&self) -> AxisPosition {
+        match self.y_marks.position {
+            AxisPosition::Automatic | AxisPosition::Top | AxisPosition::Bottom => {
+                AxisPosition::Leading
+            }
+            other => other,
+        }
+    }
+
+    /// Resolve the X-axis `AxisPosition::Automatic` to the HIG default
+    /// (`Bottom`).
+    pub(crate) fn effective_x_position(&self) -> AxisPosition {
+        match self.x_marks.position {
+            AxisPosition::Automatic | AxisPosition::Leading | AxisPosition::Trailing => {
+                AxisPosition::Bottom
+            }
+            other => other,
+        }
+    }
+
     /// Whether any axis rendering is needed.
     pub fn is_active(&self) -> bool {
         self.y_ticks.is_some()
@@ -336,6 +856,14 @@ impl AxisConfig {
 
     /// Compute Y-axis tick values using "nice numbers" algorithm.
     pub(crate) fn compute_y_ticks(&self, min: f32, max: f32) -> Vec<f32> {
+        // Priority: explicit `AxisTickStyle::Manual` > legacy `y_ticks` >
+        // automatic `nice_ticks`. `Hidden` collapses to an empty vec so
+        // the label column is not allocated.
+        match &self.y_marks.tick_style {
+            AxisTickStyle::Manual(values) => return values.clone(),
+            AxisTickStyle::Hidden => return Vec::new(),
+            AxisTickStyle::Automatic => {}
+        }
         if let Some(ref ticks) = self.y_ticks {
             return ticks.clone();
         }
@@ -427,6 +955,8 @@ pub struct GridlineConfig {
     pub vertical: bool,
     /// Override colour. Defaults to `theme.separator_color()`.
     pub color: Option<Hsla>,
+    /// Gridline stroke style. Defaults to [`GridLineStyle::Solid`].
+    pub style: GridLineStyle,
 }
 
 impl GridlineConfig {
@@ -457,8 +987,14 @@ impl GridlineConfig {
         self
     }
 
+    /// Set the gridline stroke style (solid, dashed, or hidden).
+    pub fn style(mut self, style: GridLineStyle) -> Self {
+        self.style = style;
+        self
+    }
+
     /// Whether any gridlines are enabled.
     pub fn is_active(&self) -> bool {
-        self.horizontal || self.vertical
+        (self.horizontal || self.vertical) && !matches!(self.style, GridLineStyle::Hidden)
     }
 }

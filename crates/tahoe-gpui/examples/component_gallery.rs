@@ -471,6 +471,10 @@ pub struct ComponentGallery {
     /// Live `ChartView` for the charts demo — demonstrates the hover
     /// crosshair, keyboard arrow/Home/End navigation, and tooltip flip.
     pub chart_view: Entity<ChartView>,
+    /// Toggle for the Phase 12 animated-data-transition demo. `true`
+    /// means the chart currently shows the alternate ("What-if") series
+    /// set; `false` means the original ("Last week") series.
+    pub chart_tween_alternate: bool,
     /// Open-state booleans for the overlay-style demo pages so the live
     /// `Sheet`, `Modal`, `Dialog`, and `Panel` components can be exercised
     /// inside the gallery rather than approximated with static mockups
@@ -687,6 +691,7 @@ impl ComponentGallery {
                     )
                     .gridlines(GridlineConfig::horizontal())
             }),
+            chart_tween_alternate: false,
         }
     }
 

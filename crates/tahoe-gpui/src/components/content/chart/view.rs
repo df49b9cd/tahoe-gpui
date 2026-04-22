@@ -2,19 +2,53 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
     Context, ElementId, FocusHandle, Hsla, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels,
-    SharedString, Window, canvas, div, px,
+    ScrollDelta, ScrollWheelEvent, SharedString, Task, Window, canvas, div, px,
 };
+
+use std::sync::Arc;
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
+use super::animation::{DATA_TRANSITION_DURATION, interpolate_data_set};
+use super::audio_graph::ChartDescriptor;
 use super::render::series_color;
-use super::types::{AxisConfig, ChartDataSet, ChartType, GridlineConfig};
+use super::scroll::ChartScrollConfig;
+use super::types::{AxisConfig, ChartDataSet, ChartType, GridlineConfig, PlottableValue};
+
+/// Selection push-to-parent hook.
+///
+/// Mirrors Swift Charts' `.chartXSelection(value:)` binding. Installed via
+/// [`ChartView::selection_binding`] and fired whenever the effective
+/// hover/focus slot changes. The callback receives the full [`SelectedPoint`]
+/// for the primary series (or `None` when the pointer and keyboard focus
+/// are both cleared), so host apps can drive external read-outs, filter
+/// sibling views, or trigger navigation.
+pub type SelectionBinding =
+    Rc<dyn Fn(&mut ChartView, Option<SelectedPoint>, &mut Context<ChartView>) + 'static>;
+
+/// Payload delivered to [`SelectionBinding`] callbacks.
+///
+/// Mirrors Swift Charts' `ChartProxy.value(atX:)` result: the primary-series
+/// name, the X value of the hovered slot, and the Y value of that series at
+/// the slot. Multi-series charts only surface the first series so the
+/// `Option<_>` signature stays the same as Swift Charts' upstream; parents
+/// can still look up sibling series by the reported X value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectedPoint {
+    /// The `ChartDataSeries::name` of the series whose point is surfaced.
+    pub series_name: SharedString,
+    /// X value of the selected slot.
+    pub x: PlottableValue,
+    /// Y value of the selected slot on the primary series.
+    pub y: PlottableValue,
+}
 
 /// Interactive chart view with hover tooltips and crosshair.
 ///
@@ -44,6 +78,31 @@ pub struct ChartView {
     /// into the wrapper-local `x` that `compute_hover_index` expects.
     /// Updated from the crosshair canvas paint callback.
     wrapper_origin_x: Rc<Cell<f32>>,
+    /// Optional push-to-parent selection callback. Fires whenever the
+    /// effective hover/focus slot changes; the payload is `None` when both
+    /// pointer and keyboard focus are cleared.
+    selection_binding: Option<SelectionBinding>,
+    /// Optional scroll / zoom configuration. When set with a narrower
+    /// `x_visible_domain` than the data, the inner [`super::Chart`] renders
+    /// only the visible slice and scroll-wheel input advances the visible
+    /// window along the X axis.
+    scroll: Option<ChartScrollConfig>,
+    /// Optional Audio Graphs descriptor. Threaded through to the inner
+    /// [`super::Chart`] at render so VoiceOver's label picks up the
+    /// descriptor's `summary`, and reachable from hosts via
+    /// [`ChartView::play_audio_graph`] for sonification triggers.
+    audio_graph: Option<Arc<ChartDescriptor>>,
+    /// Stash of the previous data set, held for the duration of an
+    /// active [`ChartView::set_data`] tween. `None` outside a
+    /// transition.
+    previous_data_set: Option<ChartDataSet>,
+    /// Wall-clock start of the active transition. Paired with
+    /// [`DATA_TRANSITION_DURATION`] to compute per-frame progress.
+    transition_started_at: Option<Instant>,
+    /// Pending per-frame redraw ticker. Dropping the `Task` cancels it,
+    /// so calling [`ChartView::set_data`] again mid-transition supersedes
+    /// the prior tween without leaking a background loop.
+    transition_task: Option<Task<()>>,
 }
 
 impl ChartView {
@@ -67,6 +126,12 @@ impl ChartView {
             pointer_index: None,
             focus_index: None,
             wrapper_origin_x: Rc::new(Cell::new(0.0)),
+            selection_binding: None,
+            scroll: None,
+            audio_graph: None,
+            previous_data_set: None,
+            transition_started_at: None,
+            transition_task: None,
         }
     }
 
@@ -109,11 +174,257 @@ impl ChartView {
         self
     }
 
+    /// Configure a scroll / zoom window over the X axis.
+    ///
+    /// Mirrors Swift Charts' `.chartXVisibleDomain(length:)` +
+    /// `.chartScrollPosition(initialX:)` pair. The inner [`super::Chart`]
+    /// renders only points whose X falls inside the effective window, and
+    /// scroll-wheel input advances the window by ~10% of its width per
+    /// line-tick (equivalent pixel math for trackpads).
+    ///
+    /// Only numeric `PlottableValue::Number` domains are honoured today.
+    pub fn scroll(mut self, config: ChartScrollConfig) -> Self {
+        self.scroll = Some(config);
+        self
+    }
+
+    /// Attach an [`ChartDescriptor`] for VoiceOver + Audio Graphs.
+    ///
+    /// Mirrors Apple's `.accessibilityChartDescriptor(_:)` modifier. The
+    /// descriptor's summary flows into the inner [`super::Chart`]'s
+    /// VoiceOver label and the sonification surface is reachable via
+    /// [`ChartView::play_audio_graph`].
+    pub fn audio_graph(mut self, descriptor: ChartDescriptor) -> Self {
+        self.audio_graph = Some(Arc::new(descriptor));
+        self
+    }
+
+    /// Trigger sonification of the attached [`ChartDescriptor`].
+    ///
+    /// HIG's *Charting data* page recommends wiring this to VoiceOver's
+    /// `VO + Shift + S` chord; since that chord is owned by the system-
+    /// level VoiceOver, hosts typically expose this through a dedicated
+    /// app-level shortcut or an accessibility button. Returns `false`
+    /// when no descriptor has been attached so hosts can fall back to
+    /// another presentation.
+    pub fn play_audio_graph(&self) -> bool {
+        match self.audio_graph.as_ref() {
+            Some(desc) => {
+                desc.play_sonification();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Replace the underlying data set with a tweened transition.
+    ///
+    /// Mirrors Swift Charts' behaviour of animating between old and new
+    /// data when the source changes — numeric Y values lerp, while Date
+    /// and Category Y values cross-fade at the midpoint. Runs across
+    /// [`DATA_TRANSITION_DURATION`] (HIG medium ramp, ~300 ms).
+    ///
+    /// When the active theme has `REDUCE_MOTION` set, the chart snaps
+    /// to `data` immediately and no frame-tick task is spawned, matching
+    /// HIG: "replace large, dramatic transitions with subtle
+    /// cross-fades."
+    ///
+    /// Calling `set_data` mid-transition cancels the prior tween by
+    /// dropping its task, stashes the current interpolated snapshot as
+    /// the new previous state, and starts a fresh ~300 ms tween toward
+    /// the latest target.
+    pub fn set_data(&mut self, data: impl Into<ChartDataSet>, cx: &mut Context<Self>) {
+        let next = data.into();
+        if cx.theme().accessibility_mode.reduce_motion() {
+            self.data_set = next;
+            self.previous_data_set = None;
+            self.transition_started_at = None;
+            self.transition_task = None;
+            cx.notify();
+            return;
+        }
+
+        // Freeze the currently-rendered snapshot as the new previous
+        // state so a mid-flight re-trigger (set_data → set_data before
+        // the first tween finishes) starts from wherever the chart is
+        // visually, not from the original source.
+        let frozen = self.current_render_data_set();
+        self.previous_data_set = Some(frozen);
+        self.data_set = next;
+        self.transition_started_at = Some(Instant::now());
+        cx.notify();
+
+        // Drive re-renders at ~60 Hz until the tween completes. The
+        // tick loop clears `previous_data_set` on the final frame so
+        // `render` falls back to the plain data path once the chart
+        // has settled.
+        let frame_interval = Duration::from_millis(16);
+        self.transition_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(frame_interval).await;
+                let finished = this
+                    .update(cx, |this, cx| {
+                        let done = this
+                            .transition_started_at
+                            .is_some_and(|start| start.elapsed() >= DATA_TRANSITION_DURATION);
+                        if done {
+                            this.previous_data_set = None;
+                            this.transition_started_at = None;
+                        }
+                        cx.notify();
+                        done
+                    })
+                    .unwrap_or(true);
+                if finished {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Compute the `[0.0, 1.0]` progress of the active transition, or
+    /// `None` when no tween is running.
+    fn transition_progress(&self) -> Option<f32> {
+        let start = self.transition_started_at?;
+        let elapsed = start.elapsed();
+        if elapsed >= DATA_TRANSITION_DURATION {
+            return Some(1.0);
+        }
+        Some(elapsed.as_secs_f32() / DATA_TRANSITION_DURATION.as_secs_f32())
+    }
+
+    /// Resolve the data set currently visible on screen, blending the
+    /// stashed previous data set with `self.data_set` when a tween is
+    /// active. Cheap clone of `self.data_set` when no transition is
+    /// running.
+    fn current_render_data_set(&self) -> ChartDataSet {
+        match (&self.previous_data_set, self.transition_progress()) {
+            (Some(prev), Some(progress)) if progress < 1.0 => {
+                interpolate_data_set(prev, &self.data_set, progress)
+            }
+            _ => self.data_set.clone(),
+        }
+    }
+
+    /// Install a push-to-parent selection callback.
+    ///
+    /// Mirrors Swift Charts' `.chartXSelection(value:)` binding. The
+    /// callback fires whenever the effective hover/focus slot changes —
+    /// mouse move, mouse leave, arrow key, Home/End, or Escape — with
+    /// `None` when both pointer and keyboard focus are cleared. The
+    /// payload carries the primary series' point at the selected slot
+    /// (see [`SelectedPoint`]), so host apps can drive external
+    /// read-outs, filter sibling views, or trigger navigation without
+    /// maintaining their own hover state.
+    pub fn selection_binding<F>(mut self, on_change: F) -> Self
+    where
+        F: Fn(&mut ChartView, Option<SelectedPoint>, &mut Context<ChartView>) + 'static,
+    {
+        self.selection_binding = Some(Rc::new(on_change));
+        self
+    }
+
+    /// Resolve the effective hover slot. Pointer wins over keyboard focus
+    /// when both are live.
+    fn effective_index(&self) -> Option<usize> {
+        self.pointer_index.or(self.focus_index)
+    }
+
+    /// Build a [`SelectedPoint`] for the primary (first) series at `idx`.
+    /// Returns `None` when the data set is empty or the primary series
+    /// doesn't have a point at that slot (ragged multi-series).
+    fn build_selected_point(&self, idx: usize) -> Option<SelectedPoint> {
+        let series = self.data_set.series.first()?;
+        let point = series.inner.points.get(idx)?;
+        Some(SelectedPoint {
+            series_name: series.inner.name.clone(),
+            x: point.x.clone(),
+            y: point.y.clone(),
+        })
+    }
+
+    /// Fire the selection binding if the effective index changed from
+    /// `previous`. Skipped when no binding is installed or the slot is
+    /// unchanged — this keeps pixel-frequency mouse moves that stay
+    /// within a slot from notifying the host every frame.
+    fn fire_selection_if_changed(&mut self, previous: Option<usize>, cx: &mut Context<Self>) {
+        let next = self.effective_index();
+        if next == previous {
+            return;
+        }
+        // Clone the Rc so the closure can call back into `self` safely.
+        if let Some(cb) = self.selection_binding.clone() {
+            let selection = next.and_then(|idx| self.build_selected_point(idx));
+            cb(self, selection, cx);
+        }
+    }
+
+    /// Advance the scroll position by `delta` data units along the X axis.
+    ///
+    /// Used by the scroll-wheel listener. Clamps the new position to
+    /// `[d_lo, d_hi - width]` so the window never slides past the data.
+    /// A negative `delta` scrolls backward.
+    fn advance_scroll_position(&mut self, delta: f64) -> bool {
+        let Some(cfg) = self.scroll.as_ref() else {
+            return false;
+        };
+        // Visible window width — only active when a numeric visible-domain
+        // was supplied. Scrolling without a domain is a no-op.
+        let (win_lo, win_hi) = match cfg.x_visible_domain.as_ref() {
+            Some((lo, hi)) => match (lo.as_number(), hi.as_number()) {
+                (Some(l), Some(h)) => (l, h),
+                _ => return false,
+            },
+            None => return false,
+        };
+        let width = (win_hi - win_lo).max(0.0);
+        if width <= 0.0 {
+            return false;
+        }
+
+        // Resolve the full data extent so we can clamp. No numeric X in
+        // the data → no scroll.
+        let mut d_lo = f64::INFINITY;
+        let mut d_hi = f64::NEG_INFINITY;
+        for series in self.data_set.series.iter() {
+            for p in series.inner.points.iter() {
+                if let Some(xv) = p.x.as_number() {
+                    d_lo = d_lo.min(xv);
+                    d_hi = d_hi.max(xv);
+                }
+            }
+        }
+        if !d_lo.is_finite() || !d_hi.is_finite() {
+            return false;
+        }
+
+        let current = cfg
+            .x_scroll_position
+            .as_ref()
+            .and_then(|v| v.as_number())
+            .unwrap_or(win_lo);
+        let upper = (d_hi - width).max(d_lo);
+        let next = (current + delta).clamp(d_lo, upper);
+        if (next - current).abs() < f64::EPSILON {
+            return false;
+        }
+
+        // Replace the scroll config with the advanced position; leaves
+        // `x_visible_domain` and `y_scrollable` untouched.
+        let new_cfg = ChartScrollConfig {
+            x_visible_domain: cfg.x_visible_domain.clone(),
+            x_scroll_position: Some(PlottableValue::Number(next)),
+            y_scrollable: cfg.y_scrollable,
+        };
+        self.scroll = Some(new_cfg);
+        true
+    }
+
     fn max_points(&self) -> usize {
         self.data_set
             .series
             .iter()
-            .map(|s| s.inner.values.len())
+            .map(|s| s.inner.points.len())
             .max()
             .unwrap_or(0)
     }
@@ -163,7 +474,10 @@ impl Render for ChartView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        let mut chart = super::Chart::new(self.data_set.clone())
+        // Blend `previous_data_set` with `self.data_set` while a Phase 12
+        // tween is running; otherwise this is a ref-count clone.
+        let render_data = self.current_render_data_set();
+        let mut chart = super::Chart::new(render_data.clone())
             .id(self.id.clone())
             .chart_type(self.chart_type)
             .size(self.width, self.height);
@@ -175,6 +489,12 @@ impl Render for ChartView {
         }
         if let Some(gl) = self.gridlines.clone() {
             chart = chart.gridlines(gl);
+        }
+        if let Some(scroll) = self.scroll.clone() {
+            chart = chart.scroll(scroll);
+        }
+        if let Some(desc) = self.audio_graph.clone() {
+            chart = chart.audio_graph_arc(desc);
         }
 
         // Pointer wins when both are live (the user is actively moving the
@@ -237,14 +557,17 @@ impl Render for ChartView {
             // to happen twice (once for the VoiceOver summary and once per
             // child row) on every hover tick — consolidating saves the
             // duplicate allocations.
-            let items: Vec<(String, Hsla)> = self
-                .data_set
+            let items: Vec<(String, Hsla)> = render_data
                 .series
                 .iter()
                 .enumerate()
                 .map(|(si, series)| {
-                    let value = series.inner.values.get(idx).copied();
-                    let color = series_color(&self.data_set, global_color, si, theme);
+                    let value = series
+                        .inner
+                        .points
+                        .get(idx)
+                        .and_then(|p| p.y.as_number_f32());
+                    let color = series_color(&render_data, global_color, si, theme);
                     let label = match value {
                         Some(v) => format!("{}: {v:.1}", series.inner.name),
                         None => format!("{}: —", series.inner.name),
@@ -332,15 +655,19 @@ impl Render for ChartView {
             // per second. Re-rendering only when the slot actually changes
             // drops every intra-slot move to a no-op.
             if this.pointer_index != next {
+                let previous = this.effective_index();
                 this.pointer_index = next;
                 cx.notify();
+                this.fire_selection_if_changed(previous, cx);
             }
         });
 
         let on_hover = cx.listener(|this, hovered: &bool, _window, cx| {
             if !hovered && this.pointer_index.is_some() {
+                let previous = this.effective_index();
                 this.pointer_index = None;
                 cx.notify();
+                this.fire_selection_if_changed(previous, cx);
             }
         });
 
@@ -371,8 +698,10 @@ impl Render for ChartView {
                 _ => return,
             };
             if this.focus_index != next {
+                let previous = this.effective_index();
                 this.focus_index = next;
                 cx.notify();
+                this.fire_selection_if_changed(previous, cx);
             }
             // Consume the keystroke so a parent focus group / workflow pane
             // doesn't also process the arrow/Home/End/Escape.
@@ -398,10 +727,44 @@ impl Render for ChartView {
             wrapper = wrapper.child(tooltip);
         }
 
+        let on_wheel = cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
+            if this.scroll.is_none() {
+                return;
+            }
+            // Visible-window width in data units drives the per-tick step.
+            // Falls out to zero when no numeric visible-domain is set, in
+            // which case `advance_scroll_position` is a no-op.
+            let width = this
+                .scroll
+                .as_ref()
+                .and_then(|c| c.x_visible_domain.as_ref())
+                .and_then(|(lo, hi)| Some(hi.as_number()? - lo.as_number()?))
+                .unwrap_or(0.0);
+            if width <= 0.0 {
+                return;
+            }
+            // Convert the raw wheel delta to data units. The plan calls for
+            // ~10% of the visible-window width per line-tick; pixel deltas
+            // (macOS trackpads) use a proportional factor that matches the
+            // wheel feel at ~40 px / line.
+            let delta = match event.delta {
+                ScrollDelta::Lines(d) => (d.x + d.y) as f64 * 0.1 * width,
+                ScrollDelta::Pixels(d) => (f32::from(d.x) + f32::from(d.y)) as f64 * 0.0025 * width,
+            };
+            if delta.abs() < f64::EPSILON {
+                return;
+            }
+            if this.advance_scroll_position(delta) {
+                cx.notify();
+                cx.stop_propagation();
+            }
+        });
+
         let wrapper = wrapper
             .on_mouse_move(on_move)
             .on_hover(on_hover)
-            .on_key_down(on_key);
+            .on_key_down(on_key)
+            .on_scroll_wheel(on_wheel);
 
         // Focus ring signals keyboard ownership of the chart so the tabstop
         // is visible before any arrow key lands. Stateless Chart children
@@ -538,5 +901,510 @@ mod tests {
         // With n=1 the data-point formula divides by zero; we fall back
         // to slot-center math which places the mark at plot_w/2.
         assert_eq!(crosshair_x_offset(ChartType::Line, 200.0, 0, 1), 100.0);
+    }
+
+    // ─── Selection binding ─────────────────────────────────────────────
+    //
+    // Phase 9 wires a push-to-parent selection callback into ChartView.
+    // The callback fires on any effective-index change (pointer or
+    // keyboard focus). Tests below exercise the helper surface used by
+    // each listener so the firing contract is verified without having
+    // to drive the full event loop.
+
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::TestAppContext;
+
+    use crate::components::content::chart::types::{ChartDataSeries, ChartDataSet, ChartSeries};
+    use crate::foundations::theme::TahoeTheme;
+
+    use super::{ChartView, SelectedPoint};
+
+    fn setup_cx_with_theme(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            if !cx.has_global::<TahoeTheme>() {
+                cx.set_global(TahoeTheme::dark());
+            }
+        });
+    }
+
+    fn multi_series_set() -> ChartDataSet {
+        ChartDataSet::multi(vec![
+            ChartSeries::new(ChartDataSeries::new("A", vec![10.0, 20.0, 30.0])),
+            ChartSeries::new(ChartDataSeries::new("B", vec![15.0, 25.0, 35.0])),
+        ])
+    }
+
+    #[gpui::test]
+    async fn selection_binding_field_defaults_to_none(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            assert!(chart.selection_binding.is_none());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn selection_binding_builder_stores_callback(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, multi_series_set()).selection_binding(|_chart, _selection, _cx| {})
+        });
+        view.update(cx, |chart, _window, _cx| {
+            assert!(chart.selection_binding.is_some());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn fire_selection_reports_first_series_point(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let captured: Rc<RefCell<Option<SelectedPoint>>> = Rc::new(RefCell::new(None));
+        let captured_cb = captured.clone();
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, multi_series_set()).selection_binding(
+                move |_chart, selection, _cx| {
+                    *captured_cb.borrow_mut() = selection;
+                },
+            )
+        });
+
+        view.update(cx, |chart, _window, cx| {
+            chart.focus_index = Some(1);
+            chart.fire_selection_if_changed(None, cx);
+        })
+        .unwrap();
+
+        let captured = captured.borrow();
+        let selection = captured.as_ref().expect("binding should have fired");
+        assert_eq!(selection.series_name.as_ref(), "A");
+        assert_eq!(selection.x.as_number_f32(), Some(1.0));
+        assert_eq!(selection.y.as_number_f32(), Some(20.0));
+    }
+
+    #[gpui::test]
+    async fn fire_selection_skips_when_index_unchanged(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let calls = Rc::new(RefCell::new(0u32));
+        let calls_cb = calls.clone();
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, multi_series_set()).selection_binding(
+                move |_chart, _selection, _cx| {
+                    *calls_cb.borrow_mut() += 1;
+                },
+            )
+        });
+
+        view.update(cx, |chart, _window, cx| {
+            chart.focus_index = Some(2);
+            // previous == next == Some(2) → binding must NOT fire.
+            chart.fire_selection_if_changed(Some(2), cx);
+        })
+        .unwrap();
+
+        assert_eq!(*calls.borrow(), 0);
+    }
+
+    #[gpui::test]
+    async fn fire_selection_emits_none_when_cleared(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let captured: Rc<RefCell<Option<Option<SelectedPoint>>>> = Rc::new(RefCell::new(None));
+        let captured_cb = captured.clone();
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, multi_series_set()).selection_binding(
+                move |_chart, selection, _cx| {
+                    // Wrap in Some(_) so we can distinguish "binding never
+                    // fired" from "binding fired with None".
+                    *captured_cb.borrow_mut() = Some(selection);
+                },
+            )
+        });
+
+        view.update(cx, |chart, _window, cx| {
+            chart.pointer_index = None;
+            chart.focus_index = None;
+            chart.fire_selection_if_changed(Some(1), cx);
+        })
+        .unwrap();
+
+        let captured = captured.borrow();
+        let outer = captured.as_ref().expect("binding should have fired");
+        assert!(outer.is_none(), "binding payload should be None on clear");
+    }
+
+    #[gpui::test]
+    async fn fire_selection_tolerates_empty_series(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let captured: Rc<RefCell<Option<Option<SelectedPoint>>>> = Rc::new(RefCell::new(None));
+        let captured_cb = captured.clone();
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(
+                cx,
+                ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                    "Empty",
+                    vec![],
+                ))]),
+            )
+            .selection_binding(move |_chart, selection, _cx| {
+                *captured_cb.borrow_mut() = Some(selection);
+            })
+        });
+
+        view.update(cx, |chart, _window, cx| {
+            chart.focus_index = Some(0);
+            chart.fire_selection_if_changed(None, cx);
+        })
+        .unwrap();
+
+        let captured = captured.borrow();
+        let outer = captured.as_ref().expect("binding should have fired");
+        // focus_index was Some(0) but the series has no points, so the
+        // payload should be None rather than panicking.
+        assert!(outer.is_none());
+    }
+
+    // ─── Phase 10: scroll / zoom ───────────────────────────────────────
+    //
+    // The wheel listener wraps `advance_scroll_position`, which carries the
+    // clamp-to-data-extent logic. Testing the helper directly covers the
+    // contract without having to synthesise a `ScrollWheelEvent` pipeline.
+
+    use super::ChartScrollConfig;
+
+    fn hundred_point_series() -> ChartDataSet {
+        let values: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        ChartDataSet::from(ChartDataSeries::new("Long", values))
+    }
+
+    #[gpui::test]
+    async fn advance_scroll_position_is_noop_without_scroll(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, hundred_point_series()));
+        view.update(cx, |chart, _window, _cx| {
+            assert!(!chart.advance_scroll_position(5.0));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn advance_scroll_position_is_noop_without_visible_domain(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        // Scroll config with only a position and no visible-domain — width
+        // is zero, so `advance_scroll_position` should short-circuit.
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, hundred_point_series())
+                .scroll(ChartScrollConfig::new().x_scroll_position(0.0))
+        });
+        view.update(cx, |chart, _window, _cx| {
+            assert!(!chart.advance_scroll_position(5.0));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn advance_scroll_position_shifts_forward(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, hundred_point_series())
+                .scroll(ChartScrollConfig::new().x_visible_domain(0.0, 9.0))
+        });
+        view.update(cx, |chart, _window, _cx| {
+            assert!(chart.advance_scroll_position(5.0));
+            let pos = chart
+                .scroll
+                .as_ref()
+                .and_then(|c| c.x_scroll_position.as_ref())
+                .and_then(|v| v.as_number());
+            assert_eq!(pos, Some(5.0));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn advance_scroll_position_clamps_to_upper_bound(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, hundred_point_series())
+                .scroll(ChartScrollConfig::new().x_visible_domain(0.0, 9.0))
+        });
+        view.update(cx, |chart, _window, _cx| {
+            // Request a huge forward jump; must clamp to `d_hi - width`
+            // (99 - 9 = 90) rather than sliding past the data.
+            assert!(chart.advance_scroll_position(200.0));
+            let pos = chart
+                .scroll
+                .as_ref()
+                .and_then(|c| c.x_scroll_position.as_ref())
+                .and_then(|v| v.as_number());
+            assert_eq!(pos, Some(90.0));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn advance_scroll_position_clamps_to_lower_bound(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(cx, hundred_point_series()).scroll(
+                ChartScrollConfig::new()
+                    .x_visible_domain(0.0, 9.0)
+                    .x_scroll_position(20.0),
+            )
+        });
+        view.update(cx, |chart, _window, _cx| {
+            // Backwards past 0 must clamp to the data low (0.0), not go
+            // negative.
+            assert!(chart.advance_scroll_position(-100.0));
+            let pos = chart
+                .scroll
+                .as_ref()
+                .and_then(|c| c.x_scroll_position.as_ref())
+                .and_then(|v| v.as_number());
+            assert_eq!(pos, Some(0.0));
+        })
+        .unwrap();
+    }
+
+    // ─── Phase 11: Audio Graphs accessibility ─────────────────────────
+    //
+    // ChartView threads the descriptor through to the inner Chart on
+    // render and exposes `play_audio_graph` so hosts can wire VoiceOver's
+    // VO+Shift+S to the sonification path. The tests below verify the
+    // builder stores the descriptor, the sonification hook reports its
+    // active/inactive state, and calling it without a descriptor is a
+    // cheap no-op.
+
+    use super::ChartDescriptor;
+    use crate::components::content::chart::audio_graph::AxisDescriptor;
+
+    #[gpui::test]
+    async fn audio_graph_field_defaults_to_none(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            assert!(chart.audio_graph.is_none());
+            assert!(!chart.play_audio_graph());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn audio_graph_builder_stores_descriptor(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            let desc = ChartDescriptor::new(
+                "Temperature",
+                "Weekly average",
+                AxisDescriptor::new("Day", (0.0, 6.0)),
+                AxisDescriptor::new("°C", (18.0, 27.0)),
+            );
+            ChartView::new(cx, multi_series_set()).audio_graph(desc)
+        });
+        view.update(cx, |chart, _window, _cx| {
+            let desc = chart.audio_graph.as_ref().expect("descriptor stored");
+            assert_eq!(desc.title.as_ref(), "Temperature");
+            assert_eq!(desc.summary.as_ref(), "Weekly average");
+            assert!(chart.play_audio_graph());
+        })
+        .unwrap();
+    }
+
+    // ─── Phase 12: Animated data transitions ──────────────────────────
+    //
+    // `set_data` replaces the live data set and stashes the prior one
+    // for a ~300 ms tween. Tests below cover the field-level behaviour:
+    // the stash is populated outside reduce-motion, reduce-motion snaps
+    // instantly, and `current_render_data_set` blends the two sources
+    // while a tween is active.
+
+    use std::time::Instant;
+
+    use super::super::animation::DATA_TRANSITION_DURATION;
+    use crate::foundations::accessibility::AccessibilityMode;
+
+    fn setup_cx_with_reduce_motion(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
+            cx.set_global(theme);
+        });
+    }
+
+    #[gpui::test]
+    async fn animation_fields_default_to_none(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            assert!(chart.previous_data_set.is_none());
+            assert!(chart.transition_started_at.is_none());
+            assert!(chart.transition_task.is_none());
+            assert!(chart.transition_progress().is_none());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn set_data_stashes_previous_and_starts_tween(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, cx| {
+            let next = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("A", vec![100.0, 200.0, 300.0])),
+                ChartSeries::new(ChartDataSeries::new("B", vec![150.0, 250.0, 350.0])),
+            ]);
+            chart.set_data(next, cx);
+            assert!(
+                chart.previous_data_set.is_some(),
+                "prior data should be stashed for tween"
+            );
+            assert!(
+                chart.transition_started_at.is_some(),
+                "transition start timestamp should be set"
+            );
+            assert!(
+                chart.transition_task.is_some(),
+                "a tick task should be spawned"
+            );
+            // `data_set` is already the target — `current_render_data_set`
+            // is the only spot that blends in the stashed previous.
+            assert_eq!(
+                chart.data_set.series[0].inner.points[0].y.as_number_f32(),
+                Some(100.0)
+            );
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn set_data_with_reduce_motion_snaps_instantly(cx: &mut TestAppContext) {
+        setup_cx_with_reduce_motion(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, cx| {
+            let next = ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                "Snap",
+                vec![100.0, 200.0, 300.0],
+            ))]);
+            chart.set_data(next, cx);
+            assert!(
+                chart.previous_data_set.is_none(),
+                "reduce-motion must not stash previous"
+            );
+            assert!(chart.transition_started_at.is_none());
+            assert!(chart.transition_task.is_none());
+            assert_eq!(chart.data_set.series[0].inner.name.as_ref(), "Snap");
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn current_render_data_set_blends_while_tween_active(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            // Construct the tween state by hand so we can freeze progress
+            // at 0.5 without waiting on the wall clock. `current_render_data_set`
+            // is what the render path actually reads.
+            let prev = ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                "S",
+                vec![0.0, 0.0],
+            ))]);
+            let next = ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                "S",
+                vec![100.0, 100.0],
+            ))]);
+            chart.data_set = next;
+            chart.previous_data_set = Some(prev);
+            chart.transition_started_at = Some(Instant::now() - DATA_TRANSITION_DURATION / 2);
+
+            let blended = chart.current_render_data_set();
+            // Midpoint → y lerps to ~50.
+            let y = blended.series[0].inner.points[0].y.as_number_f32().unwrap();
+            assert!(
+                (y - 50.0).abs() < 5.0,
+                "midpoint lerp expected ~50, got {y}"
+            );
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn current_render_data_set_returns_target_after_duration(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            let prev =
+                ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new("S", vec![0.0]))]);
+            let next = ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                "S",
+                vec![99.0],
+            ))]);
+            chart.data_set = next;
+            chart.previous_data_set = Some(prev);
+            // Start in the distant past so progress clamps to >= 1.0.
+            chart.transition_started_at = Some(Instant::now() - DATA_TRANSITION_DURATION * 3);
+
+            let settled = chart.current_render_data_set();
+            assert_eq!(
+                settled.series[0].inner.points[0].y.as_number_f32(),
+                Some(99.0)
+            );
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn transition_progress_clamps_to_one_after_duration(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| ChartView::new(cx, multi_series_set()));
+        view.update(cx, |chart, _window, _cx| {
+            chart.transition_started_at = Some(Instant::now() - DATA_TRANSITION_DURATION * 2);
+            let p = chart.transition_progress().expect("transition active");
+            assert!((p - 1.0).abs() < f32::EPSILON);
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    async fn set_data_mid_flight_re_stashes_interpolated_snapshot(cx: &mut TestAppContext) {
+        setup_cx_with_theme(cx);
+        let view = cx.add_window(|_, cx| {
+            ChartView::new(
+                cx,
+                ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new("S", vec![0.0]))]),
+            )
+        });
+        view.update(cx, |chart, _window, cx| {
+            // First tween: 0 → 100, frozen midway.
+            chart.set_data(
+                ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                    "S",
+                    vec![100.0],
+                ))]),
+                cx,
+            );
+            chart.transition_started_at = Some(Instant::now() - DATA_TRANSITION_DURATION / 2);
+
+            // Second tween at mid-flight: the stashed previous should be
+            // the interpolated snapshot (~50), not the original 0.
+            chart.set_data(
+                ChartDataSet::multi(vec![ChartSeries::new(ChartDataSeries::new(
+                    "S",
+                    vec![200.0],
+                ))]),
+                cx,
+            );
+            let stashed = chart
+                .previous_data_set
+                .as_ref()
+                .expect("second tween should stash previous");
+            let stashed_y = stashed.series[0].inner.points[0].y.as_number_f32().unwrap();
+            assert!(
+                (40.0..=60.0).contains(&stashed_y),
+                "expected ~50 from mid-flight capture, got {stashed_y}"
+            );
+        })
+        .unwrap();
     }
 }

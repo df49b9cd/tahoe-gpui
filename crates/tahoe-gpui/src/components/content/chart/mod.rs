@@ -44,15 +44,32 @@
 //! <https://developer.apple.com/design/human-interface-guidelines/charts>
 
 mod accessibility;
+mod animation;
+mod annotation;
+mod audio_graph;
+mod interpolation;
 mod marks;
+mod rectangle;
 mod render;
+mod scales;
+mod scroll;
+mod sector;
+mod stacking;
 #[cfg(test)]
 mod tests;
 mod types;
 mod view;
 
+pub use annotation::{AnnotationContent, AnnotationPosition, AnnotationTarget, ChartAnnotation};
+pub use audio_graph::{AxisDescriptor, ChartDescriptor, SeriesDescriptor};
+pub use interpolation::InterpolationMethod;
 pub use render::Chart;
+pub use scales::{CategoryScale, DateScale, LinearScale, LogScale, Scale};
+pub use scroll::ChartScrollConfig;
+pub use stacking::MarkStackingMethod;
 pub use types::{
-    AxisConfig, ChartDataSeries, ChartDataSet, ChartSeries, ChartType, GridlineConfig,
+    AxisConfig, AxisMarks, AxisPosition, AxisTickStyle, AxisValueFormatter, BarOrientation,
+    ChartDataSeries, ChartDataSet, ChartPoint, ChartSeries, ChartType, GridLineStyle,
+    GridlineConfig, LegendPosition, PlottableValue,
 };
-pub use view::ChartView;
+pub use view::{ChartView, SelectedPoint, SelectionBinding};

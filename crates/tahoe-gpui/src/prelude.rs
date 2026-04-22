@@ -31,9 +31,13 @@ pub use crate::foundations::theme::{
 // ── Components > Content ───────────────────────────────────────────────────
 
 pub use crate::components::content::{
-    Avatar, AvatarSize, AvatarStatus, AxisConfig, Badge, BadgeVariant, Chart, ChartDataSeries,
-    ChartDataSet, ChartSeries, ChartType, ChartView, ContentMode, GridlineConfig, Label,
-    LabelVariant, TextView,
+    AnnotationContent, AnnotationPosition, AnnotationTarget, Avatar, AvatarSize, AvatarStatus,
+    AxisConfig, AxisDescriptor, AxisMarks, AxisPosition, AxisTickStyle, AxisValueFormatter, Badge,
+    BadgeVariant, BarOrientation, CategoryScale, Chart, ChartAnnotation, ChartDataSeries,
+    ChartDataSet, ChartDescriptor, ChartPoint, ChartScrollConfig, ChartSeries, ChartType,
+    ChartView, ContentMode, DateScale, GridLineStyle, GridlineConfig, InterpolationMethod, Label,
+    LabelVariant, LegendPosition, LinearScale, LogScale, MarkStackingMethod, PlottableValue, Scale,
+    SelectedPoint, SelectionBinding, SeriesDescriptor, TextView,
 };
 
 // ── Components > Layout and organization ───────────────────────────────────
