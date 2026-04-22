@@ -265,6 +265,27 @@ pub fn render(
                     .plain("."),
             )
         }))
+        // ── Formatted content (SwiftUI `Text(_ value, format:)`) ───────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Formatted content"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption1, theme)
+                .text_color(theme.text_muted)
+                .child(
+                    "TextView::formatted delegates to the value's Display impl, \
+                     making the intent (a formatted value, not verbatim copy) \
+                     visible at the call site.",
+                ),
+        )
+        .child(cx.new(|cx| TextView::formatted(cx, 42_u32)))
+        .child(cx.new(|cx| TextView::formatted(cx, 99.5_f64)))
+        .child(cx.new(|cx| TextView::formatted(cx, true)))
         // ── Font design ────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(

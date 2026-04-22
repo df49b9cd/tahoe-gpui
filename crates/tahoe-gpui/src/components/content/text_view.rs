@@ -745,6 +745,27 @@ impl TextView {
         this
     }
 
+    /// Construct a plain-text view from any [`Display`]-implementing
+    /// value. Matches SwiftUI's `Text(_ value, format:)` family by
+    /// delegating the formatting to the caller's [`Display`] impl —
+    /// works with numbers, booleans, custom types that implement
+    /// [`Display`], and any pre-formatted string. Prefer this over
+    /// `TextView::new(cx, format!("{}", value))` so the intent (this
+    /// is a formatted value, not a verbatim string) is visible at the
+    /// call site.
+    ///
+    /// **Date / time / measurement variants** (`Text(_ date:style:)`,
+    /// `Text(_ measurement:)`) are intentionally not yet provided —
+    /// they require a time-handling dependency (`chrono` / `time` /
+    /// `jiff`) that is not in the workspace. Until the repo adopts
+    /// one, format the value externally and feed the `String` / `&str`
+    /// through this method.
+    ///
+    /// [`Display`]: std::fmt::Display
+    pub fn formatted<T: std::fmt::Display>(cx: &mut Context<Self>, value: T) -> Self {
+        Self::new(cx, SharedString::from(value.to_string()))
+    }
+
     pub fn text_style(mut self, style: TextStyle) -> Self {
         self.style = style;
         self
@@ -2590,6 +2611,37 @@ mod gpui_tests {
                 }
                 TextViewContent::Plain(_) => panic!("expected Rich content from empty TextRuns"),
             }
+        });
+    }
+
+    // ── Phase D — formatted initializer ───────────────────────────
+
+    #[gpui::test]
+    async fn text_view_formatted_renders_display_impl(cx: &mut gpui::TestAppContext) {
+        // Any Display-implementing value: integer, float, bool, custom.
+        let (handle, cx) =
+            setup_test_window(cx, |_window, cx| TextView::formatted(cx, 99.5_f64));
+        handle.update(cx, |tv, _| {
+            assert!(matches!(
+                &tv.content,
+                TextViewContent::Plain(s) if s.as_ref() == "99.5"
+            ));
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_formatted_preserves_pre_formatted_string(cx: &mut gpui::TestAppContext) {
+        // Confirms that `formatted` is a drop-in for a caller who
+        // already has a formatted `String` — the output matches what
+        // `TextView::new` would produce, but expresses intent.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::formatted(cx, String::from("42%"))
+        });
+        handle.update(cx, |tv, _| {
+            assert!(matches!(
+                &tv.content,
+                TextViewContent::Plain(s) if s.as_ref() == "42%"
+            ));
         });
     }
 }
