@@ -153,6 +153,7 @@ pub fn render(
 
         Modal::new("gallery-dialog", body)
             .open(true)
+            .accessibility_label("Save changes")
             .on_dismiss(move |window, cx| dismiss(window, cx))
             .into_any_element()
     } else {
