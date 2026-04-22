@@ -1,0 +1,150 @@
+name: mdstitch publish
+
+on:
+  push:
+    tags:
+      - "mdstitch-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip the real cargo publish)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mdstitch-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Parse mdstitch version from Cargo.toml
+        id: parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --format-version 1 --no-deps \
+            --manifest-path crates/mdstitch/Cargo.toml \
+            | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="mdstitch"))')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=mdstitch-v${version}" >> "$GITHUB_OUTPUT"
+          echo "Cargo.toml version: ${version}"
+
+      - name: Assert tag is reachable from main
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=100
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "Tag commit ${{ github.sha }} is not reachable from origin/main; refusing to publish."
+            exit 1
+          fi
+
+      - name: Assert tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          expected="${{ steps.parse.outputs.tag }}"
+          if [[ "$tag" != "$expected" ]]; then
+            echo "Tag '$tag' does not match expected '$expected' derived from Cargo.toml."
+            exit 1
+          fi
+
+      - name: Confirm version is not already on crates.io
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.parse.outputs.version }}"
+          if cargo search mdstitch --limit 20 | grep -E "^mdstitch\s*=\s*\"${version}\"" >/dev/null; then
+            echo "mdstitch ${version} is already published on crates.io."
+            exit 1
+          fi
+          echo "mdstitch ${version} is not yet on crates.io; proceeding."
+
+      - name: cargo fmt --check
+        run: cargo fmt -p mdstitch --check
+
+      - name: cargo clippy
+        run: cargo clippy -p mdstitch --all-targets -- -D warnings
+
+      - name: cargo nextest
+        run: cargo nextest run -p mdstitch --profile ci
+
+      - name: cargo publish --dry-run
+        run: cargo publish -p mdstitch --dry-run
+
+  publish:
+    name: publish
+    needs: verify
+    if: github.event_name == 'push' || github.event.inputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p mdstitch
+
+  release:
+    name: github-release
+    needs: [verify, publish]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          python3 - "$version" <<'PY' > release-notes.md
+          import re, sys
+          version = sys.argv[1]
+          with open("crates/mdstitch/CHANGELOG.md") as fh:
+              text = fh.read()
+          pat = re.compile(
+              rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              re.M | re.S,
+          )
+          match = pat.search(text)
+          print((match.group(1).strip() if match else f"Release mdstitch {version}."))
+          PY
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.verify.outputs.tag }}
+          name: mdstitch ${{ needs.verify.outputs.version }}
+          body_path: release-notes.md

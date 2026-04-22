@@ -1,9 +1,27 @@
-name: CI
+name: tahoe-gpui CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/tahoe-gpui/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "rustfmt.toml"
+      - "clippy.toml"
+      - ".config/nextest.toml"
+      - ".github/workflows/tahoe-gpui-ci.yml"
   pull_request:
+    paths:
+      - "crates/tahoe-gpui/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "rustfmt.toml"
+      - "clippy.toml"
+      - ".config/nextest.toml"
+      - ".github/workflows/tahoe-gpui-ci.yml"
   workflow_dispatch:
 
 concurrency:
@@ -88,3 +106,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  all-green:
+    name: all-green
+    if: always()
+    needs: [fmt, clippy, test, docs, deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every required job succeeded
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All required jobs succeeded or were skipped."
