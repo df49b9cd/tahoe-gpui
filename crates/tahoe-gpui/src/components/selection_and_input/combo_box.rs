@@ -341,16 +341,28 @@ impl RenderOnce for ComboBox {
             let current_value = self.value.clone();
             let mouse_out_toggle = on_toggle.clone();
 
+            // `overflow_y_scroll()` makes items past `DROPDOWN_MAX_HEIGHT`
+            // reachable via wheel / trackpad; the previous
+            // `.overflow_hidden()` just clipped them out of sight with no
+            // recourse. It's called after `.id(...)` because
+            // `overflow_y_scroll` is a `StatefulInteractiveElement`
+            // method — the id upgrade is what makes it available.
+            //
+            // `py(spacing_xs)` gives the first/last rows a small gap
+            // from the glass surface's rounded corners so the row-level
+            // inset-pill hover background doesn't visually run into
+            // the rounded edge.
             let mut list = glass_surface(
                 div()
                     .flex()
                     .flex_col()
-                    .overflow_hidden()
+                    .py(theme.spacing_xs)
                     .max_h(px(DROPDOWN_MAX_HEIGHT)),
                 theme,
                 GlassSize::Medium,
             )
             .id(ElementId::from((self.id.clone(), "dropdown")))
+            .overflow_y_scroll()
             .debug_selector(|| "combo-box-dropdown".into())
             .focusable();
 
@@ -471,12 +483,20 @@ impl RenderOnce for ComboBox {
                     let on_select_r = on_select.clone();
                     let on_toggle_r = on_toggle.clone();
                     let item_value = item.clone();
+                    // HIG inset-pill hover background: the row is
+                    // horizontally inset from the glass surface edge
+                    // (`mx(menu_inset)`) and rounds its own corners so
+                    // the hover highlight never touches the surface's
+                    // rounded edges. Matches the context-menu / picker
+                    // pattern used elsewhere in this crate.
                     let row = div()
                         .id(ElementId::NamedInteger("combo-recent".into(), ridx as u64))
                         .min_h(px(theme.target_size()))
                         .flex()
                         .items_center()
                         .px(theme.spacing_md)
+                        .mx(theme.menu_inset)
+                        .rounded(theme.radius_md)
                         .cursor_pointer()
                         .hover(|style| style.bg(hover_bg))
                         .child(
@@ -512,12 +532,18 @@ impl RenderOnce for ComboBox {
                 let item_label = item.clone();
                 let is_highlighted = highlighted_index == Some(idx);
 
+                // HIG inset-pill hover background (see Recent section for
+                // the rationale) — `mx(menu_inset)` + `rounded(radius_md)`
+                // keep the hover/highlight highlight contained within the
+                // glass surface's rounded edges.
                 let mut row = div()
                     .id(ElementId::NamedInteger("combo-item".into(), idx as u64))
                     .min_h(px(theme.target_size()))
                     .flex()
                     .items_center()
                     .px(theme.spacing_md)
+                    .mx(theme.menu_inset)
+                    .rounded(theme.radius_md)
                     .cursor_pointer()
                     .hover(|style| style.bg(hover_bg));
 
