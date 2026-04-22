@@ -15,7 +15,7 @@ use crate::foundations::layout::HOVER_CARD_MAX_WIDTH;
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, ElementId, Window, div, point, px};
+use gpui::{AnyElement, App, Context, ElementId, Window, div, px};
 
 /// Default hover-in delay (300 ms). Matches HIG guidance that
 /// rich hover surfaces should not appear during pointer traversal.
@@ -215,18 +215,13 @@ impl Render for HoverCard {
             HoverCardPlacement::BelowLeft => OverlayAnchor::BelowLeft,
             HoverCardPlacement::BelowRight => OverlayAnchor::BelowRight,
         };
-        // Gap between trigger and card. Anchored positions the attach
-        // corner at the trigger corner, then adds this offset. Above
-        // placements shift upward, below placements shift downward.
-        let gap_y = if self.placement.is_above() {
-            -spacing_xs
-        } else {
-            spacing_xs
-        };
 
+        // `AnchoredOverlay::gap` signs the gap against the realised anchor,
+        // so if `realise_anchor` flips the preferred side in prepaint the
+        // gap lands on the side the card actually renders on.
         let mut overlay = AnchoredOverlay::new(overlay_id, trigger_div)
             .anchor(anchor)
-            .offset(point(px(0.0), gap_y));
+            .gap(spacing_xs);
 
         if let Some(content) = content_el {
             // Hover cards share popover layering: mid-depth overlay surface,

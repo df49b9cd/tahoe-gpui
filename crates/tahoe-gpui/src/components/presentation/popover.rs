@@ -25,7 +25,7 @@ use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Window,
-    div, point, px,
+    div, px,
 };
 
 /// Arrow width in points. Chosen to match macOS popover callouts
@@ -48,13 +48,6 @@ pub enum PopoverPlacement {
     AboveLeft,
     /// Above the trigger, aligned to the right edge.
     AboveRight,
-}
-
-impl PopoverPlacement {
-    /// Whether this placement renders the popover above the trigger.
-    fn is_above(self) -> bool {
-        matches!(self, Self::AboveLeft | Self::AboveRight)
-    }
 }
 
 /// A popover that shows floating content relative to a trigger.
@@ -157,15 +150,11 @@ impl RenderOnce for Popover {
             PopoverPlacement::AboveRight => OverlayAnchor::AboveRight,
         });
 
-        // Gap between trigger edge and popover body. For below-placements
-        // the anchored positioner offsets the content downward; for
-        // above-placements upward. We key the direction off the preferred
-        // placement; if `AnchoredOverlay` later flips the realised anchor
-        // in prepaint, the offset still points in the right general
-        // direction because the `anchored()` corner flips with it.
-        let gap: gpui::Pixels = theme.spacing_xs;
-        let gap_y = if self.placement.is_above() { -gap } else { gap };
-        overlay = overlay.offset(point(px(0.0), gap_y));
+        // Gap between trigger edge and popover body. `AnchoredOverlay::gap`
+        // resolves the sign against the *realised* anchor inside prepaint,
+        // so flipping Below↔Above via `realise_anchor` keeps the gap on the
+        // side the overlay actually lands on.
+        overlay = overlay.gap(theme.spacing_xs);
 
         if self.is_open {
             // Popovers are mid-layer overlay surfaces: one depth level above
@@ -395,14 +384,6 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn popover_is_above_classifies_placements() {
-        assert!(PopoverPlacement::AboveLeft.is_above());
-        assert!(PopoverPlacement::AboveRight.is_above());
-        assert!(!PopoverPlacement::BelowLeft.is_above());
-        assert!(!PopoverPlacement::BelowRight.is_above());
-    }
 }
 
 #[cfg(test)]
@@ -536,11 +517,19 @@ mod interaction_tests {
         assert_element_absent(cx, POPOVER_CONTENT);
     }
 
-    /// Regression harness: nest the popover inside a small
-    /// `overflow_hidden()` container and verify the floating content is
-    /// painted at window-absolute coordinates that fall OUTSIDE the
-    /// clipping container's bounds. This is the primary invariant
-    /// `AnchoredOverlay` was introduced to provide.
+    /// Harness: nest the popover inside a small `overflow_hidden()`
+    /// container so we can read both regions' bounds. The assertion lives
+    /// on the *layout* rectangle of the popover content, which is
+    /// `AnchoredOverlay`'s structural proxy for having successfully routed
+    /// the overlay through `deferred(anchored(...))`.
+    ///
+    /// Harness limitation: `VisualTestContext::debug_bounds` returns taffy
+    /// layout bounds, not post-clip paint bounds. A true paint-clip
+    /// verification (pixel diff after clipping is applied) requires a
+    /// visual-regression harness that this crate doesn't ship; the
+    /// structural assertion below fails if someone removes `anchored()`
+    /// from `AnchoredOverlay`, which is the only way the overlay would
+    /// fall back into the parent's clip chain.
     struct ClippedPopoverHarness {
         is_open: bool,
     }
@@ -576,25 +565,27 @@ mod interaction_tests {
     }
 
     #[gpui::test]
-    async fn overlay_content_escapes_parent_overflow_hidden_clip(cx: &mut TestAppContext) {
+    async fn overlay_content_anchors_outside_parent_layout_bounds(cx: &mut TestAppContext) {
         let (_host, cx) =
             setup_test_window(cx, |_window, _cx| ClippedPopoverHarness { is_open: true });
 
         let clip = cx.get_element("clip-region");
         let content = cx.get_element(POPOVER_CONTENT);
 
-        // Content is wider than the 80pt clip region — if it weren't
-        // escaping via `deferred(anchored(...))`, its painted right edge
-        // would be clamped to the clip's right edge. We assert it
-        // extends past.
+        // `debug_bounds` returns taffy layout bounds, not post-clip paint
+        // bounds — so this assertion verifies that `anchored()` placed the
+        // overlay's layout rectangle outside the clip region, not that
+        // GPUI's clip pipeline allowed it through. If `anchored()` were
+        // removed from `AnchoredOverlay`, the content would lay out inline
+        // inside the clip region and this assertion would fail.
         assert!(
             content.bounds.right() > clip.bounds.right(),
             "content.right() {:?} should exceed clip.right() {:?}",
             content.bounds.right(),
             clip.bounds.right(),
         );
-        // Content starts below the trigger (clip is trigger-sized); its
-        // top should be at or past the clip's bottom edge.
+        // Content lands below the trigger (which fills the clip); its top
+        // should meet or clear the clip's bottom edge.
         assert!(
             content.bounds.top() >= clip.bounds.bottom(),
             "content.top() {:?} should be at or below clip.bottom() {:?}",

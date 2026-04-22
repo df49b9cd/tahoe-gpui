@@ -32,7 +32,7 @@
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Corner, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, Size, Style, Window, anchored,
-    deferred, div, prelude::*,
+    deferred, div, point, prelude::*,
 };
 
 use crate::foundations::layout::DROPDOWN_SNAP_MARGIN;
@@ -114,6 +114,7 @@ pub struct AnchoredOverlay {
     content_fn: Option<ContentFn>,
     anchor: OverlayAnchor,
     offset: Point<Pixels>,
+    gap: Option<Pixels>,
     snap_margin: Pixels,
     priority: usize,
     occlude: bool,
@@ -133,6 +134,7 @@ impl AnchoredOverlay {
             content_fn: None,
             anchor: OverlayAnchor::default(),
             offset: Point::default(),
+            gap: None,
             snap_margin: DROPDOWN_SNAP_MARGIN,
             priority: 1,
             occlude: true,
@@ -181,13 +183,27 @@ impl AnchoredOverlay {
         self
     }
 
-    /// Pixel offset applied to the anchor point before positioning. Useful
-    /// for the 4pt gap between a trigger and its menu, or for visually
-    /// nudging a context-menu away from the cursor. Defaults to
-    /// `Point::default()` (zero offset — the overlay sits flush against the
-    /// attach corner).
+    /// Pixel offset applied to the anchor point before positioning. Free-form
+    /// — the sign is honoured as given, independent of the realised placement.
+    /// Use this for a fixed nudge (e.g. inset from a context-menu cursor
+    /// position). For the canonical "gap between trigger and overlay" use
+    /// [`Self::gap`] instead so the sign tracks the realised side after
+    /// [`realise_anchor`] may have flipped it. Defaults to `Point::default()`.
     pub fn offset(mut self, offset: Point<Pixels>) -> Self {
         self.offset = offset;
+        self
+    }
+
+    /// Vertical gap (in pixels) between the trigger edge and the overlay.
+    /// The sign is resolved in `prepaint` against the *realised* anchor:
+    /// `Below*` placements shift the overlay downward by `magnitude`;
+    /// `Above*` placements shift it upward. Flipping Below↔Above via
+    /// [`realise_anchor`] therefore preserves the gap on whichever side the
+    /// overlay actually lands on — callers don't need to re-sign the offset
+    /// themselves. Ignored for [`OverlayAnchor::WindowPoint`]. Composes
+    /// additively with [`Self::offset`] when both are set.
+    pub fn gap(mut self, magnitude: Pixels) -> Self {
+        self.gap = Some(magnitude);
         self
     }
 
@@ -238,6 +254,31 @@ impl AnchoredOverlay {
     #[cfg(test)]
     fn occlude_value(&self) -> bool {
         self.occlude
+    }
+
+    /// Test-only accessor for the configured gap magnitude.
+    #[cfg(test)]
+    fn gap_value(&self) -> Option<Pixels> {
+        self.gap
+    }
+
+    /// Test-only shim that replicates the anchor-resolution + content-fn
+    /// invocation path inside `prepaint`, without running the full GPUI
+    /// element lifecycle. Returns the realised anchor so tests can assert
+    /// both `realise_anchor`'s decision and the `content_fn` contract
+    /// (the closure is invoked with the realised anchor, not the preferred
+    /// one). Consumes `self.content_fn` on invocation, same as prepaint.
+    #[cfg(test)]
+    fn simulate_resolve(
+        &mut self,
+        trigger_bounds: Option<Bounds<Pixels>>,
+        window_size: Size<Pixels>,
+    ) -> OverlayAnchor {
+        let realised = realise_anchor(self.anchor, trigger_bounds, window_size);
+        if let Some(builder) = self.content_fn.take() {
+            let _ = builder(realised);
+        }
+        realised
     }
 }
 
@@ -330,10 +371,11 @@ impl Element for AnchoredOverlay {
             .or_else(|| request_layout.content_fn.take().map(|f| f(realised)));
 
         if let Some(raw_content) = raw_content {
+            let effective_offset = apply_gap_to_offset(self.offset, self.gap, realised);
             let mut anchored_content = build_overlay_subtree(
                 raw_content,
                 realised,
-                self.offset,
+                effective_offset,
                 self.snap_margin,
                 self.priority,
                 self.occlude,
@@ -427,6 +469,32 @@ fn realise_anchor(
     }
 }
 
+/// Resolve the effective offset for an overlay, folding in the flip-aware
+/// gap set via [`AnchoredOverlay::gap`] against the realised anchor.
+///
+/// The y-axis points downward in GPUI coordinates, so Below* placements
+/// shift the overlay *down* (positive) to clear the trigger, and Above*
+/// placements shift *up* (negative). Using the realised anchor here —
+/// rather than the preferred one the caller set — means the gap lands on
+/// the correct side even after [`realise_anchor`] flips Below↔Above.
+/// [`OverlayAnchor::WindowPoint`] has no trigger to clear, so the gap is
+/// ignored for it.
+fn apply_gap_to_offset(
+    base: Point<Pixels>,
+    gap: Option<Pixels>,
+    realised: OverlayAnchor,
+) -> Point<Pixels> {
+    let Some(magnitude) = gap else {
+        return base;
+    };
+    let signed = match realised {
+        OverlayAnchor::BelowLeft | OverlayAnchor::BelowRight => magnitude,
+        OverlayAnchor::AboveLeft | OverlayAnchor::AboveRight => -magnitude,
+        OverlayAnchor::WindowPoint(_) => return base,
+    };
+    point(base.x, base.y + signed)
+}
+
 /// Wraps `content` in `deferred(anchored().child(occluded_content))`
 /// ready for layout/prepaint/paint. Positioning falls back to the
 /// anchored element's laid-out origin until `trigger_bounds` is populated
@@ -462,8 +530,8 @@ fn build_overlay_subtree(
 #[cfg(test)]
 mod tests {
     use super::{
-        AnchoredOverlay, OverlayAnchor, build_overlay_subtree, child_id, realise_anchor,
-        resolve_anchor_point,
+        AnchoredOverlay, OverlayAnchor, apply_gap_to_offset, build_overlay_subtree, child_id,
+        realise_anchor, resolve_anchor_point,
     };
     use core::prelude::v1::test;
     use gpui::{AnyElement, Bounds, Corner, ElementId, IntoElement, Pixels, div, point, px, size};
@@ -801,5 +869,139 @@ mod tests {
             realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
             OverlayAnchor::BelowLeft,
         );
+    }
+
+    #[test]
+    fn apply_gap_signs_positive_for_below_negative_for_above() {
+        let base = point(px(0.0), px(0.0));
+        let gap = px(4.0);
+
+        let below_left = apply_gap_to_offset(base, Some(gap), OverlayAnchor::BelowLeft);
+        assert_eq!(below_left, point(px(0.0), px(4.0)));
+
+        let below_right = apply_gap_to_offset(base, Some(gap), OverlayAnchor::BelowRight);
+        assert_eq!(below_right, point(px(0.0), px(4.0)));
+
+        let above_left = apply_gap_to_offset(base, Some(gap), OverlayAnchor::AboveLeft);
+        assert_eq!(above_left, point(px(0.0), px(-4.0)));
+
+        let above_right = apply_gap_to_offset(base, Some(gap), OverlayAnchor::AboveRight);
+        assert_eq!(above_right, point(px(0.0), px(-4.0)));
+    }
+
+    #[test]
+    fn apply_gap_flips_sign_when_realised_anchor_flips() {
+        // The bug the gap API exists to prevent: caller's preferred
+        // placement decides a sign, the primitive flips Below↔Above, and
+        // the old offset-based approach kept the pre-flip sign — producing
+        // an overlap with the trigger instead of a gap. `.gap()` resolves
+        // against the realised anchor, so flipping preserves the gap on
+        // the correct side.
+        let base = point(px(0.0), px(0.0));
+        let gap = px(4.0);
+
+        // Preferred Below, realised Above (flipped because trigger is near
+        // the bottom of the viewport): the old code kept +4 (wrong side);
+        // the gap API emits -4, pushing the overlay up and away from the
+        // trigger.
+        let flipped_to_above = apply_gap_to_offset(base, Some(gap), OverlayAnchor::AboveLeft);
+        assert_eq!(flipped_to_above, point(px(0.0), px(-4.0)));
+
+        // Preferred Above, realised Below (flipped because trigger is near
+        // the top): old code kept -4 (wrong side); gap API emits +4.
+        let flipped_to_below = apply_gap_to_offset(base, Some(gap), OverlayAnchor::BelowLeft);
+        assert_eq!(flipped_to_below, point(px(0.0), px(4.0)));
+    }
+
+    #[test]
+    fn apply_gap_returns_base_when_no_gap_set() {
+        let base = point(px(3.0), px(7.0));
+        let out = apply_gap_to_offset(base, None, OverlayAnchor::BelowLeft);
+        assert_eq!(out, base);
+    }
+
+    #[test]
+    fn apply_gap_is_additive_with_base_offset() {
+        let base = point(px(1.0), px(2.0));
+        let gap = px(4.0);
+
+        let below = apply_gap_to_offset(base, Some(gap), OverlayAnchor::BelowRight);
+        assert_eq!(below, point(px(1.0), px(6.0)));
+
+        let above = apply_gap_to_offset(base, Some(gap), OverlayAnchor::AboveRight);
+        assert_eq!(above, point(px(1.0), px(-2.0)));
+    }
+
+    #[test]
+    fn apply_gap_is_ignored_for_window_point_anchor() {
+        let base = point(px(10.0), px(20.0));
+        let out = apply_gap_to_offset(
+            base,
+            Some(px(4.0)),
+            OverlayAnchor::WindowPoint(point(px(0.0), px(0.0))),
+        );
+        assert_eq!(out, base);
+    }
+
+    #[test]
+    fn gap_builder_stores_magnitude() {
+        let overlay = AnchoredOverlay::new(ElementId::Name("o".into()), div()).gap(px(6.0));
+        assert_eq!(overlay.gap_value(), Some(px(6.0)));
+    }
+
+    #[test]
+    fn content_fn_receives_realised_anchor_after_flip() {
+        // Simulate the prepaint path: preferred BelowLeft with the trigger
+        // pinned near the bottom edge must flip to AboveLeft, and the
+        // content_fn closure must observe the post-flip anchor so consumers
+        // (e.g. popover arrow glyphs) can track the realised side.
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let received: Rc<Cell<Option<OverlayAnchor>>> = Rc::new(Cell::new(None));
+        let received_clone = received.clone();
+
+        let mut overlay = AnchoredOverlay::new(ElementId::Name("flip-probe".into()), div())
+            .anchor(OverlayAnchor::BelowLeft)
+            .content_fn(true, move |realised| {
+                received_clone.set(Some(realised));
+                div().into_any_element()
+            });
+
+        let window = size(px(1000.0), px(1000.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(100.0), px(900.0)),
+            size: size(px(80.0), px(32.0)),
+        };
+        let realised = overlay.simulate_resolve(Some(trigger), window);
+
+        assert_eq!(realised, OverlayAnchor::AboveLeft);
+        assert_eq!(received.get(), Some(OverlayAnchor::AboveLeft));
+    }
+
+    #[test]
+    fn content_fn_receives_preferred_anchor_when_no_flip() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let received: Rc<Cell<Option<OverlayAnchor>>> = Rc::new(Cell::new(None));
+        let received_clone = received.clone();
+
+        let mut overlay = AnchoredOverlay::new(ElementId::Name("no-flip".into()), div())
+            .anchor(OverlayAnchor::BelowLeft)
+            .content_fn(true, move |realised| {
+                received_clone.set(Some(realised));
+                div().into_any_element()
+            });
+
+        // Trigger mid-viewport: both sides have comparable room, no flip.
+        let window = size(px(1000.0), px(1000.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(100.0), px(450.0)),
+            size: size(px(80.0), px(32.0)),
+        };
+        overlay.simulate_resolve(Some(trigger), window);
+
+        assert_eq!(received.get(), Some(OverlayAnchor::BelowLeft));
     }
 }
