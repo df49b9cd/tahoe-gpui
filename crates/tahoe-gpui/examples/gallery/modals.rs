@@ -116,6 +116,7 @@ pub fn render(
 
         Modal::new("gallery-modal", body)
             .open(true)
+            .accessibility_label("Modal demo")
             .on_dismiss(move |window, cx| dismiss(window, cx))
             .into_any_element()
     } else {

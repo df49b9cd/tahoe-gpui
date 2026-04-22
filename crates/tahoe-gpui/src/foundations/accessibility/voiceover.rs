@@ -144,6 +144,26 @@ pub enum AccessibilityRole {
     Toolbar,
     /// Image / decorative media.
     Image,
+    /// Individual data point within a chart or graph. Maps to
+    /// NSAccessibility `AXDataPoint`. No direct WAI-ARIA equivalent;
+    /// the closest analogue is the WAI-ARIA Graphics Module
+    /// `graphics-symbol`. Callers should populate the label with the
+    /// content only (e.g. `"bar: 10.00"` or `"Sales: 10.00"`) and let
+    /// [`posinset`](AccessibilityProps::posinset) /
+    /// [`setsize`](AccessibilityProps::setsize) carry position so
+    /// VoiceOver announces "1 of 5" structurally rather than having the
+    /// caller fold it into the label (which makes VoiceOver read it
+    /// twice).
+    DataPoint,
+    /// Contextual tooltip that appears on hover or focus (WAI-ARIA
+    /// `role="tooltip"` / NSAccessibility `AXHelpTag`). Distinct from
+    /// [`Alert`](AccessibilityRole::Alert) and
+    /// [`AlertDialog`](AccessibilityRole::AlertDialog): a tooltip is a
+    /// transient descriptor of its associated element, not a standalone
+    /// announcement — VoiceOver should read it in relation to the thing
+    /// the user is hovering/focusing rather than interrupting with an
+    /// alert announcement on every update.
+    Tooltip,
     /// Heading at the given depth. Carries the level so VoiceOver's
     /// "next heading" and "headings at level N" gestures can land on the
     /// right rung of the document outline when GPUI exposes an AX tree.
