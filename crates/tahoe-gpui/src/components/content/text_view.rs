@@ -59,6 +59,7 @@ use crate::foundations::theme::{
     ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle,
     TextStyledExt, TruncationMode,
 };
+use crate::markdown::StreamingMarkdown;
 use crate::text_actions::{
     Copy, Down, End, Home, PageDown, PageUp, SelectAll, ShowContextMenu, Up,
 };
@@ -407,18 +408,28 @@ fn debug_assert_highlight_ranges(text: &str, highlights: &[(Range<usize>, Highli
 /// copies the spans into the [`StyledText`] it hands to GPUI, but the
 /// builder path and any logical clone of the view avoid a deep copy of
 /// the span vector.
+#[derive(Clone)]
 enum TextViewContent {
     Plain(SharedString),
     Rich {
         text: SharedString,
         highlights: Arc<[(Range<usize>, HighlightStyle)]>,
     },
+    /// Block-level markdown content rendered by an embedded
+    /// [`StreamingMarkdown`] entity. Created through
+    /// [`TextView::markdown`]. `source` carries the raw markdown string
+    /// for the a11y label / VoiceOver fallback; `inner` owns the parser,
+    /// selection coordinator, and full block render pipeline.
+    Markdown {
+        source: SharedString,
+        inner: Entity<StreamingMarkdown>,
+    },
 }
 
 impl TextViewContent {
     fn text(&self) -> &SharedString {
         match self {
-            Self::Plain(t) | Self::Rich { text: t, .. } => t,
+            Self::Plain(t) | Self::Rich { text: t, .. } | Self::Markdown { source: t, .. } => t,
         }
     }
 
@@ -428,13 +439,19 @@ impl TextViewContent {
             Self::Rich { text, highlights } => {
                 StyledText::new(text.clone()).with_highlights(highlights.to_vec())
             }
+            // Markdown content renders through the embedded
+            // `StreamingMarkdown` entity — the render path short-circuits
+            // before ever calling `.styled()`. This branch returns the
+            // raw source as an unstyled fallback to keep the method total.
+            Self::Markdown { source, .. } => StyledText::new(source.clone()),
         }
     }
 
     /// Returns a clone of `self` with the case transform applied to the
-    /// underlying text. Rich content is returned unchanged — a case
-    /// transform can alter UTF-8 byte length and would invalidate the
-    /// stored `HighlightStyle` byte ranges.
+    /// underlying text. Rich / Markdown content is returned unchanged — a
+    /// case transform can alter UTF-8 byte length and would invalidate the
+    /// stored `HighlightStyle` byte ranges (Rich) or require a re-parse
+    /// of the markdown AST (Markdown).
     fn with_case(&self, case: TextCase) -> Self {
         match self {
             Self::Plain(t) => Self::Plain(SharedString::from(case.apply(t))),
@@ -442,18 +459,27 @@ impl TextViewContent {
                 text: text.clone(),
                 highlights: highlights.clone(),
             },
+            Self::Markdown { source, inner } => Self::Markdown {
+                source: source.clone(),
+                inner: inner.clone(),
+            },
         }
     }
 
     /// Returns a plain-text clone with the middle-truncation helper
-    /// applied. Rich content is returned unchanged — replacing the string
-    /// would invalidate the stored `HighlightStyle` byte ranges.
+    /// applied. Rich / Markdown content is returned unchanged — replacing
+    /// the string would invalidate the stored `HighlightStyle` byte
+    /// ranges (Rich) or drop markdown block structure (Markdown).
     fn truncate_middle_content(&self, max_chars: usize) -> Self {
         match self {
             Self::Plain(t) => Self::Plain(SharedString::from(truncate_middle(t, max_chars))),
             Self::Rich { text, highlights } => Self::Rich {
                 text: text.clone(),
                 highlights: highlights.clone(),
+            },
+            Self::Markdown { source, inner } => Self::Markdown {
+                source: source.clone(),
+                inner: inner.clone(),
             },
         }
     }
@@ -752,6 +778,44 @@ impl TextView {
             text,
             highlights: Arc::from(highlights),
         };
+        this
+    }
+
+    /// Construct a block-level markdown view. Matches SwiftUI's
+    /// `Text(_ LocalizedStringKey)` / `Text(_ AttributedString)` markdown
+    /// support by one-shot parsing the input through the same
+    /// [`StreamingMarkdown`] pipeline used for AI-streamed markdown —
+    /// full block fidelity for headings, lists, code blocks (with
+    /// tree-sitter syntax highlighting), tables, math, and mermaid.
+    ///
+    /// The markdown renderer controls its own typography per block, so
+    /// view-level text modifiers (`text_style`, `bold`, `italic`,
+    /// `underline`, `strikethrough`, `text_case`, `truncation_mode`,
+    /// `font_design`, `color`, `label_level`, `emphasize`,
+    /// `monospaced_digit`, `ligatures`, `max_lines`, `leading_style`,
+    /// `text_align`, `readable_width`) have no effect on markdown
+    /// content. Selection, focus, and `Cmd+A` / `Cmd+C` are handled by
+    /// the embedded [`StreamingMarkdown`] entity, so
+    /// [`Self::selectable`]`(false)` is also not honoured here. The
+    /// outer wrappers that still apply are [`Self::scrollable`],
+    /// [`Self::accessibility_label`], [`Self::accessibility_heading`],
+    /// and [`Self::accessibility_text_content_type`].
+    ///
+    /// For **streaming** markdown — progressive delta push, animated
+    /// typing caret, citation popovers — reach for
+    /// [`StreamingMarkdown`] directly. `TextView::markdown` is the
+    /// static, one-shot path; it pushes the entire string as a single
+    /// delta and finishes the parser immediately.
+    pub fn markdown(cx: &mut Context<Self>, text: impl Into<SharedString>) -> Self {
+        let source = text.into();
+        let inner = cx.new(|cx| {
+            let mut md = StreamingMarkdown::new(cx);
+            md.push_delta(source.as_ref(), cx);
+            md.finish(cx);
+            md
+        });
+        let mut this = Self::new(cx, source.clone());
+        this.content = TextViewContent::Markdown { source, inner };
         this
     }
 
@@ -1280,13 +1344,7 @@ impl TextView {
     fn effective_text_for_test(&self) -> SharedString {
         let content = match self.text_case {
             Some(case) => self.content.with_case(case),
-            None => match &self.content {
-                TextViewContent::Plain(t) => TextViewContent::Plain(t.clone()),
-                TextViewContent::Rich { text, highlights } => TextViewContent::Rich {
-                    text: text.clone(),
-                    highlights: highlights.clone(),
-                },
-            },
+            None => self.content.clone(),
         };
         let content = match self.truncation_mode {
             Some(TruncationMode::Middle) => content.truncate_middle_content(
@@ -1459,19 +1517,13 @@ impl Render for TextView {
         }
 
         // Resolve the rendered content: apply the case transform for
-        // plain content, leave rich content untouched (see docs on
-        // `TextView::text_case`). `effective_content` flows to both the
+        // plain content, leave rich / markdown content untouched (see docs
+        // on `TextView::text_case`). `effective_content` flows to both the
         // a11y label and the styled child, so every downstream consumer
         // sees the same string.
         let mut effective_content = match self.text_case {
             Some(case) => self.content.with_case(case),
-            None => match &self.content {
-                TextViewContent::Plain(t) => TextViewContent::Plain(t.clone()),
-                TextViewContent::Rich { text, highlights } => TextViewContent::Rich {
-                    text: text.clone(),
-                    highlights: highlights.clone(),
-                },
-            },
+            None => self.content.clone(),
         };
 
         // Phase B — truncation. Head / Tail use GPUI's native
@@ -1514,29 +1566,41 @@ impl Render for TextView {
             a11y = a11y.content_type(kind);
         }
 
-        let text_body = if self.selectable {
-            // macOS NSTextView selection tint: accent color at ~28% alpha.
-            // HIG: selection highlights use the system accent hue.
-            let selection_bg = {
-                let mut bg = theme.accent;
-                bg.a = 0.28;
-                bg
-            };
-            typography
-                .child(SelectableText::new(
-                    self.element_id.clone(),
-                    effective_content.text().clone(),
-                    effective_content.styled(),
-                    selection_bg,
-                    self.selection.clone(),
-                ))
-                .with_accessibility(&a11y)
-        } else {
-            // Non-selectable view: render the plain-text child directly
-            // so there are no mouse handlers / hitboxes.
-            typography
-                .child(effective_content.styled())
-                .with_accessibility(&a11y)
+        let text_body = match &effective_content {
+            TextViewContent::Markdown { inner, .. } => {
+                // Markdown branch: delegate the render + selection +
+                // keyboard to the embedded `StreamingMarkdown` entity,
+                // which carries its own MarkdownSelection, focus handle,
+                // and block-typography pipeline. The outer `typography`
+                // builder is intentionally dropped — markdown owns its
+                // own type ramp per block.
+                div().child(inner.clone()).with_accessibility(&a11y)
+            }
+            _ if self.selectable => {
+                // macOS NSTextView selection tint: accent color at ~28% alpha.
+                // HIG: selection highlights use the system accent hue.
+                let selection_bg = {
+                    let mut bg = theme.accent;
+                    bg.a = 0.28;
+                    bg
+                };
+                typography
+                    .child(SelectableText::new(
+                        self.element_id.clone(),
+                        effective_content.text().clone(),
+                        effective_content.styled(),
+                        selection_bg,
+                        self.selection.clone(),
+                    ))
+                    .with_accessibility(&a11y)
+            }
+            _ => {
+                // Non-selectable view: render the plain-text child directly
+                // so there are no mouse handlers / hitboxes.
+                typography
+                    .child(effective_content.styled())
+                    .with_accessibility(&a11y)
+            }
         };
 
         // Scroll wrapper (optional). `scroll_id` and `max_lines` are
@@ -2215,7 +2279,7 @@ mod gpui_tests {
                 assert_eq!(highlights.len(), 1);
                 assert_eq!(highlights[0].0, 0..4);
             }
-            TextViewContent::Plain(_) => panic!("expected Rich content"),
+            _ => panic!("expected Rich content"),
         });
     }
 
@@ -2245,7 +2309,7 @@ mod gpui_tests {
                 assert_eq!(highlights.len(), 1);
                 assert_eq!(highlights[0].0, 0..4);
             }
-            TextViewContent::Plain(_) => panic!("expected Rich content"),
+            _ => panic!("expected Rich content"),
         });
     }
 
@@ -2638,7 +2702,7 @@ mod gpui_tests {
                 assert_eq!(highlights.len(), 1);
                 assert_eq!(highlights[0].0, 6..11);
             }
-            TextViewContent::Plain(_) => panic!("expected Rich content from TextRuns"),
+            _ => panic!("expected Rich content from TextRuns"),
         });
     }
 
@@ -2656,7 +2720,7 @@ mod gpui_tests {
                     assert_eq!(text.as_ref(), "");
                     assert!(highlights.is_empty());
                 }
-                TextViewContent::Plain(_) => panic!("expected Rich content from empty TextRuns"),
+                _ => panic!("expected Rich content from empty TextRuns"),
             }
         });
     }
@@ -2727,6 +2791,46 @@ mod gpui_tests {
                 tv.accessibility_text_content_type,
                 Some(TextContentType::FileSystemPath),
             );
+        });
+    }
+
+    // ── Phase F — markdown incorporation ──────────────────────────
+
+    #[gpui::test]
+    async fn text_view_markdown_stores_markdown_content(cx: &mut gpui::TestAppContext) {
+        let source = "# Title\n\nBody paragraph with **bold**.";
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::markdown(cx, source));
+        handle.update(cx, |tv, _| match &tv.content {
+            TextViewContent::Markdown { source: s, .. } => {
+                assert_eq!(s.as_ref(), source);
+            }
+            _ => panic!("expected Markdown content from TextView::markdown"),
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_markdown_preserves_source_for_a11y(cx: &mut gpui::TestAppContext) {
+        // The a11y label fallback pulls from `content.text()` — for
+        // Markdown content this must return the raw source so VoiceOver
+        // hears something meaningful until GPUI lands an AX tree that
+        // can walk per-block.
+        let source = "A paragraph with `code` and [a link](https://example.com).";
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::markdown(cx, source));
+        handle.update(cx, |tv, _| {
+            assert_eq!(tv.content.text().as_ref(), source);
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_markdown_accepts_block_structure(cx: &mut gpui::TestAppContext) {
+        // Smoke test that multi-block input parses through the inner
+        // StreamingMarkdown entity without panic — specific block counts
+        // are the parser's concern and are covered by markdown-crate
+        // tests, so this just exercises the wiring.
+        let source = "# Heading\n\n- item\n- item\n\n```rust\nfn main() {}\n```";
+        let (handle, cx) = setup_test_window(cx, |_window, cx| TextView::markdown(cx, source));
+        handle.update(cx, |tv, _| {
+            assert!(matches!(&tv.content, TextViewContent::Markdown { .. }));
         });
     }
 }

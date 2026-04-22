@@ -549,6 +549,39 @@ pub fn render(
                 .font_design(FontDesign::Monospaced)
                 .accessibility_text_content_type(TextContentType::ConsoleOutput)
         }))
+        // ── Markdown ───────────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Markdown"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption1, theme)
+                .text_color(theme.text_muted)
+                .child(
+                    "TextView::markdown renders block-level markdown — \
+                     headings, paragraphs, lists, code, tables, math, mermaid — \
+                     by reusing the same pipeline that powers StreamingMarkdown. \
+                     Use StreamingMarkdown directly for progressive token-by-token \
+                     rendering with citations and a typing caret.",
+                ),
+        )
+        .child(cx.new(|cx| {
+            TextView::markdown(
+                cx,
+                "## Release checklist\n\n\
+                 The **typography** and *accessibility* review must land before cutting a tag.\n\n\
+                 - Verify [HIG label hierarchy](https://developer.apple.com/design/human-interface-guidelines/typography)\n\
+                 - Check VoiceOver heading rotor\n\
+                 - Confirm `TextView::markdown` parity with SwiftUI `Text(_:)`\n\n\
+                 ```rust\n\
+                 let view = TextView::markdown(cx, source);\n\
+                 ```\n",
+            )
+        }))
         // ── Scrollable ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
