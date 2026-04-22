@@ -483,12 +483,11 @@ pub enum LeadingStyle {
 // TextCase
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Case transform applied to rendered text — mirrors SwiftUI's `Text.Case`.
+/// Case transform applied to rendered text.
 ///
 /// Applied at paint time to the string that reaches the layout engine. The
 /// transformed string is what selection, copy, and the VoiceOver label all
-/// observe, matching SwiftUI's contract: the user sees X, selects X, copies
-/// X, hears X.
+/// observe — the user sees X, selects X, copies X, hears X.
 ///
 /// # Rich content
 ///
@@ -504,9 +503,8 @@ pub enum TextCase {
     /// Lowercase via [`str::to_lowercase`].
     Lowercase,
     /// Capitalise the first character of the string, leave the rest
-    /// unchanged. SwiftUI's `.sentenceCase` follows the same rule: only
-    /// the first grapheme of the string is capitalised; subsequent
-    /// sentence boundaries are not inferred.
+    /// unchanged. Subsequent sentence boundaries are not inferred —
+    /// only the first grapheme of the string is capitalised.
     SentenceCase,
 }
 
@@ -533,10 +531,10 @@ impl TextCase {
 
 /// Where to place the ellipsis when text overflows its container.
 ///
-/// Mirrors SwiftUI's `Text.TruncationMode` enum. Head and tail map directly
-/// to GPUI's [`TextOverflow::TruncateStart`] and [`TextOverflow::Truncate`].
-/// Middle has no native GPUI primitive, so the render path emulates it by
-/// replacing the string with a head+ellipsis+tail form via
+/// Head and tail map directly to GPUI's [`TextOverflow::TruncateStart`]
+/// and [`TextOverflow::Truncate`]. Middle has no native GPUI primitive,
+/// so the render path emulates it by replacing the string with a
+/// head+ellipsis+tail form via
 /// [`foundations::text_truncation::truncate_middle`].
 ///
 /// [`foundations::text_truncation::truncate_middle`]: crate::foundations::text_truncation::truncate_middle
@@ -605,9 +603,8 @@ impl LabelLevel {
 
 /// HIG font design variants.
 ///
-/// Corresponds to `Font.Design` in SwiftUI. Use `.Default` for the system font
-/// (SF Pro), `.Serif` for New York, `.Rounded` for SF Pro Rounded,
-/// and `.Monospaced` for SF Mono.
+/// Use `.Default` for the system font (SF Pro), `.Serif` for New York,
+/// `.Rounded` for SF Pro Rounded, and `.Monospaced` for SF Mono.
 ///
 /// Apply to an element via [`TextStyledExt::text_style_with_design`] or
 /// [`TextStyledExt::text_style_emphasized_with_design`]. The plain
@@ -877,9 +874,9 @@ mod tests {
 
     #[test]
     fn text_case_sentence_case_capitalises_only_the_first_char() {
-        // SwiftUI's `.sentenceCase` capitalises the first grapheme and
-        // leaves the remainder unchanged — it does not infer subsequent
-        // sentence boundaries, and it preserves case in trailing words.
+        // Sentence case capitalises the first grapheme and leaves the
+        // remainder unchanged — it does not infer subsequent sentence
+        // boundaries, and it preserves case in trailing words.
         assert_eq!(
             TextCase::SentenceCase.apply("hello WORLD"),
             "Hello WORLD",

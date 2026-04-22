@@ -487,10 +487,10 @@ impl TextViewContent {
 
 /// Builder for composing styled text from a sequence of runs.
 ///
-/// Mirrors SwiftUI's `Text + Text` concatenation — each call to
-/// [`Self::plain`] / [`Self::styled`] / [`Self::bold`] / [`Self::italic`] /
-/// [`Self::underline`] / [`Self::strikethrough`] appends one run. Feed the
-/// completed builder to [`TextView::from_runs`] to materialise a view.
+/// Each call to [`Self::plain`] / [`Self::styled`] / [`Self::bold`] /
+/// [`Self::italic`] / [`Self::underline`] / [`Self::strikethrough`]
+/// appends one run. Feed the completed builder to
+/// [`TextView::from_runs`] to materialise a view.
 ///
 /// Runs flow through the same
 /// [`TextViewContent::Rich { text, highlights }`](TextViewContent::Rich)
@@ -673,10 +673,10 @@ pub struct TextView {
     disabled: bool,
     accessibility_label: Option<SharedString>,
     context_menu: Entity<ContextMenu>,
-    // Phase A — SwiftUI `Text` parity: per-view decorations / weight /
-    // italic / font features / case transform. Each is `None` or the
-    // "identity" value so the defaults preserve the pre-phase-A behaviour
-    // of the existing `TextStyle` + `emphasize` path.
+    // Per-view decorations / weight / italic / font features / case
+    // transform. Each is `None` or the "identity" value so the defaults
+    // preserve the behaviour of the existing `TextStyle` + `emphasize`
+    // path.
     weight_override: Option<FontWeight>,
     italic: bool,
     underline: Option<UnderlineStyle>,
@@ -687,17 +687,16 @@ pub struct TextView {
     /// ligatures like `=>`, `!=`).
     ligatures_enabled: Option<bool>,
     text_case: Option<TextCase>,
-    // Phase B — SwiftUI `Text.TruncationMode` parity. `None` keeps
-    // GPUI's default (`TextOverflow::Truncate` applied implicitly when
-    // `line_clamp` clips the string). `Some(mode)` pairs the mode with an
-    // explicit `text_ellipsis` / `text_ellipsis_start` / `truncate_middle`
-    // render-path decision.
+    // `None` keeps GPUI's default (`TextOverflow::Truncate` applied
+    // implicitly when `line_clamp` clips the string). `Some(mode)` pairs
+    // the mode with an explicit `text_ellipsis` /
+    // `text_ellipsis_start` / `truncate_middle` render-path decision.
     truncation_mode: Option<TruncationMode>,
     /// Character budget used by [`TruncationMode::Middle`]. Falls back to
     /// a conservative default when the caller does not supply one.
     truncation_char_budget: Option<usize>,
-    // Phase E — SwiftUI accessibility enrichments. `accessibility_heading`
-    // promotes the element's role from `StaticText` to `Heading(level)`.
+    // `accessibility_heading` promotes the element's role from
+    // `StaticText` to `Heading(level)`.
     // `accessibility_text_content_type` lets VoiceOver tune reading
     // cadence to the content kind (source code, file path, etc.).
     accessibility_heading: Option<HeadingLevel>,
@@ -766,10 +765,9 @@ impl TextView {
         this
     }
 
-    /// Construct a rich-text view from a [`TextRuns`] builder. Matches
-    /// SwiftUI's `Text + Text` concatenation — the per-run strings
-    /// collapse into one `SharedString` for selection and VoiceOver,
-    /// while the per-run styles map to byte-ranged
+    /// Construct a rich-text view from a [`TextRuns`] builder. The
+    /// per-run strings collapse into one `SharedString` for selection
+    /// and VoiceOver, while the per-run styles map to byte-ranged
     /// [`HighlightStyle`] spans.
     pub fn from_runs(cx: &mut Context<Self>, runs: TextRuns) -> Self {
         let (text, highlights) = runs.into_text_and_highlights();
@@ -781,12 +779,11 @@ impl TextView {
         this
     }
 
-    /// Construct a block-level markdown view. Matches SwiftUI's
-    /// `Text(_ LocalizedStringKey)` / `Text(_ AttributedString)` markdown
-    /// support by one-shot parsing the input through the same
-    /// [`StreamingMarkdown`] pipeline used for AI-streamed markdown —
-    /// full block fidelity for headings, lists, code blocks (with
-    /// tree-sitter syntax highlighting), tables, math, and mermaid.
+    /// Construct a block-level markdown view. One-shot parses the input
+    /// through the same [`StreamingMarkdown`] pipeline used for
+    /// AI-streamed markdown — full block fidelity for headings, lists,
+    /// code blocks (with tree-sitter syntax highlighting), tables,
+    /// math, and mermaid.
     ///
     /// The markdown renderer controls its own typography per block, so
     /// view-level text modifiers (`text_style`, `bold`, `italic`,
@@ -820,20 +817,18 @@ impl TextView {
     }
 
     /// Construct a plain-text view from any [`Display`]-implementing
-    /// value. Matches SwiftUI's `Text(_ value, format:)` family by
-    /// delegating the formatting to the caller's [`Display`] impl —
-    /// works with numbers, booleans, custom types that implement
-    /// [`Display`], and any pre-formatted string. Prefer this over
-    /// `TextView::new(cx, format!("{}", value))` so the intent (this
-    /// is a formatted value, not a verbatim string) is visible at the
-    /// call site.
+    /// value. Delegates the formatting to the caller's [`Display`]
+    /// impl — works with numbers, booleans, custom types that
+    /// implement [`Display`], and any pre-formatted string. Prefer
+    /// this over `TextView::new(cx, format!("{}", value))` so the
+    /// intent (this is a formatted value, not a verbatim string) is
+    /// visible at the call site.
     ///
-    /// **Date / time / measurement variants** (`Text(_ date:style:)`,
-    /// `Text(_ measurement:)`) are intentionally not yet provided —
-    /// they require a time-handling dependency (`chrono` / `time` /
-    /// `jiff`) that is not in the workspace. Until the repo adopts
-    /// one, format the value externally and feed the `String` / `&str`
-    /// through this method.
+    /// **Date / time / measurement variants** are intentionally not
+    /// yet provided — they require a time-handling dependency
+    /// (`chrono` / `time` / `jiff`) that is not in the workspace.
+    /// Until the repo adopts one, format the value externally and
+    /// feed the `String` / `&str` through this method.
     ///
     /// [`Display`]: std::fmt::Display
     pub fn formatted<T: std::fmt::Display>(cx: &mut Context<Self>, value: T) -> Self {
@@ -996,8 +991,7 @@ impl TextView {
 
     /// Promote the view's accessibility role from
     /// [`AccessibilityRole::StaticText`] to
-    /// [`AccessibilityRole::Heading`] at the given depth. Matches
-    /// SwiftUI's `.accessibilityHeading(_:)`.
+    /// [`AccessibilityRole::Heading`] at the given depth.
     ///
     /// VoiceOver's "next heading" and "headings at level N" rotor
     /// gestures land on these elements, letting a screen-reader user
@@ -1013,29 +1007,26 @@ impl TextView {
     }
 
     /// Classify the text content kind (file path, source code, console
-    /// output, …). Matches SwiftUI's
-    /// `.accessibilityTextContentType(_:)`. Populates
-    /// [`AccessibilityProps::content_type`] so that when GPUI lands an
-    /// AX tree, VoiceOver will tune reading cadence and per-segment
-    /// navigation to the content kind.
+    /// output, …). Populates [`AccessibilityProps::content_type`] so
+    /// that when GPUI lands an AX tree, VoiceOver will tune reading
+    /// cadence and per-segment navigation to the content kind.
     pub fn accessibility_text_content_type(mut self, kind: TextContentType) -> Self {
         self.accessibility_text_content_type = Some(kind);
         self
     }
 
-    // ── Phase A — SwiftUI `Text` parity ───────────────────────────────
+    // ── Per-view decorations ──────────────────────────────────────────
     //
-    // Builders mirror SwiftUI's `Text` modifiers so callers reaching for
-    // the Apple docs land on a familiar method name. These compose on top
-    // of the existing `text_style` / `emphasize` / `font_design` path:
-    // `weight`/`bold` override the weight the `TextStyle` would pick,
-    // `italic` sets the font style, `underline`/`strikethrough` pass a
-    // fully-configured decoration struct straight into GPUI's
-    // `TextStyle.underline` / `TextStyle.strikethrough`, and
-    // `monospaced_digit` / `ligatures` map to OpenType features.
+    // These compose on top of the existing `text_style` / `emphasize` /
+    // `font_design` path: `weight`/`bold` override the weight the
+    // `TextStyle` would pick, `italic` sets the font style,
+    // `underline`/`strikethrough` pass a fully-configured decoration
+    // struct straight into GPUI's `TextStyle.underline` /
+    // `TextStyle.strikethrough`, and `monospaced_digit` / `ligatures`
+    // map to OpenType features.
 
     /// Override the font weight picked by [`Self::text_style`] /
-    /// [`Self::emphasize`]. Matches SwiftUI's `.fontWeight(_:)`.
+    /// [`Self::emphasize`].
     ///
     /// Precedence (highest first):
     /// 1. `.weight(w)` (this method)
@@ -1048,24 +1039,23 @@ impl TextView {
         self
     }
 
-    /// Alias for `.weight(FontWeight::BOLD)`. Matches SwiftUI's `.bold()`
-    /// modifier. Use [`Self::emphasize`] instead when you want each
-    /// [`TextStyle`]'s semantic emphasis (e.g. `Headline` emphasizes to
-    /// `BLACK`, not `BOLD`) rather than a flat BOLD across all styles.
+    /// Alias for `.weight(FontWeight::BOLD)`. Use [`Self::emphasize`]
+    /// instead when you want each [`TextStyle`]'s semantic emphasis
+    /// (e.g. `Headline` emphasizes to `BLACK`, not `BOLD`) rather than
+    /// a flat BOLD across all styles.
     pub fn bold(self) -> Self {
         self.weight(FontWeight::BOLD)
     }
 
-    /// Toggle italic. Matches SwiftUI's `.italic(_:)`. Pass `false` as a
-    /// no-op helper for call sites that compute the flag dynamically —
-    /// the default is already non-italic.
+    /// Toggle italic. Pass `false` as a no-op helper for call sites
+    /// that compute the flag dynamically — the default is already
+    /// non-italic.
     pub fn italic(mut self, italic: bool) -> Self {
         self.italic = italic;
         self
     }
 
-    /// Draw an underline with the given [`UnderlineStyle`]. Matches
-    /// SwiftUI's `.underline(_:pattern:color:)`. Call with
+    /// Draw an underline with the given [`UnderlineStyle`]. Call with
     /// `UnderlineStyle::default()` for the 1 pt solid default, or
     /// construct a custom struct (`thickness`, `color`, `wavy`) for
     /// finer control.
@@ -1075,23 +1065,21 @@ impl TextView {
     }
 
     /// Draw a strikethrough with the given [`StrikethroughStyle`].
-    /// Matches SwiftUI's `.strikethrough(_:pattern:color:)`. Call with
-    /// `StrikethroughStyle::default()` for the 1 pt solid default.
+    /// Call with `StrikethroughStyle::default()` for the 1 pt solid
+    /// default.
     pub fn strikethrough(mut self, style: StrikethroughStyle) -> Self {
         self.strikethrough = Some(style);
         self
     }
 
-    /// Alias for `.font_design(FontDesign::Monospaced)`. Matches
-    /// SwiftUI's `.monospaced(_:)` modifier.
+    /// Alias for `.font_design(FontDesign::Monospaced)`.
     pub fn monospaced(self) -> Self {
         self.font_design(FontDesign::Monospaced)
     }
 
-    /// Enable monospaced digits (OpenType `tnum`). Matches SwiftUI's
-    /// `.monospacedDigit()` modifier — keeps digits the same width so
-    /// numerics in running text (timestamps, counters) do not jitter
-    /// between frames.
+    /// Enable monospaced digits (OpenType `tnum`) — keeps digits the
+    /// same width so numerics in running text (timestamps, counters)
+    /// do not jitter between frames.
     pub fn monospaced_digit(mut self, enabled: bool) -> Self {
         self.monospaced_digit = enabled;
         self
@@ -1106,8 +1094,7 @@ impl TextView {
         self
     }
 
-    /// Apply a case transform to the rendered text. Matches SwiftUI's
-    /// `.textCase(_:)`.
+    /// Apply a case transform to the rendered text.
     ///
     /// The transform runs at paint time on the string that reaches the
     /// layout engine. The transformed string is also what the selection
@@ -1125,7 +1112,7 @@ impl TextView {
         self
     }
 
-    // ── Phase B — SwiftUI `Text.truncationMode` parity ────────────────
+    // ── Truncation mode ───────────────────────────────────────────────
     //
     // [`TruncationMode::Tail`] and [`Head`](TruncationMode::Head) route to
     // GPUI's native `TextOverflow::Truncate` / `TruncateStart`. Middle has
@@ -1140,7 +1127,7 @@ impl TextView {
     // width.
 
     /// Control where the ellipsis is placed when text overflows its
-    /// container. Matches SwiftUI's `.truncationMode(_:)` modifier.
+    /// container.
     ///
     /// - [`TruncationMode::Tail`] (default) clips the end: `"a/long/pa…"`.
     /// - [`TruncationMode::Head`] clips the start: `"…g/path/file.rs"`.
@@ -1479,9 +1466,9 @@ impl Render for TextView {
             typography = typography.max_w(gpui::px(READABLE_OPTIMAL_WIDTH * scale));
         }
 
-        // Phase A — decoration / weight / italic / font-features wiring.
-        // Applied after `apply_typography` so these settings win against
-        // the `TextStyle` baseline (e.g. `weight_override` beats the
+        // Decoration / weight / italic / font-features wiring. Applied
+        // after `apply_typography` so these settings win against the
+        // `TextStyle` baseline (e.g. `weight_override` beats the
         // emphasized weight). Decorations use the GPUI `TextStyleRefinement`
         // directly rather than the `.underline()` / `.line_through()`
         // helpers, because the helpers install a 1 pt default — our
@@ -1526,12 +1513,12 @@ impl Render for TextView {
             None => self.content.clone(),
         };
 
-        // Phase B — truncation. Head / Tail use GPUI's native
-        // `TextOverflow` (wired on the enclosing element's `TextStyle`).
-        // Middle has no GPUI primitive, so rewrite the plain-text content
-        // through `truncate_middle` ahead of rendering. Rich content is a
-        // no-op for Middle because any byte-range shift would invalidate
-        // the stored `HighlightStyle` spans — same rationale as
+        // Truncation. Head / Tail use GPUI's native `TextOverflow`
+        // (wired on the enclosing element's `TextStyle`). Middle has no
+        // GPUI primitive, so rewrite the plain-text content through
+        // `truncate_middle` ahead of rendering. Rich content is a no-op
+        // for Middle because any byte-range shift would invalidate the
+        // stored `HighlightStyle` spans — same rationale as
         // `TextView::text_case`.
         match self.truncation_mode {
             Some(TruncationMode::Tail) => {
@@ -2034,7 +2021,7 @@ mod tests {
         }
     }
 
-    // ── TextRuns (Phase C) ────────────────────────────────────────
+    // ── TextRuns ──────────────────────────────────────────────────
 
     use super::TextRuns;
     use gpui::{FontWeight, HighlightStyle};
@@ -2146,7 +2133,7 @@ mod gpui_tests {
             assert!(tv.selectable);
             assert!(!tv.disabled);
             assert!(tv.accessibility_label.is_none());
-            // Phase A defaults — each new builder resolves to the
+            // Decoration defaults — each new builder resolves to the
             // baseline `TextStyle` behaviour when not called.
             assert!(tv.weight_override.is_none());
             assert!(!tv.italic);
@@ -2155,7 +2142,7 @@ mod gpui_tests {
             assert!(!tv.monospaced_digit);
             assert!(tv.ligatures_enabled.is_none());
             assert!(tv.text_case.is_none());
-            // Phase B defaults — truncation off; budget unset.
+            // Truncation defaults — off; budget unset.
             assert!(tv.truncation_mode.is_none());
             assert!(tv.truncation_char_budget.is_none());
         });
@@ -2500,7 +2487,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase A — SwiftUI `Text` parity ───────────────────────────────
+    // ── Per-view decorations ──────────────────────────────────────────
 
     #[gpui::test]
     async fn text_view_decorations_builders_set_fields(cx: &mut gpui::TestAppContext) {
@@ -2551,8 +2538,7 @@ mod gpui_tests {
     #[gpui::test]
     async fn text_view_monospaced_aliases_font_design_monospaced(cx: &mut gpui::TestAppContext) {
         // `.monospaced()` must set `font_design` to `Monospaced` — it's
-        // a SwiftUI-compatibility alias for
-        // `.font_design(FontDesign::Monospaced)`.
+        // an alias for `.font_design(FontDesign::Monospaced)`.
         let (handle, cx) =
             setup_test_window(cx, |_window, cx| TextView::new(cx, "code").monospaced());
         handle.update(cx, |tv, _| {
@@ -2610,7 +2596,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase B — truncation mode ─────────────────────────────────
+    // ── Truncation mode ───────────────────────────────────────────
 
     #[gpui::test]
     async fn truncation_mode_builder_stores_mode(cx: &mut gpui::TestAppContext) {
@@ -2688,7 +2674,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase C — TextRuns composition ────────────────────────────
+    // ── TextRuns composition ──────────────────────────────────────
 
     #[gpui::test]
     async fn text_view_from_runs_stores_rich_content(cx: &mut gpui::TestAppContext) {
@@ -2725,7 +2711,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase D — formatted initializer ───────────────────────────
+    // ── Formatted initializer ─────────────────────────────────────
 
     #[gpui::test]
     async fn text_view_formatted_renders_display_impl(cx: &mut gpui::TestAppContext) {
@@ -2755,7 +2741,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase E — accessibility heading + content type ────────────
+    // ── Accessibility heading + content type ──────────────────────
 
     #[gpui::test]
     async fn text_view_accessibility_heading_stored(cx: &mut gpui::TestAppContext) {
@@ -2794,7 +2780,7 @@ mod gpui_tests {
         });
     }
 
-    // ── Phase F — markdown incorporation ──────────────────────────
+    // ── Markdown content ──────────────────────────────────────────
 
     #[gpui::test]
     async fn text_view_markdown_stores_markdown_content(cx: &mut gpui::TestAppContext) {

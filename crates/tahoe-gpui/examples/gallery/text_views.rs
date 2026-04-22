@@ -106,13 +106,13 @@ pub fn render(
             div()
                 .text_style(TextStyle::Headline, theme)
                 .text_color(theme.text)
-                .child("Bold (SwiftUI parity)"),
+                .child("Bold"),
         )
         .child(cx.new(|cx| {
-            // `.bold()` is an alias for `.weight(FontWeight::BOLD)` —
-            // matches SwiftUI's `Text.bold()` modifier. Prefer
-            // `.emphasize(true)` when the surrounding text style already
-            // carries its own emphasized weight (e.g. Headline → BLACK).
+            // `.bold()` is an alias for `.weight(FontWeight::BOLD)`.
+            // Prefer `.emphasize(true)` when the surrounding text style
+            // already carries its own emphasized weight (e.g. Headline →
+            // BLACK).
             TextView::new(cx, "Bold body text via `.bold()`.").bold()
         }))
         // ── Italic ─────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ pub fn render(
                 )],
             )
         }))
-        // ── TextRuns composition (SwiftUI `Text + Text`) ───────────────────
+        // ── TextRuns composition ───────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
             div()
@@ -251,9 +251,8 @@ pub fn render(
                 .child("TextRuns composition"),
         )
         .child(cx.new(|cx| {
-            // Build a single view from an ordered sequence of runs.
-            // Matches SwiftUI's `Text("a") + Text("b").bold()` idiom and
-            // keeps selection / copy / VoiceOver seeing one merged string.
+            // Build a single view from an ordered sequence of runs —
+            // selection / copy / VoiceOver see one merged string.
             TextView::from_runs(
                 cx,
                 TextRuns::new()
@@ -266,7 +265,7 @@ pub fn render(
                     .plain("."),
             )
         }))
-        // ── Formatted content (SwiftUI `Text(_ value, format:)`) ───────────
+        // ── Formatted content ──────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
             div()
@@ -576,7 +575,7 @@ pub fn render(
                  The **typography** and *accessibility* review must land before cutting a tag.\n\n\
                  - Verify [HIG label hierarchy](https://developer.apple.com/design/human-interface-guidelines/typography)\n\
                  - Check VoiceOver heading rotor\n\
-                 - Confirm `TextView::markdown` parity with SwiftUI `Text(_:)`\n\n\
+                 - Confirm `TextView::markdown` renders the full block set\n\n\
                  ```rust\n\
                  let view = TextView::markdown(cx, source);\n\
                  ```\n",

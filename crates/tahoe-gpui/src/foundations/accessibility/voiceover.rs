@@ -45,41 +45,37 @@ impl HeadingLevel {
     }
 }
 
-/// Semantic classification of text content — mirrors SwiftUI's
-/// [`AccessibilityTextContentType`][swiftui]. VoiceOver (and other assistive
-/// technologies) use the type to tune reading cadence, pronunciation, and
-/// navigation — e.g. `ConsoleOutput` suppresses auto-capitalisation
-/// announcements, `FileSystemPath` enables per-segment navigation, and
-/// `SourceCode` switches to a code-reading voice that pauses on punctuation
-/// instead of eliding it.
+/// Semantic classification of text content. VoiceOver (and other
+/// assistive technologies) use the type to tune reading cadence,
+/// pronunciation, and navigation — e.g. `ConsoleOutput` suppresses
+/// auto-capitalisation announcements, `FileSystemPath` enables
+/// per-segment navigation, and `SourceCode` switches to a code-reading
+/// voice that pauses on punctuation instead of eliding it.
 ///
 /// GPUI does not yet expose an AX tree, so the value is currently held on
 /// [`AccessibilityProps::content_type`] and ignored at paint time. The
 /// enum exists today so that when GPUI lands the AX bridge, every call
 /// site is already annotated.
-///
-/// [swiftui]: https://developer.apple.com/documentation/swiftui/accessibilitytextcontenttype
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextContentType {
-    /// Unclassified prose — SwiftUI's `.plain`. Default.
+    /// Unclassified prose. Default.
     #[default]
     PlainText,
-    /// Line-oriented console output (stdout, stderr). SwiftUI's `.consoleOutput`.
+    /// Line-oriented console output (stdout, stderr).
     ConsoleOutput,
-    /// Path-like content (`/Users/…`, `C:\…`). SwiftUI's `.fileSystemPath`.
+    /// Path-like content (`/Users/…`, `C:\…`).
     FileSystemPath,
     /// Email address — VoiceOver reads the local-part and domain distinctly.
-    /// SwiftUI's `.emailAddress`.
     EmailAddress,
-    /// Source code (any language). SwiftUI's `.sourceCode`.
+    /// Source code (any language).
     SourceCode,
-    /// Spreadsheet cell content — enables cell-aware navigation. SwiftUI's `.spreadsheet`.
+    /// Spreadsheet cell content — enables cell-aware navigation.
     SpreadsheetCell,
-    /// Long-form word-processing body copy. SwiftUI's `.wordProcessing`.
+    /// Long-form word-processing body copy.
     WordProcessing,
-    /// Message recipient (chat, email To:). SwiftUI's `.messaging`.
+    /// Message recipient (chat, email To:).
     MessageRecipient,
-    /// Narrative prose (articles, documentation). SwiftUI's `.narrative`.
+    /// Narrative prose (articles, documentation).
     Narrative,
 }
 
@@ -188,13 +184,11 @@ pub struct AccessibilityProps {
     /// disabled visual state should also set this flag so the AX wiring
     /// announces "dimmed" once GPUI lands an AX tree.
     pub disabled: bool,
-    /// Semantic classification of the element's text content (SwiftUI's
-    /// [`AccessibilityTextContentType`][swiftui]). When populated alongside
-    /// [`AccessibilityRole::StaticText`] or [`AccessibilityRole::Heading`],
-    /// lets VoiceOver tune reading cadence and navigation to the content
-    /// kind (console output, file paths, source code, etc.).
-    ///
-    /// [swiftui]: https://developer.apple.com/documentation/swiftui/accessibilitytextcontenttype
+    /// Semantic classification of the element's text content. When
+    /// populated alongside [`AccessibilityRole::StaticText`] or
+    /// [`AccessibilityRole::Heading`], lets VoiceOver tune reading
+    /// cadence and navigation to the content kind (console output,
+    /// file paths, source code, etc.).
     pub content_type: Option<TextContentType>,
 }
 
@@ -264,8 +258,7 @@ impl AccessibilityProps {
         self
     }
 
-    /// Set the text-content classification (SwiftUI's
-    /// `.accessibilityTextContentType(_:)`).
+    /// Set the text-content classification.
     pub fn content_type(mut self, kind: TextContentType) -> Self {
         self.content_type = Some(kind);
         self
