@@ -548,6 +548,9 @@ impl Render for ChartView {
                 }
             },
         )
+        .absolute()
+        .top_0()
+        .left_0()
         .w(width)
         .h(height);
 
