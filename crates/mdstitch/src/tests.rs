@@ -1557,6 +1557,65 @@ fn idempotency_regression_0145() {
     assert_eq!(twice, once);
 }
 
+/// Idempotency violation on `"*0*>$$**\r*\n"` with `italic` + `katex`.
+/// The `*` at pos 9 is between `\r` (CR) and `\n` (LF). The whitespace
+/// flanking check treated `\n` as ws but not `\r`, so the `*` was counted
+/// as a floating italic opener. italic_asterisk appended a `*`, katex then
+/// wrapped the tail in `\n$$`, and on the next pass the new `*` (inside
+/// complete math) plus the `\r`-flanked `*` counted as odd, triggering
+/// another append. Fix: `\r` flanks like `\n` in should_skip_asterisk.
+#[test]
+fn idempotency_regression_0146() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: true,
+        bold_italic: false,
+        inline_code: false,
+        strikethrough: false,
+        links: false,
+        images: false,
+        katex: true,
+        inline_katex: false,
+        setext_headings: false,
+        html_tags: false,
+        single_tilde: false,
+        comparison_operators: false,
+        link_mode: LinkMode::Protocol,
+        handlers: Vec::new(),
+    };
+    let once = stitch("*0*>$$**\r*\n", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
+/// Companion regression to 0146: the proptest also shrinks to `"*\r$"`
+/// with `italic` + `inline_katex`. The `*` at pos 0 has `prev==SOF` (ws)
+/// and `next==\r`. If `\r` isn't whitespace, the `*` is counted as a
+/// floating opener and italic appends `*`, which inline_katex then wraps.
+#[test]
+fn idempotency_regression_0147() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: true,
+        bold_italic: false,
+        inline_code: false,
+        strikethrough: false,
+        links: false,
+        images: false,
+        katex: false,
+        inline_katex: true,
+        setext_headings: false,
+        html_tags: false,
+        single_tilde: false,
+        comparison_operators: false,
+        link_mode: LinkMode::Protocol,
+        handlers: Vec::new(),
+    };
+    let once = stitch("*\r$", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
 /// Pipeline-level idempotency tripwires for each proptest regression seed.
 /// These exercise the full stitch() pipeline (not individual handlers).
 #[test]
@@ -1655,6 +1714,20 @@ fn idempotency_seeds_pipeline() {
             only(|o| {
                 o.italic = true;
                 o.bold_italic = true;
+            }),
+        ),
+        (
+            "*0*>$$**\r*\n",
+            only(|o| {
+                o.italic = true;
+                o.katex = true;
+            }),
+        ),
+        (
+            "*\r$",
+            only(|o| {
+                o.italic = true;
+                o.inline_katex = true;
             }),
         ),
     ];

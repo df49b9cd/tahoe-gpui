@@ -52,9 +52,11 @@ fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8) -> bool {
     }
 
     // Asymmetric: SOF is ws (so "* foo" stays a list bullet); EOF is not
-    // (so our own trailing `*` remains countable as a closer).
-    let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-    let next_ws = matches!(next, b' ' | b'\t' | b'\n');
+    // (so our own trailing `*` remains countable as a closer). CommonMark
+    // treats `\r`, `\n`, and `\r\n` as line terminators, so `\r` flanks
+    // like `\n` here.
+    let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+    let next_ws = matches!(next, b' ' | b'\t' | b'\n' | b'\r');
     if prev_ws && next_ws {
         return true;
     }
@@ -422,8 +424,8 @@ fn find_first_single_asterisk_index_with_ranges(
             }
 
             // Asymmetric: SOF is ws, EOF is not — see should_skip_asterisk.
-            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-            let next_ws = matches!(next, b' ' | b'\t' | b'\n');
+            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+            let next_ws = matches!(next, b' ' | b'\t' | b'\n' | b'\r');
             if prev_ws && next_ws {
                 i += 1;
                 continue;
