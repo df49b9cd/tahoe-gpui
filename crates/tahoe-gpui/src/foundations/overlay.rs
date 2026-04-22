@@ -81,7 +81,7 @@ impl OverlayLayer {
 ///   popovers below a toolbar button. The default for anything triggered
 ///   by a control with more room below than above.
 /// - **`AboveLeft` / `AboveRight`** — tooltip-style popovers attached to a
-///   trigger near the bottom of a pane. [`realise_anchor`] flips a
+///   trigger near the bottom of a pane. The overlay flips a
 ///   preferred `Below*` to `Above*` (and vice-versa) automatically when
 ///   the opposite side has materially more room, so most callers can
 ///   leave the preferred side set to whatever reads best in the common
@@ -106,7 +106,7 @@ pub enum OverlayAnchor {
     /// The coordinate is viewport-relative — (0, 0) is the window's
     /// top-left corner, matching GPUI's `Window::viewport_size`. The
     /// overlay's top-left is placed at this point (modulo offset);
-    /// [`realise_anchor`] does not flip `WindowPoint` overlays, and
+    /// the overlay does not flip `WindowPoint` overlays, and
     /// [`AnchoredOverlay::gap`] is a no-op because there is no trigger
     /// to clear.
     WindowPoint(Point<Pixels>),
@@ -238,7 +238,7 @@ impl AnchoredOverlay {
     /// Use this for a fixed nudge (e.g. inset from a context-menu cursor
     /// position). For the canonical "gap between trigger and overlay" use
     /// [`Self::gap`] instead so the sign tracks the realised side after
-    /// [`realise_anchor`] may have flipped it. Defaults to `Point::default()`.
+    /// any overflow-driven flip. Defaults to `Point::default()`.
     pub fn offset(mut self, offset: Point<Pixels>) -> Self {
         self.offset = offset;
         self
@@ -247,9 +247,9 @@ impl AnchoredOverlay {
     /// Vertical gap (in pixels) between the trigger edge and the overlay.
     /// The sign is resolved in `prepaint` against the *realised* anchor:
     /// `Below*` placements shift the overlay downward by `magnitude`;
-    /// `Above*` placements shift it upward. Flipping Below↔Above via
-    /// [`realise_anchor`] therefore preserves the gap on whichever side the
-    /// overlay actually lands on — callers don't need to re-sign the offset
+    /// `Above*` placements shift it upward. An overflow-driven Below↔Above
+    /// flip therefore preserves the gap on whichever side the overlay
+    /// actually lands on — callers don't need to re-sign the offset
     /// themselves. Ignored for [`OverlayAnchor::WindowPoint`]. Composes
     /// additively with [`Self::offset`] when both are set.
     pub fn gap(mut self, magnitude: Pixels) -> Self {
