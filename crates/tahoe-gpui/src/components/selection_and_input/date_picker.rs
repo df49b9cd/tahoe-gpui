@@ -893,6 +893,8 @@ impl RenderOnce for DatePicker {
 
             dropdown = dropdown.child(dropdown_content);
 
+            // TODO(overlay-migration): port to `AnchoredOverlay` so the
+            // dropdown escapes parent `overflow_hidden()` clipping.
             container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
         }
 

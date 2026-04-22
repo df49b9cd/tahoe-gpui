@@ -906,6 +906,8 @@ impl RenderOnce for ColorWell {
             };
             grid = grid.child(alpha_row);
 
+            // TODO(overlay-migration): port to `AnchoredOverlay` so the
+            // grid escapes parent `overflow_hidden()` clipping.
             container = container.child(deferred(grid).with_priority(OverlayLayer::DROPDOWN));
         }
 

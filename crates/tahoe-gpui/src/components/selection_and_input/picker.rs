@@ -1161,6 +1161,9 @@ impl RenderOnce for Picker {
                 // the trigger — no deferred layer, no absolute positioning.
                 container = container.child(list);
             } else {
+                // TODO(overlay-migration): port the non-inline picker to
+                // `AnchoredOverlay` so the list escapes parent
+                // `overflow_hidden()` clipping.
                 container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
             }
         }

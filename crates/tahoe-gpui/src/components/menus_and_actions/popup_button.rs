@@ -478,6 +478,8 @@ impl RenderOnce for PopupButton {
                 list = list.child(row);
             }
 
+            // TODO(overlay-migration): port to `AnchoredOverlay` so the
+            // list escapes parent `overflow_hidden()` clipping.
             container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
         }
 

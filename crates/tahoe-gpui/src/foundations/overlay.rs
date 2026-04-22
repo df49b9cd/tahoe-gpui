@@ -20,7 +20,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use tahoe_gpui::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
+//! use tahoe_gpui::foundations::{AnchoredOverlay, OverlayAnchor};
 //! use gpui::{IntoElement, div, point, px};
 //!
 //! let is_open = true;
@@ -38,7 +38,7 @@
 //! let overlay = AnchoredOverlay::new("my-overlay", div().child("Trigger"))
 //!     .anchor(OverlayAnchor::BelowLeft)
 //!     .content_fn(is_open, |realised| {
-//!         let arrow = if realised.is_above() { "▲" } else { "▼" };
+//!         let arrow = if realised.is_above() { "▼" } else { "▲" };
 //!         div().child(arrow).child("Body").into_any_element()
 //!     });
 //! ```
@@ -48,8 +48,7 @@
 //! When both [`.content()`](AnchoredOverlay::content) and
 //! [`.content_fn()`](AnchoredOverlay::content_fn) are set, `content`
 //! takes precedence; `content_fn` is only invoked when `content` is
-//! `None`. This mirrors the `raw_content.take().or_else(content_fn)`
-//! drain order inside `prepaint`.
+//! `None`.
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Corner, Element, ElementId, GlobalElementId,
@@ -124,16 +123,43 @@ pub enum OverlayAnchor {
     /// Overlay is positioned at a window-absolute point, with no trigger
     /// anchoring. Used by `ContextMenu::show(pos)` and similar.
     ///
-    /// The coordinate is viewport-relative — (0, 0) is the window's
-    /// top-left corner, matching GPUI's `Window::viewport_size`. The
-    /// overlay's top-left is placed at this point (modulo offset);
-    /// the overlay does not flip `WindowPoint` overlays, and
-    /// [`AnchoredOverlay::gap`] is a no-op because there is no trigger
-    /// to clear.
+    /// The coordinate is in GPUI's window coordinate space (origin at the
+    /// top-left; extent given by `Window::viewport_size()`) — the same
+    /// space `anchored().position()` consumes. The overlay's top-left is
+    /// placed at this point (modulo offset). `WindowPoint` overlays are
+    /// not auto-flipped, and [`AnchoredOverlay::gap`] is a no-op because
+    /// there is no trigger edge to clear.
+    ///
+    /// Callers summoning a menu near the window's bottom or right edge
+    /// should pre-clamp the point against the overlay's expected size so
+    /// the menu doesn't spill past the viewport. GPUI's
+    /// `snap_to_window_with_margin` will clamp the overlay back into the
+    /// visible region, but the clamp shifts the whole overlay instead of
+    /// flipping its growth direction — the user's cursor is no longer the
+    /// anchor corner after a clamp. A future primitive-level flip for
+    /// `WindowPoint` is tracked alongside the overlay migration work.
     WindowPoint(Point<Pixels>),
 }
 
 impl OverlayAnchor {
+    /// Whether this placement renders the overlay above the trigger.
+    /// `WindowPoint` overlays have no trigger-relative side; this method
+    /// returns `false` for them.
+    ///
+    /// Useful inside an [`AnchoredOverlay::content_fn`] closure to orient
+    /// directional glyphs (e.g. popover callout arrows) against the
+    /// realised — not the preferred — placement.
+    pub fn is_above(self) -> bool {
+        matches!(self, Self::AboveLeft | Self::AboveRight)
+    }
+
+    /// Whether this placement aligns the overlay to the left edge of the
+    /// trigger. `WindowPoint` overlays have no trigger-relative alignment;
+    /// this method returns `false` for them.
+    pub fn aligns_left(self) -> bool {
+        matches!(self, Self::BelowLeft | Self::AboveLeft)
+    }
+
     /// Which corner of the overlay box is the anchor point.
     fn anchor_corner(self) -> Corner {
         match self {
@@ -468,6 +494,18 @@ impl Element for AnchoredOverlay {
         let window_size = window.viewport_size();
         let realised = realise_anchor(self.anchor, trigger_bounds, window_size);
 
+        // Trigger-relative anchors need bounds to position correctly;
+        // rendering the overlay on a frame without bounds just stamps it
+        // at a stale position that the next frame supersedes. Skip the
+        // work so a markdown-heavy HoverCard doesn't eat its first-frame
+        // taffy pass for a result that's about to be discarded.
+        // `WindowPoint` overlays carry their own coordinate and always
+        // have something to render against.
+        let needs_bounds = !matches!(self.anchor, OverlayAnchor::WindowPoint(_));
+        if needs_bounds && trigger_bounds.is_none() {
+            return;
+        }
+
         let raw_content = request_layout
             .raw_content
             .take()
@@ -494,9 +532,11 @@ impl Element for AnchoredOverlay {
                 width: AvailableSpace::MinContent,
                 height: AvailableSpace::MinContent,
             };
-            // TODO(perf): cache the layout pass keyed by
+            // TODO(overlay-perf-cache): cache the layout pass keyed by
             // `(trigger_bounds, content_id)` so repeated frames with
-            // identical inputs skip the taffy traversal.
+            // identical inputs skip the taffy traversal. Tracked in the
+            // overlay migration work alongside the dropdown-component
+            // migration (see `TODO(overlay-migration)` call sites).
             anchored_content.layout_as_root(available, window, cx);
             anchored_content.prepaint(window, cx);
 
@@ -569,8 +609,14 @@ fn realise_anchor(
     let Some(trigger) = trigger_bounds else {
         return preferred;
     };
-    let space_above = trigger.origin.y;
-    let space_below = window_size.height - trigger.bottom();
+    // Clamp negative space to zero before comparing. A trigger that has
+    // fully exited the viewport (mid-resize, scrolled-off) produces
+    // negative values on both sides; the unclamped `> 2.0` comparison on
+    // two negatives can return true when the RHS is "more negative" than
+    // the LHS, producing cosmetic flips in a degenerate frame where
+    // neither side actually has room.
+    let space_above = trigger.origin.y.max(px(0.0));
+    let space_below = (window_size.height - trigger.bottom()).max(px(0.0));
     match preferred {
         OverlayAnchor::BelowLeft if space_above > space_below * 2.0 => OverlayAnchor::AboveLeft,
         OverlayAnchor::BelowRight if space_above > space_below * 2.0 => OverlayAnchor::AboveRight,
@@ -624,11 +670,9 @@ fn clamp_snap_margin(configured: Pixels, window_size: Size<Pixels>) -> Pixels {
     if ceiling <= px(0.0) {
         return configured;
     }
-    if configured < ceiling {
-        configured
-    } else {
-        ceiling
-    }
+    // `min` keeps the "configured is an upper bound" invariant explicit
+    // even across f32 fuzz (e.g. a future 0.0299... tweak to the 3% rule).
+    configured.min(ceiling)
 }
 
 /// Wraps `content` in `deferred(anchored().child(occluded_content))`
@@ -714,6 +758,24 @@ mod tests {
     #[test]
     fn default_anchor_is_below_left() {
         assert_eq!(OverlayAnchor::default(), OverlayAnchor::BelowLeft);
+    }
+
+    #[test]
+    fn is_above_classifies_variants() {
+        assert!(OverlayAnchor::AboveLeft.is_above());
+        assert!(OverlayAnchor::AboveRight.is_above());
+        assert!(!OverlayAnchor::BelowLeft.is_above());
+        assert!(!OverlayAnchor::BelowRight.is_above());
+        assert!(!OverlayAnchor::WindowPoint(point(px(0.0), px(0.0))).is_above());
+    }
+
+    #[test]
+    fn aligns_left_classifies_variants() {
+        assert!(OverlayAnchor::BelowLeft.aligns_left());
+        assert!(OverlayAnchor::AboveLeft.aligns_left());
+        assert!(!OverlayAnchor::BelowRight.aligns_left());
+        assert!(!OverlayAnchor::AboveRight.aligns_left());
+        assert!(!OverlayAnchor::WindowPoint(point(px(0.0), px(0.0))).aligns_left());
     }
 
     #[test]
@@ -1271,6 +1333,32 @@ mod tests {
         assert_eq!(
             realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
             OverlayAnchor::BelowLeft,
+        );
+    }
+
+    #[test]
+    fn flip_noop_when_both_sides_have_negative_space() {
+        // Pathological resize-mid-frame: the trigger fully exceeds the
+        // viewport (origin above the top AND bottom below the bottom).
+        // Without the `max(0)` clamp in `realise_anchor`, the `> * 2.0`
+        // comparison on two negative values could return true when the
+        // RHS is "more negative" than the LHS — producing a cosmetic
+        // flip in a frame where neither side actually has room.
+        let window = size(px(100.0), px(100.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(-50.0)),
+            size: size(px(20.0), px(250.0)),
+        };
+        // space_above (raw) = -50, space_below (raw) = 100 - 200 = -100.
+        // After clamping both to 0, the comparison collapses to 0 > 0*2
+        // (false) — preferred placement survives on both preferences.
+        assert_eq!(
+            realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
+            OverlayAnchor::BelowLeft,
+        );
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveRight, Some(trigger), window),
+            OverlayAnchor::AboveRight,
         );
     }
 

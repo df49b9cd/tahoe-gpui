@@ -603,6 +603,8 @@ impl RenderOnce for PulldownButton {
                 let _ = &action_handlers;
             }
 
+            // TODO(overlay-migration): port to `AnchoredOverlay` so the
+            // list escapes parent `overflow_hidden()` clipping.
             container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
         }
 

@@ -47,6 +47,15 @@
 //! (TextField, Button, Icon, etc.) do not stop-propagate Escape, so
 //! the common case "just works".
 //!
+//! ## Focus restoration on dismiss
+//!
+//! Use [`Popover::restore_focus_to`] with the triggering control's
+//! `FocusHandle` so focus returns to the trigger when the popover
+//! dismisses. This mirrors [`Modal::restore_focus_to`](super::modal::Modal)
+//! and [`Sheet::restore_focus_to`](super::sheet::Sheet) and is HIG-
+//! aligned behaviour for any dismissible overlay summoned from a
+//! keyboard-focusable control.
+//!
 //! [`foundations::accessibility::voiceover`]: crate::foundations::accessibility::voiceover
 //! [`AccessibleExt::with_accessibility`]: crate::foundations::accessibility::AccessibleExt::with_accessibility
 
@@ -104,6 +113,7 @@ pub struct Popover {
     content: AnyElement,
     placement: PopoverPlacement,
     focus_handle: Option<FocusHandle>,
+    restore_focus_to: Option<FocusHandle>,
     on_dismiss: OnMutCallback,
     max_width: Option<gpui::Pixels>,
     /// Whether to render the directional callout arrow. Defaults to `true`.
@@ -123,6 +133,7 @@ impl Popover {
             content: content.into_any_element(),
             placement: PopoverPlacement::default(),
             focus_handle: None,
+            restore_focus_to: None,
             on_dismiss: None,
             max_width: None,
             arrow: true,
@@ -142,12 +153,22 @@ impl Popover {
     /// Attach a focus handle to the content surface. When set, the popover
     /// auto-focuses the surface on open so Escape fires without a prior click.
     ///
-    /// Focus restoration on dismiss is the consumer's responsibility: call
-    /// `trigger_handle.focus(window, cx)` inside the `on_dismiss` callback
-    /// to return focus to the triggering element. Popover is stateless
-    /// (`RenderOnce`) and cannot store the previously-focused element.
+    /// Pair with [`Self::restore_focus_to`] so focus returns to the
+    /// triggering control on dismiss. Without `restore_focus_to`, focus
+    /// stays on the now-detached popover content surface after dismiss
+    /// and the next Tab behaves unpredictably.
     pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
         self.focus_handle = Some(handle);
+        self
+    }
+
+    /// Focus handle to refocus when the popover dismisses (typically the
+    /// trigger button's handle). Mirrors the restoration path on
+    /// [`super::modal::Modal`] and [`super::sheet::Sheet`]: the popover
+    /// wraps `on_dismiss` so the handle is focused before the consumer's
+    /// dismiss handler runs.
+    pub fn restore_focus_to(mut self, handle: FocusHandle) -> Self {
+        self.restore_focus_to = Some(handle);
         self
     }
 
@@ -228,7 +249,18 @@ impl RenderOnce for Popover {
             }
 
             if let Some(handler) = self.on_dismiss {
-                let handler = std::rc::Rc::new(handler);
+                // Wrap the consumer's handler so `restore_focus_to` (if
+                // set) moves focus back to the triggering control before
+                // their callback observes the dismissal. Mirrors the
+                // restoration path on Modal/Sheet.
+                let restore_handle = self.restore_focus_to.clone();
+                let consumer = handler;
+                let handler = std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
+                    if let Some(handle) = restore_handle.as_ref() {
+                        handle.focus(window, cx);
+                    }
+                    consumer(window, cx);
+                });
                 let key_handler = handler.clone();
                 // Bubble-phase Escape handler, same convention as Alert
                 // and Modal. "Bubble-phase" means children receive the
@@ -460,13 +492,12 @@ mod interaction_tests {
     const POPOVER_CONTENT: &str = "popover-content";
 
     // Assumed test viewport dimensions (matches `TestDisplay::new`'s
-    // default 1920×1080). Padding values below are tuned against these
-    // so `realise_anchor` doesn't flip or clamp unexpectedly. Kept as
-    // named constants so the coupling is grep-friendly and future tests
-    // that need to assert against the viewport can reference them.
-    #[expect(dead_code, reason = "documenting viewport coupling; used by comments")]
+    // default 1920×1080). Padding values below are derived from these
+    // rather than hardcoded so the coupling is load-bearing: if
+    // `TestDisplay`'s default ever drifts, the derived constants shift
+    // with it, and `realise_anchor`'s flip threshold stays relatively
+    // placed instead of silently becoming wrong.
     const VIEWPORT_W: f32 = 1920.0;
-    #[expect(dead_code, reason = "documenting viewport coupling; used by comments")]
     const VIEWPORT_H: f32 = 1080.0;
 
     // Trigger and content sizes used by the harness. Kept as named
@@ -475,6 +506,32 @@ mod interaction_tests {
     const TRIGGER_H: f32 = 32.0;
     const CONTENT_W: f32 = 120.0;
     const CONTENT_H: f32 = 60.0;
+
+    // Keep the trigger this far below the viewport top. Derived so the
+    // "above" side has strictly less than 2× the "below" side — the
+    // `realise_anchor` flip threshold is >2×, so we stay just under.
+    // `VIEWPORT_H / 2.7` puts the trigger at ~400pt on the default
+    // 1080pt display with room for neighbouring harness padding.
+    const STABLE_ANCHOR_TOP_PAD: f32 = VIEWPORT_H / 2.7;
+
+    // Keep the trigger near the viewport's bottom so the preferred
+    // `BelowLeft` placement runs out of room and flips to `AboveLeft`.
+    // `VIEWPORT_H - 280` leaves space_below ≈ 248 and space_above ≈
+    // 800 — well past the 2× flip threshold.
+    const FORCED_FLIP_TOP_PAD: f32 = VIEWPORT_H - 280.0;
+
+    // Compile-time sanity checks that keep `VIEWPORT_W`/`VIEWPORT_H`
+    // load-bearing — silent drift of either constant to zero or a
+    // negative value would fail the build rather than the runtime.
+    // VIEWPORT_W doesn't appear in a derived padding today but is the
+    // grep-anchor for any future horizontal derivation (e.g. centering
+    // a trigger for corner-edge flip tests).
+    const _: () = {
+        assert!(VIEWPORT_W > 0.0);
+        assert!(VIEWPORT_H > 0.0);
+        assert!(STABLE_ANCHOR_TOP_PAD > 0.0);
+        assert!(FORCED_FLIP_TOP_PAD > STABLE_ANCHOR_TOP_PAD);
+    };
 
     struct PopoverHarness {
         focus_handle: FocusHandle,
@@ -508,14 +565,12 @@ mod interaction_tests {
             //    expected ordering).
             // 2. `AnchoredOverlay::realise_anchor` must not flip
             //    Above→Below. The flip fires when the opposite side has
-            //    >2× the space of the preferred side. The default test
-            //    display is VIEWPORT_W×VIEWPORT_H, so
-            //    `trigger.origin.y >= (VIEWPORT_H - TRIGGER_H) / 3 ≈ 349pt`
-            //    keeps the preferred anchor stable.
+            //    >2× the space of the preferred side — see
+            //    `STABLE_ANCHOR_TOP_PAD` for the derivation.
             //
-            // 400pt covers both constraints with headroom; left padding
-            // leaves room for the "Right"-aligned content surface.
-            let top_pad = px(400.0);
+            // Left padding leaves room for the "Right"-aligned content
+            // surface plus the snap margin.
+            let top_pad = px(STABLE_ANCHOR_TOP_PAD);
             let left_pad = DROPDOWN_SNAP_MARGIN + px(CONTENT_W - TRIGGER_W + 4.0);
             div().pt(top_pad).pl(left_pad).child(
                 Popover::new(
@@ -593,9 +648,9 @@ mod interaction_tests {
     /// swap) end-to-end, not just the pure-function level covered by the
     /// overlay unit tests.
     ///
-    /// Top padding is 800pt: space_above = 800, space_below ≈ 248,
-    /// ratio > 3x, which clears `realise_anchor`'s strict 2x threshold
-    /// and triggers a Below→Above flip.
+    /// Top padding derived so space_above ≈ VIEWPORT_H - 280 ≈ 800pt
+    /// and space_below ≈ 248pt, ratio > 3x — comfortably past
+    /// `realise_anchor`'s strict 2x threshold.
     struct FlippedPopoverHarness {
         is_open: bool,
     }
@@ -606,7 +661,7 @@ mod interaction_tests {
             _window: &mut gpui::Window,
             _cx: &mut Context<Self>,
         ) -> impl IntoElement {
-            let top_pad = px(800.0);
+            let top_pad = px(FORCED_FLIP_TOP_PAD);
             let left_pad = DROPDOWN_SNAP_MARGIN + px(CONTENT_W - TRIGGER_W + 4.0);
             div().pt(top_pad).pl(left_pad).child(
                 Popover::new(
@@ -646,25 +701,31 @@ mod interaction_tests {
     }
 
     /// Harness: nest the popover inside a small `overflow_hidden()`
-    /// container so we can read both regions' bounds. The assertion lives
-    /// on the *layout* rectangle of the popover content, which is
-    /// `AnchoredOverlay`'s structural proxy for having successfully routed
-    /// the overlay through `deferred(anchored(...))`.
+    /// container so we can read both regions' layout bounds. The
+    /// harness is named for what the assertion actually checks
+    /// (overlay's layout rectangle anchors past the parent's bounds),
+    /// not the paint-time clipping the branch name suggests — see the
+    /// limitation note below.
     ///
-    /// Harness limitation: `VisualTestContext::debug_bounds` returns taffy
-    /// layout bounds, not post-clip paint bounds. A true paint-clip
-    /// verification (pixel diff after clipping is applied) requires
-    /// visual-regression infrastructure (`RenderImage`-based golden
-    /// diffing) that this crate does not yet ship. The `test-support`
-    /// feature only provides layout bounds via `debug_bounds()`, not
-    /// post-paint pixel data. The structural assertion below fails if
-    /// someone removes `anchored()` from `AnchoredOverlay`, which is the
-    /// only way the overlay would fall back into the parent's clip chain.
-    struct ClippedPopoverHarness {
+    /// Harness limitation: `VisualTestContext::debug_bounds` returns
+    /// taffy layout bounds, not post-clip paint bounds. This harness
+    /// verifies the layout-level contract that `AnchoredOverlay` routed
+    /// the overlay through `deferred(anchored(...))` — if `anchored()`
+    /// is removed, the content lays out inside the parent and the
+    /// assertion below fails. A true paint-clip verification (pixel
+    /// diff after clipping is applied) requires visual-regression
+    /// infrastructure (`RenderImage`-based golden diffing) that this
+    /// crate does not yet ship. `TODO(overlay-paint-golden)`: once
+    /// `test-support` exposes post-clip paint geometry or golden-image
+    /// diffing, add a true pixel-level clip test alongside this
+    /// structural one. Tracked alongside the overlay migration work
+    /// (see `TODO(overlay-migration)` call sites in menus_and_actions
+    /// and selection_and_input).
+    struct AnchoredPastParentHarness {
         is_open: bool,
     }
 
-    impl Render for ClippedPopoverHarness {
+    impl Render for AnchoredPastParentHarness {
         fn render(
             &mut self,
             _window: &mut gpui::Window,
@@ -696,8 +757,9 @@ mod interaction_tests {
 
     #[gpui::test]
     async fn overlay_content_anchors_outside_parent_layout_bounds(cx: &mut TestAppContext) {
-        let (_host, cx) =
-            setup_test_window(cx, |_window, _cx| ClippedPopoverHarness { is_open: true });
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| AnchoredPastParentHarness {
+            is_open: true,
+        });
 
         let clip = cx.get_element("clip-region");
         let content = cx.get_element(POPOVER_CONTENT);
@@ -709,12 +771,13 @@ mod interaction_tests {
         // removed from `AnchoredOverlay`, the content would lay out inline
         // inside the clip region and this assertion would fail.
         //
-        // TODO(visual-regression): once the `test-support` harness exposes
-        // post-clip paint geometry (or a golden-image diff), extend this
-        // to assert that the pixels inside `content.bounds` are actually
-        // drawn — which is the real regression the 36aa389 fix addressed.
-        // The structural check below catches the "anchored() removed"
-        // regression but not "paint pipeline re-clips deferred children".
+        // TODO(overlay-paint-golden): once the `test-support` harness
+        // exposes post-clip paint geometry (or a golden-image diff),
+        // extend this to assert that the pixels inside `content.bounds`
+        // are actually drawn. The structural check below catches the
+        // "anchored() removed" regression but not "paint pipeline
+        // re-clips deferred children". Tracked alongside the overlay
+        // migration work.
         assert!(
             content.bounds.right() > clip.bounds.right(),
             "content.right() {:?} should exceed clip.right() {:?}",

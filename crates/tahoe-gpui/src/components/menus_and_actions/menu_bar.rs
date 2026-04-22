@@ -420,6 +420,11 @@ impl RenderOnce for MenuBar {
             )
             .child(content);
 
+            // TODO(overlay-migration): port this dropdown to
+            // `AnchoredOverlay` so it escapes parent `overflow_hidden()`
+            // clipping like Popover and HoverCard already do. Priority
+            // rename is cosmetic; the absolute-positioned `deferred()`
+            // still lives inside the trigger's layout tree.
             container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
         }
 

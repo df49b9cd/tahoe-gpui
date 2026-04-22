@@ -21,19 +21,34 @@ use gpui::{AnyElement, App, Context, ElementId, Task, Window, div, px};
 /// rich hover surfaces should not appear during pointer traversal.
 pub const HOVER_CARD_DEFAULT_DELAY_MS: u64 = 300;
 
-/// Grace window between losing hover on both the trigger and the card
-/// before the card actually closes. Bridges the dead-zone between the
-/// trigger edge and the card (the configured `gap`) so a pointer
-/// traversal of the gap — which briefly leaves both hit regions — does
-/// not dismiss the card.
+/// Base grace window (ms) used when computing the close debounce.
 ///
-/// 80 ms ≈ 2× the pointer-travel time across a `spacing_xs` (8 pt) gap
-/// at typical desktop velocities (~200 pt/s pointer moves clear the
-/// gap in ~40 ms; doubling leaves a comfortable margin for slower
-/// pointers and higher-DPI cursors). Shortening below ~50 ms risks
-/// spurious closes during gap traversal; lengthening beyond ~150 ms
-/// starts to feel sticky on re-entry.
-const HOVER_CARD_CLOSE_DEBOUNCE_MS: u64 = 80;
+/// The debounce bridges the dead-zone between the trigger edge and the
+/// card (the configured `gap`) so a pointer traversal of the gap — which
+/// briefly leaves both hit regions — does not dismiss the card. The
+/// effective debounce is `BASE + PER_PT * gap_pt`, so a theme that bumps
+/// `spacing_xs` (the gap source) scales the debounce proportionally
+/// rather than under-debouncing a wider gap.
+///
+/// Default theme pairs a 4 pt gap with an 80 ms debounce (60 ms base +
+/// 5 ms/pt * 4 pt), matching the prior hand-tuned constant. At a 16 pt
+/// gap it scales to 140 ms; at 0 pt (no gap) it floors at the base.
+/// Shortening below ~50 ms risks spurious closes during gap traversal;
+/// lengthening beyond ~150 ms starts to feel sticky on re-entry — the
+/// base is chosen so the scaled result stays in that band over the
+/// realistic `spacing_xs` range.
+const HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS: u64 = 60;
+const HOVER_CARD_CLOSE_DEBOUNCE_PER_PT_MS: u64 = 5;
+
+/// Compute the close-debounce duration for a given gap magnitude. Pulled
+/// out so the relationship between `theme.spacing_xs` and the debounce
+/// window is testable in isolation.
+fn close_debounce_for_gap(gap: gpui::Pixels) -> Duration {
+    let gap_pt: f32 = gap.into();
+    let gap_pt = gap_pt.max(0.0);
+    let extra = (gap_pt as u64).saturating_mul(HOVER_CARD_CLOSE_DEBOUNCE_PER_PT_MS);
+    Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS.saturating_add(extra))
+}
 
 /// Positions the HoverCard renders relative to the trigger.
 ///
@@ -83,14 +98,17 @@ pub struct HoverCard {
     content_hovered: bool,
     /// Whether keyboard focus is on the trigger. Opened on focus-in so
     /// keyboard-only users (no pointer, VoiceOver, switch control) can
-    /// surface the card's contents; mirrors the hover-in path,
-    /// including `open_delay` and close debounce.
+    /// surface the card's contents; mirrors the hover-in path but uses
+    /// `focus_open_delay` (not `open_delay`) because focus-in is itself
+    /// a deliberate act and doesn't need a traversal-guard.
     trigger_focused: bool,
-    /// Unique id for element identification. Kept for structural identity
-    /// even though render uses the cached child IDs; removing it would
-    /// lose the HoverCard's canonical id.
-    #[expect(dead_code)]
-    id: ElementId,
+    /// Set when Escape dismisses an open, focused card. Gates re-opens
+    /// until the user actually leaves the trigger (focus-out or
+    /// hover-out clears it). Keeps `trigger_focused` honest with the
+    /// underlying AppKit focus state — the old `trigger_focused = false`
+    /// shortcut lied about focus and forced future code to reason about
+    /// a desynced flag.
+    dismissed_while_focused: bool,
     /// Cached child-element IDs computed once in `new()` so `render()`
     /// only does a cheap `Arc` refcount bump instead of allocating a new
     /// `Arc<SharedString>` on each frame.
@@ -101,12 +119,21 @@ pub struct HoverCard {
     trigger: AppElementBuilder,
     /// Builder for the card content.
     content: AppElementBuilder,
-    /// Placement preference. Callers can flip this based on viewport
-    /// position to clamp to the visible bounds.
+    /// Preferred placement. `AnchoredOverlay::realise_anchor` may flip
+    /// Below↔Above at render time if the opposite side has materially
+    /// more room; callers don't need to pre-compute edge clamping.
     placement: HoverCardPlacement,
     /// Hover-in delay; prevents the card from appearing during brief
-    /// pointer traversals.
+    /// pointer traversals. Applies only to the hover path — the focus
+    /// path uses [`HoverCard::focus_open_delay`] because keyboard focus
+    /// is intentional, not accidental.
     open_delay: Duration,
+    /// Keyboard focus-in delay. Defaults to `Duration::ZERO`. The hover
+    /// `open_delay` exists to filter accidental pointer traversals; a
+    /// keyboard user who tabs to a control is already committed, so the
+    /// card should surface immediately by default. Raise this if a
+    /// specific app wants focus-triggered cards to also dwell.
+    focus_open_delay: Duration,
     /// Max content width (px). Defaults to [`HOVER_CARD_MAX_WIDTH`].
     max_width: gpui::Pixels,
     /// Timestamp of the most recent trigger enter (hover or focus),
@@ -118,9 +145,9 @@ pub struct HoverCard {
     /// drops this handle, cancelling the queued future — so the card
     /// doesn't pop open after the user has already moved away.
     pending_open: Option<Task<()>>,
-    /// Pending close timer that fires after
-    /// [`HOVER_CARD_CLOSE_DEBOUNCE_MS`] if neither region is re-entered.
-    /// Dropped (cancelled) the moment hover resumes on either region.
+    /// Pending close timer that fires after [`close_debounce_for_gap`]
+    /// elapses if neither region is re-entered. Dropped (cancelled)
+    /// the moment hover resumes on either region.
     pending_close: Option<Task<()>>,
     /// Focus handle attached to the trigger so the card has a keyboard
     /// activation path (Tab into trigger → card opens after
@@ -136,18 +163,16 @@ pub struct HoverCard {
 impl HoverCard {
     pub fn new(id: impl Into<ElementId>, cx: &mut Context<Self>) -> Self {
         let id = id.into();
-        let trigger_id =
-            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-trigger".into());
-        let content_id =
-            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-content".into());
-        let overlay_id =
-            ElementId::NamedChild(std::sync::Arc::new(id.clone()), "hc-overlay".into());
+        let id_arc = std::sync::Arc::new(id);
+        let trigger_id = ElementId::NamedChild(id_arc.clone(), "hc-trigger".into());
+        let content_id = ElementId::NamedChild(id_arc.clone(), "hc-content".into());
+        let overlay_id = ElementId::NamedChild(id_arc, "hc-overlay".into());
         Self {
             is_open: false,
             trigger_hovered: false,
             content_hovered: false,
             trigger_focused: false,
-            id,
+            dismissed_while_focused: false,
             trigger_id,
             content_id,
             overlay_id,
@@ -155,6 +180,7 @@ impl HoverCard {
             content: None,
             placement: HoverCardPlacement::default(),
             open_delay: Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS),
+            focus_open_delay: Duration::ZERO,
             max_width: px(HOVER_CARD_MAX_WIDTH),
             trigger_entered_at: None,
             pending_open: None,
@@ -162,6 +188,15 @@ impl HoverCard {
             focus_handle: cx.focus_handle(),
             _focus_subscriptions: None,
         }
+    }
+
+    /// Override the keyboard-focus open delay (default `Duration::ZERO`).
+    /// Useful for apps that want focus-triggered hover cards to dwell the
+    /// same way hover-triggered ones do, e.g. to avoid flashing content
+    /// during rapid Tab-through during navigation-heavy workflows.
+    pub fn set_focus_open_delay(&mut self, delay: Duration, cx: &mut Context<Self>) {
+        self.focus_open_delay = delay;
+        cx.notify();
     }
 
     /// Set the trigger element builder.
@@ -219,11 +254,24 @@ impl HoverCard {
         }
         let focus_in = cx.on_focus_in(&self.focus_handle, window, |this, _window, cx| {
             this.trigger_focused = true;
-            this.trigger_entered_at = Some(Instant::now());
+            // Clear the dismissal sentinel if focus is arriving fresh
+            // (we cleared it on focus-out, so a new focus-in means the
+            // user has deliberately re-engaged).
+            this.dismissed_while_focused = false;
+            // Guard the restamp so a focus-in arriving mid-hover-delay
+            // doesn't erase real dwell time the hover path already
+            // accumulated. Mirrors the `is_none()` guard on the hover
+            // branch.
+            if this.trigger_entered_at.is_none() {
+                this.trigger_entered_at = Some(Instant::now());
+            }
             this.update_visibility(cx);
         });
         let focus_out = cx.on_focus_out(&self.focus_handle, window, |this, _event, _window, cx| {
             this.trigger_focused = false;
+            // Focus genuinely left — clear any Escape-dismissal sentinel
+            // so a subsequent re-focus is free to reopen.
+            this.dismissed_while_focused = false;
             if !this.trigger_hovered {
                 // Focus left and the pointer isn't on the trigger —
                 // drop the entered-at stamp so a subsequent re-entry
@@ -235,8 +283,32 @@ impl HoverCard {
         self._focus_subscriptions = Some([focus_in, focus_out]);
     }
 
+    /// Dismiss the card as if the user pressed Escape. Centralises the
+    /// state reset so both the trigger and the content surface can share
+    /// the same Escape path (focused descendants inside the content
+    /// dismiss via this helper too).
+    fn dismiss_from_escape(&mut self, cx: &mut Context<Self>) {
+        if !self.is_open {
+            return;
+        }
+        self.is_open = false;
+        self.trigger_entered_at = None;
+        self.pending_open = None;
+        self.pending_close = None;
+        // Only suppress re-open while focus is still live on the
+        // trigger. A content-side Escape may fire while the content has
+        // focus (not the trigger handle) — in that case focus-out on
+        // the trigger already happened, so the sentinel stays off and
+        // the next focus-in reopens normally.
+        if self.trigger_focused {
+            self.dismissed_while_focused = true;
+        }
+        cx.notify();
+    }
+
     fn update_visibility(&mut self, cx: &mut Context<Self>) {
-        let should_open = self.trigger_hovered || self.content_hovered || self.trigger_focused;
+        let hover_active = self.trigger_hovered || self.content_hovered;
+        let should_open = hover_active || self.trigger_focused;
 
         if !should_open {
             // Hover and focus both left the relevant regions. Drop any
@@ -252,10 +324,13 @@ impl HoverCard {
                 return;
             }
             if self.pending_close.is_none() {
+                // Scale the debounce against the actually-applied gap
+                // so a theme that bumps `spacing_xs` to a wider dead-
+                // zone gets a proportionally wider grace window (rather
+                // than a flicker on traversal).
+                let debounce = close_debounce_for_gap(cx.theme().spacing_xs);
                 self.pending_close = Some(cx.spawn(async move |this, cx| {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS))
-                        .await;
+                    cx.background_executor().timer(debounce).await;
                     this.update(cx, |this, cx| {
                         this.pending_close = None;
                         // Re-check: the user may have re-entered either
@@ -274,32 +349,51 @@ impl HoverCard {
             return;
         }
 
-        // Opening path: hover resumed on trigger or content, so cancel
-        // any pending close that was about to dismiss us.
+        // User dismissed with Escape while the trigger still had focus;
+        // don't reopen until focus actually leaves (focus-out clears
+        // the sentinel). Also cancel any scheduled opens so a pending
+        // timer doesn't override the dismissal.
+        if self.dismissed_while_focused && self.trigger_focused {
+            self.pending_open = None;
+            self.pending_close = None;
+            return;
+        }
+
+        // Opening path: hover or focus resumed, so cancel any pending
+        // close that was about to dismiss us.
         self.pending_close = None;
 
         if self.is_open {
             return;
         }
 
-        // Respect the hover-in delay. If `trigger_entered_at` is still
+        // Pick the active delay. Hover traversal is the accidental
+        // case — it needs the full dwell guard. Keyboard focus is
+        // deliberate, so it uses `focus_open_delay` (default zero).
+        let active_delay = if hover_active {
+            self.open_delay
+        } else {
+            self.focus_open_delay
+        };
+
+        // Respect the active delay. If `trigger_entered_at` is still
         // inside the delay window, schedule a deferred wake so the flip
         // fires even when no subsequent pointer event arrives — without
         // this, a user who enters the trigger and holds still for longer
-        // than `open_delay` would never see the card open.
+        // than the delay would never see the card open.
         //
         // Reduce-motion suppresses decorative transitions at the
         // material/overlay level; the dwell delay is about preventing
         // accidental opens during pointer traversal, not about animation,
         // so it is always honoured.
-        if self.open_delay > Duration::ZERO
+        if active_delay > Duration::ZERO
             && let Some(entered_at) = self.trigger_entered_at
         {
             let elapsed = entered_at.elapsed();
-            if elapsed < self.open_delay {
-                let remaining = self.open_delay - elapsed;
+            if elapsed < active_delay {
+                let remaining = active_delay - elapsed;
                 // The timer IS the delay — once it fires we trust that
-                // `open_delay` has elapsed and flip `is_open` directly
+                // the delay has elapsed and flip `is_open` directly
                 // instead of re-running `update_visibility` (which would
                 // compare `entered_at.elapsed()` against the delay again,
                 // and under a mocked background-executor clock that
@@ -313,7 +407,11 @@ impl HoverCard {
                         this.pending_open = None;
                         let still_should =
                             this.trigger_hovered || this.content_hovered || this.trigger_focused;
-                        if still_should && !this.is_open {
+                        // Re-check the dismissal sentinel at fire time:
+                        // the user may have pressed Escape during the
+                        // wait.
+                        let suppressed = this.dismissed_while_focused && this.trigger_focused;
+                        if still_should && !suppressed && !this.is_open {
                             this.is_open = true;
                             cx.notify();
                         }
@@ -354,12 +452,7 @@ impl Render for HoverCard {
             .on_key_down(
                 cx.listener(|this, event: &gpui::KeyDownEvent, _window, cx| {
                     if this.is_open && crate::foundations::keyboard::is_escape_key(event) {
-                        this.is_open = false;
-                        this.trigger_focused = false;
-                        this.trigger_entered_at = None;
-                        this.pending_open = None;
-                        this.pending_close = None;
-                        cx.notify();
+                        this.dismiss_from_escape(cx);
                     }
                 }),
             )
@@ -400,6 +493,18 @@ impl Render for HoverCard {
                 this.content_hovered = hovered;
                 this.update_visibility(cx);
             }))
+            // Bubble-phase Escape on the content surface so a focused
+            // descendant (e.g. a link inside rich card content) can
+            // dismiss the card without bubbling up through the
+            // deferred-rendered trigger. Mirrors Popover's content-
+            // surface Escape handler.
+            .on_key_down(
+                cx.listener(|this, event: &gpui::KeyDownEvent, _window, cx| {
+                    if this.is_open && crate::foundations::keyboard::is_escape_key(event) {
+                        this.dismiss_from_escape(cx);
+                    }
+                }),
+            )
             .child(content);
             overlay = overlay.content(card);
         }
@@ -411,14 +516,21 @@ impl Render for HoverCard {
 #[cfg(test)]
 mod tests {
     use super::{
-        HOVER_CARD_CLOSE_DEBOUNCE_MS, HOVER_CARD_DEFAULT_DELAY_MS, HoverCard, HoverCardPlacement,
+        HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS, HOVER_CARD_CLOSE_DEBOUNCE_PER_PT_MS,
+        HOVER_CARD_DEFAULT_DELAY_MS, HoverCard, HoverCardPlacement, close_debounce_for_gap,
     };
-    use crate::foundations::accessibility::AccessibilityMode;
-    use crate::foundations::theme::TahoeTheme;
     use crate::test_helpers::helpers::setup_test_window;
     use core::prelude::v1::test;
-    use gpui::{IntoElement, TestAppContext, div};
+    use gpui::{IntoElement, TestAppContext, div, px};
     use std::time::{Duration, Instant};
+
+    /// Debounce matching the default theme's `spacing_xs` (4 pt). Used by
+    /// the close-debounce tests so the timing stays anchored to the
+    /// helper's derivation rather than a hardcoded number that would
+    /// drift if the base or per-pt constants move.
+    fn default_close_debounce() -> Duration {
+        close_debounce_for_gap(px(4.0))
+    }
 
     #[test]
     fn placement_default_is_above_left() {
@@ -428,6 +540,35 @@ mod tests {
     #[test]
     fn default_delay_is_300ms() {
         assert_eq!(HOVER_CARD_DEFAULT_DELAY_MS, 300);
+    }
+
+    #[test]
+    fn close_debounce_scales_with_gap_magnitude() {
+        // Base floor when no gap: only the BASE_MS portion.
+        assert_eq!(
+            close_debounce_for_gap(px(0.0)),
+            Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS)
+        );
+        // Default theme gap (4 pt): base + 4 * per-pt.
+        assert_eq!(
+            close_debounce_for_gap(px(4.0)),
+            Duration::from_millis(
+                HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS + 4 * HOVER_CARD_CLOSE_DEBOUNCE_PER_PT_MS
+            )
+        );
+        // Wider theme override (16 pt): linear scale, no clamp.
+        assert_eq!(
+            close_debounce_for_gap(px(16.0)),
+            Duration::from_millis(
+                HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS + 16 * HOVER_CARD_CLOSE_DEBOUNCE_PER_PT_MS
+            )
+        );
+        // Negative input (shouldn't happen at render time but defensive):
+        // clamped to base, not sign-extended into a large duration.
+        assert_eq!(
+            close_debounce_for_gap(px(-4.0)),
+            Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_BASE_MS)
+        );
     }
 
     /// Builds a HoverCard with trivial trigger/content so `update_visibility`
@@ -512,8 +653,9 @@ mod tests {
             assert!(hc.pending_close.is_some(), "close debounce must schedule");
         });
 
+        let debounce = default_close_debounce();
         cx.executor()
-            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS + 20));
+            .advance_clock(debounce + Duration::from_millis(20));
         cx.run_until_parked();
 
         hc.update(cx, |hc, _cx| {
@@ -541,8 +683,8 @@ mod tests {
 
         // Simulate the pointer bridging the gap into the card while the
         // close debounce is still pending.
-        cx.executor()
-            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS / 2));
+        let debounce = default_close_debounce();
+        cx.executor().advance_clock(debounce / 2);
         cx.run_until_parked();
 
         hc.update(cx, |hc, cx| {
@@ -556,8 +698,7 @@ mod tests {
         });
 
         // Advance past the original debounce deadline — card must persist.
-        cx.executor()
-            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS));
+        cx.executor().advance_clock(debounce);
         cx.run_until_parked();
 
         hc.update(cx, |hc, _cx| {
@@ -566,27 +707,22 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn reduce_motion_still_respects_open_delay(cx: &mut TestAppContext) {
+    async fn open_delay_applies_to_hover_even_without_reduce_motion(cx: &mut TestAppContext) {
+        // `update_visibility` does not consult the theme or
+        // `AccessibilityMode`; the dwell delay is about filtering
+        // accidental pointer traversal, which is a hover concern
+        // independent of motion settings. This test guards that
+        // invariant (a regression that made the delay theme-dependent
+        // would start bypassing the timer under certain accessibility
+        // modes). If the dwell logic ever does start reading the theme,
+        // this test should grow a REDUCE_MOTION branch.
         let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
-
-        // Swap in a theme with REDUCE_MOTION so `update_visibility` sees it.
-        // Save the original theme to restore after assertions.
-        let original_theme = cx.update(|_window, cx| {
-            let original = cx.global::<TahoeTheme>().clone();
-            let mut theme = TahoeTheme::dark();
-            theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
-            cx.set_global(theme);
-            original
-        });
 
         hc.update(cx, |hc, cx| {
             hc.trigger_hovered = true;
             hc.trigger_entered_at = Some(Instant::now());
             hc.update_visibility(cx);
-            // Reduce-motion no longer collapses the delay — it only
-            // suppresses decorative transitions at the material/overlay
-            // level. The card must still wait for the open delay.
-            assert!(!hc.is_open, "reduce_motion must still respect open_delay");
+            assert!(!hc.is_open, "hover path must respect open_delay");
             assert!(hc.pending_open.is_some(), "open timer must be scheduled");
         });
 
@@ -597,35 +733,162 @@ mod tests {
         hc.update(cx, |hc, _cx| {
             assert!(hc.is_open, "card must open after delay elapses");
         });
-
-        // Restore original theme so subsequent tests aren't affected.
-        cx.update(|_window, cx| {
-            cx.set_global(original_theme);
-        });
     }
 
     #[gpui::test]
-    async fn focus_in_opens_card_after_delay(cx: &mut TestAppContext) {
+    async fn focus_in_opens_card_immediately_by_default(cx: &mut TestAppContext) {
+        // Keyboard focus is a deliberate act, not accidental traversal.
+        // `focus_open_delay` defaults to `Duration::ZERO`, so a focus-in
+        // should flip `is_open` without spawning a timer.
         let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
-
-        // Run until parked so the first render fires and focus
-        // subscriptions are installed via `install_focus_subscriptions`.
         cx.run_until_parked();
 
         hc.update(cx, |hc, cx| {
             hc.trigger_focused = true;
             hc.trigger_entered_at = Some(Instant::now());
             hc.update_visibility(cx);
-            assert!(!hc.is_open, "focus-in still respects open_delay");
+            assert!(hc.is_open, "zero focus_open_delay opens immediately");
+            assert!(
+                hc.pending_open.is_none(),
+                "no open timer should be spawned at zero delay"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_in_respects_non_zero_focus_open_delay(cx: &mut TestAppContext) {
+        // Consumers that want the focus-triggered path to dwell can opt
+        // in via `set_focus_open_delay`. The delay is honoured just like
+        // the hover `open_delay`, including the deferred wake that fires
+        // without a subsequent event.
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, cx| {
+            hc.set_focus_open_delay(Duration::from_millis(150), cx);
+            hc.trigger_focused = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(!hc.is_open);
             assert!(hc.pending_open.is_some());
         });
 
-        cx.executor()
-            .advance_clock(Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS + 20));
+        cx.executor().advance_clock(Duration::from_millis(170));
         cx.run_until_parked();
 
         hc.update(cx, |hc, _cx| {
-            assert!(hc.is_open, "card opens once the focus-in delay elapses");
+            assert!(hc.is_open);
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_in_preserves_in_flight_hover_entered_at(cx: &mut TestAppContext) {
+        // If hover already stamped `trigger_entered_at` and a focus-in
+        // arrives during the dwell window, focus-in must NOT restamp
+        // the timer (that would erase accumulated dwell time). This
+        // mirrors the `is_none()` guard on the hover path.
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+        cx.run_until_parked();
+
+        let earlier = Instant::now() - Duration::from_millis(200);
+        let stamped = hc.update(cx, |hc, _cx| {
+            hc.trigger_hovered = true;
+            hc.trigger_entered_at = Some(earlier);
+            hc.trigger_entered_at
+        });
+
+        // Simulate the focus-in listener: arrives while `trigger_entered_at`
+        // is already set, must not overwrite it.
+        hc.update(cx, |hc, _cx| {
+            hc.trigger_focused = true;
+            hc.dismissed_while_focused = false;
+            if hc.trigger_entered_at.is_none() {
+                hc.trigger_entered_at = Some(Instant::now());
+            }
+            assert_eq!(
+                hc.trigger_entered_at, stamped,
+                "focus-in must preserve the hover's entered_at stamp"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn escape_dismisses_focused_card_and_suppresses_reopen(cx: &mut TestAppContext) {
+        // Escape dismisses an open, focused card, resets all pending
+        // timers, and gates re-opens via `dismissed_while_focused` until
+        // focus actually leaves.
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_focused = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(hc.is_open);
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.dismiss_from_escape(cx);
+            assert!(!hc.is_open, "escape must close the card");
+            assert!(hc.trigger_entered_at.is_none());
+            assert!(hc.pending_open.is_none());
+            assert!(hc.pending_close.is_none());
+            assert!(hc.trigger_focused, "escape must NOT lie about focus state");
+            assert!(hc.dismissed_while_focused, "sentinel must gate re-opens");
+        });
+
+        // Simulate the user re-hovering the trigger while focus is
+        // still live: the card must NOT reopen because the sentinel
+        // is set.
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(!hc.is_open, "sentinel must block reopen while focused");
+        });
+
+        // Simulate focus leaving (focus-out clears the sentinel).
+        hc.update(cx, |hc, cx| {
+            hc.trigger_focused = false;
+            hc.dismissed_while_focused = false;
+            hc.update_visibility(cx);
+        });
+
+        // Zero-delay reopen via hover now that sentinel is clear.
+        hc.update(cx, |hc, cx| {
+            hc.set_open_delay(Duration::ZERO, cx);
+            hc.update_visibility(cx);
+            assert!(hc.is_open, "hover reopens once sentinel is cleared");
+        });
+    }
+
+    #[gpui::test]
+    async fn escape_on_unfocused_trigger_does_not_arm_sentinel(cx: &mut TestAppContext) {
+        // A content-side Escape may fire while focus is on a descendant
+        // inside the card, not on the trigger handle. The dismissal
+        // sentinel should only arm when the trigger itself is focused
+        // — otherwise subsequent focus-in on the trigger must be free
+        // to reopen.
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, cx| {
+            hc.set_open_delay(Duration::ZERO, cx);
+            hc.trigger_hovered = true;
+            hc.update_visibility(cx);
+            assert!(hc.is_open);
+            // Simulate focus moving to a descendant inside content:
+            // trigger handle no longer focused.
+            hc.trigger_focused = false;
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.dismiss_from_escape(cx);
+            assert!(!hc.is_open);
+            assert!(
+                !hc.dismissed_while_focused,
+                "sentinel must NOT arm when the trigger is not focused"
+            );
         });
     }
 }
