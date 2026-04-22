@@ -101,7 +101,11 @@ impl SpringPreset {
 /// (short / medium / long) but carry Glass-specific names for historical
 /// reasons. Prefer reading via [`MotionTokens::duration_for`] so theme
 /// overrides propagate.
-#[derive(Debug, Clone)]
+///
+/// Cheap to copy: three `u64` duration fields plus three `f32` spring
+/// parameters. `Copy` lets callers store a token snapshot in a closure
+/// without a visible `.clone()` at every capture site.
+#[derive(Debug, Clone, Copy)]
 pub struct MotionTokens {
     /// Flex response press/release duration in ms (semantic: short ramp).
     ///

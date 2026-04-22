@@ -15,11 +15,18 @@ use crate::foundations::layout::HOVER_CARD_MAX_WIDTH;
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, ElementId, Window, div, px};
+use gpui::{AnyElement, App, Context, ElementId, Task, Window, div, px};
 
 /// Default hover-in delay (300 ms). Matches HIG guidance that
 /// rich hover surfaces should not appear during pointer traversal.
 pub const HOVER_CARD_DEFAULT_DELAY_MS: u64 = 300;
+
+/// Grace window between losing hover on both the trigger and the card
+/// before the card actually closes. Bridges the dead-zone between the
+/// trigger edge and the card (the configured `gap`) so a pointer
+/// traversal of the gap — which briefly leaves both hit regions — does
+/// not dismiss the card.
+const HOVER_CARD_CLOSE_DEBOUNCE_MS: u64 = 80;
 
 /// Positions the HoverCard renders relative to the trigger.
 ///
@@ -38,6 +45,17 @@ pub enum HoverCardPlacement {
     BelowLeft,
     /// Below the trigger, aligned to the right edge.
     BelowRight,
+}
+
+impl From<HoverCardPlacement> for OverlayAnchor {
+    fn from(placement: HoverCardPlacement) -> Self {
+        match placement {
+            HoverCardPlacement::AboveLeft => OverlayAnchor::AboveLeft,
+            HoverCardPlacement::AboveRight => OverlayAnchor::AboveRight,
+            HoverCardPlacement::BelowLeft => OverlayAnchor::BelowLeft,
+            HoverCardPlacement::BelowRight => OverlayAnchor::BelowRight,
+        }
+    }
 }
 
 impl HoverCardPlacement {
@@ -101,6 +119,16 @@ pub struct HoverCard {
     /// Timestamp of the most recent trigger enter, used to defer the
     /// open-visibility flip by `open_delay`.
     trigger_entered_at: Option<Instant>,
+    /// Pending deferred wake that will re-run [`Self::update_visibility`]
+    /// once `open_delay` has elapsed since `trigger_entered_at`. Storing
+    /// (rather than detaching) the task means a subsequent hover-out
+    /// drops this handle, cancelling the queued future — so the card
+    /// doesn't pop open after the user has already moved away.
+    pending_open: Option<Task<()>>,
+    /// Pending close timer that fires after
+    /// [`HOVER_CARD_CLOSE_DEBOUNCE_MS`] if neither region is re-entered.
+    /// Dropped (cancelled) the moment hover resumes on either region.
+    pending_close: Option<Task<()>>,
 }
 
 impl HoverCard {
@@ -116,6 +144,8 @@ impl HoverCard {
             open_delay: Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS),
             max_width: px(HOVER_CARD_MAX_WIDTH),
             trigger_entered_at: None,
+            pending_open: None,
+            pending_close: None,
         }
     }
 
@@ -160,20 +190,74 @@ impl HoverCard {
 
     fn update_visibility(&mut self, cx: &mut Context<Self>) {
         let should_open = self.trigger_hovered || self.content_hovered;
-        if should_open != self.is_open {
-            // Respect the hover-in delay: if the trigger just entered,
-            // defer open until `open_delay` has elapsed. Close events
-            // are applied immediately to avoid lingering cards.
-            if should_open
-                && self.open_delay > Duration::ZERO
-                && let Some(entered_at) = self.trigger_entered_at
-                && entered_at.elapsed() < self.open_delay
-            {
+
+        if !should_open {
+            // Hover left both regions. Drop any pending open so a
+            // lingering timer doesn't re-open the card after the user
+            // has moved away, then debounce the close so pointer
+            // traversal of the gap between the trigger and card (which
+            // leaves both hit regions briefly) doesn't dismiss the
+            // surface. When the card isn't open, just reset bookkeeping.
+            self.pending_open = None;
+            if !self.is_open {
+                self.pending_close = None;
                 return;
             }
-            self.is_open = should_open;
-            cx.notify();
+            if self.pending_close.is_none() {
+                self.pending_close = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS))
+                        .await;
+                    this.update(cx, |this, cx| {
+                        this.pending_close = None;
+                        // Re-check: the user may have re-entered either
+                        // region during the debounce window.
+                        let still_hovered = this.trigger_hovered || this.content_hovered;
+                        if !still_hovered && this.is_open {
+                            this.is_open = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                }));
+            }
+            return;
         }
+
+        // Opening path: hover resumed on trigger or content, so cancel
+        // any pending close that was about to dismiss us.
+        self.pending_close = None;
+
+        if self.is_open {
+            return;
+        }
+
+        // Respect the hover-in delay. If `trigger_entered_at` is still
+        // inside the delay window, schedule a deferred wake so the flip
+        // fires even when no subsequent pointer event arrives — without
+        // this, a user who enters the trigger and holds still for longer
+        // than `open_delay` would never see the card open.
+        if self.open_delay > Duration::ZERO
+            && let Some(entered_at) = self.trigger_entered_at
+        {
+            let elapsed = entered_at.elapsed();
+            if elapsed < self.open_delay {
+                let remaining = self.open_delay - elapsed;
+                self.pending_open = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(remaining).await;
+                    this.update(cx, |this, cx| {
+                        this.pending_open = None;
+                        this.update_visibility(cx);
+                    })
+                    .ok();
+                }));
+                return;
+            }
+        }
+
+        self.pending_open = None;
+        self.is_open = true;
+        cx.notify();
     }
 }
 
@@ -209,18 +293,11 @@ impl Render for HoverCard {
             }))
             .children(trigger_el);
 
-        let anchor = match self.placement {
-            HoverCardPlacement::AboveLeft => OverlayAnchor::AboveLeft,
-            HoverCardPlacement::AboveRight => OverlayAnchor::AboveRight,
-            HoverCardPlacement::BelowLeft => OverlayAnchor::BelowLeft,
-            HoverCardPlacement::BelowRight => OverlayAnchor::BelowRight,
-        };
-
         // `AnchoredOverlay::gap` signs the gap against the realised anchor,
         // so if `realise_anchor` flips the preferred side in prepaint the
         // gap lands on the side the card actually renders on.
         let mut overlay = AnchoredOverlay::new(overlay_id, trigger_div)
-            .anchor(anchor)
+            .anchor(self.placement.into())
             .gap(spacing_xs);
 
         if let Some(content) = content_el {

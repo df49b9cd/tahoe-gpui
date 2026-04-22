@@ -10,17 +10,19 @@
 //!
 //! # Accessibility
 //!
-//! The glyph arrow is purely decorative — it has no accessibility
-//! label because VoiceOver already announces "popover" as a role hint
-//! when the focused content surface is acquired. Consumers should
+//! The glyph arrow is purely decorative and carries no accessibility
+//! label. GPUI does not yet expose an AppKit "popover" role, so what
+//! VoiceOver announces when focus lands on the content surface is
+//! whatever role the contained elements surface (typically the
+//! content's own role rather than a "popover" hint). Consumers should
 //! supply semantic labeling on the `content` they pass in; the popover
-//! shell adds no announceable text of its own. VoiceOver behaviour is
-//! not yet verified end-to-end in automated tests, so manual AX passes
-//! on macOS remain the source of truth for this surface.
+//! shell adds no announceable text of its own. Manual AX passes on
+//! macOS are the source of truth for this surface until GPUI ships
+//! richer role metadata.
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
 use crate::foundations::motion::accessible_transition_animation;
-use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor, child_id};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize};
 use gpui::prelude::*;
 use gpui::{
@@ -48,6 +50,17 @@ pub enum PopoverPlacement {
     AboveLeft,
     /// Above the trigger, aligned to the right edge.
     AboveRight,
+}
+
+impl From<PopoverPlacement> for OverlayAnchor {
+    fn from(placement: PopoverPlacement) -> Self {
+        match placement {
+            PopoverPlacement::BelowLeft => OverlayAnchor::BelowLeft,
+            PopoverPlacement::BelowRight => OverlayAnchor::BelowRight,
+            PopoverPlacement::AboveLeft => OverlayAnchor::AboveLeft,
+            PopoverPlacement::AboveRight => OverlayAnchor::AboveRight,
+        }
+    }
 }
 
 /// A popover that shows floating content relative to a trigger.
@@ -126,12 +139,16 @@ impl RenderOnce for Popover {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if self.is_open
             && let Some(ref handle) = self.focus_handle
-            && !handle.is_focused(window)
+            && !handle.contains_focused(window, cx)
         {
             // Auto-focus the content surface on open so Escape-dismiss
-            // fires without a prior click, matching Alert/Modal. Done
-            // before re-borrowing the theme below so the mutable-borrow
-            // on `cx` is released before the immutable global read.
+            // fires without a prior click, matching Alert/Modal. Use
+            // `contains_focused` (not `is_focused`) so a focusable child
+            // inside the content — e.g. a text field — keeps focus on
+            // open instead of having it stolen back to the shell.
+            // Done before re-borrowing the theme below so the
+            // mutable-borrow on `cx` is released before the immutable
+            // global read.
             handle.focus(window, cx);
         }
 
@@ -141,14 +158,10 @@ impl RenderOnce for Popover {
             .debug_selector(|| "popover-trigger".into())
             .child(self.trigger);
 
-        let overlay_id = child_id(&self.id, "overlay");
+        let overlay_id =
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "overlay".into());
 
-        let mut overlay = AnchoredOverlay::new(overlay_id, trigger).anchor(match self.placement {
-            PopoverPlacement::BelowLeft => OverlayAnchor::BelowLeft,
-            PopoverPlacement::BelowRight => OverlayAnchor::BelowRight,
-            PopoverPlacement::AboveLeft => OverlayAnchor::AboveLeft,
-            PopoverPlacement::AboveRight => OverlayAnchor::AboveRight,
-        });
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger).anchor(self.placement.into());
 
         // Gap between trigger edge and popover body. `AnchoredOverlay::gap`
         // resolves the sign against the *realised* anchor inside prepaint,
@@ -201,7 +214,7 @@ impl RenderOnce for Popover {
                 .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
             let spacing_sm = theme.spacing_sm;
             let accessibility = theme.accessibility_mode;
-            let motion = theme.glass.motion.clone();
+            let motion = theme.glass.motion;
             let natural_duration = std::time::Duration::from_millis(motion.lift_duration_ms);
 
             // Defer the arrow-rendering decision to the realised anchor.
@@ -515,6 +528,65 @@ mod interaction_tests {
             assert!(!host.is_open);
         });
         assert_element_absent(cx, POPOVER_CONTENT);
+    }
+
+    /// Harness that pins the trigger near the bottom of the 1920x1080
+    /// test window so [`crate::foundations::overlay::realise_anchor`] is
+    /// forced to flip a preferred `Below*` placement to `Above*`. Used to
+    /// verify the full pipeline (`.gap()` sign flip + arrow orientation
+    /// swap) end-to-end, not just the pure-function level covered by the
+    /// overlay unit tests.
+    ///
+    /// Top padding is 800pt: space_above = 800, space_below ≈ 248,
+    /// ratio > 3x, which clears `realise_anchor`'s strict 2x threshold
+    /// and triggers a Below→Above flip.
+    struct FlippedPopoverHarness {
+        is_open: bool,
+    }
+
+    impl Render for FlippedPopoverHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            let top_pad = px(800.0);
+            let left_pad = DROPDOWN_SNAP_MARGIN + px(CONTENT_W - TRIGGER_W + 4.0);
+            div().pt(top_pad).pl(left_pad).child(
+                Popover::new(
+                    "popover",
+                    div().w(px(TRIGGER_W)).h(px(TRIGGER_H)).child("Trigger"),
+                    div().w(px(CONTENT_W)).h(px(CONTENT_H)).child("Content"),
+                )
+                .open(self.is_open)
+                .placement(PopoverPlacement::BelowLeft)
+                .arrow(false),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn preferred_below_flips_to_above_when_trigger_near_bottom(cx: &mut TestAppContext) {
+        let (_host, cx) =
+            setup_test_window(cx, |_window, _cx| FlippedPopoverHarness { is_open: true });
+
+        let trigger = cx.get_element(POPOVER_TRIGGER);
+        let content = cx.get_element(POPOVER_CONTENT);
+
+        // The caller asked for `BelowLeft`, but with the trigger pinned
+        // near the bottom edge `realise_anchor` must flip the preferred
+        // side. If the flip fires, the content lays out above the
+        // trigger; if it doesn't, the content spills past the viewport
+        // bottom or gets snapped up under the trigger by
+        // `snap_to_window_with_margin` (both of which would fail this
+        // assertion because the content's bottom would be at or below
+        // the trigger's top).
+        assert!(
+            content.bounds.bottom() <= trigger.bounds.top(),
+            "flipped content.bottom() {:?} should be at or above trigger.top() {:?}",
+            content.bounds.bottom(),
+            trigger.bounds.top(),
+        );
     }
 
     /// Harness: nest the popover inside a small `overflow_hidden()`

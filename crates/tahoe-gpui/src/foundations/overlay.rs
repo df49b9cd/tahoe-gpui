@@ -11,18 +11,19 @@
 //! `ManagedView`.
 //!
 //! Overlay content is laid out independently in prepaint (via
-//! `AnyElement::layout_as_root`) so positioning is correct on the first
-//! frame — no two-frame bootstrap or caller-side `cx.notify()` dance.
-//!
-//! See `foundations::layout`'s overflow-clipping audit note for the list
-//! of in-crate components that should migrate onto this primitive.
+//! `AnyElement::layout_as_root`) so a trigger-anchored overlay positions
+//! correctly on the first frame — the trigger's bounds are realised inside
+//! the same `prepaint` pass, before the overlay subtree is built. The
+//! first-frame fallback (no trigger bounds yet) hands off to `anchored()`'s
+//! own laid-out-origin behaviour.
 //!
 //! # Example
 //!
 //! ```ignore
 //! use tahoe_gpui::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-//! use gpui::{div, point, px};
+//! use gpui::{IntoElement, div, point, px};
 //!
+//! let is_open = true;
 //! let overlay = AnchoredOverlay::new("my-overlay", div().child("Trigger"))
 //!     .anchor(OverlayAnchor::BelowLeft)
 //!     .offset(point(px(0.0), px(4.0)))
@@ -37,11 +38,57 @@ use gpui::{
 
 use crate::foundations::layout::DROPDOWN_SNAP_MARGIN;
 
+/// Named z-order constants for [`AnchoredOverlay::priority`] and the raw
+/// GPUI [`deferred`]`(...).with_priority(n)` builder.
+///
+/// The values are ordinal, not spaced: each constant sits above the
+/// previous one, so a new layer inserted between two existing tiers would
+/// renumber the ones above it. This is by design — GPUI's deferred-draw
+/// priority is a dense `usize` ordering, not a numeric scale. The
+/// absolute values carry no meaning beyond their relative ordering, so
+/// new consumers should prefer an existing layer over inventing a raw
+/// number.
+pub struct OverlayLayer;
+
+impl OverlayLayer {
+    /// Dropdown menus, list pickers, combo-box popups. The base layer
+    /// for trigger-anchored overlay surfaces and the default for
+    /// [`AnchoredOverlay`].
+    pub const DROPDOWN: usize = 1;
+    /// Morphing glass surface transitions (see
+    /// `foundations::materials::glass_surface_morph`). Stacks one above
+    /// dropdowns so an in-flight morph doesn't get stamped under a
+    /// simultaneously-opening dropdown.
+    pub const GLASS_MORPH: usize = 2;
+    /// Tooltip surfaces. Stacks above popovers so a tooltip over a
+    /// popover's control renders on top.
+    pub const TOOLTIP: usize = 10;
+    /// Context menus (right-click / control-click) and `WindowPoint`
+    /// popovers. Stacks above tooltips so the menu always reads as the
+    /// active input surface once summoned.
+    pub const CONTEXT_MENU: usize = 20;
+}
+
 /// Where an overlay attaches relative to its trigger.
 ///
-/// Each variant encodes two corners: which corner of the trigger the
-/// overlay latches onto (the "attach" corner) and which corner of the
-/// overlay is placed at that point (the "anchor" corner).
+/// Each trigger-relative variant encodes two corners: which corner of the
+/// trigger the overlay latches onto (the "attach" corner) and which corner
+/// of the overlay is placed at that point (the "anchor" corner).
+///
+/// # Choosing a variant
+///
+/// - **`BelowLeft` / `BelowRight`** — dropdowns, auto-complete menus,
+///   popovers below a toolbar button. The default for anything triggered
+///   by a control with more room below than above.
+/// - **`AboveLeft` / `AboveRight`** — tooltip-style popovers attached to a
+///   trigger near the bottom of a pane. [`realise_anchor`] flips a
+///   preferred `Below*` to `Above*` (and vice-versa) automatically when
+///   the opposite side has materially more room, so most callers can
+///   leave the preferred side set to whatever reads best in the common
+///   case.
+/// - **`WindowPoint`** — context menus and popovers summoned at the
+///   pointer position. See the variant's own docs for the coordinate
+///   space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OverlayAnchor {
     /// Overlay's top-left meets the trigger's bottom-left.
@@ -55,6 +102,13 @@ pub enum OverlayAnchor {
     AboveRight,
     /// Overlay is positioned at a window-absolute point, with no trigger
     /// anchoring. Used by `ContextMenu::show(pos)` and similar.
+    ///
+    /// The coordinate is viewport-relative — (0, 0) is the window's
+    /// top-left corner, matching GPUI's `Window::viewport_size`. The
+    /// overlay's top-left is placed at this point (modulo offset);
+    /// [`realise_anchor`] does not flip `WindowPoint` overlays, and
+    /// [`AnchoredOverlay::gap`] is a no-op because there is no trigger
+    /// to clear.
     WindowPoint(Point<Pixels>),
 }
 
@@ -83,16 +137,6 @@ impl OverlayAnchor {
     }
 }
 
-/// Derive a deterministic child [`ElementId`] from a parent id and a static
-/// suffix. Uses GPUI's [`Display`](std::fmt::Display) impl on `ElementId`
-/// rather than the unstable `Debug` impl, so the resulting name stays
-/// predictable across GPUI upgrades. Intended for components that need a
-/// per-instance id for a child element (e.g. a popover's floating surface
-/// id paired with the popover trigger's id).
-pub fn child_id(parent: &ElementId, suffix: &'static str) -> ElementId {
-    ElementId::Name(format!("{parent}-{suffix}").into())
-}
-
 /// Content builder that receives the realised anchor (after any
 /// overflow-driven flip) so consumers whose rendering depends on
 /// placement — such as a popover arrow glyph — can stay in sync with
@@ -103,10 +147,16 @@ type ContentFn = Box<dyn FnOnce(OverlayAnchor) -> AnyElement>;
 ///
 /// The trigger element is always laid out in the normal tree. The content
 /// element, when present, is built in `prepaint` (after the trigger's
-/// bounds are realised by taffy) and wrapped in a
+/// bounds are realised by taffy in the same pass) and wrapped in a
 /// `deferred(anchored(...))` subtree so it paints after the rest of the
-/// frame at window-absolute coordinates. Positioning is correct on the
-/// first frame — no two-frame bootstrap.
+/// frame at window-absolute coordinates.
+///
+/// The common case is first-frame correct: `prepaint` reads the trigger's
+/// freshly-realised bounds before building the anchored subtree. The edge
+/// case where `trigger_bounds` isn't available yet (e.g. window just
+/// opened, taffy hasn't measured the trigger) falls back to
+/// `anchored()`'s own laid-out-origin behaviour — the overlay appears at
+/// its natural layout position until the next frame resolves bounds.
 pub struct AnchoredOverlay {
     id: ElementId,
     trigger: Option<AnyElement>,
@@ -136,7 +186,7 @@ impl AnchoredOverlay {
             offset: Point::default(),
             gap: None,
             snap_margin: DROPDOWN_SNAP_MARGIN,
-            priority: 1,
+            priority: OverlayLayer::DROPDOWN,
             occlude: true,
         }
     }
@@ -213,8 +263,10 @@ impl AnchoredOverlay {
         self
     }
 
-    /// Deferred-draw priority. Defaults to `1` (matches Zed's `PopoverMenu`);
-    /// raise for overlays that must stack above other floating surfaces.
+    /// Deferred-draw priority. Defaults to [`OverlayLayer::DROPDOWN`]
+    /// (matches Zed's `PopoverMenu`); pass one of the other
+    /// [`OverlayLayer`] constants (or a raw `usize` for bespoke stacks)
+    /// to place the overlay above other floating surfaces.
     pub fn priority(mut self, priority: usize) -> Self {
         self.priority = priority;
         self
@@ -236,6 +288,15 @@ impl AnchoredOverlay {
     #[cfg(test)]
     fn has_content(&self) -> bool {
         self.content.is_some()
+    }
+
+    /// Test-only mirror of [`Self::has_content`] for the flip-aware
+    /// `content_fn` path. Lets tests assert that `content_fn(is_open, ...)`
+    /// gates the builder closure correctly (and that it doesn't run
+    /// eagerly when `is_open` is false).
+    #[cfg(test)]
+    fn has_content_fn(&self) -> bool {
+        self.content_fn.is_some()
     }
 
     /// Test-only accessor for the configured snap margin.
@@ -262,12 +323,18 @@ impl AnchoredOverlay {
         self.gap
     }
 
-    /// Test-only shim that replicates the anchor-resolution + content-fn
-    /// invocation path inside `prepaint`, without running the full GPUI
+    /// Test-only shim that replicates the anchor-resolution + content
+    /// precedence path inside `prepaint`, without running the full GPUI
     /// element lifecycle. Returns the realised anchor so tests can assert
     /// both `realise_anchor`'s decision and the `content_fn` contract
     /// (the closure is invoked with the realised anchor, not the preferred
-    /// one). Consumes `self.content_fn` on invocation, same as prepaint.
+    /// one).
+    ///
+    /// Mirrors prepaint's precedence: if `content` is set it's drained
+    /// first and `content_fn` is left untouched; otherwise the
+    /// `content_fn` builder is consumed and invoked with the realised
+    /// anchor. Matches the `raw_content.take().or_else(...)` shape in
+    /// `prepaint`.
     #[cfg(test)]
     fn simulate_resolve(
         &mut self,
@@ -275,7 +342,9 @@ impl AnchoredOverlay {
         window_size: Size<Pixels>,
     ) -> OverlayAnchor {
         let realised = realise_anchor(self.anchor, trigger_bounds, window_size);
-        if let Some(builder) = self.content_fn.take() {
+        if self.content.take().is_none()
+            && let Some(builder) = self.content_fn.take()
+        {
             let _ = builder(realised);
         }
         realised
@@ -439,17 +508,24 @@ fn resolve_anchor_point(
 
 /// Decide which side of the trigger the overlay should actually render on.
 ///
-/// When the preferred anchor would put the overlay in a region with
-/// materially less space than the opposite side, flip Below↔Above so
-/// consumers that adapt their rendering to the realised placement (e.g.
-/// a popover arrow glyph) stay in sync. The threshold (opposite side
-/// must have strictly more than twice the space of the preferred side)
-/// is deliberately conservative so near-equal splits don't flicker.
+/// Flips Below↔Above when the opposite side has strictly more than twice
+/// the space of the preferred side — i.e. `space_opposite > space_preferred * 2.0`.
+/// The `> 2.0` (not `>= 2.0`) is deliberate: a trigger sitting exactly on
+/// the 2:1 split stays on the preferred side so small viewport resizes
+/// don't flicker the overlay across the trigger.
+///
+/// Space is measured as the pixel distance from the trigger's edge to
+/// the viewport edge on each side: `trigger.origin.y` for above, and
+/// `window.height - trigger.bottom()` for below. The horizontal suffix
+/// (`Left`/`Right`) is preserved across a vertical flip so a
+/// `BelowLeft` → `AboveLeft` realisation keeps the overlay pinned to
+/// the trigger's left edge.
 ///
 /// Returns the preferred anchor unchanged when:
-/// - No trigger bounds have been captured yet.
-/// - The anchor is a free-floating [`OverlayAnchor::WindowPoint`].
-/// - Both sides have comparable room.
+/// - No trigger bounds have been captured yet (first-frame bootstrap).
+/// - The anchor is a free-floating [`OverlayAnchor::WindowPoint`] —
+///   these carry their own window-absolute point and never flip.
+/// - Both sides have comparable room (ratio ≤ 2:1 either way).
 fn realise_anchor(
     preferred: OverlayAnchor,
     trigger_bounds: Option<Bounds<Pixels>>,
@@ -530,8 +606,8 @@ fn build_overlay_subtree(
 #[cfg(test)]
 mod tests {
     use super::{
-        AnchoredOverlay, OverlayAnchor, apply_gap_to_offset, build_overlay_subtree, child_id,
-        realise_anchor, resolve_anchor_point,
+        AnchoredOverlay, OverlayAnchor, apply_gap_to_offset, build_overlay_subtree, realise_anchor,
+        resolve_anchor_point,
     };
     use core::prelude::v1::test;
     use gpui::{AnyElement, Bounds, Corner, ElementId, IntoElement, Pixels, div, point, px, size};
@@ -658,10 +734,16 @@ mod tests {
     }
 
     #[test]
-    fn build_overlay_subtree_emits_element_for_all_anchor_kinds() {
-        // Exercising every anchor variant ensures no panic paths
-        // (unwrap/expect) exist in the construction pipeline. Positioning
-        // correctness is covered by `resolve_anchor_point_*` tests above.
+    fn build_overlay_subtree_wraps_content_in_deferred_for_all_anchor_kinds() {
+        // `build_overlay_subtree` must wrap the content in a `deferred()`
+        // element so the overlay paints after its ancestors and escapes
+        // parent `overflow_hidden()` clipping — the whole point of the
+        // primitive. Asserting the outer element downcasts to `Deferred`
+        // for every anchor variant proves the wrapper was actually
+        // applied (and that no variant silently returns the inner
+        // content inline). Positioning correctness is covered by
+        // `resolve_anchor_point_*` above; this test guards the shape of
+        // the construction pipeline.
         let bounds: Bounds<Pixels> = Bounds {
             origin: point(px(10.0), px(20.0)),
             size: size(px(100.0), px(30.0)),
@@ -676,7 +758,7 @@ mod tests {
         ];
         for (anchor, trigger_bounds) in cases {
             let content: AnyElement = div().into_any_element();
-            let el = build_overlay_subtree(
+            let mut el = build_overlay_subtree(
                 content,
                 anchor,
                 point(px(0.0), px(4.0)),
@@ -685,34 +767,12 @@ mod tests {
                 true,
                 trigger_bounds,
             );
-            // An empty (non-constructed) AnyElement wouldn't have a
-            // non-None source location from `deferred()`; getting this
-            // far without panic means the subtree was built.
-            drop(el);
+            assert!(
+                el.downcast_mut::<gpui::Deferred>().is_some(),
+                "outer element for {:?} should be a gpui::Deferred wrapper",
+                anchor,
+            );
         }
-    }
-
-    #[test]
-    fn child_id_differs_from_parent_and_suffix() {
-        let parent = ElementId::Name("my-widget".into());
-        let derived = child_id(&parent, "overlay");
-        assert_ne!(derived, parent);
-        assert_eq!(derived, ElementId::Name("my-widget-overlay".into()));
-    }
-
-    #[test]
-    fn child_id_distinguishes_suffixes() {
-        let parent = ElementId::Name("my-widget".into());
-        assert_ne!(child_id(&parent, "overlay"), child_id(&parent, "surface"));
-    }
-
-    #[test]
-    fn child_id_works_with_integer_parents() {
-        // Non-Name parent ids should still format via Display without the
-        // Debug-fallback branch of the old call site.
-        let parent: ElementId = 42usize.into();
-        let derived = child_id(&parent, "overlay");
-        assert_eq!(derived, ElementId::Name("42-overlay".into()));
     }
 
     #[test]
@@ -738,6 +798,54 @@ mod tests {
             .content(div())
             .content_when(true, || div().into_any_element());
         assert!(overlay.has_content());
+    }
+
+    #[test]
+    fn content_fn_when_false_leaves_builder_unset() {
+        let overlay = AnchoredOverlay::new("o", div()).content_fn(false, |_realised| {
+            panic!("content_fn builder should not be stored when is_open is false")
+        });
+        assert!(!overlay.has_content_fn());
+        assert!(!overlay.has_content());
+    }
+
+    #[test]
+    fn content_fn_when_true_captures_builder() {
+        let overlay =
+            AnchoredOverlay::new("o", div()).content_fn(true, |_realised| div().into_any_element());
+        assert!(overlay.has_content_fn());
+        // `content_fn` is a separate channel from `content`; it must not
+        // bleed into the plain-content slot.
+        assert!(!overlay.has_content());
+    }
+
+    #[test]
+    fn content_has_precedence_over_content_fn_in_prepaint() {
+        // Both channels set — prepaint's `raw_content.take().or_else(...)`
+        // drains `content` and skips `content_fn`. A panicking closure in
+        // `content_fn` proves the builder was not invoked. `content_fn`
+        // remains captured on the overlay afterwards — prepaint only
+        // consumes the branch it actually runs.
+        let window = size(px(1000.0), px(1000.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(100.0), px(450.0)),
+            size: size(px(80.0), px(32.0)),
+        };
+
+        let mut overlay = AnchoredOverlay::new(ElementId::Name("both".into()), div())
+            .content(div())
+            .content_fn(true, |_realised| {
+                panic!("content_fn should not run when content() is also set")
+            });
+        assert!(overlay.has_content());
+        assert!(overlay.has_content_fn());
+
+        overlay.simulate_resolve(Some(trigger), window);
+
+        // `content` drained; `content_fn` left for a subsequent frame
+        // (matches the real prepaint's branch-specific `take`).
+        assert!(!overlay.has_content());
+        assert!(overlay.has_content_fn());
     }
 
     #[test]
@@ -857,7 +965,7 @@ mod tests {
     }
 
     #[test]
-    fn realise_anchor_does_not_flip_at_threshold() {
+    fn realise_anchor_does_not_flip_below_at_threshold() {
         // Exactly 2x — must NOT flip (strict >).
         let window = size(px(300.0), px(300.0));
         let trigger: Bounds<Pixels> = Bounds {
@@ -868,6 +976,62 @@ mod tests {
         assert_eq!(
             realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
             OverlayAnchor::BelowLeft,
+        );
+    }
+
+    #[test]
+    fn realise_anchor_does_not_flip_above_at_threshold() {
+        // Symmetric to the Below case: a preferred Above at exactly 2x
+        // in favour of below must also stay on the preferred side. This
+        // guards against the flip condition being asymmetric between
+        // Above→Below and Below→Above.
+        let window = size(px(300.0), px(300.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(100.0)),
+            size: size(px(10.0), px(0.0)),
+        };
+        // space_above = 100, space_below = 200; ratio exactly 2x
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
+            OverlayAnchor::AboveLeft,
+        );
+    }
+
+    #[test]
+    fn realise_anchor_flips_below_just_over_threshold() {
+        // Just over 2x — must flip. Uses a 1pt nudge of the trigger
+        // (space_above = 201, space_below = 99; ratio ≈ 2.03x).
+        let window = size(px(300.0), px(300.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(201.0)),
+            size: size(px(10.0), px(0.0)),
+        };
+        assert_eq!(
+            realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
+            OverlayAnchor::AboveLeft,
+        );
+        assert_eq!(
+            realise_anchor(OverlayAnchor::BelowRight, Some(trigger), window),
+            OverlayAnchor::AboveRight,
+        );
+    }
+
+    #[test]
+    fn realise_anchor_flips_above_just_over_threshold() {
+        // Mirror case: trigger just above the 2x split in favour of below.
+        let window = size(px(300.0), px(300.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(99.0)),
+            size: size(px(10.0), px(0.0)),
+        };
+        // space_above = 99, space_below = 201; ratio ≈ 2.03x
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
+            OverlayAnchor::BelowLeft,
+        );
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveRight, Some(trigger), window),
+            OverlayAnchor::BelowRight,
         );
     }
 
