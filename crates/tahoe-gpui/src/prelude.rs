@@ -25,7 +25,8 @@ pub use crate::foundations::layout::{
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
 pub use crate::foundations::theme::{
-    ActiveTheme, GlassSize, SurfaceContext, TahoeTheme, TextStyle, TextStyledExt,
+    ActiveTheme, FontDesign, GlassSize, LabelLevel, LeadingStyle, SurfaceContext, TahoeTheme,
+    TextStyle, TextStyledExt,
 };
 
 // ── Components > Content ───────────────────────────────────────────────────
@@ -83,6 +84,7 @@ pub use crate::components::selection_and_input::{
     TextContentType, TextField, TextFieldStyle, TextFieldValidation, TimePicker, TimePickerStyle,
     Toggle, ToggleSize,
 };
+pub use crate::foundations::accessibility::A11yTextContentType;
 
 // ── Components > Status ────────────────────────────────────────────────────
 
@@ -114,4 +116,4 @@ pub use crate::citation::{CitationSource, InlineCitation};
 
 // ── Keybindings ────────────────────────────────────────────────────────────
 
-pub use crate::{all_keybindings, text_keybindings, textfield_keybindings};
+pub use crate::{all_keybindings, text_keybindings, textfield_keybindings, textview_keybindings};

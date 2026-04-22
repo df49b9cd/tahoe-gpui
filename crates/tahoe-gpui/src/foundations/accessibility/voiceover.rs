@@ -18,7 +18,7 @@ pub struct HeadingLevel(u8);
 impl HeadingLevel {
     /// Returns `Some(level)` when `level` is in `1..=6`, `None` otherwise.
     pub const fn new(level: u8) -> Option<Self> {
-        if level >= 1 && level <= 6 {
+        if matches!(level, 1..=6) {
             Some(Self(level))
         } else {
             None
@@ -43,6 +43,43 @@ impl HeadingLevel {
     pub const fn get(self) -> u8 {
         self.0
     }
+}
+
+/// Semantic classification of text content for accessibility. VoiceOver
+/// (and other assistive technologies) use the type to tune reading cadence,
+/// pronunciation, and navigation — e.g. `ConsoleOutput` suppresses
+/// auto-capitalisation announcements, `FileSystemPath` enables
+/// per-segment navigation, and `SourceCode` switches to a code-reading
+/// voice that pauses on punctuation instead of eliding it.
+///
+/// Renamed from `TextContentType` to avoid collision with the autofill-
+/// oriented [`crate::components::selection_and_input::TextContentType`].
+///
+/// GPUI does not yet expose an AX tree, so the value is currently held on
+/// [`AccessibilityProps::content_type`] and ignored at paint time. The
+/// enum exists today so that when GPUI lands the AX bridge, every call
+/// site is already annotated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum A11yTextContentType {
+    /// Unclassified prose. Default.
+    #[default]
+    PlainText,
+    /// Line-oriented console output (stdout, stderr).
+    ConsoleOutput,
+    /// Path-like content (`/Users/…`, `C:\…`).
+    FileSystemPath,
+    /// Email address — VoiceOver reads the local-part and domain distinctly.
+    EmailAddress,
+    /// Source code (any language).
+    SourceCode,
+    /// Spreadsheet cell content — enables cell-aware navigation.
+    SpreadsheetCell,
+    /// Long-form word-processing body copy.
+    WordProcessing,
+    /// Message recipient (chat, email To:).
+    MessageRecipient,
+    /// Narrative prose (articles, documentation).
+    Narrative,
 }
 
 /// Semantic role of an accessibility-labelled element — mirrors the subset of
@@ -164,6 +201,18 @@ pub struct AccessibilityProps {
     /// [`AccessibilityRole::AlertDialog`], or [`AccessibilityRole::Alert`] so
     /// VoiceOver announces "modal dialog" once GPUI lands an AX tree.
     pub modal: bool,
+    /// Marks the element as disabled (WAI-ARIA `aria-disabled` /
+    /// NSAccessibility `AXEnabled = false`). Visual dimming alone does not
+    /// tell VoiceOver the control is inactive; components that render a
+    /// disabled visual state should also set this flag so the AX wiring
+    /// announces "dimmed" once GPUI lands an AX tree.
+    pub disabled: bool,
+    /// Semantic classification of the element's text content. When
+    /// populated alongside [`AccessibilityRole::StaticText`] or
+    /// [`AccessibilityRole::Heading`], lets VoiceOver tune reading
+    /// cadence and navigation to the content kind (console output,
+    /// file paths, source code, etc.).
+    pub content_type: Option<A11yTextContentType>,
 }
 
 impl AccessibilityProps {
@@ -214,6 +263,12 @@ impl AccessibilityProps {
         self
     }
 
+    /// Mark this element as disabled / inactive.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     /// Set the 1-based position within a group (WAI-ARIA `aria-posinset`).
     pub fn posinset(mut self, pos: usize) -> Self {
         self.posinset = Some(pos);
@@ -226,14 +281,22 @@ impl AccessibilityProps {
         self
     }
 
+    /// Set the text-content classification.
+    pub fn content_type(mut self, kind: A11yTextContentType) -> Self {
+        self.content_type = Some(kind);
+        self
+    }
+
     /// Returns true when at least one field carries information.
     pub fn is_some(&self) -> bool {
         self.label.is_some()
             || self.role.is_some()
             || self.value.is_some()
             || self.modal
+            || self.disabled
             || self.posinset.is_some()
             || self.setsize.is_some()
+            || self.content_type.is_some()
     }
 }
 
@@ -292,7 +355,9 @@ fn warn_once_a11y_dropped(loc: &'static std::panic::Location<'static>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel};
+    use super::{
+        A11yTextContentType, AccessibilityProps, AccessibilityRole, AccessibleExt, HeadingLevel,
+    };
     use core::prelude::v1::test;
 
     #[test]
@@ -446,5 +511,63 @@ mod tests {
     #[test]
     fn accessibility_props_is_some_true_when_only_setsize() {
         assert!(AccessibilityProps::new().setsize(3).is_some());
+    }
+
+    #[test]
+    fn accessibility_props_disabled_defaults_false() {
+        assert!(!AccessibilityProps::new().disabled);
+    }
+
+    #[test]
+    fn accessibility_props_disabled_builder_sets_flag() {
+        let props = AccessibilityProps::new().disabled(true);
+        assert!(props.disabled);
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_disabled() {
+        assert!(AccessibilityProps::new().disabled(true).is_some());
+    }
+
+    #[test]
+    fn text_content_type_default_is_plain() {
+        assert_eq!(
+            A11yTextContentType::default(),
+            A11yTextContentType::PlainText
+        );
+    }
+
+    #[test]
+    fn accessibility_props_content_type_defaults_none() {
+        assert!(AccessibilityProps::new().content_type.is_none());
+    }
+
+    #[test]
+    fn accessibility_props_content_type_builder_sets_field() {
+        let props = AccessibilityProps::new().content_type(A11yTextContentType::FileSystemPath);
+        assert_eq!(
+            props.content_type,
+            Some(A11yTextContentType::FileSystemPath)
+        );
+    }
+
+    #[test]
+    fn accessibility_props_is_some_true_when_only_content_type() {
+        assert!(
+            AccessibilityProps::new()
+                .content_type(A11yTextContentType::SourceCode)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn accessibility_role_heading_carries_level() {
+        let h3 = HeadingLevel::new(3).expect("3 is in range");
+        let role = AccessibilityRole::Heading(h3);
+        if let AccessibilityRole::Heading(level) = role {
+            assert_eq!(level.get(), 3);
+        } else {
+            panic!("expected Heading role");
+        }
     }
 }

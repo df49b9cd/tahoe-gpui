@@ -121,14 +121,32 @@ pub fn textfield_keybindings() -> Vec<gpui::KeyBinding> {
     components::selection_and_input::text_field::keybindings()
 }
 
+/// Returns the bindings scoped to `TextView`. Only needed by apps that
+/// embed a [`TextView`](crate::components::content::TextView).
+///
+/// Installs the full HIG set a focused text view expects:
+/// - Clipboard / selection: `Cmd+C`, `Cmd+A`
+/// - Keyboard scrolling: `Up`, `Down`, `PageUp`, `PageDown`, `Home`, `End`
+/// - Context menu: `Shift+F10` (NSTextView convention — opens Copy /
+///   Select All without a pointer)
+///
+/// ```ignore
+/// cx.bind_keys(tahoe_gpui::textview_keybindings());
+/// ```
+pub fn textview_keybindings() -> Vec<gpui::KeyBinding> {
+    components::content::text_view::keybindings()
+}
+
 /// Returns all standard HIG keybindings for the crate's components.
 ///
 /// Includes:
 /// - Modifier-key text editing shortcuts (Cmd+C, Alt+Left, Shift+Right, etc.)
 /// - TextField-scoped raw key bindings (Backspace, Delete, arrow keys)
+/// - TextView-scoped bindings (Cmd+C, Cmd+A, keyboard scroll keys, Shift+F10)
 ///
-/// Prefer [`text_keybindings`] or [`textfield_keybindings`] when you only
-/// embed a subset of the components.
+/// Prefer [`text_keybindings`], [`textfield_keybindings`], or
+/// [`textview_keybindings`] when you only embed a subset of the
+/// components.
 ///
 /// ```ignore
 /// cx.bind_keys(tahoe_gpui::all_keybindings());
@@ -136,5 +154,6 @@ pub fn textfield_keybindings() -> Vec<gpui::KeyBinding> {
 pub fn all_keybindings() -> Vec<gpui::KeyBinding> {
     let mut bindings = text_keybindings();
     bindings.extend(textfield_keybindings());
+    bindings.extend(textview_keybindings());
     bindings
 }
