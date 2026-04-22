@@ -5,7 +5,7 @@
 //! foundations types most host apps rely on. Organized by HIG taxonomy so
 //! coverage gaps are easy to spot.
 //!
-//! Stub modules (Chart, WebView, TabView, ColumnView, Lockup,
+//! Stub modules (WebView, TabView, ColumnView, Lockup,
 //! VirtualKeyboard, Ornament, and the `system_experiences` surface) do not
 //! re-export anything — they only carry HIG documentation URLs today.
 
@@ -32,8 +32,13 @@ pub use crate::foundations::theme::{
 // ── Components > Content ───────────────────────────────────────────────────
 
 pub use crate::components::content::{
-    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelVariant,
-    TextView,
+    AnnotationContent, AnnotationPosition, AnnotationTarget, Avatar, AvatarSize, AvatarStatus,
+    AxisConfig, AxisDescriptor, AxisMarks, AxisPosition, AxisTickStyle, AxisValueFormatter, Badge,
+    BadgeVariant, BarOrientation, CategoryScale, Chart, ChartAnnotation, ChartDataSeries,
+    ChartDataSet, ChartDescriptor, ChartPoint, ChartScrollConfig, ChartSeries, ChartType,
+    ChartView, ContentMode, DateScale, GridLineStyle, GridlineConfig, InterpolationMethod, Label,
+    LabelVariant, LegendPosition, LinearScale, LogScale, MarkStackingMethod, PlottableValue, Scale,
+    SelectedPoint, SelectionBinding, SeriesDescriptor, TextView,
 };
 
 // ── Components > Layout and organization ───────────────────────────────────

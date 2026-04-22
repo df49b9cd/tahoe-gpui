@@ -317,16 +317,19 @@ impl LensEffect {
 impl From<&LensEffect> for gpui::LensEffect {
     fn from(effect: &LensEffect) -> Self {
         // `tahoe-gpui` stores refraction/dispersion normalized to 0.0..1.0 to
-        // match how callers think in fractions. GPUI's `LensEffect` expects
-        // the raw Figma 0..100 scale — denormalize here so the conversion
-        // cannot be forgotten at any call site. Angle is stored in degrees
-        // for the same ergonomic reason; GPUI consumes radians.
+        // match how callers think in fractions; GPUI's `LensEffect` now
+        // uses the same 0..1 convention (upstream normalized refraction /
+        // dispersion / depth in v0.231.1-pre), so refraction and dispersion
+        // pass through directly. `depth` is still stored on the Figma 0..100
+        // scale at call sites (e.g. `depth: 16.0`) — divide by 100 to reach
+        // GPUI's normalized depth. Angle is stored in degrees for ergonomics;
+        // GPUI consumes radians.
         Self {
             radius: px(effect.blur.radius),
             kernel_levels: DEFAULT_BLUR_KERNEL_LEVELS,
-            refraction: effect.refraction * 100.0,
-            depth: effect.depth,
-            dispersion: effect.dispersion * 100.0,
+            refraction: effect.refraction,
+            depth: effect.depth / 100.0,
+            dispersion: effect.dispersion,
             splay: px(effect.splay),
             light_angle: gpui::radians(effect.light_angle.to_radians()),
             light_intensity: effect.light_intensity,
@@ -1631,7 +1634,7 @@ pub fn glass_morph(
             }
         },
     ))
-    .with_priority(2)
+    .with_priority(crate::foundations::overlay::OverlayLayer::GLASS_MORPH)
 }
 
 /// Cross-fade a glass surface between two tiers when its `GlassSize` changes.
@@ -2330,24 +2333,30 @@ mod tests {
     }
 
     #[test]
-    fn lens_effect_from_denormalizes_refraction_and_dispersion() {
+    fn lens_effect_from_passes_normalized_refraction_and_dispersion() {
         use super::{BlurEffect, LensEffect};
+        // GPUI's `LensEffect` now uses the same 0..1 normalized convention
+        // for refraction / dispersion as `tahoe-gpui`, so the `From` impl
+        // passes both values through without denormalizing.
         let effect = LensEffect {
             blur: BlurEffect {
                 radius: 12.0,
                 corner_radius: 16.0,
                 tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
             },
-            refraction: 1.0,  // normalized 1.0 = Figma 100
-            dispersion: 0.25, // normalized 0.25 = Figma 25
+            refraction: 1.0,
+            dispersion: 0.25,
             depth: 16.0,
             splay: 6.0,
             light_angle: -45.0,
             light_intensity: 0.67,
         };
         let gpui_effect = gpui::LensEffect::from(&effect);
-        assert!((gpui_effect.refraction - 100.0).abs() < f32::EPSILON);
-        assert!((gpui_effect.dispersion - 25.0).abs() < f32::EPSILON);
+        assert!((gpui_effect.refraction - 1.0).abs() < f32::EPSILON);
+        assert!((gpui_effect.dispersion - 0.25).abs() < f32::EPSILON);
+        // Depth stays on the Figma 0..100 scale in `tahoe-gpui`; the `From`
+        // impl divides by 100 to reach GPUI's normalized depth.
+        assert!((gpui_effect.depth - 0.16).abs() < f32::EPSILON);
     }
 
     #[test]

@@ -13,7 +13,7 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window,
-    deferred, div, px,
+    div, px,
 };
 
 use crate::callback_types::{OnMutCallback, OnToggle, rc_wrap};
@@ -24,6 +24,7 @@ use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
     LensEffect, SurfaceContext, apply_standard_control_styling, glass_lens_surface,
 };
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 /// Callback invoked when keyboard highlight changes in a [`PulldownButton`] dropdown.
@@ -339,8 +340,11 @@ impl RenderOnce for PulldownButton {
             });
         }
 
-        // ── Container (trigger + optional dropdown) ─────────────────────────
-        let mut container = div().relative().child(trigger);
+        // ── Overlay-anchored dropdown ───────────────────────────────────────
+        let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+            .anchor(OverlayAnchor::BelowLeft)
+            .gap(theme.dropdown_offset);
 
         if self.is_open {
             // ── Dropdown action list ────────────────────────────────────────
@@ -397,15 +401,12 @@ impl RenderOnce for PulldownButton {
 
             let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
             let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .absolute()
-                .left_0()
-                .top(theme.dropdown_top())
-                .w_full()
                 .flex()
                 .flex_col()
                 .overflow_hidden()
                 .max_h(px(DROPDOWN_MAX_HEIGHT))
                 .id(ElementId::from((self.id.clone(), "dropdown")))
+                .debug_selector(|| "pulldown-button-dropdown".into())
                 .focusable();
 
             // Keyboard navigation in the open dropdown (mirrors PopupButton).
@@ -599,10 +600,10 @@ impl RenderOnce for PulldownButton {
                 let _ = &action_handlers;
             }
 
-            container = container.child(deferred(list).with_priority(1));
+            overlay = overlay.content(list);
         }
 
-        container
+        overlay
     }
 }
 
@@ -743,5 +744,58 @@ mod tests {
         let label = SharedString::from("Shared");
         let item = PulldownItem::new(label);
         assert_eq!(item.label.as_ref(), "Shared");
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{PulldownButton, PulldownItem};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Mirrors the PopupButton clip-escape pattern: nest the pulldown
+    /// inside a small `overflow_hidden()` container and verify
+    /// `AnchoredOverlay` lays out the dropdown past the parent's bottom
+    /// edge.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(80.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        PulldownButton::new("pulldown", "Menu")
+                            .item(PulldownItem::new("Cut"))
+                            .item(PulldownItem::new("Copy"))
+                            .item(PulldownItem::new("Paste"))
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn dropdown_layout_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("pulldown-button-dropdown");
+
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

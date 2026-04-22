@@ -1616,6 +1616,35 @@ fn idempotency_regression_0147() {
     assert_eq!(twice, once);
 }
 
+/// Regression for seed `21da98eb…` (shrunk to `` `>\\ ``, `inline_code`).
+/// `count_single_backticks` used to treat any `\` immediately before a
+/// `` ` `` as an escape, so `` `>\\` `` re-stitched to `` `>\\`` `` —
+/// the doubled `\\` was not recognised as an escaped backslash that
+/// leaves the subsequent backtick unescaped.
+#[test]
+fn idempotency_regression_0148() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: false,
+        bold_italic: false,
+        inline_code: true,
+        strikethrough: false,
+        links: false,
+        images: false,
+        katex: false,
+        inline_katex: false,
+        setext_headings: false,
+        html_tags: false,
+        single_tilde: false,
+        comparison_operators: false,
+        link_mode: LinkMode::Protocol,
+        handlers: Vec::new(),
+    };
+    let once = stitch("`>\\\\", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
 /// Pipeline-level idempotency tripwires for each proptest regression seed.
 /// These exercise the full stitch() pipeline (not individual handlers).
 #[test]

@@ -24,14 +24,14 @@ without incurring a copy when the text is already closed.
 
 ## Status
 
-Workspace-private (`publish = false`). Consumed by
-[`tahoe-gpui`](../tahoe-gpui) for streaming Markdown rendering.
+Published on crates.io. Consumed by [`tahoe-gpui`](../tahoe-gpui) for
+streaming Markdown rendering.
 
 ## Usage
 
 ```toml
 [dependencies]
-mdstitch = { path = "../mdstitch" }
+mdstitch = "0.1"
 ```
 
 ```rust

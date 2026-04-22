@@ -9,7 +9,7 @@
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, Hsla, KeyDownEvent, MouseDownEvent, Rgba, SharedString, Window,
-    deferred, div, hsla, px,
+    div, hsla, px,
 };
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
@@ -17,6 +17,7 @@ use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{
     LensEffect, apply_focus_ring, apply_high_contrast_border, glass_lens_surface,
 };
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Swatch size inside the dropdown grid (32x32pt).
@@ -436,9 +437,11 @@ impl RenderOnce for ColorWell {
             });
         }
 
-        // -- Container (trigger + optional dropdown) --
-        let mut container = div().relative();
-        container = container.child(trigger);
+        // ── Overlay-anchored palette grid ───────────────────────────────────
+        let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+        let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+            .anchor(OverlayAnchor::BelowLeft)
+            .gap(theme.dropdown_offset);
 
         if self.is_open {
             let palette = system_color_palette(theme);
@@ -455,15 +458,13 @@ impl RenderOnce for ColorWell {
 
             let grid_effect = LensEffect::liquid_glass(GlassSize::Small, theme);
             let mut grid = glass_lens_surface(theme, &grid_effect, GlassSize::Small)
-                .absolute()
-                .left_0()
-                .top(theme.dropdown_top())
                 .flex()
                 .flex_wrap()
                 .gap(grid_gap)
                 .p(grid_padding)
                 .overflow_hidden()
                 .id(ElementId::from((self.id.clone(), "palette")))
+                .debug_selector(|| "color-well-palette".into())
                 .focusable();
 
             // Set a fixed width: 6 swatches + 5 gaps + 2*padding
@@ -901,11 +902,10 @@ impl RenderOnce for ColorWell {
                     .child(ticks)
             };
             grid = grid.child(alpha_row);
-
-            container = container.child(deferred(grid).with_priority(1));
+            overlay = overlay.content(grid);
         }
 
-        container
+        overlay
     }
 }
 
@@ -1138,5 +1138,54 @@ mod tests {
         let last = (ALPHA_TICK_COUNT as f32 - 1.0) / (ALPHA_TICK_COUNT as f32 - 1.0);
         assert!((first - 0.0).abs() < f32::EPSILON);
         assert!((last - 1.0).abs() < f32::EPSILON);
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, hsla, px};
+
+    use super::ColorWell;
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Mirrors the PopupButton clip-escape pattern: the color palette
+    /// grid must anchor past the parent's clip region.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(60.0))
+                    .h(px(28.0))
+                    .overflow_hidden()
+                    .child(
+                        ColorWell::new("color-well")
+                            .color(hsla(0.5, 0.5, 0.5, 1.0))
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn palette_layout_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let palette = cx.get_element("color-well-palette");
+
+        assert!(
+            palette.bounds.top() >= clip.bounds.bottom(),
+            "palette.top() {:?} should be at or below clip.bottom() {:?}",
+            palette.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

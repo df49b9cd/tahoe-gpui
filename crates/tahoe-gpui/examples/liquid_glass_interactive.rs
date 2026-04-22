@@ -170,7 +170,7 @@ impl GlassMessenger {
             .enumerate()
             .map(|(i, contact)| {
                 cx.new(|cx| {
-                    let mut hc = HoverCard::new(format!("hc-{i}"));
+                    let mut hc = HoverCard::new(format!("hc-{i}"), cx);
                     let (h, s, l) = contact.color;
                     hc.set_trigger(
                         move |_cx| {
@@ -734,6 +734,7 @@ impl GlassMessenger {
         Modal::new("new-chat-modal", content)
             .open(self.show_new_chat_modal)
             .width(px(380.0))
+            .accessibility_label("New conversation")
             .on_dismiss(move |_, cx| {
                 entity_close.update(cx, |this, cx| {
                     this.show_new_chat_modal = false;
