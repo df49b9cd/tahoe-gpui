@@ -771,13 +771,10 @@ mod interaction_tests {
         // removed from `AnchoredOverlay`, the content would lay out inline
         // inside the clip region and this assertion would fail.
         //
-        // TODO(overlay-paint-golden): once the `test-support` harness
-        // exposes post-clip paint geometry (or a golden-image diff),
-        // extend this to assert that the pixels inside `content.bounds`
-        // are actually drawn. The structural check below catches the
-        // "anchored() removed" regression but not "paint pipeline
-        // re-clips deferred children". Tracked alongside the overlay
-        // migration work.
+        // Pixel-clip coverage deferred to the visual-regression
+        // workstream — it needs a render-to-buffer API from GPUI
+        // plus golden-file tooling, neither of which the crate ships
+        // today. Not worth blocking this structural check on.
         assert!(
             content.bounds.right() > clip.bounds.right(),
             "content.right() {:?} should exceed clip.right() {:?}",

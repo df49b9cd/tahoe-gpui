@@ -532,11 +532,13 @@ impl Element for AnchoredOverlay {
                 width: AvailableSpace::MinContent,
                 height: AvailableSpace::MinContent,
             };
-            // TODO(overlay-perf-cache): cache the layout pass keyed by
-            // `(trigger_bounds, content_id)` so repeated frames with
-            // identical inputs skip the taffy traversal. Tracked in the
-            // overlay migration work alongside the dropdown-component
-            // migration (see `TODO(overlay-migration)` call sites).
+            // Per-frame `layout_as_root` is microsecond-scale for Popover
+            // and HoverCard (taffy traversal of ~10-50 nodes). No cache
+            // until a measured regression appears: `content_fn` returns a
+            // fresh `AnyElement` each frame, `trigger_bounds` is f32-based,
+            // and realistic frames change at least one input (scroll,
+            // resize, animation) — a cache keyed on them would invalidate
+            // too often to pay for its complexity.
             anchored_content.layout_as_root(available, window, cx);
             anchored_content.prepaint(window, cx);
 
