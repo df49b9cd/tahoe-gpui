@@ -1241,12 +1241,7 @@ fn render_bars(
 
     let bar_w = bar_width(slot_width, n_series);
 
-    let mut row = div()
-        .flex()
-        .flex_row()
-        .items_end()
-        .w(width)
-        .h(height);
+    let mut row = div().flex().flex_row().items_end().w(width).h(height);
 
     for (slot_i, _point) in (0..max_points).enumerate() {
         let mut group = div()
@@ -1451,12 +1446,7 @@ fn render_horizontal_bars(
 
     let bar_thickness = bar_width(slot_height, n_series);
 
-    let mut col = div()
-        .flex()
-        .flex_col()
-        .items_start()
-        .w(width)
-        .h(height);
+    let mut col = div().flex().flex_col().items_start().w(width).h(height);
 
     for slot_i in 0..max_points {
         let mut group = div()
