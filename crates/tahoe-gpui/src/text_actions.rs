@@ -81,12 +81,22 @@ actions!(
         /// scroll-up-by-one-line when scrollable; future multi-line
         /// editors may bind it to cursor-move-up.
         Up,
-        /// Down arrow — line-down navigation.
+        /// Down arrow — line-down navigation. TextView binds this to
+        /// scroll-down-by-one-line when scrollable; future multi-line
+        /// editors may bind it to cursor-move-down.
         Down,
-        /// Page Up — scroll or jump by one viewport height.
+        /// Page Up — scroll or jump by one viewport height. TextView
+        /// binds this to `scroll_handle.bounds().height` (falling back
+        /// to ten line-heights before layout has populated bounds).
         PageUp,
         /// Page Down — scroll or jump by one viewport height.
         PageDown,
+        /// Open the context menu from the keyboard. macOS / NSTextView
+        /// convention binds Shift-F10 so Copy / Select All stay
+        /// reachable without a pointer. Components synthesise a
+        /// position (selection bounds, cursor, or view centre) when
+        /// firing the menu for this action.
+        ShowContextMenu,
     ]
 );
 

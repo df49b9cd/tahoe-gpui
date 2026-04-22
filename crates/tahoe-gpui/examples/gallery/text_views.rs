@@ -231,10 +231,12 @@ pub fn render(
         .child(cx.new(|cx| {
             // Quinary (macOS Tahoe) is the lightest tier — reserved for
             // decorative separators or timestamps that should not compete
-            // with nearby primary content.
+            // with nearby primary content. Pair it with Caption1 (not
+            // Caption2) so the combination of the low-contrast colour and
+            // the small size still clears WCAG AA.
             TextView::new(cx, "Last updated 2 min ago")
                 .label_level(LabelLevel::Quinary)
-                .text_style(TextStyle::Caption2)
+                .text_style(TextStyle::Caption1)
         }))
         // ── Disabled look via explicit color ───────────────────────────────
         .child(div().h(theme.spacing_sm))
@@ -274,6 +276,57 @@ pub fn render(
             )
             .readable_width(true)
         }))
+        // ── Text alignment ─────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Text alignment"),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Leading alignment — the HIG default for body text.")
+                .text_align(gpui::TextAlign::Left)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Centered alignment — short headlines, empty states.")
+                .text_align(gpui::TextAlign::Center)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(cx, "Trailing alignment — numeric columns, timestamps.")
+                .text_align(gpui::TextAlign::Right)
+        }))
+        // ── Non-selectable ────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Non-selectable"),
+        )
+        .child(cx.new(|cx| {
+            // `selectable(false)` opts out of drag-select, shift-click,
+            // ⌘A / ⌘C, and the context menu. Use it for labels that
+            // decorate a control (tick-marks on a slider, axis labels on
+            // a chart) where selection would interfere with the
+            // surrounding gesture.
+            TextView::new(cx, "Try to drag-select this — the gesture is suppressed.")
+                .selectable(false)
+        }))
+        // ── Accessibility label ───────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Accessibility label"),
+        )
+        .child(cx.new(|cx| {
+            // When the visual text is ambiguous or abbreviated, provide
+            // a separate VoiceOver label so screen-reader users hear the
+            // full meaning without cluttering the on-screen copy.
+            TextView::new(cx, "⌘⇧N").accessibility_label("Keyboard shortcut: Command Shift N")
+        }))
         // ── Scrollable ─────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(
@@ -281,6 +334,16 @@ pub fn render(
                 .text_style(TextStyle::Headline, theme)
                 .text_color(theme.text)
                 .child("Scrollable"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption1, theme)
+                .text_color(theme.text_muted)
+                .child(
+                    "Focus the view, then Up / Down / Page / Home / End \
+                     move the viewport. Shift+F10 opens Copy / Select All \
+                     from the keyboard.",
+                ),
         )
         .child(div().max_h(gpui::px(120.0)).child(cx.new(|cx| {
             TextView::new(

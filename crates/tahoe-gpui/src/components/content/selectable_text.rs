@@ -106,6 +106,16 @@ pub trait SelectionCoordinator: Clone + 'static {
     /// `mouse_down`). Mouse-move handlers consult this before
     /// extending the selection.
     fn is_pending(&self) -> bool;
+
+    /// Called once per frame *before* any paragraph re-registers via
+    /// [`Self::register`]. Multi-paragraph coordinators
+    /// ([`crate::markdown::MarkdownSelection`]) override this to flush
+    /// the per-frame registration list so paragraphs that no longer
+    /// exist in the new frame drop out of the selection rect.
+    /// Single-paragraph coordinators (like
+    /// [`crate::components::content::text_view::TextViewSelection`])
+    /// have nothing to reset and keep the empty default.
+    fn begin_frame(&self) {}
 }
 
 /// A [`StyledText`] wrapper that participates in a shared
@@ -329,7 +339,19 @@ impl<S: SelectionCoordinator> Element for SelectableText<S> {
                     let Ok(ix) = text_layout.index_for_position(event.position) else {
                         return;
                     };
-                    mouse_down_index.set(Some(ix));
+                    // Only the single-click path can become a link
+                    // navigation: setting `mouse_down_index` for a
+                    // second click would mean the matching mouse-up
+                    // (which still reports `down_ix == up_ix` for an
+                    // in-place double-click) opens the URL while the
+                    // coordinator simultaneously selects the word.
+                    // Double / triple / quad clicks are gesture-only —
+                    // they drive selection and must never navigate.
+                    if event.click_count == 1 {
+                        mouse_down_index.set(Some(ix));
+                    } else {
+                        mouse_down_index.set(None);
+                    }
                     selection.mouse_down(
                         element_id.clone(),
                         &text_string,
@@ -651,11 +673,63 @@ fn warn_global_id_missing_once() {}
 
 #[cfg(test)]
 mod tests {
-    use super::{fragment_of, percent_decode_fragment};
+    use super::{fragment_of, percent_decode_fragment, word_range_at};
     use core::prelude::v1::test;
 
     fn normalize(a: usize, b: usize) -> (usize, usize) {
         if a <= b { (a, b) } else { (b, a) }
+    }
+
+    // ── word_range_at ────────────────────────────────────────────────
+    // `word_range_at` is the core of double-click word selection: both
+    // `TextViewSelection` and `MarkdownSelection` delegate to it. Cover
+    // the shapes that once regressed: empty text, trailing boundary,
+    // punctuation runs, whitespace-only hits, and multi-byte codepoints
+    // (so a non-boundary index can't silently corrupt the range).
+
+    #[test]
+    fn word_range_at_empty_text_is_empty_range() {
+        assert_eq!(word_range_at("", 0), 0..0);
+    }
+
+    #[test]
+    fn word_range_at_clamps_past_end() {
+        // Index past `text.len()` should clamp rather than panic.
+        let text = "hello";
+        assert_eq!(word_range_at(text, 99), 0..5);
+    }
+
+    #[test]
+    fn word_range_at_selects_alphanumeric_word() {
+        let text = "alpha beta gamma";
+        // Index inside "beta".
+        assert_eq!(word_range_at(text, 7), 6..10);
+    }
+
+    #[test]
+    fn word_range_at_on_boundary_prefers_previous_word() {
+        // Cursor sitting on the space between "alpha" and "beta" should
+        // snap to the word on the preferred side — the matching priority
+        // rule means the previous alphabetic run wins over the following
+        // whitespace.
+        let text = "alpha beta";
+        assert_eq!(word_range_at(text, 5), 0..5);
+    }
+
+    #[test]
+    fn word_range_at_punctuation_groups_together() {
+        // A run of punctuation is its own "word" for double-click.
+        let text = "hi!!! there";
+        assert_eq!(word_range_at(text, 3), 2..5);
+    }
+
+    #[test]
+    fn word_range_at_multibyte_codepoint_midpoint_snaps_back() {
+        // 'é' is 2 bytes in UTF-8. An index in the middle of the
+        // codepoint must snap back to the preceding char boundary
+        // instead of panicking inside the `&text[..index]` split.
+        let text = "café latte";
+        assert_eq!(word_range_at(text, 4), 0..5);
     }
 
     #[test]

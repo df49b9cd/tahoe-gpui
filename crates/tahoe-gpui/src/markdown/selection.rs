@@ -462,6 +462,10 @@ impl SelectionCoordinator for MarkdownSelection {
     fn is_pending(&self) -> bool {
         MarkdownSelection::is_pending(self)
     }
+
+    fn begin_frame(&self) {
+        MarkdownSelection::begin_frame(self);
+    }
 }
 
 fn normalise(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
@@ -510,9 +514,12 @@ fn extend_with_range(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::prelude::v1::test;
-    use gpui::SharedString;
+
+    use gpui::{ElementId, SharedString};
+
+    use super::MarkdownSelection;
+    use crate::components::content::selectable_text::word_range_at;
 
     fn make_id(name: &'static str) -> ElementId {
         ElementId::Name(name.into())

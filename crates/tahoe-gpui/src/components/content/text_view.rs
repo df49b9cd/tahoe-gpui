@@ -8,11 +8,19 @@
 //! # Architecture
 //!
 //! `TextView` is a GPUI [`gpui::Entity`] — construct via
-//! `cx.new(|cx| TextView::new(cx, "…"))`. The entity owns a
-//! [`FocusHandle`] (so ⌘C / ⌘A reach it through the standard focus
-//! dispatch path) and a [`TextViewSelection`] coordinator that mediates
-//! mouse-driven selection against the [`super::selectable_text::SelectableText`]
-//! primitive.
+//! `cx.new(|cx| TextView::new(cx, "…"))`. The entity owns four pieces of
+//! state that together make the view interactive:
+//!
+//! - a [`FocusHandle`] so ⌘C / ⌘A (and the raw scroll keys bound under
+//!   [`TEXT_VIEW_CONTEXT`]) reach it through the standard focus
+//!   dispatch path;
+//! - a [`TextViewSelection`] coordinator that mediates mouse-driven
+//!   selection against the [`super::selectable_text::SelectableText`]
+//!   primitive;
+//! - a [`gpui::ScrollHandle`] wired to the keyboard-scroll action set
+//!   when [`TextView::scrollable`] is on;
+//! - an [`Entity<ContextMenu>`] rendered as a fullscreen overlay on
+//!   right-click. See [`Self::open_context_menu`].
 //!
 //! # Dynamic Type
 //!
@@ -26,12 +34,13 @@
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
     App, ClipboardItem, Context, ElementId, Entity, FocusHandle, Focusable, HighlightStyle, Hsla,
     MouseButton, MouseDownEvent, Pixels, Point, ScrollHandle, SharedString, StyledText, TextAlign,
-    Window, div, px,
+    Window, div, point, px,
 };
 
 use crate::components::content::selectable_text::{
@@ -45,7 +54,9 @@ use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
 use crate::foundations::theme::{
     ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt,
 };
-use crate::text_actions::{Copy, Down, End, Home, PageDown, PageUp, SelectAll, Up};
+use crate::text_actions::{
+    Copy, Down, End, Home, PageDown, PageUp, SelectAll, ShowContextMenu, Up,
+};
 
 /// GPUI key context used by `TextView` for scoped keyboard shortcuts.
 ///
@@ -66,6 +77,9 @@ pub const TEXT_VIEW_CONTEXT: &str = "TextView";
 /// Covers:
 /// - ⌘C (Copy) and ⌘A (Select All) — selection shortcuts.
 /// - Up / Down / Page Up / Page Down / Home / End — keyboard scroll.
+/// - Shift-F10 (macOS / NSTextView convention) — open the right-click
+///   context menu from the keyboard so the Copy / Select All entries
+///   stay reachable without a pointer.
 ///
 /// The raw keys are scoped to [`TEXT_VIEW_CONTEXT`] so they only fire
 /// when a focused [`TextView`] owns the key dispatch path — they do not
@@ -83,6 +97,7 @@ pub fn keybindings() -> Vec<gpui::KeyBinding> {
         KeyBinding::new("pagedown", PageDown, ctx),
         KeyBinding::new("home", Home, ctx),
         KeyBinding::new("end", End, ctx),
+        KeyBinding::new("shift-f10", ShowContextMenu, ctx),
     ]
 }
 
@@ -126,6 +141,10 @@ pub struct TextViewSelection {
 }
 
 impl TextViewSelection {
+    /// Construct a fresh coordinator with no registered element and an
+    /// empty selection. Equivalent to [`TextViewSelection::default`] —
+    /// kept as an explicit constructor so call sites read as
+    /// `TextViewSelection::new()` rather than calling `Default::default`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -230,7 +249,36 @@ impl SelectionCoordinator for TextViewSelection {
             return;
         }
         if shift && s.anchor.is_some() {
-            s.focus = Some(char_index);
+            // Shift-click extends the existing selection. Word / Line
+            // modes grow to the surrounding word or paragraph so the
+            // extension respects the original gesture — matching
+            // macOS NSTextView where shift-clicking after a
+            // double-click grows by whole words rather than collapsing
+            // back to character granularity.
+            let focus = match s.mode {
+                SelectMode::Word => {
+                    let word = word_range_at(text, char_index);
+                    match s.original {
+                        Some((orig_start, orig_end)) if char_index < orig_start => {
+                            s.anchor = Some(orig_end);
+                            word.start
+                        }
+                        Some((orig_start, _)) => {
+                            s.anchor = Some(orig_start);
+                            word.end
+                        }
+                        None => word.end,
+                    }
+                }
+                SelectMode::Line => {
+                    // Triple-click mode anchored to the full paragraph
+                    // — shift-click keeps the paragraph selected.
+                    s.anchor = Some(0);
+                    text.len()
+                }
+                SelectMode::Character | SelectMode::All => char_index,
+            };
+            s.focus = Some(focus);
             s.pending = true;
             return;
         }
@@ -316,16 +364,42 @@ fn normalise(a: usize, b: usize) -> (usize, usize) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
+/// Debug-only guard against highlight ranges that would panic inside
+/// [`StyledText::with_highlights`] or silently truncate visible text:
+/// out-of-bounds endpoints, or endpoints that split a multi-byte UTF-8
+/// codepoint. Release builds skip the check entirely — the same
+/// contract GPUI itself documents on the `StyledText` API.
+fn debug_assert_highlight_ranges(text: &str, highlights: &[(Range<usize>, HighlightStyle)]) {
+    if cfg!(debug_assertions) {
+        for (range, _) in highlights {
+            debug_assert!(
+                range.start <= range.end
+                    && range.end <= text.len()
+                    && text.is_char_boundary(range.start)
+                    && text.is_char_boundary(range.end),
+                "TextView highlight range {range:?} invalid for text of length {}",
+                text.len(),
+            );
+        }
+    }
+}
+
 /// Content held by a [`TextView`] — either a plain string or rich text
 /// with inline highlight spans. Rich content carries the plain-text
 /// equivalent alongside the highlight vector so VoiceOver has something
 /// to announce without callers re-supplying the text via
 /// [`TextView::accessibility_label`].
+///
+/// The highlight slice is wrapped in an [`Arc`] so the view itself (the
+/// `Entity<TextView>`) only holds a cheap shared handle. Paint still
+/// copies the spans into the [`StyledText`] it hands to GPUI, but the
+/// builder path and any logical clone of the view avoid a deep copy of
+/// the span vector.
 enum TextViewContent {
     Plain(SharedString),
     Rich {
         text: SharedString,
-        highlights: Vec<(Range<usize>, HighlightStyle)>,
+        highlights: Arc<[(Range<usize>, HighlightStyle)]>,
     },
 }
 
@@ -340,7 +414,7 @@ impl TextViewContent {
         match self {
             Self::Plain(t) => StyledText::new(t.clone()),
             Self::Rich { text, highlights } => {
-                StyledText::new(text.clone()).with_highlights(highlights.clone())
+                StyledText::new(text.clone()).with_highlights(highlights.to_vec())
             }
         }
     }
@@ -397,6 +471,7 @@ pub struct TextView {
     scroll_handle: ScrollHandle,
     readable_width: bool,
     selectable: bool,
+    disabled: bool,
     accessibility_label: Option<SharedString>,
     context_menu: Entity<ContextMenu>,
 }
@@ -426,9 +501,30 @@ impl TextView {
             scroll_handle: ScrollHandle::new(),
             readable_width: false,
             selectable: true,
+            disabled: false,
             accessibility_label: None,
             context_menu: cx.new(ContextMenu::new),
         }
+    }
+
+    /// Construct a rich-text view directly. Equivalent to
+    /// `TextView::new(cx, text).styled_text(text, highlights)` without
+    /// the throwaway plain-text placeholder, and avoids the
+    /// double-allocation the two-step pattern implies when the caller
+    /// already has the `HighlightStyle` vector in hand.
+    pub fn styled(
+        cx: &mut Context<Self>,
+        text: impl Into<SharedString>,
+        highlights: Vec<(Range<usize>, HighlightStyle)>,
+    ) -> Self {
+        let text = text.into();
+        debug_assert_highlight_ranges(&text, &highlights);
+        let mut this = Self::new(cx, text.clone());
+        this.content = TextViewContent::Rich {
+            text,
+            highlights: Arc::from(highlights),
+        };
+        this
     }
 
     pub fn text_style(mut self, style: TextStyle) -> Self {
@@ -449,9 +545,11 @@ impl TextView {
         text: impl Into<SharedString>,
         highlights: Vec<(Range<usize>, HighlightStyle)>,
     ) -> Self {
+        let text = text.into();
+        debug_assert_highlight_ranges(&text, &highlights);
         self.content = TextViewContent::Rich {
-            text: text.into(),
-            highlights,
+            text,
+            highlights: Arc::from(highlights),
         };
         self
     }
@@ -560,6 +658,20 @@ impl TextView {
         self
     }
 
+    /// Mark the view as disabled. Paints with [`TahoeTheme::text_disabled`]
+    /// (unless an explicit [`Self::color`] wins) and threads
+    /// [`AccessibilityProps::disabled`] so VoiceOver will announce the
+    /// dimmed state once GPUI lands an AX tree.
+    ///
+    /// `TextView` has no interactive state beyond selection, so disabling
+    /// a selectable view does not also suppress Copy / Select All — the
+    /// reader can still pull text off the disabled surface, matching
+    /// macOS behaviour for disabled NSTextView.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     /// Override the VoiceOver label. Defaults to the plain-text content
     /// for both [`Self::new`] and [`Self::styled_text`] views — rich
     /// content carries its plain-text equivalent alongside the styled
@@ -623,13 +735,26 @@ impl TextView {
         cx.notify();
     }
 
+    /// Viewport height used by Page Up / Page Down. Falls back to a
+    /// ten-line span when layout has not populated `bounds()` yet —
+    /// tests (and the first keypress before layout runs) would otherwise
+    /// see a zero-height "page" and treat the key as a no-op.
+    fn scroll_page_height(&self, cx: &App) -> Pixels {
+        let bounds = self.scroll_handle.bounds().size.height;
+        if bounds > px(0.) {
+            bounds
+        } else {
+            self.scroll_line_height(cx) * 10.0
+        }
+    }
+
     fn handle_page_up(&mut self, _: &PageUp, _: &mut Window, cx: &mut Context<Self>) {
-        self.scroll_by(self.scroll_handle.bounds().size.height);
+        self.scroll_by(self.scroll_page_height(cx));
         cx.notify();
     }
 
     fn handle_page_down(&mut self, _: &PageDown, _: &mut Window, cx: &mut Context<Self>) {
-        self.scroll_by(-self.scroll_handle.bounds().size.height);
+        self.scroll_by(-self.scroll_page_height(cx));
         cx.notify();
     }
 
@@ -701,8 +826,45 @@ impl TextView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.show_context_menu_at(event.position, window, cx);
+    }
+
+    /// Shift-F10 / Menu-key handler: opens the context menu without a
+    /// pointer event. No anchor rectangle is reachable from an action
+    /// listener (bounds() is only valid post-paint), so the menu opens
+    /// at the view's scroll-handle origin if available, otherwise at
+    /// the window origin. The user still gets the Copy / Select All
+    /// affordance; positioning polish can follow once GPUI exposes the
+    /// focused element's bounds in action context.
+    fn handle_show_context_menu(
+        &mut self,
+        _: &ShowContextMenu,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let bounds = self.scroll_handle.bounds();
+        let position = if bounds.size.width > px(0.) {
+            bounds.origin
+        } else {
+            point(px(0.), px(0.))
+        };
+        self.show_context_menu_at(position, window, cx);
+    }
+
+    fn show_context_menu_at(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Prevent a stacked open from a rapid double-trigger (right-click
+        // arriving during an in-flight Shift-F10 activation, or vice
+        // versa). The menu stays open once and re-fires notify for the
+        // host to repaint.
+        if self.context_menu.read(cx).is_open() {
+            return;
+        }
         let items = Self::build_context_menu_items(self.selection.has_selection());
-        let position = event.position;
         self.context_menu.update(cx, |menu, cx| {
             menu.set_items(items);
             menu.open(position, window, cx);
@@ -716,15 +878,28 @@ impl Focusable for TextView {
     }
 }
 
-/// Resolve the final text color from the three inputs.
+/// Resolve the final text color from the four inputs.
 ///
 /// Precedence (first set wins): explicit [`TextView::color`] > semantic
-/// [`LabelLevel`] > default `theme.text`.
-fn resolve_color(color: Option<Hsla>, level: Option<LabelLevel>, theme: &TahoeTheme) -> Hsla {
+/// [`LabelLevel`] > [`TextView::disabled`] > default `theme.text`.
+///
+/// An explicit `color()` wins over the disabled flag: callers who want a
+/// disabled view to ignore an accent colour should drop the explicit
+/// colour alongside setting `disabled(true)`. This matches the wider
+/// design-system rule that a literal color always trumps a semantic
+/// tier or state.
+fn resolve_color(
+    color: Option<Hsla>,
+    level: Option<LabelLevel>,
+    disabled: bool,
+    theme: &TahoeTheme,
+) -> Hsla {
     if let Some(color) = color {
         color
     } else if let Some(level) = level {
         level.resolve(theme)
+    } else if disabled {
+        theme.text_disabled()
     } else {
         theme.text
     }
@@ -746,8 +921,9 @@ fn apply_typography(
 }
 
 impl Render for TextView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let focused = self.focus_handle.is_focused(window);
 
         // max_lines + scrollable is undefined: clamped height short-circuits
         // the scroll viewport. Assert in debug so the conflict is caught in
@@ -776,7 +952,12 @@ impl Render for TextView {
             typography = typography.line_height(gpui::px(f32::from(attrs.leading) * scale));
         }
 
-        typography = typography.text_color(resolve_color(self.color, self.label_level, theme));
+        typography = typography.text_color(resolve_color(
+            self.color,
+            self.label_level,
+            self.disabled,
+            theme,
+        ));
 
         if let Some(align) = self.text_align {
             typography = typography.text_align(align);
@@ -800,7 +981,8 @@ impl Render for TextView {
             .unwrap_or_else(|| self.content.text().clone());
         let a11y = AccessibilityProps::new()
             .role(AccessibilityRole::StaticText)
-            .label(label);
+            .label(label)
+            .disabled(self.disabled);
 
         let text_body = if self.selectable {
             // macOS NSTextView selection tint: accent color at ~28% alpha.
@@ -833,7 +1015,15 @@ impl Render for TextView {
         // the scroll when both are set. `track_scroll` wires the scroll
         // handle so keyboard scroll handlers can read and mutate the
         // current offset.
-        let scrollable = self.scroll_id.clone().filter(|_| self.max_lines.is_none());
+        //
+        // `as_ref().cloned()` (not `.clone().filter(...)`) keeps the
+        // `Option<ElementId>` borrow cheap when `max_lines` wins — no
+        // `ElementId` allocation happens on the hot clamp path.
+        let scrollable = self
+            .scroll_id
+            .as_ref()
+            .filter(|_| self.max_lines.is_none())
+            .cloned();
         let body = match scrollable {
             Some(id) => div()
                 .id(id)
@@ -859,6 +1049,7 @@ impl Render for TextView {
                 root = root
                     .on_action(cx.listener(Self::handle_copy))
                     .on_action(cx.listener(Self::handle_select_all))
+                    .on_action(cx.listener(Self::handle_show_context_menu))
                     .on_mouse_down(MouseButton::Right, cx.listener(Self::open_context_menu));
             }
             if self.scroll_id.is_some() {
@@ -870,6 +1061,11 @@ impl Render for TextView {
                     .on_action(cx.listener(Self::handle_home))
                     .on_action(cx.listener(Self::handle_end));
             }
+            // HIG §Focus-and-selection: focusable controls must show a
+            // visible ring. `apply_focus_ring` draws the theme-accent
+            // shadow only when `focused` is true, so idle views carry no
+            // extra chrome.
+            root = crate::foundations::materials::apply_focus_ring(root, theme, focused, &[]);
             // The context-menu entity renders as a fullscreen overlay only
             // when open, so attaching it unconditionally on selectable
             // views adds no visible chrome when idle.
@@ -904,14 +1100,14 @@ mod tests {
     #[test]
     fn resolve_color_defaults_to_theme_text() {
         let theme = TahoeTheme::dark();
-        assert_eq!(resolve_color(None, None, &theme), theme.text);
+        assert_eq!(resolve_color(None, None, false, &theme), theme.text);
     }
 
     #[test]
     fn resolve_color_label_level_resolves_to_theme_tier() {
         let theme = TahoeTheme::dark();
         assert_eq!(
-            resolve_color(None, Some(LabelLevel::Secondary), &theme),
+            resolve_color(None, Some(LabelLevel::Secondary), false, &theme),
             theme.text_muted,
         );
     }
@@ -921,7 +1117,7 @@ mod tests {
         let theme = TahoeTheme::dark();
         let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
         assert_eq!(
-            resolve_color(Some(color), Some(LabelLevel::Secondary), &theme),
+            resolve_color(Some(color), Some(LabelLevel::Secondary), false, &theme),
             color,
             "explicit color() must win over label_level()",
         );
@@ -931,7 +1127,37 @@ mod tests {
     fn resolve_color_explicit_wins_over_default() {
         let theme = TahoeTheme::dark();
         let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
-        assert_eq!(resolve_color(Some(color), None, &theme), color);
+        assert_eq!(resolve_color(Some(color), None, false, &theme), color);
+    }
+
+    #[test]
+    fn resolve_color_disabled_resolves_to_theme_text_disabled() {
+        // No explicit color and no label level: disabled flag must win
+        // over the plain `theme.text` default.
+        let theme = TahoeTheme::dark();
+        assert_eq!(
+            resolve_color(None, None, true, &theme),
+            theme.text_disabled(),
+        );
+    }
+
+    #[test]
+    fn resolve_color_label_level_wins_over_disabled() {
+        // A semantic tier is a deliberate author choice that trumps the
+        // generic disabled tint — callers who want both should drop the
+        // label level alongside setting `disabled(true)`.
+        let theme = TahoeTheme::dark();
+        assert_eq!(
+            resolve_color(None, Some(LabelLevel::Secondary), true, &theme),
+            theme.text_muted,
+        );
+    }
+
+    #[test]
+    fn resolve_color_explicit_wins_over_disabled() {
+        let theme = TahoeTheme::dark();
+        let color = gpui::hsla(0.5, 0.8, 0.6, 1.0);
+        assert_eq!(resolve_color(Some(color), None, true, &theme), color);
     }
 
     // ── TextViewSelection coordinator behaviour ──────────────────
@@ -1043,6 +1269,36 @@ mod tests {
     }
 
     #[test]
+    fn shift_click_after_word_grows_by_word() {
+        // Double-click "beta" then shift-click inside "delta" — the
+        // extension should snap to the word boundary (up to "delta"'s
+        // end), matching NSTextView's "grow by whole words" rule when
+        // the original gesture anchored on a word.
+        let text = "alpha beta gamma delta";
+        let (sel, id) = registered_selection(text);
+        sel.mouse_down(id.clone(), text, 7, 2, false); // inside "beta"
+        sel.end_drag();
+        assert_eq!(sel.selected_text(), "beta");
+        sel.mouse_down(id, text, 19, 1, true); // inside "delta"
+        assert_eq!(sel.selected_text(), "beta gamma delta");
+    }
+
+    #[test]
+    fn shift_click_after_line_keeps_paragraph() {
+        // Triple-click selects the whole paragraph. A subsequent
+        // shift-click anywhere inside the same paragraph must keep
+        // every character selected — a naive character-mode extension
+        // would collapse to the shift-click position.
+        let text = "the quick brown fox";
+        let (sel, id) = registered_selection(text);
+        sel.mouse_down(id.clone(), text, 0, 3, false); // triple-click
+        sel.end_drag();
+        assert_eq!(sel.selected_text(), text);
+        sel.mouse_down(id, text, 5, 1, true);
+        assert_eq!(sel.selected_text(), text);
+    }
+
+    #[test]
     fn drag_requires_pending_state() {
         // MouseMove without a preceding MouseDown should be a no-op.
         let (sel, id) = registered_selection("hello world");
@@ -1090,11 +1346,12 @@ mod tests {
     // ── Keybindings ───────────────────────────────────────────────
 
     #[test]
-    fn keybindings_cover_selection_and_scroll() {
-        // Two selection bindings (⌘C, ⌘A) plus six scroll bindings
-        // (Up, Down, PageUp, PageDown, Home, End) = 8 total.
+    fn keybindings_cover_selection_scroll_and_context_menu() {
+        // Two selection bindings (⌘C, ⌘A), six scroll bindings (Up, Down,
+        // PageUp, PageDown, Home, End), plus the Shift-F10 context-menu
+        // activation = 9 total.
         let bindings = keybindings();
-        assert_eq!(bindings.len(), 8);
+        assert_eq!(bindings.len(), 9);
     }
 
     // ── Context menu item composition (Phase 4) ──────────────────
@@ -1215,6 +1472,7 @@ mod gpui_tests {
             assert!(tv.scroll_id.is_none());
             assert!(!tv.readable_width);
             assert!(tv.selectable);
+            assert!(!tv.disabled);
             assert!(tv.accessibility_label.is_none());
         });
     }
@@ -1287,9 +1545,70 @@ mod gpui_tests {
     }
 
     #[gpui::test]
+    async fn text_view_disabled_builder_threads_flag(cx: &mut gpui::TestAppContext) {
+        // Smoke-test the disabled() builder so a future caller can
+        // trust the flag actually flips. The downstream colour / AX
+        // plumbing is covered by `resolve_color_disabled_*` tests.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "inactive").disabled(true)
+        });
+        handle.update(cx, |tv, _| assert!(tv.disabled));
+    }
+
+    #[cfg(debug_assertions)]
+    #[gpui::test]
+    #[should_panic(expected = "mutually exclusive")]
+    async fn text_view_max_lines_plus_scrollable_panics_in_debug(cx: &mut gpui::TestAppContext) {
+        // The mutual-exclusion contract is enforced by a `debug_assert!`
+        // fired during render. Combining both options panics in debug
+        // builds; release silently prefers `max_lines` (and the test
+        // compiles out entirely via `cfg(debug_assertions)` so
+        // `cargo nextest run --release` stays green). The panic
+        // substring check is stable against rewording of the full
+        // message.
+        let (_handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "whoops")
+                .max_lines(3)
+                .scrollable("scroll-id")
+        });
+        // Drive a render so the debug_assert trips.
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
     async fn text_view_styled_text_stores_plain_text_and_highlights(cx: &mut gpui::TestAppContext) {
         let (handle, cx) = setup_test_window(cx, |_window, cx| {
             TextView::new(cx, "placeholder").styled_text(
+                "Bold hello",
+                vec![(
+                    0..4,
+                    HighlightStyle {
+                        font_weight: Some(gpui::FontWeight::BOLD),
+                        ..Default::default()
+                    },
+                )],
+            )
+        });
+        handle.update(cx, |tv, _| match &tv.content {
+            TextViewContent::Rich { text, highlights } => {
+                assert_eq!(text.as_ref(), "Bold hello");
+                assert_eq!(highlights.len(), 1);
+                assert_eq!(highlights[0].0, 0..4);
+            }
+            TextViewContent::Plain(_) => panic!("expected Rich content"),
+        });
+    }
+
+    #[gpui::test]
+    async fn text_view_styled_constructor_skips_plaintext_placeholder(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        // `styled` is equivalent to `new().styled_text()` without the
+        // throwaway plain-text argument. Confirm it lands as Rich content
+        // in a single allocation.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::styled(
+                cx,
                 "Bold hello",
                 vec![(
                     0..4,

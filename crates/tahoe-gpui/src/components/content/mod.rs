@@ -22,5 +22,5 @@ pub use chart::{Chart, ChartDataSeries, ChartType};
 pub use image_view::{ContentMode, ImageView};
 pub use label::{Label, LabelVariant};
 pub use selectable_text::{AnchorClickHandler, SelectableText, SelectionCoordinator};
-pub use text_view::TextView;
+pub use text_view::{TextView, TextViewSelection};
 pub use web_view::WebView;

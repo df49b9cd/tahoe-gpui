@@ -13,7 +13,7 @@ follow SemVer once the crate reaches 1.0.
   [#13](https://github.com/df49b9cd/tahoe-gpui/issues/13)). Previously every
   `Icon::new(...)` — the default — rendered with glass pastel colors and a
   1.5pt stroke regardless of whether the icon sat on a Liquid Glass surface.
-  Per HIG §Materials (`docs/hig/foundations.md:1045`), vibrancy is applied by
+  Per HIG §Materials (`crates/tahoe-gpui/docs/hig/foundations.md:1045`), vibrancy is applied by
   the *surface*, not by a global theme mode, so the fix threads "this subtree
   is on glass" through the element tree via a new
   [`foundations::GlassSurfaceScope`] wrapper. `IconStyle::Auto` now resolves
@@ -37,6 +37,13 @@ follow SemVer once the crate reaches 1.0.
   component with 11 new builders: `styled_text`, `max_lines`, `emphasize`,
   `color`, `label_level`, `font_design`, `leading_style`, `text_align`,
   `scrollable`, `readable_width`, and `accessibility_label`.
+- `TextView::styled_text(text, highlights)` — accepts a plain-text
+  `SharedString` alongside `Vec<(Range<usize>, HighlightStyle)>` so
+  VoiceOver has a label to announce without callers needing to restate
+  the content via `.accessibility_label(...)`. Highlights that fall
+  outside the text (start or end beyond `text.len()`, or a reversed
+  range) trip a `debug_assert!` so mismatches surface during tests
+  rather than silently rendering truncated runs at runtime.
 - `TextView` keyboard scroll (scrollable views only): Up / Down move by one
   rendered line-height, Page Up / Page Down move by one viewport height,
   Home jumps to the start, End jumps to the end. Bound inside the new
@@ -65,6 +72,16 @@ follow SemVer once the crate reaches 1.0.
 
 ### Changed
 
+- `TahoeTheme.avatar_size` default raised from `px(28.0)` to `px(32.0)`
+  so the token matches the HIG `AvatarSize::Standard` baseline (the
+  canonical default most app surfaces use). Callers that set a size
+  explicitly via `Avatar::size(...)` / `Avatar::canonical_size(...)` are
+  unaffected; only `Avatar::new("…")` without a size override picks up
+  the new default.
+- `TextView::max_lines(...)` and `TextView::scrollable(...)` are mutually
+  exclusive: clamped height short-circuits GPUI's scroll viewport.
+  Setting both trips a `debug_assert!` so the conflict panics in tests;
+  release builds silently prefer `max_lines`.
 - `GlassIconTile` now declares its own glass surface scope via
   `GlassSurfaceScope`. The redundant explicit `.style(IconStyle::LiquidGlass)`
   on its inner `Icon` was removed — the scope drives resolution now.
@@ -115,10 +132,3 @@ follow SemVer once the crate reaches 1.0.
   child through a deferred boundary must re-wrap the deferred content in
   `GlassSurfaceScope`, or hold a `GlassSurfaceGuard` across the boundary. See
   the module-level documentation in `foundations/surface_scope.rs`.
-- `TextView::styled_text(text, styled)` now takes a plain-text argument
-  alongside the `StyledText` so VoiceOver has a label to announce without
-  callers needing to restate the content via `.accessibility_label(...)`.
-- `TextView::max_lines(...)` and `TextView::scrollable(...)` are mutually
-  exclusive: clamped height short-circuits GPUI's scroll viewport. Setting
-  both trips a `debug_assert!` so the conflict panics in tests; release
-  builds silently prefer `max_lines`.

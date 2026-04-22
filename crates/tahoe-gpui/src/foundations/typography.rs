@@ -429,7 +429,23 @@ impl TextStyleAttrs {
     /// successive lines.
     pub fn with_leading(mut self, style: LeadingStyle) -> Self {
         match style {
-            LeadingStyle::Tight => self.leading = px(f32::from(self.leading) * 0.95),
+            LeadingStyle::Tight => {
+                // Defence against a style whose HIG Standard leading
+                // sits near the practical SF Pro floor: clamp the Tight
+                // result so the ratio never drops below `size × 1.15`,
+                // the ratio at which SF Pro ascenders and descenders
+                // visibly start colliding. Today only Title1 (26 pt
+                // leading, 22 pt size → 1.18× ratio) is close enough
+                // that the clamp kicks in; every other HIG style has
+                // enough headroom for the multiplier to win outright.
+                // The clamp keeps the contract stable if a caller
+                // introduces a custom style with tighter baseline
+                // spacing.
+                let size = f32::from(self.size);
+                let scaled = f32::from(self.leading) * 0.95;
+                let floor = size * 1.15;
+                self.leading = px(scaled.max(floor));
+            }
             LeadingStyle::Standard => {}
             LeadingStyle::Loose => self.leading = px(f32::from(self.leading) * 1.15),
         }
@@ -485,7 +501,12 @@ pub enum LabelLevel {
     /// Quaternary/watermark text — `theme.text_quaternary()` (semantic `quaternaryLabel`).
     Quaternary,
     /// Quinary text (macOS Tahoe; iOS equivalent where available) —
-    /// `theme.text_quinary()` (semantic `quinaryLabel`).
+    /// `theme.text_quinary()` (semantic `quinaryLabel`). The lightest
+    /// tier in the HIG hierarchy: reserve for decorative separators,
+    /// timestamps, and trailing metadata that must recede so it does
+    /// not compete with nearby primary content. Not appropriate for
+    /// running prose — contrast is below WCAG AA for body text and
+    /// readers with mild vision impairment will struggle.
     Quinary,
 }
 
