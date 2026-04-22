@@ -393,14 +393,22 @@ impl Chart {
                     s.name
                 );
             }
-            return format!(
-                "{} chart: {}, {} values, range {:.2} to {:.2}",
-                self.chart_type.voice_label(),
-                s.name,
-                count,
-                s.min_value(),
-                s.max_value()
-            );
+            return match (s.min_value(), s.max_value()) {
+                (Some(lo), Some(hi)) => format!(
+                    "{} chart: {}, {} values, range {:.2} to {:.2}",
+                    self.chart_type.voice_label(),
+                    s.name,
+                    count,
+                    lo,
+                    hi
+                ),
+                _ => format!(
+                    "{} chart: {}, {} values (non-numeric)",
+                    self.chart_type.voice_label(),
+                    s.name,
+                    count
+                ),
+            };
         }
         let names: Vec<&str> = self
             .data_set
@@ -503,8 +511,13 @@ impl RenderOnce for Chart {
             self.data_set = filter_data_set_to_window(self.data_set, window);
         }
 
-        let raw_min = self.data_set.global_min();
-        let raw_max = self.data_set.global_max();
+        // Empty / all-non-numeric data sets return `None`; pick a 0..1
+        // placeholder so the plot area still draws and downstream scaling
+        // math never divides by a non-finite range.
+        let (raw_min, raw_max) = match (self.data_set.global_min(), self.data_set.global_max()) {
+            (Some(lo), Some(hi)) => (lo, hi),
+            _ => (0.0, 1.0),
+        };
         // Anchor Bar/Area/Range at zero; let Line/Point/Rule breathe around
         // their actual data so all-negative series still fill the plot area
         // instead of collapsing against the top edge.
@@ -513,8 +526,8 @@ impl RenderOnce for Chart {
         } else {
             (raw_min, raw_max)
         };
-        // Fallback for empty / NaN / zero-width ranges. Without this the
-        // divisor in `(v - min) / range` would be zero or non-finite.
+        // Fallback for NaN / zero-width ranges. Without this the divisor
+        // in `(v - min) / range` would be zero or non-finite.
         if !(min.is_finite() && max.is_finite()) || (max - min).abs() < f32::EPSILON {
             min = min.min(0.0);
             max = (min + 1.0).max(max);
@@ -816,19 +829,31 @@ impl RenderOnce for Chart {
                     &data_set,
                     global_color,
                     theme,
+                    window,
                     plot_width,
                     plot_height,
                     self.inner_radius_ratio,
                     self.sector_start_angle,
+                    &fka_points,
+                    &point_prefix,
+                    total_fka_points,
+                    &series_offsets,
+                    &fka_labels,
                     dwc,
                 ),
                 ChartType::Rectangle => render_rectangle(
                     &data_set,
                     global_color,
                     theme,
+                    window,
                     plot_width,
                     plot_height,
                     axis_config.as_ref(),
+                    &fka_points,
+                    &point_prefix,
+                    total_fka_points,
+                    &series_offsets,
+                    &fka_labels,
                     dwc,
                 ),
             })
@@ -1060,6 +1085,13 @@ impl RenderOnce for Chart {
                 container = container.child(plot_wrapper);
             }
         } else {
+            // Empty state needs a semantic role so VoiceOver announces
+            // "No data" rather than silently skipping the plot area.
+            // `Alert` matches the WAI-ARIA "status / live region"
+            // pattern for passive non-interactive notifications.
+            let empty_a11y = AccessibilityProps::new()
+                .label(SharedString::from("No data"))
+                .role(AccessibilityRole::Alert);
             container = container.child(
                 div()
                     .flex()
@@ -1069,6 +1101,7 @@ impl RenderOnce for Chart {
                     .h_full()
                     .text_style(TextStyle::Caption1, theme)
                     .text_color(theme.text_muted)
+                    .with_accessibility(&empty_a11y)
                     .child("No data"),
             );
         }
@@ -1266,7 +1299,11 @@ fn render_bars(
                 group = group.child(div().w(px(bar_w)));
                 continue;
             }
-            let norm = y_scale.project(&p.y);
+            // Clamp to `[0, 1]` because `Scale::project` contracts return
+            // a normalised coordinate — a custom user-supplied scale that
+            // doesn't honour the contract would otherwise overdraw the
+            // plot area or produce a negative bar height.
+            let norm = y_scale.project(&p.y).clamp(0.0, 1.0);
             let bar_h = f32::from(height) * norm;
             let color = series_color(data_set, global_color, si, theme);
             let mut bar = div()
@@ -1993,35 +2030,117 @@ fn render_sector(
     data_set: &ChartDataSet,
     global_color: Option<Hsla>,
     theme: &crate::foundations::theme::TahoeTheme,
+    window: &mut Window,
     width: Pixels,
     height: Pixels,
     inner_radius_ratio: f32,
     start_angle: f32,
+    fka_points: &Option<(FocusGroup, Vec<FocusHandle>)>,
+    point_prefix: &Option<SharedString>,
+    total_fka_points: usize,
+    series_offsets: &[usize],
+    fka_labels: &[SharedString],
     dwc: bool,
 ) -> gpui::Div {
     let weights = sector_weights(data_set, |i| series_color(data_set, global_color, i, theme));
     let pw = f32::from(width);
     let ph = f32::from(height);
 
-    div().w(width).h(height).child(
-        canvas(
-            |_info, _window, _cx| {},
-            move |bounds, _state, window, _cx| {
-                paint_sector_chart(
-                    window,
-                    bounds.origin,
-                    pw,
-                    ph,
-                    &weights,
-                    inner_radius_ratio,
-                    start_angle,
-                    dwc,
-                );
-            },
-        )
-        .w(width)
-        .h(height),
+    let canvas_el = canvas(
+        |_info, _window, _cx| {},
+        move |bounds, _state, window, _cx| {
+            paint_sector_chart(
+                window,
+                bounds.origin,
+                pw,
+                ph,
+                &weights,
+                inner_radius_ratio,
+                start_angle,
+                dwc,
+            );
+        },
     )
+    .w(width)
+    .h(height);
+
+    let Some((group, handles)) = fka_points.as_ref() else {
+        return div().w(width).h(height).child(canvas_el);
+    };
+    let Some(prefix) = point_prefix.as_ref() else {
+        return div().w(width).h(height).child(canvas_el);
+    };
+
+    // Sector hit overlay: each visible slice gets a centroid-anchored
+    // square hit div so keyboard / VoiceOver users can land on it
+    // individually.  A rectangular hit does not match the wedge shape,
+    // but the focus ring and announcement follow the same pattern the
+    // canvas-based Line and Area charts use.
+    let diameter = pw.min(ph);
+    let radius = diameter * 0.5;
+    let inner_radius = radius * inner_radius_ratio.clamp(0.0, 0.95);
+    let mid_radius = (inner_radius + radius) * 0.5;
+    let center_x = pw * 0.5;
+    let center_y = ph * 0.5;
+    let hit_size = theme.min_target_size().max(1.0);
+
+    let indexed: Vec<(usize, f32)> = data_set
+        .series
+        .iter()
+        .enumerate()
+        .filter_map(|(i, series)| {
+            let first = series.inner.points.first()?;
+            let v = first.y.as_number_f32()?;
+            if v <= 0.0 || !v.is_finite() {
+                return None;
+            }
+            Some((i, v))
+        })
+        .collect();
+    let total: f32 = indexed.iter().map(|(_, v)| *v).sum();
+
+    let mut overlay = div().absolute().top_0().left_0().w(width).h(height);
+    if total.is_finite() && total > 0.0 {
+        let mut cursor = start_angle;
+        for (si, value) in &indexed {
+            let sweep = (value / total) * core::f32::consts::TAU;
+            let mid_angle = cursor + sweep * 0.5;
+            let hx = center_x + mid_angle.cos() * mid_radius;
+            let hy = center_y + mid_angle.sin() * mid_radius;
+            let fka_idx = series_offsets[*si];
+            if fka_idx < handles.len() {
+                let hit = div()
+                    .absolute()
+                    .top(px((hy - hit_size * 0.5).max(0.0)))
+                    .left(px((hx - hit_size * 0.5).max(0.0)))
+                    .w(px(hit_size))
+                    .h(px(hit_size));
+                let hit = attach_fka(
+                    hit,
+                    &FkaAttachContext {
+                        group,
+                        handles,
+                        prefix,
+                        total: total_fka_points,
+                        theme,
+                        labels: fka_labels,
+                        slot_width: hit_size,
+                    },
+                    fka_idx,
+                    window,
+                );
+                overlay = overlay.child(hit);
+            }
+            cursor += sweep;
+        }
+    }
+
+    div()
+        .relative()
+        .w(width)
+        .h(height)
+        .child(canvas_el)
+        .child(overlay)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2029,9 +2148,15 @@ fn render_rectangle(
     data_set: &ChartDataSet,
     global_color: Option<Hsla>,
     theme: &crate::foundations::theme::TahoeTheme,
+    window: &mut Window,
     width: Pixels,
     height: Pixels,
     axis_config: Option<&AxisConfig>,
+    fka_points: &Option<(FocusGroup, Vec<FocusHandle>)>,
+    point_prefix: &Option<SharedString>,
+    total_fka_points: usize,
+    series_offsets: &[usize],
+    fka_labels: &[SharedString],
     dwc: bool,
 ) -> gpui::Div {
     let base_color = series_color(data_set, global_color, 0, theme);
@@ -2071,26 +2196,73 @@ fn render_rectangle(
         y_slots,
     );
 
-    div().w(width).h(height).child(
-        canvas(
-            |_info, _window, _cx| {},
-            move |bounds, _state, window, _cx| {
-                paint_rectangle_chart(
-                    window,
-                    bounds.origin,
-                    pw,
-                    ph,
-                    &cells,
-                    z_min,
-                    z_max,
-                    base_color,
-                    dwc,
-                );
-            },
-        )
-        .w(width)
-        .h(height),
+    // Clone for the paint closure — the overlay pass below borrows the
+    // original slice.
+    let paint_cells = cells.clone();
+    let canvas_el = canvas(
+        |_info, _window, _cx| {},
+        move |bounds, _state, window, _cx| {
+            paint_rectangle_chart(
+                window,
+                bounds.origin,
+                pw,
+                ph,
+                &paint_cells,
+                z_min,
+                z_max,
+                base_color,
+                dwc,
+            );
+        },
     )
+    .w(width)
+    .h(height);
+
+    let Some((group, handles)) = fka_points.as_ref() else {
+        return div().w(width).h(height).child(canvas_el);
+    };
+    let Some(prefix) = point_prefix.as_ref() else {
+        return div().w(width).h(height).child(canvas_el);
+    };
+
+    // Cell hit overlay: one absolute-positioned hit div per HeatmapCell,
+    // sized to the cell so VoiceOver and keyboard navigation can reach
+    // each datum directly.
+    let mut overlay = div().absolute().top_0().left_0().w(width).h(height);
+    for cell in &cells {
+        let fka_idx = series_offsets.get(cell.series_index).copied().unwrap_or(0) + cell.slot_index;
+        if fka_idx >= handles.len() {
+            continue;
+        }
+        let hit = div()
+            .absolute()
+            .top(cell.y)
+            .left(cell.x)
+            .w(cell.w)
+            .h(cell.h);
+        let hit = attach_fka(
+            hit,
+            &FkaAttachContext {
+                group,
+                handles,
+                prefix,
+                total: total_fka_points,
+                theme,
+                labels: fka_labels,
+                slot_width: f32::from(cell.w).max(1.0),
+            },
+            fka_idx,
+            window,
+        );
+        overlay = overlay.child(hit);
+    }
+
+    div()
+        .relative()
+        .w(width)
+        .h(height)
+        .child(canvas_el)
+        .child(overlay)
 }
 
 /// X extent for rectangle charts — reads the first numeric `x` from each

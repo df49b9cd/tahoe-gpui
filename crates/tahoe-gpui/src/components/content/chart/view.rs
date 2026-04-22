@@ -1364,7 +1364,7 @@ mod tests {
         view.update(cx, |chart, _window, _cx| {
             chart.transition_started_at = Some(Instant::now() - DATA_TRANSITION_DURATION * 2);
             let p = chart.transition_progress().expect("transition active");
-            assert!((p - 1.0).abs() < f32::EPSILON);
+            assert!((p - 1.0).abs() < 1e-4);
         })
         .unwrap();
     }

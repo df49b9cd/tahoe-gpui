@@ -326,34 +326,31 @@ impl ChartDataSeries {
 
     /// Minimum Y value across the series, honouring Range bounds.
     ///
-    /// Non-Number Y values (Date/Category) are skipped — they have no
-    /// numeric meaning without a [`Scale`]. Phase 1 will route axis
-    /// extent through the scale and retire this helper.
-    pub(crate) fn min_value(&self) -> f32 {
-        let mut m = f32::INFINITY;
-        for p in self.points.iter() {
-            if let Some(y) = p.y.as_number_f32() {
-                m = m.min(y);
-            }
-            if let Some(yh) = p.y_high.as_ref().and_then(|v| v.as_number_f32()) {
-                m = m.min(yh);
-            }
-        }
-        m
+    /// Returns `None` for an empty series or one with no numeric Y —
+    /// callers must decide the empty-domain fallback explicitly rather
+    /// than inheriting `f32::INFINITY` as a sentinel that later
+    /// propagates into `NaN` through subtraction.
+    pub(crate) fn min_value(&self) -> Option<f32> {
+        self.points
+            .iter()
+            .flat_map(|p| {
+                p.y.as_number_f32()
+                    .into_iter()
+                    .chain(p.y_high.as_ref().and_then(|v| v.as_number_f32()))
+            })
+            .reduce(f32::min)
     }
 
     /// Maximum Y value across the series, honouring Range bounds.
-    pub(crate) fn max_value(&self) -> f32 {
-        let mut m = f32::NEG_INFINITY;
-        for p in self.points.iter() {
-            if let Some(y) = p.y.as_number_f32() {
-                m = m.max(y);
-            }
-            if let Some(yh) = p.y_high.as_ref().and_then(|v| v.as_number_f32()) {
-                m = m.max(yh);
-            }
-        }
-        m
+    pub(crate) fn max_value(&self) -> Option<f32> {
+        self.points
+            .iter()
+            .flat_map(|p| {
+                p.y.as_number_f32()
+                    .into_iter()
+                    .chain(p.y_high.as_ref().and_then(|v| v.as_number_f32()))
+            })
+            .reduce(f32::max)
     }
 }
 
@@ -420,20 +417,22 @@ impl ChartDataSet {
             .unwrap_or(0)
     }
 
-    /// Global min across all series.
-    pub(crate) fn global_min(&self) -> f32 {
+    /// Global min across all series, or `None` if every series is empty
+    /// / non-numeric.
+    pub(crate) fn global_min(&self) -> Option<f32> {
         self.series
             .iter()
-            .map(|s| s.inner.min_value())
-            .fold(f32::INFINITY, f32::min)
+            .filter_map(|s| s.inner.min_value())
+            .reduce(f32::min)
     }
 
-    /// Global max across all series.
-    pub(crate) fn global_max(&self) -> f32 {
+    /// Global max across all series, or `None` if every series is empty
+    /// / non-numeric.
+    pub(crate) fn global_max(&self) -> Option<f32> {
         self.series
             .iter()
-            .map(|s| s.inner.max_value())
-            .fold(f32::NEG_INFINITY, f32::max)
+            .filter_map(|s| s.inner.max_value())
+            .reduce(f32::max)
     }
 }
 

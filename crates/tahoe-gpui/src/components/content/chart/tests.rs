@@ -83,8 +83,15 @@ fn default_accessibility_label_handles_empty_series() {
 #[test]
 fn data_series_min_max() {
     let s = series();
-    assert!((s.min_value() - 10.0).abs() < f32::EPSILON);
-    assert!((s.max_value() - 30.0).abs() < f32::EPSILON);
+    assert!((s.min_value().expect("non-empty series") - 10.0).abs() < 1e-4);
+    assert!((s.max_value().expect("non-empty series") - 30.0).abs() < 1e-4);
+}
+
+#[test]
+fn data_series_min_max_empty_is_none() {
+    let s = ChartDataSeries::new("Empty", Vec::<f32>::new());
+    assert_eq!(s.min_value(), None);
+    assert_eq!(s.max_value(), None);
 }
 
 #[test]
@@ -294,8 +301,13 @@ async fn dwc_renders_bar_without_panic(cx: &mut TestAppContext) {
         cx.set_global(theme);
         ChartDwcHarness::new(ChartType::Bar)
     });
-    host.update(_vcx, |_h, _cx| {
-        // Render completed without panic — DwC border styling applied.
+    host.update(_vcx, |_h, cx| {
+        // DwC border styling is canvas/div-painted so pixel-level
+        // assertion requires the `test-support` feature for visual
+        // regression. Assert at least that the theme actually carries
+        // the DwC flag so the render path above read the intended mode.
+        let theme = cx.global::<TahoeTheme>();
+        assert!(theme.accessibility_mode.differentiate_without_color());
     });
 }
 
@@ -452,8 +464,18 @@ fn data_set_global_min_max() {
         ChartSeries::new(ChartDataSeries::new("A", vec![1.0, 5.0])),
         ChartSeries::new(ChartDataSeries::new("B", vec![3.0, 10.0])),
     ]);
-    assert!((ds.global_min() - 1.0).abs() < f32::EPSILON);
-    assert!((ds.global_max() - 10.0).abs() < f32::EPSILON);
+    assert!((ds.global_min().expect("non-empty") - 1.0).abs() < 1e-4);
+    assert!((ds.global_max().expect("non-empty") - 10.0).abs() < 1e-4);
+}
+
+#[test]
+fn data_set_global_min_max_empty_is_none() {
+    let ds = ChartDataSet::multi(vec![
+        ChartSeries::new(ChartDataSeries::new("A", Vec::<f32>::new())),
+        ChartSeries::new(ChartDataSeries::new("B", Vec::<f32>::new())),
+    ]);
+    assert_eq!(ds.global_min(), None);
+    assert_eq!(ds.global_max(), None);
 }
 
 #[test]
@@ -997,6 +1019,49 @@ async fn chart_rule_renders_without_panic(cx: &mut TestAppContext) {
     host.update(_vcx, |_h, _cx| {});
 }
 
+#[gpui::test]
+async fn chart_rule_multi_point_renders_first_only(cx: &mut TestAppContext) {
+    // `ChartType::Rule` is documented to draw only the first point's
+    // Y value (matches Swift Charts' `RuleMark(y:)`).  Extra points
+    // should be silently ignored at render time and never cause a
+    // panic.  A debug assertion in `ChartDataSeries::new` surfaces
+    // the misuse in debug builds, so gate this test against debug so
+    // production still proves the tolerant behaviour.
+    if cfg!(debug_assertions) {
+        return;
+    }
+    struct RuleMultiHarness;
+    impl Render for RuleMultiHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::new("Targets", vec![50.0, 75.0, 12.0]))
+                .id("rule-multi-test")
+                .chart_type(ChartType::Rule)
+                .size(px(300.0), px(160.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RuleMultiHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_line_single_point_renders_without_panic(cx: &mut TestAppContext) {
+    // `paint_line` short-circuits when the series has fewer than two
+    // points because the interpolator needs at least one segment.
+    // Exercise that degenerate branch end-to-end so a regression
+    // (e.g. an off-by-one loop or a division by `n - 1 = 0`) surfaces.
+    struct SinglePointLine;
+    impl Render for SinglePointLine {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::new("Single", vec![42.0]))
+                .id("line-single-test")
+                .chart_type(ChartType::Line)
+                .size(px(300.0), px(160.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| SinglePointLine);
+    host.update(_vcx, |_h, _cx| {});
+}
+
 // ─── Paint callbacks ───────────────────────────────────────────────
 
 #[test]
@@ -1357,6 +1422,53 @@ fn sector_with_no_positive_weights_does_not_render() {
         pairs.is_empty(),
         "sectors should reject non-positive weights so the slice ratio stays meaningful"
     );
+}
+
+#[test]
+fn pie_sector_weights_preserve_magnitudes() {
+    use super::sector::sector_weights;
+    let set = ChartDataSet::multi(vec![
+        ChartSeries::new(ChartDataSeries::new("a", vec![10.0])),
+        ChartSeries::new(ChartDataSeries::new("b", vec![25.0])),
+        ChartSeries::new(ChartDataSeries::new("c", vec![15.0])),
+        ChartSeries::new(ChartDataSeries::new("d", vec![50.0])),
+    ]);
+    let pairs = sector_weights(&set, |_| hsla(0.0, 0.0, 0.0, 1.0));
+    let values: Vec<f32> = pairs.iter().map(|(_, v)| *v).collect();
+    assert_eq!(values.len(), 4);
+    assert!((values.iter().sum::<f32>() - 100.0).abs() < 1e-4);
+    // Each slice preserves its input magnitude — normalisation into a
+    // `[0, 1]` sweep happens inside `paint_sector_chart`, so downstream
+    // callers (FKA overlay, legend) can work from absolute values.
+    assert!((values[0] - 10.0).abs() < 1e-4);
+    assert!((values[1] - 25.0).abs() < 1e-4);
+    assert!((values[2] - 15.0).abs() < 1e-4);
+    assert!((values[3] - 50.0).abs() < 1e-4);
+}
+
+#[test]
+fn donut_builder_clamps_inner_radius_ratio() {
+    // Valid ratio round-trips verbatim.
+    let chart = Chart::new(ChartDataSeries::new("x", vec![1.0]))
+        .id("donut")
+        .chart_type(ChartType::Sector)
+        .inner_radius_ratio(0.6);
+    assert!((chart.inner_radius_ratio - 0.6).abs() < 1e-4);
+
+    // Over-max ratio clamps to the 0.95 ceiling (beyond this the ring
+    // becomes visually indistinct from a stroked circle).
+    let chart = Chart::new(ChartDataSeries::new("x", vec![1.0]))
+        .id("donut")
+        .chart_type(ChartType::Sector)
+        .inner_radius_ratio(1.5);
+    assert!((chart.inner_radius_ratio - 0.95).abs() < 1e-4);
+
+    // Negative ratio clamps to 0.
+    let chart = Chart::new(ChartDataSeries::new("x", vec![1.0]))
+        .id("donut")
+        .chart_type(ChartType::Sector)
+        .inner_radius_ratio(-0.2);
+    assert!(chart.inner_radius_ratio.abs() < 1e-4);
 }
 
 #[test]

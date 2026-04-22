@@ -40,20 +40,45 @@ pub(crate) fn paint_line(
     if points.len() < 2 {
         return;
     }
-    let pts: Vec<Point<Pixels>> = points
+    let pts = project_points(points, origin, w, h, y_scale);
+    paint_line_from_projected(window, &pts, color, method);
+}
+
+/// Project a slice of `ChartPoint`s into pixel-space coordinates using the
+/// supplied scale.  Shared by `paint_line` and `paint_area` so the area
+/// painter doesn't project the same points twice per frame.
+fn project_points(
+    points: &[ChartPoint],
+    origin: Point<Pixels>,
+    w: f32,
+    h: f32,
+    y_scale: &dyn Scale,
+) -> Vec<Point<Pixels>> {
+    let denom = (points.len() as f32 - 1.0).max(1.0);
+    points
         .iter()
         .enumerate()
         .map(|(i, p)| {
             let norm = y_scale.project(&p.y);
-            let x = origin.x + px(w * (i as f32 / (points.len() as f32 - 1.0)));
+            let x = origin.x + px(w * (i as f32 / denom));
             let y = origin.y + px(h * (1.0 - norm));
             point(x, y)
         })
-        .collect();
+        .collect()
+}
 
+fn paint_line_from_projected(
+    window: &mut Window,
+    pts: &[Point<Pixels>],
+    color: Hsla,
+    method: InterpolationMethod,
+) {
+    if pts.len() < 2 {
+        return;
+    }
     let mut pb = PathBuilder::stroke(px(2.0));
     pb.move_to(pts[0]);
-    append_interpolation(&mut pb, &pts, method);
+    append_interpolation(&mut pb, pts, method);
     if let Ok(path) = pb.build() {
         window.paint_path(path, color);
     }
@@ -78,16 +103,7 @@ pub(crate) fn paint_area(
     if points.is_empty() {
         return;
     }
-    let pts: Vec<Point<Pixels>> = points
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let norm = y_scale.project(&p.y);
-            let x = origin.x + px(w * (i as f32 / (points.len() as f32 - 1.0).max(1.0)));
-            let y = origin.y + px(h * (1.0 - norm));
-            point(x, y)
-        })
-        .collect();
+    let pts = project_points(points, origin, w, h, y_scale);
 
     let mut pb = PathBuilder::fill();
 
@@ -112,8 +128,9 @@ pub(crate) fn paint_area(
         window.paint_path(path, fill_color);
     }
 
-    // Stroke the upper edge for definition.
-    paint_line(window, origin, w, h, points, y_scale, color, method);
+    // Stroke the upper edge for definition — reuse the projected points
+    // instead of walking `paint_line` which would re-project them.
+    paint_line_from_projected(window, &pts, color, method);
 }
 
 /// Paint a stacked-area ribbon bounded above by `segment.hi` and below

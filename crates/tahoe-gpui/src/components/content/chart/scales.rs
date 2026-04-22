@@ -137,20 +137,38 @@ impl Scale for LogScale {
 
     fn ticks(&self, count: usize) -> Vec<(PlottableValue, SharedString)> {
         let (lo, hi) = self.domain;
-        let log_lo = lo.log(self.base).floor() as i32;
-        let log_hi = hi.log(self.base).ceil() as i32;
-        let step = ((log_hi - log_lo).max(1) as usize / count.max(1)).max(1);
+        if !(lo.is_finite() && hi.is_finite()) || lo <= 0.0 || hi <= 0.0 {
+            return Vec::new();
+        }
+        // `f64::MAX.log2() ≈ 1024`, so decimal/natural logs stay well
+        // inside `i32` range for any finite domain — but clamp anyway as
+        // defense-in-depth against callers that feed pathological values.
+        let log_lo_f = lo.log(self.base).floor().clamp(-1024.0, 1024.0);
+        let log_hi_f = hi.log(self.base).ceil().clamp(-1024.0, 1024.0);
+        let log_lo = log_lo_f as i32;
+        let log_hi = log_hi_f as i32;
+        let span = log_hi.saturating_sub(log_lo).max(1) as usize;
+        let step = (span / count.max(1)).max(1) as i32;
         let mut out = Vec::new();
         let mut e = log_lo;
-        while e <= log_hi {
+        // Hard cap on iterations so a huge span + step-of-1 still
+        // terminates in bounded time; matches the `nice_ticks` defence.
+        let max_iters = count.saturating_mul(4).max(32);
+        for _ in 0..max_iters {
+            if e > log_hi {
+                break;
+            }
             let v = self.base.powi(e);
-            if v >= lo && v <= hi {
+            if v.is_finite() && v >= lo && v <= hi {
                 out.push((
                     PlottableValue::Number(v),
                     SharedString::from(format_linear(v as f32)),
                 ));
             }
-            e += step as i32;
+            e = match e.checked_add(step) {
+                Some(next) => next,
+                None => break,
+            };
         }
         out
     }
@@ -339,9 +357,13 @@ impl Scale for DateScale {
 }
 
 fn system_secs_since_epoch(t: SystemTime) -> f64 {
+    // `duration_since(UNIX_EPOCH)` returns `Err(_)` whenever `t` is
+    // before 1970-01-01. Use the signed offset so pre-epoch timestamps
+    // project distinctly — otherwise every date prior to the epoch
+    // collapses onto the same tick.
     match t.duration_since(UNIX_EPOCH) {
         Ok(d) => d.as_secs_f64(),
-        Err(_) => 0.0,
+        Err(e) => -e.duration().as_secs_f64(),
     }
 }
 

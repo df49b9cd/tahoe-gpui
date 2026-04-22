@@ -175,14 +175,21 @@ fn append_monotone(pb: &mut PathBuilder, pts: &[Point<Pixels>]) {
     for i in 1..n - 1 {
         let s0 = slopes[i - 1];
         let s1 = slopes[i];
-        if s0 * s1 <= 0.0 {
+        // `s0 * s1 <= 0.0` handles opposite-signs and the zero case via
+        // the product.  The extra `is_finite` check guards against
+        // extreme slopes (e.g. a very steep segment whose slope rounds
+        // to `±inf`) which could otherwise round the harmonic mean to
+        // `inf / 0 = inf` and propagate `NaN` through the
+        // Fritsch-Carlson clamp below.
+        if s0 * s1 <= 0.0 || !(s0.is_finite() && s1.is_finite()) {
             tangents[i] = 0.0;
         } else {
             let h0 = dx[i - 1];
             let h1 = dx[i];
             let w0 = 2.0 * h1 + h0;
             let w1 = h1 + 2.0 * h0;
-            tangents[i] = (w0 + w1) / (w0 / s0 + w1 / s1);
+            let tan = (w0 + w1) / (w0 / s0 + w1 / s1);
+            tangents[i] = if tan.is_finite() { tan } else { 0.0 };
         }
     }
 

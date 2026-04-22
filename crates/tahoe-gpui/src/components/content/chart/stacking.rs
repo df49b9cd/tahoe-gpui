@@ -151,6 +151,15 @@ pub(crate) fn compute_stacks(
                 }
             }
             MarkStackingMethod::Center => {
+                // Stream-graph layout: each slot's envelope is sized by
+                // its absolute total relative to the y-axis `span` and
+                // centered on 0.5 of the plot area.  Slots with larger
+                // totals draw visibly taller stacks — this is the
+                // intentional difference from `Normalized`, which
+                // forces every slot to fill the full plot area.  Using
+                // `span` (the y-axis domain) rather than per-slot
+                // `total` keeps the envelope height comparable across
+                // slots in the same chart.
                 let total = totals[slot];
                 if total <= 0.0 {
                     continue;

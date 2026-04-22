@@ -21,12 +21,17 @@ use super::scales::Scale;
 use super::types::{ChartDataSet, PlottableValue};
 
 /// Resolved heatmap cell geometry — one per plotted (x, y, z) triple.
+#[derive(Clone, Copy)]
 pub(crate) struct HeatmapCell {
     pub x: Pixels,
     pub y: Pixels,
     pub w: Pixels,
     pub h: Pixels,
     pub magnitude: f32,
+    /// Source series index (for FKA label/handle lookup).
+    pub series_index: usize,
+    /// Slot within the source series (for FKA label/handle lookup).
+    pub slot_index: usize,
 }
 
 /// Paint a heatmap across the plot rectangle.
@@ -124,11 +129,32 @@ pub(crate) fn build_cells(
     let mut z_min = f32::INFINITY;
     let mut z_max = f32::NEG_INFINITY;
 
-    for series in data_set.series.iter() {
-        for p in series.inner.points.iter() {
+    for (si, series) in data_set.series.iter().enumerate() {
+        for (slot_i, p) in series.inner.points.iter().enumerate() {
+            // Heatmap magnitude priority:
+            //   1. `z` when numeric (the documented, intended input);
+            //   2. `y` when `z` is absent or non-numeric (fallback for
+            //      sparse data sources);
+            //   3. skip the cell when neither is numeric.
+            // Surface a debug assertion when `z` is *present but the
+            // wrong type* — that almost always indicates a data-source
+            // bug (e.g. passing a `Date` into the magnitude axis) that
+            // would otherwise render as an invisible cell.
             let magnitude = match &p.z {
                 Some(PlottableValue::Number(n)) => *n as f32,
-                _ => match p.y.as_number_f32() {
+                Some(_other) => {
+                    debug_assert!(
+                        false,
+                        "rectangle chart: `z` must be numeric to drive magnitude; \
+                         got {:?}. Falling back to `y`.",
+                        _other
+                    );
+                    match p.y.as_number_f32() {
+                        Some(v) => v,
+                        None => continue,
+                    }
+                }
+                None => match p.y.as_number_f32() {
                     Some(v) => v,
                     None => continue,
                 },
@@ -146,6 +172,8 @@ pub(crate) fn build_cells(
                 w: px(cell_w),
                 h: px(cell_h),
                 magnitude,
+                series_index: si,
+                slot_index: slot_i,
             });
         }
     }
