@@ -57,3 +57,10 @@ coverage/
 # ─── Worktree-local scratch (build wrappers, generated apps, etc.) ──────────
 /tmp/
 .claude/
+
+# ─── Vendored GPUI fork (see CONTRIBUTING.md → Prerequisites) ────────────────
+# `crates/tahoe-gpui/Cargo.toml` temporarily depends on a local checkout of
+# zed-industries/zed at .context/zed while the BlurRect/LensRect primitives
+# bake upstream. The directory is a separate cargo workspace (excluded via
+# Cargo.toml's `exclude = [".context/zed"]`).
+.context/zed/

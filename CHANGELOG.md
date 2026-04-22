@@ -6,6 +6,34 @@ follow SemVer once the crate reaches 1.0.
 
 ## [Unreleased]
 
+### Changed — rendering
+
+- `glass_blur_surface`, `glass_lens_surface`, `backdrop_overlay`, and
+  `backdrop_blur_overlay` now paint real dual-Kawase backdrop blur and
+  Liquid Glass lens composites via GPUI's new `Window::paint_blur_rect` /
+  `paint_lens_rect` entry points. Previous releases fell back to a
+  translucent tinted fill + shadows. Each blur/lens primitive forces a
+  render-pass break — prefer one primitive per glass surface; do not use
+  them for per-list-row backgrounds. Until the upstream Zed PR merges,
+  `crates/tahoe-gpui/Cargo.toml` points `gpui` / `gpui_platform` at a
+  local checkout of the fork in `.context/zed` (see
+  [CONTRIBUTING.md](CONTRIBUTING.md) → "Vendored GPUI fork" for setup).
+
+- **Breaking (signature)** — `glass_blur_surface` and `glass_lens_surface`
+  no longer take an `el: Div` parameter. Each returns a `.relative()`
+  wrapper whose first child is the blur/lens canvas; callers attach
+  content by chaining `.child(...)` on the return, which paints on top
+  of the blur. The previous shape silently blurred any pre-existing
+  children of `el`. `backdrop_overlay` / `backdrop_blur_overlay` are
+  unchanged.
+
+- `LensEffect::refraction` and `LensEffect::dispersion` are now correctly
+  denormalized from the documented 0.0..1.0 scale to GPUI's raw 0..100
+  Figma scale at the API boundary (via `From<&LensEffect> for
+  gpui::LensEffect`). Before this change, the HIG-default Liquid Glass
+  lens was rendering at ~1% refraction strength. `LensEffect::light_angle`
+  is similarly converted from degrees to radians at the boundary.
+
 ### Fixed
 
 - **`IconStyle::Auto` now consults surface scope instead of always resolving to

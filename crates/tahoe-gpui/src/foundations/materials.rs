@@ -46,31 +46,32 @@
 //! - `accent_tinted_glass_surface()` — Accent-colored Liquid Glass
 //! - `glass_clear_surface()` — Clear variant for media backgrounds
 //! - `glass_shaped_surface()` — Glass with HIG shape (Capsule, Concentric)
-//! - `glass_blur_surface()` — Per-element blur (blur primitive pending
-//!   GPUI; falls back to `glass_surface`)
-//! - `glass_lens_surface()` — Per-element refraction (blur primitive
-//!   pending GPUI; falls back to `glass_surface`)
-//! - `backdrop_overlay()` — Full-viewport modal backdrop scrim. Routes
-//!   through `backdrop_blur_overlay()` so every modal auto-upgrades
-//!   once the GPUI blur primitive lands.
-//! - `backdrop_blur_overlay()` — Full-viewport backdrop with explicit
-//!   [`BlurEffect`]; today emits the tint and records the intent.
+//! - `glass_blur_surface()` — Per-element backdrop blur (dual-Kawase via
+//!   [`Window::paint_blur_rect`]).
+//! - `glass_lens_surface()` — Per-element Liquid Glass lens composite via
+//!   [`Window::paint_lens_rect`] (backdrop blur + refraction + chromatic
+//!   aberration + Fresnel edge highlight).
+//! - `backdrop_overlay()` — Full-viewport modal backdrop scrim with HIG
+//!   default blur. Routes through `backdrop_blur_overlay()`.
+//! - `backdrop_blur_overlay()` — Full-viewport backdrop with an explicit
+//!   [`BlurEffect`].
 //!
-//! # Current rendering limitation
+//! # Rendering pipeline
 //!
-//! GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so every
-//! surface function in this module is a translucent tinted fill plus
-//! shadows — no per-element compositing of the content behind the element.
-//! On macOS, when the window uses `WindowBackgroundAppearance::Blurred`
-//! (NSVisualEffectView) — set via `theme.glass.window_background` in
-//! `WindowOptions` or by calling [`TahoeTheme::apply_in_window`] — glass is
-//! translucent to the **desktop wallpaper behind the window** but NOT to
-//! sibling GPUI elements in the same window. On a window created with
-//! `WindowBackgroundAppearance::Opaque` (the default non-glass case), even
-//! the wallpaper is hidden and glass reads as a flat tinted fill. Place
-//! glass directly on the window root for meaningful translucency; over
-//! dense content it reads as a tinted rectangle. See [`glass_surface`] for
-//! the full caveat and guidance.
+//! Blur and lens surfaces use the dual-Kawase primitives that live on the
+//! vendored `gpui` fork at `.context/zed` (`Primitive::BlurRect` /
+//! `Primitive::LensRect`; pending upstream merge — see
+//! `crates/tahoe-gpui/Cargo.toml` for the path dep). Each primitive forces
+//! the renderer to break the current render pass so the framebuffer can be
+//! sampled — keep the count per frame small and prefer one primitive per
+//! glass surface. Do not use `glass_blur_surface` / `glass_lens_surface`
+//! for list-row backgrounds. Other surfaces (`glass_surface`,
+//! `tinted_glass_surface`, …) are still translucent tinted fills plus
+//! shadows, which composite cheaply without a render-pass break.
+//!
+//! On macOS, [`TahoeTheme::apply_in_window`] additionally installs the
+//! `NSVisualEffectView` window background so glass surfaces at the window
+//! root stay translucent against the desktop wallpaper.
 //!
 //! [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
 //!
@@ -79,43 +80,6 @@
 //! - **ReduceTransparency**: Glass replaced with opaque fills
 //! - **IncreaseContrast**: Visible borders added via `apply_high_contrast_border()`
 //! - **ReduceMotion**: Animation durations set to 0 via `effective_duration()`
-//!
-//! # GPU Pipeline Extension (Future)
-//!
-//! When GPUI gains render-to-texture support, the blur and lens effects
-//! will be implemented as new scene primitives:
-//!
-//! ## BlurRect -- Dual Kawase Backdrop Blur
-//!
-//! 1. End current render pass
-//! 2. Copy framebuffer region under bounds to downsample chain (3-4 levels)
-//! 3. Run Dual Kawase downsample shader per level (5 tex samples, ~10 lines WGSL)
-//! 4. Run Dual Kawase upsample shader per level (8 tex samples, ~15 lines WGSL)
-//! 5. Composite blurred result with tint overlay and corner_radius SDF mask
-//! 6. Resume main render pass
-//!
-//! ## LensRect -- Glass Refraction (extends BlurRect)
-//!
-//! Additional fragment shader work:
-//! - Parabolic UV distortion: `offset = (1 - dist^2) * direction * strength`
-//! - Chromatic aberration: sample R/G/B at offset UVs
-//! - Fresnel edge highlight: `smoothstep(edge, 0, sdf) * dot(normal, light)`
-//!
-//! ## Cross-Platform Shaders
-//!
-//! | Platform | Shader Lang | Backend |
-//! |----------|------------|---------|
-//! | macOS    | Metal / WGSL | gpui_macos / gpui_wgpu |
-//! | Linux    | WGSL (Vulkan) | gpui_wgpu |
-//! | Windows  | HLSL / WGSL | gpui_windows / gpui_wgpu |
-//! | Web      | WGSL (WebGPU) | gpui_web |
-//!
-//! Performance: Dual Kawase is <1ms per element at 1920x1080 (GTX 1060 class).
-//! Budget at 120fps (8.3ms/frame) supports multiple glass elements.
-//!
-//! The wgpu renderer already implements multi-pass rendering for path
-//! compositing (`path_intermediate_texture`), so the architectural
-//! pattern for blur passes exists -- it needs to be generalized.
 //!
 //! # Example
 //!
@@ -129,8 +93,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnimationExt, AnyElement, BoxShadow, Deferred, Div, ElementId, FocusHandle, Hsla, Pixels,
-    SharedString, Window, deferred, hsla, px,
+    AnimationExt, AnyElement, Bounds, BoxShadow, Corners, Deferred, Div, ElementId, FocusHandle,
+    Hsla, Pixels, SharedString, Window, canvas, deferred, hsla, px,
 };
 
 use crate::foundations::accessibility::{AccessibilityMode, AccessibilityTokens};
@@ -221,9 +185,8 @@ pub type StandardMaterial = MaterialThickness;
 
 /// Configuration for per-element backdrop blur.
 ///
-/// When GPUI gains render-to-texture support, this will drive a Dual Kawase
-/// blur pass on the framebuffer region behind the element. Currently falls
-/// back to the standard glass surface styling (translucent fill + shadows).
+/// Drives a Dual Kawase blur pass on the framebuffer region behind the
+/// element via [`Window::paint_blur_rect`].
 #[derive(Debug, Clone, Copy)]
 pub struct BlurEffect {
     /// Blur radius in points. Higher values = more blur.
@@ -251,6 +214,16 @@ impl BlurEffect {
     }
 }
 
+impl From<&BlurEffect> for gpui::BlurEffect {
+    fn from(effect: &BlurEffect) -> Self {
+        Self {
+            radius: px(effect.radius),
+            kernel_levels: DEFAULT_BLUR_KERNEL_LEVELS,
+            tint: effect.tint,
+        }
+    }
+}
+
 /// Configuration for glass refraction/lensing effect.
 ///
 /// Extends [`BlurEffect`] with light-bending distortion that creates Apple's
@@ -268,8 +241,9 @@ impl BlurEffect {
 /// | Light angle | `light_angle` | -45° |
 /// | Light intensity | `light_intensity` | 67% (→ 0.67) |
 ///
-/// Currently falls back to standard glass surface styling until GPUI
-/// gains render-to-texture support for real-time refraction.
+/// Drives the Liquid Glass composite via [`Window::paint_lens_rect`],
+/// which applies dual-Kawase backdrop blur, parabolic refraction,
+/// chromatic aberration, and a directional Fresnel edge highlight.
 #[derive(Debug, Clone, Copy)]
 pub struct LensEffect {
     /// Base blur configuration (frost maps to blur.radius).
@@ -338,6 +312,27 @@ impl LensEffect {
             splay: 0.0,
             light_angle: -45.0,
             light_intensity: 0.0,
+        }
+    }
+}
+
+impl From<&LensEffect> for gpui::LensEffect {
+    fn from(effect: &LensEffect) -> Self {
+        // `tahoe-gpui` stores refraction/dispersion normalized to 0.0..1.0 to
+        // match how callers think in fractions. GPUI's `LensEffect` expects
+        // the raw Figma 0..100 scale — denormalize here so the conversion
+        // cannot be forgotten at any call site. Angle is stored in degrees
+        // for the same ergonomic reason; GPUI consumes radians.
+        Self {
+            radius: px(effect.blur.radius),
+            kernel_levels: DEFAULT_BLUR_KERNEL_LEVELS,
+            refraction: effect.refraction * 100.0,
+            depth: effect.depth,
+            dispersion: effect.dispersion * 100.0,
+            splay: px(effect.splay),
+            light_angle_radians: effect.light_angle.to_radians(),
+            light_intensity: effect.light_intensity,
+            tint: effect.blur.tint,
         }
     }
 }
@@ -834,7 +829,7 @@ impl GlassStyle {
 /// the composited result as the primary fill color (stored in `GlassStyle`),
 /// plus a subtle tint overlay div for the glass effect layer.
 fn apply_glass_chrome(
-    mut el: Div,
+    el: Div,
     theme: &TahoeTheme,
     bg: gpui::Hsla,
     radius: Pixels,
@@ -859,24 +854,30 @@ fn apply_glass_chrome(
     let composited =
         crate::foundations::color::compose_black_tint_linear(bg, GLASS_LAYER_TINT_ALPHA);
 
-    el = el
-        .bg(composited)
-        .rounded(radius)
-        .shadow(glass.shadows(size).to_vec());
+    apply_glass_border(
+        el.bg(composited)
+            .rounded(radius)
+            .shadow(glass.shadows(size).to_vec()),
+        theme,
+        size,
+    )
+}
 
-    if theme.accessibility_mode.increase_contrast() {
+/// Apply IncreaseContrast border and specular top-edge highlight.
+///
+/// Shared by `glass_blur_surface`, `glass_lens_surface`, and
+/// `apply_glass_chrome` so the border contract is identical across all glass
+/// surface variants. The specular highlight is a decorative translucent
+/// white edge (HIG "frosted edge"), so it is skipped when the user has
+/// enabled ReduceTransparency — those users get only the IncreaseContrast
+/// solid border, or nothing, on top of the opaque fallback fill.
+fn apply_glass_border(mut el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
+    let mode = theme.accessibility_mode;
+    if mode.increase_contrast() {
         el = el
             .border_1()
-            .border_color(glass.accessibility.high_contrast_border);
-    } else if matches!(size, GlassSize::Medium | GlassSize::Large) {
-        // Approximate Apple's specular inner-edge highlight on Liquid Glass.
-        // A real inset highlight needs `BoxShadow::inset`, which GPUI does
-        // not yet expose; until then a 1px translucent top border gives the
-        // perceived "frosted edge" on large panels without producing a
-        // distinct outlined look. Skipped at `GlassSize::Small` because the
-        // 20pt corner radius leaves too little straight-edge surface for
-        // the highlight to read cleanly — small pill/tab controls stay
-        // visually clean.
+            .border_color(theme.glass.accessibility.high_contrast_border);
+    } else if !mode.reduce_transparency() && matches!(size, GlassSize::Medium | GlassSize::Large) {
         el = el.border_t(px(1.0)).border_color(hsla(0.0, 0.0, 1.0, 0.18));
     }
     el
@@ -901,30 +902,10 @@ fn default_glass_bg(glass: &GlassStyle, mode: AccessibilityMode, size: GlassSize
 /// Respects accessibility mode: ReduceTransparency uses frosted fills,
 /// IncreaseContrast adds a visible border.
 ///
-/// # ⚠️ Current limitation: no per-element compositing
-///
-/// GPUI exposes no `paint_blur_rect()` / backdrop-filter primitive, so this
-/// function cannot composite a blurred sample of the content behind the
-/// element into its fill. The rendering is a translucent tinted fill plus
-/// per-size shadows — nothing more. On macOS, when the window uses
-/// `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) — which the
-/// glass themes provide via `theme.glass.window_background` and the app
-/// wires into `WindowOptions`, or [`TahoeTheme::apply_in_window`] installs
-/// directly — glass surfaces are translucent to the **desktop wallpaper
-/// behind the window** but NOT to sibling GPUI elements inside the same
-/// window. A glass card placed directly over a list renders as a tinted
-/// rectangle, not true Liquid Glass. On a window created with
-/// `WindowBackgroundAppearance::Opaque`, even the wallpaper is hidden and
-/// glass reads as a flat tinted fill.
-///
-/// For meaningful translucency, place glass surfaces directly on the window
-/// root background (see `examples/liquid_glass_gallery.rs` for the pattern).
-/// [`glass_blur_surface`] and [`glass_lens_surface`] fall back to this
-/// function for the same reason; [`backdrop_blur_overlay`] documents the
-/// same gap for full-viewport scrims. The upstream tracking task is a GPUI
-/// PR that lands a rect-level blur entry point.
-///
-/// [`TahoeTheme::apply_in_window`]: crate::foundations::theme::TahoeTheme::apply_in_window
+/// This is the fill-only (cheap) path — a translucent tinted fill plus
+/// per-size shadows. Callers that need real backdrop compositing (a blurred
+/// sample of the content behind the element) should use
+/// [`glass_blur_surface`] or [`glass_lens_surface`] instead.
 ///
 /// **Note per HIG:** Don't use Liquid Glass in the content layer.
 /// Use glass surfaces only for controls, navigation elements, and overlays.
@@ -945,7 +926,7 @@ pub fn glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
 ///
 /// Glass is always present per HIG macOS Tahoe.
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn glass_surface_thick(
     el: Div,
     theme: &TahoeTheme,
@@ -968,7 +949,7 @@ pub fn glass_surface_thick(
 /// Respects accessibility mode: ReduceTransparency increases tint opacity
 /// (alpha × 3, capped at 0.5), IncreaseContrast adds a visible border.
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn tinted_glass_surface(el: Div, theme: &TahoeTheme, tint: &GlassTint, size: GlassSize) -> Div {
     let bg = if theme.accessibility_mode.reduce_transparency() {
         let mut higher = tint.bg;
@@ -987,7 +968,7 @@ pub fn tinted_glass_surface(el: Div, theme: &TahoeTheme, tint: &GlassTint, size:
 /// Respects accessibility mode: ReduceTransparency uses an opaque fallback,
 /// IncreaseContrast adds a visible border (via `apply_glass_chrome`).
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn glass_clear_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     let glass = &theme.glass;
     let bg = if theme.accessibility_mode.reduce_transparency() {
@@ -1057,8 +1038,9 @@ fn hud_fill(theme: &TahoeTheme, size: GlassSize) -> Hsla {
 /// Respects accessibility the same way [`glass_surface`] does:
 /// ReduceTransparency routes through the opaque fallback fill (the
 /// HUD tint then darkens that opaque color), and IncreaseContrast
-/// adds a visible border. Inherits the current GPUI backdrop-blur
-/// limitation from [`glass_surface`].
+/// adds a visible border. Uses the fill-only rendering path from
+/// [`glass_surface`]; pair with [`glass_blur_surface`] or
+/// [`glass_lens_surface`] when a HUD needs a blurred backdrop.
 pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     let bg = hud_fill(theme, size);
     let radius = theme.glass.radius(size);
@@ -1091,157 +1073,129 @@ pub fn glass_surface_hud(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
 // full propagation compose with one extra `GlassSurfaceScope::new(…)`.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Apply per-element glass blur effect to a div.
+/// Kawase pass count used by every `tahoe-gpui` glass helper.
 ///
-/// # ⚠️ Backdrop blur is not yet implemented
+/// 3 matches Apple's HIG default for heavy sheet / inspector backdrops and
+/// GPUI's own default. `kernel_levels` is the Kawase downsample/upsample
+/// pass count *inside* the blur post-process (clamped to 1..=5 by the
+/// renderer), not the number of render-pass breaks — each `BlurRect` /
+/// `LensRect` primitive always breaks the render pass exactly once, so
+/// raising this value widens the blur without adding more pass-breaks.
+const DEFAULT_BLUR_KERNEL_LEVELS: u32 = 3;
+
+/// Create a per-element backdrop blur surface.
 ///
-/// GPUI does not currently expose `paint_blur_rect()`, so this function falls
-/// back to [`glass_surface`] — a translucent fill plus shadows. Callers get
-/// the correct glass *chrome* but no real backdrop blur; on dark backgrounds
-/// the visual difference is subtle, on content-heavy backgrounds it is not.
-/// The `effect.radius` is unused in the fallback path.
+/// Returns an absolutely-positioned-ready wrapper whose first child is a
+/// dual-Kawase blur canvas sampling the framebuffer behind the surface;
+/// callers layer their own content by chaining `.child(...)` on the return,
+/// which paints above the blur. The wrapper is `.relative()` so the blur
+/// canvas's absolute sizing always resolves against this surface (not some
+/// unrelated positioned ancestor).
 ///
-/// The reference shader lives at `src/foundations/shaders/dual_kawase.wgsl`
-/// and is the target of the GPUI upstream PR that unblocks this call.
+/// Accessibility: when `ReduceTransparency` is set, an opaque fill is returned
+/// without blur or shadows. Otherwise the full shadow stack and backdrop blur
+/// are applied. `IncreaseContrast` adds a visible border on all paths.
 ///
-/// Accessibility: falls back to the opaque ReduceTransparency fill
-/// irrespective of blur support — users who disable transparency never see
-/// the blur either way.
-///
-/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
-/// this fallback runs. Install a `tracing` subscriber (e.g.
-/// `tracing_subscriber::fmt().init()`) to surface it.
-pub fn glass_blur_surface(
-    el: Div,
-    theme: &TahoeTheme,
-    effect: &BlurEffect,
-    size: GlassSize,
-) -> Div {
-    // Accessibility: opaque fallback for ReduceTransparency
+/// Each call forces a render-pass break; do not use for per-list-row
+/// backgrounds. See the module "Rendering pipeline" section for details.
+pub fn glass_blur_surface(theme: &TahoeTheme, effect: &BlurEffect, size: GlassSize) -> Div {
+    let corner = px(effect.corner_radius);
+
     if theme.accessibility_mode.reduce_transparency() {
-        return el
-            .bg(theme.glass.accessibility.reduced_transparency_bg)
-            .rounded(px(effect.corner_radius));
-    }
-
-    warn_blur_fallback_once(BlurFallbackSite::Blur);
-
-    // GPUI blocker: no per-element backdrop-blur API exists today.
-    // GPUI ships `Window::set_background_appearance(WindowBackgroundAppearance::Blurred)`
-    // which wraps the private `CGSSetWindowBackgroundBlurRadius` on
-    // macOS (see Zed `crates/gpui_macos/src/window.rs:~1050`); that is a
-    // window-level blur, not a rect-level one. Fall back to
-    // [`glass_surface`] which pairs that window blur with translucent
-    // fills — visually close on simple surfaces but loses the
-    // per-element corner radius / tint control a future
-    // `paint_blur_rect` would provide.
-    glass_surface(el, theme, size)
-}
-
-/// Apply per-element glass lens effect to a div.
-///
-/// # ⚠️ Refraction/lens rendering is not yet implemented
-///
-/// GPUI does not currently expose a render-to-texture path, so this function
-/// falls back to [`glass_surface`] (translucent fill + shadows). The
-/// `effect.refraction`, `effect.dispersion`, `effect.depth`, `effect.splay`,
-/// `effect.light_angle`, and `effect.light_intensity` values are encoded but
-/// not sampled until the shader at `src/foundations/shaders/glass_composite.wgsl`
-/// is compiled and wired up.
-///
-/// When the pipeline lands, this function should apply:
-/// 1. Dual Kawase backdrop blur (`dual_kawase.wgsl`)
-/// 2. Parabolic UV distortion (refraction, depth-scaled)
-/// 3. Chromatic aberration (dispersion)
-/// 4. Directional Fresnel edge highlight (light_angle, light_intensity,
-///    splay)
-///
-/// Accessibility: falls back to the opaque ReduceTransparency fill
-/// irrespective of lens support.
-///
-/// Diagnostics: debug builds emit a one-shot `tracing::warn!` the first time
-/// this fallback runs. Install a `tracing` subscriber (e.g.
-/// `tracing_subscriber::fmt().init()`) to surface it.
-pub fn glass_lens_surface(
-    el: Div,
-    theme: &TahoeTheme,
-    effect: &LensEffect,
-    size: GlassSize,
-) -> Div {
-    // Accessibility: opaque fallback
-    if theme.accessibility_mode.reduce_transparency() {
-        return el
-            .bg(theme.glass.accessibility.reduced_transparency_bg)
-            .rounded(px(effect.blur.corner_radius));
-    }
-
-    warn_blur_fallback_once(BlurFallbackSite::Lens);
-
-    // GPUI blocker: lens rendering needs a render-to-texture pass GPUI
-    // doesn't expose today. The shader stack (dual Kawase blur,
-    // parabolic UV distortion, chromatic aberration, directional
-    // Fresnel) lives in `src/foundations/shaders/glass_composite.wgsl`
-    // and is staged for when GPUI lands a `paint_lens_rect` entry
-    // point. Until then fall through to the standard glass surface —
-    // equivalent coverage for the blur + tint layers, no refraction or
-    // dispersion. Zed's materials system makes the same trade-off
-    // (window-level blur only; see investigation notes in commit
-    // history).
-    let _ = (
-        effect.refraction,
-        effect.depth,
-        effect.dispersion,
-        effect.splay,
-        effect.light_intensity,
-        effect.light_angle,
-    );
-    glass_surface(el, theme, size)
-}
-
-/// Callsite tag for [`warn_blur_fallback_once`] — see that fn for the
-/// rationale behind making this an enum instead of an `&'static str`.
-#[derive(Copy, Clone)]
-enum BlurFallbackSite {
-    Blur,
-    Lens,
-}
-
-/// Emit a one-shot `tracing::warn!` the first time a glass blur/lens surface
-/// falls back to the non-blurred implementation. Taking a [`BlurFallbackSite`]
-/// rather than an `&'static str` means any new fallback callsite must be wired
-/// into the dispatch below before it compiles — the previous `_ => return`
-/// fallthrough silently dropped warnings for typos or new callers.
-///
-/// A per-variant `OnceLock` keeps the event out of hot paths; release builds
-/// collapse the whole helper to a no-op.
-#[cfg(debug_assertions)]
-fn warn_blur_fallback_once(site: BlurFallbackSite) {
-    use std::sync::OnceLock;
-    static BLUR_WARN: OnceLock<()> = OnceLock::new();
-    static LENS_WARN: OnceLock<()> = OnceLock::new();
-    let (slot, name) = match site {
-        BlurFallbackSite::Blur => (&BLUR_WARN, "glass_blur_surface"),
-        BlurFallbackSite::Lens => (&LENS_WARN, "glass_lens_surface"),
-    };
-    slot.get_or_init(|| {
-        tracing::warn!(
-            site = name,
-            "per-element backdrop blur is not yet implemented; falling back \
-             to glass_surface(). Track the GPUI upstream paint_blur_rect() / \
-             paint_lens_rect() contribution to re-enable real refractive \
-             rendering."
+        return apply_glass_border(
+            gpui::div()
+                .bg(theme.glass.accessibility.reduced_transparency_bg)
+                .rounded(corner),
+            theme,
+            size,
         );
-    });
+    }
+
+    apply_glass_border(
+        gpui::div()
+            .relative()
+            .rounded(corner)
+            .shadow(theme.glass.shadows(size).to_vec())
+            .child(blur_rect_canvas(gpui::BlurEffect::from(effect), corner)),
+        theme,
+        size,
+    )
 }
 
-#[cfg(not(debug_assertions))]
-fn warn_blur_fallback_once(_site: BlurFallbackSite) {}
+/// Create a per-element Liquid Glass lens-composite surface.
+///
+/// Composites a dual-Kawase backdrop blur, parabolic UV refraction,
+/// chromatic aberration, and a directional Fresnel edge highlight over
+/// the surface rectangle. All parameters map directly to Figma's Glass
+/// effect panel — see [`LensEffect`] for the field table.
+///
+/// Returns a `.relative()` wrapper whose first child is the lens canvas;
+/// callers attach content by chaining `.child(...)` on the return, which
+/// paints above the lens composite. See [`glass_blur_surface`] for the
+/// caller-contract and render-pass-break cost.
+///
+/// Accessibility: when `ReduceTransparency` is set, an opaque fill is returned
+/// without blur or shadows. Otherwise the full shadow stack and lens composite
+/// are applied. `IncreaseContrast` adds a visible border on all paths.
+pub fn glass_lens_surface(theme: &TahoeTheme, effect: &LensEffect, size: GlassSize) -> Div {
+    let corner = px(effect.blur.corner_radius);
+
+    if theme.accessibility_mode.reduce_transparency() {
+        return apply_glass_border(
+            gpui::div()
+                .bg(theme.glass.accessibility.reduced_transparency_bg)
+                .rounded(corner),
+            theme,
+            size,
+        );
+    }
+
+    apply_glass_border(
+        gpui::div()
+            .relative()
+            .rounded(corner)
+            .shadow(theme.glass.shadows(size).to_vec())
+            .child(lens_rect_canvas(gpui::LensEffect::from(effect), corner)),
+        theme,
+        size,
+    )
+}
+
+/// Returns a styled [`gpui::Canvas`] that fills its parent and invokes
+/// `paint` during the paint phase. The canvas is `.absolute()` + `.size_full()`
+/// so it covers the parent's box without participating in the flex flow;
+/// attached as the *first* child so the paint callback samples the
+/// framebuffer before sibling content paints on top.
+fn paint_canvas(paint: impl FnOnce(Bounds<Pixels>, &mut Window) + 'static) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| paint(bounds, window),
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// Wrap [`Window::paint_blur_rect`] in a [`paint_canvas`] that fills its parent.
+fn blur_rect_canvas(effect: gpui::BlurEffect, corner_radius: Pixels) -> impl IntoElement {
+    paint_canvas(move |bounds, window| {
+        window.paint_blur_rect(bounds, Corners::all(corner_radius), effect);
+    })
+}
+
+/// Wrap [`Window::paint_lens_rect`] in a [`paint_canvas`] that fills its parent.
+fn lens_rect_canvas(effect: gpui::LensEffect, corner_radius: Pixels) -> impl IntoElement {
+    paint_canvas(move |bounds, window| {
+        window.paint_lens_rect(bounds, Corners::all(corner_radius), effect);
+    })
+}
 
 /// Apply accent-tinted glass surface styling.
 /// Uses the theme's accent color as the glass tint, suitable for
 /// primary action areas like toolbars and navigation bars.
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn accent_tinted_glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize) -> Div {
     tinted_glass_surface(el, theme, &theme.glass.accent_tint, size)
 }
@@ -1251,7 +1205,7 @@ pub fn accent_tinted_glass_surface(el: Div, theme: &TahoeTheme, size: GlassSize)
 /// Combines concentricity-based radius calculation with glass surface styling.
 /// Use this when a component needs a specific HIG shape (Fixed, Capsule, Concentric).
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn glass_shaped_surface(
     el: Div,
     theme: &TahoeTheme,
@@ -1305,7 +1259,7 @@ pub fn accessible_tint_bg(tint: &GlassTint, mode: AccessibilityMode) -> gpui::Hs
 /// This is the most common styling pattern in the crate -- use it for any container
 /// that needs glass surface treatment.
 ///
-/// See [`glass_surface`] for the current GPUI backdrop-blur limitation.
+/// See [`glass_surface`] for details on the fill-only rendering path.
 pub fn glass_or_surface<E: gpui::Styled>(mut el: E, theme: &TahoeTheme, size: GlassSize) -> E {
     let glass = &theme.glass;
     el = el
@@ -1471,10 +1425,12 @@ pub const SCROLL_EDGE_HEIGHT_COMPACT: Pixels = px(16.0);
 /// HIG distinguishes a **soft** effect (the default: a gentle blur fade
 /// between scrolling content and the navigation bar) from a **hard**
 /// effect (used by macOS interactive text surfaces to keep text readable
-/// all the way to the edge). GPUI currently lacks a backdrop-blur
-/// primitive, so the implementation below approximates both with a
-/// bounded linear gradient until that lands. Expose the enum now so
-/// callers record intent and the rendering can upgrade in one place.
+/// all the way to the edge). Apple's real effect fades blur *strength*
+/// across the edge band — `Window::paint_blur_rect` today takes a single
+/// scalar radius, so the implementation below still approximates both
+/// with a bounded linear gradient. Expose the enum now so callers record
+/// intent and the rendering can upgrade in one place when a
+/// variable-radius blur primitive lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScrollEdgeStyle {
     /// Default soft fade — subtle gradient between content and toolbar.
@@ -1497,9 +1453,11 @@ pub enum ScrollEdgeStyle {
 /// `style` selects between [`ScrollEdgeStyle::Soft`] (gradient fade,
 /// matching the pre-audit behavior) and [`ScrollEdgeStyle::Hard`]
 /// (abrupt cutoff — near-instant fade used by interactive text
-/// surfaces). Variable blur matching the HIG's modern scroll-edge
-/// effect is unavailable until GPUI ships a backdrop-blur primitive;
-/// this fallback is documented at the call site.
+/// surfaces). Variable-radius blur matching the HIG's modern
+/// scroll-edge effect needs a primitive GPUI does not yet expose
+/// (`paint_blur_rect` takes a single scalar radius); this gradient
+/// fallback is documented at the call site and can upgrade when a
+/// variable-radius primitive ships.
 pub fn scroll_edge_top(theme: &TahoeTheme, height: Pixels, style: ScrollEdgeStyle) -> Div {
     scroll_edge(theme, height, style, ScrollEdgeSide::Top)
 }
@@ -1528,8 +1486,8 @@ fn scroll_edge(
     // reads as a gentle smear. Hard variant: confine the fade to the
     // last ~10 % of the gradient so the opaque region meets the
     // scroll content nearly at the edge — the closest approximation
-    // of HIG's "hard" scroll edge effect without a backdrop-blur
-    // primitive.
+    // of HIG's "hard" scroll edge effect using a gradient, since
+    // `paint_blur_rect` does not yet accept a variable-radius mask.
     let (top_color, top_stop, bottom_color, bottom_stop) = match style {
         ScrollEdgeStyle::Soft => (bg, 0.0, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
         ScrollEdgeStyle::Hard => (bg, 0.9, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
@@ -1791,20 +1749,11 @@ pub fn card_surface(theme: &crate::foundations::theme::TahoeTheme) -> gpui::Div 
 ///
 /// # Backdrop blur (HIG Materials)
 ///
-/// Apple inspector / sheet / alert backdrops composite a blurred view of
-/// the window content *behind* the overlay tint (vibrancy / material
-/// layer). Today this function emits only the tint because GPUI lacks a
-/// `paint_blur_rect()` primitive — there is no way to blur an arbitrary
-/// sub-region of the framebuffer. This is the same GPUI gap that makes
-/// [`glass_blur_surface`] / [`glass_lens_surface`] fall back to
-/// [`glass_surface`].
-///
-/// Callers that want to *express* backdrop-blur intent (so they can
-/// audit which overlays need the upgrade) should use
-/// [`backdrop_blur_overlay`] instead. `backdrop_overlay` itself delegates
-/// to `backdrop_blur_overlay` with a HIG-default [`BlurEffect`], so every
-/// site that calls this function is automatically upgraded the moment a
-/// real blur primitive ships upstream.
+/// Apple inspector / sheet / alert backdrops composite a dual-Kawase
+/// blurred view of the window content *behind* the overlay tint
+/// (vibrancy / material layer). This function delegates to
+/// [`backdrop_blur_overlay`] with a HIG-default [`BlurEffect`], so every
+/// call site automatically gets the real backdrop blur.
 pub fn backdrop_overlay(theme: &crate::foundations::theme::TahoeTheme) -> gpui::Div {
     backdrop_blur_overlay(theme, &default_backdrop_blur_effect(theme))
 }
@@ -1812,43 +1761,37 @@ pub fn backdrop_overlay(theme: &crate::foundations::theme::TahoeTheme) -> gpui::
 /// Create a full-screen backdrop overlay with an explicit backdrop-blur
 /// effect — the blur-aware analog of [`backdrop_overlay`].
 ///
-/// # Current behaviour (pending GPUI `paint_blur_rect`)
-///
 /// - With `ReduceTransparency`: tints with the opaque
 ///   [`AccessibilityTokens::reduced_transparency_bg`] so motion-sensitive
-///   and high-contrast users get a solid scrim instead of any translucency.
-/// - Otherwise: tints with [`TahoeTheme::overlay_bg`]. The `effect.radius`
-///   is recorded but not rendered — GPUI has no render-to-texture
-///   primitive for arbitrary sub-region blur yet. See the module-level
-///   "GPU Pipeline Extension" section for the shader design.
+///   and high-contrast users get a solid scrim with no blur.
+/// - Otherwise: paints a full-viewport dual-Kawase blur via
+///   [`Window::paint_blur_rect`], with `effect.tint` composited on top.
 ///
-/// # Future
-///
-/// When GPUI lands `paint_blur_rect()`, this function will compose
-/// `effect.radius`-point Dual Kawase blur over the covered region and
-/// then overlay `effect.tint`. Every caller of [`backdrop_overlay`] gains
-/// real blur without any additional edits because `backdrop_overlay`
-/// routes through here.
+/// `effect.corner_radius` is intentionally ignored — a modal backdrop is
+/// always full-bleed, and rounding the blur rect over a `size_full`
+/// overlay would leave four triangular corners of unblurred content
+/// bleeding through. Callers that want the scrim to clip to a rounded
+/// window chrome must render this overlay inside a rounded,
+/// `overflow_hidden` ancestor.
 pub fn backdrop_blur_overlay(
     theme: &crate::foundations::theme::TahoeTheme,
     effect: &BlurEffect,
 ) -> gpui::Div {
-    let bg = if theme.accessibility_mode.reduce_transparency() {
-        theme.glass.accessibility.reduced_transparency_bg
-    } else {
-        effect.tint
-    };
+    if theme.accessibility_mode.reduce_transparency() {
+        return gpui::div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .bg(theme.glass.accessibility.reduced_transparency_bg);
+    }
 
-    // GPUI blocker: without `paint_blur_rect`, the backdrop blur comes
-    // from the window-level `WindowBackgroundAppearance::Blurred` set
-    // at install time. The `effect.radius` / `corner_radius` values are
-    // retained on the struct so callers can still express intent; once
-    // GPUI lands a rect-level blur entry, populate it here before the
-    // tint fill without changing the call-site API.
-    let _ = effect.radius;
-    let _ = effect.corner_radius;
-
-    gpui::div().absolute().top_0().left_0().size_full().bg(bg)
+    gpui::div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .child(blur_rect_canvas(gpui::BlurEffect::from(effect), px(0.0)))
 }
 
 /// HIG-default backdrop-blur effect for full-viewport modal overlays.
@@ -2191,6 +2134,179 @@ mod tests {
             (effect.corner_radius - f32::from(theme.glass.radius(GlassSize::Medium))).abs()
                 < f32::EPSILON,
         );
+    }
+
+    // ── Glass Blur / Lens / Backdrop Construction Tests ──────────────────────
+    //
+    // These smoke tests confirm the builder chains don't panic across
+    // accessibility modes. The *behavioural* coverage (what values the
+    // surfaces actually pass to GPUI's paint primitives) lives in the
+    // `From` impl tests below — those catch scale-mismatches, lost
+    // degrees→radians conversions, and `kernel_levels` regressions
+    // without needing a real frame paint.
+
+    #[test]
+    fn glass_blur_surface_builds_without_panic() {
+        use super::BlurEffect;
+        let theme = TahoeTheme::liquid_glass();
+        let effect = BlurEffect::for_glass_size(GlassSize::Medium, &theme);
+        let _div: gpui::Div = super::glass_blur_surface(&theme, &effect, GlassSize::Medium);
+    }
+
+    #[test]
+    fn glass_blur_surface_reduce_transparency_builds_without_panic() {
+        use super::BlurEffect;
+        let mut theme = TahoeTheme::liquid_glass();
+        theme.accessibility_mode = AccessibilityMode::REDUCE_TRANSPARENCY;
+        let effect = BlurEffect::for_glass_size(GlassSize::Medium, &theme);
+        let _div: gpui::Div = super::glass_blur_surface(&theme, &effect, GlassSize::Medium);
+    }
+
+    #[test]
+    fn glass_blur_surface_increase_contrast_builds_without_panic() {
+        use super::BlurEffect;
+        let mut theme = TahoeTheme::liquid_glass();
+        theme.accessibility_mode = AccessibilityMode::INCREASE_CONTRAST;
+        let effect = BlurEffect::for_glass_size(GlassSize::Medium, &theme);
+        let _div: gpui::Div = super::glass_blur_surface(&theme, &effect, GlassSize::Medium);
+    }
+
+    #[test]
+    fn glass_lens_surface_builds_without_panic() {
+        use super::LensEffect;
+        let theme = TahoeTheme::liquid_glass();
+        let effect = LensEffect::liquid_glass(GlassSize::Medium, &theme);
+        let _div: gpui::Div = super::glass_lens_surface(&theme, &effect, GlassSize::Medium);
+    }
+
+    #[test]
+    fn glass_lens_surface_reduce_transparency_builds_without_panic() {
+        use super::LensEffect;
+        let mut theme = TahoeTheme::liquid_glass();
+        theme.accessibility_mode = AccessibilityMode::REDUCE_TRANSPARENCY;
+        let effect = LensEffect::liquid_glass(GlassSize::Medium, &theme);
+        let _div: gpui::Div = super::glass_lens_surface(&theme, &effect, GlassSize::Medium);
+    }
+
+    #[test]
+    fn backdrop_blur_overlay_builds_without_panic() {
+        let theme = TahoeTheme::liquid_glass();
+        let effect = super::default_backdrop_blur_effect(&theme);
+        let _div: gpui::Div = super::backdrop_blur_overlay(&theme, &effect);
+    }
+
+    #[test]
+    fn backdrop_blur_overlay_reduce_transparency_builds_without_panic() {
+        let mut theme = TahoeTheme::liquid_glass();
+        theme.accessibility_mode = AccessibilityMode::REDUCE_TRANSPARENCY;
+        let effect = super::default_backdrop_blur_effect(&theme);
+        let _div: gpui::Div = super::backdrop_blur_overlay(&theme, &effect);
+    }
+
+    // ── BlurEffect / LensEffect → gpui::* conversion tests ───────────────────
+    //
+    // The From impls are the single boundary between tahoe-gpui's
+    // ergonomic scales (normalized, degrees, points) and GPUI's raw scales
+    // (Figma 0..100, radians, Pixels). These tests assert the actual
+    // values that cross that boundary — they are what the paint closure
+    // hands to `paint_blur_rect` / `paint_lens_rect`.
+
+    #[test]
+    fn blur_effect_from_sets_kernel_levels_and_pixel_wraps_radius() {
+        use super::{BlurEffect, DEFAULT_BLUR_KERNEL_LEVELS};
+        let effect = BlurEffect {
+            radius: 24.0,
+            corner_radius: 12.0,
+            tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+        };
+        let gpui_effect = gpui::BlurEffect::from(&effect);
+        assert_eq!(gpui_effect.radius, px(24.0));
+        assert_eq!(gpui_effect.kernel_levels, DEFAULT_BLUR_KERNEL_LEVELS);
+        assert_eq!(gpui_effect.tint, effect.tint);
+    }
+
+    #[test]
+    fn lens_effect_from_denormalizes_refraction_and_dispersion() {
+        use super::{BlurEffect, LensEffect};
+        let effect = LensEffect {
+            blur: BlurEffect {
+                radius: 12.0,
+                corner_radius: 16.0,
+                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+            },
+            refraction: 1.0,  // normalized 1.0 = Figma 100
+            dispersion: 0.25, // normalized 0.25 = Figma 25
+            depth: 16.0,
+            splay: 6.0,
+            light_angle: -45.0,
+            light_intensity: 0.67,
+        };
+        let gpui_effect = gpui::LensEffect::from(&effect);
+        assert!((gpui_effect.refraction - 100.0).abs() < f32::EPSILON);
+        assert!((gpui_effect.dispersion - 25.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn lens_effect_from_converts_degrees_to_radians() {
+        use super::{BlurEffect, LensEffect};
+        let effect = LensEffect {
+            blur: BlurEffect {
+                radius: 12.0,
+                corner_radius: 16.0,
+                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+            },
+            refraction: 1.0,
+            dispersion: 0.0,
+            depth: 16.0,
+            splay: 6.0,
+            light_angle: -45.0,
+            light_intensity: 0.67,
+        };
+        let gpui_effect = gpui::LensEffect::from(&effect);
+        let expected = -std::f32::consts::FRAC_PI_4;
+        assert!((gpui_effect.light_angle_radians - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lens_effect_from_wraps_splay_in_pixels_and_sets_kernel_levels() {
+        use super::{BlurEffect, DEFAULT_BLUR_KERNEL_LEVELS, LensEffect};
+        let effect = LensEffect {
+            blur: BlurEffect {
+                radius: 12.0,
+                corner_radius: 16.0,
+                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+            },
+            refraction: 1.0,
+            dispersion: 0.0,
+            depth: 16.0,
+            splay: 6.0,
+            light_angle: -45.0,
+            light_intensity: 0.67,
+        };
+        let gpui_effect = gpui::LensEffect::from(&effect);
+        assert_eq!(gpui_effect.splay, px(6.0));
+        assert_eq!(gpui_effect.kernel_levels, DEFAULT_BLUR_KERNEL_LEVELS);
+    }
+
+    #[test]
+    fn liquid_glass_lens_effect_matches_gpui_default() {
+        // Figma's HIG default, expressed via LensEffect::liquid_glass, should
+        // round-trip through the From impl to the same values as
+        // gpui::LensEffect::default() for every parameter the defaults share.
+        use super::LensEffect;
+        let theme = TahoeTheme::liquid_glass();
+        let effect = LensEffect::liquid_glass(GlassSize::Medium, &theme);
+        let gpui_effect = gpui::LensEffect::from(&effect);
+        let default = gpui::LensEffect::default();
+        assert!((gpui_effect.refraction - default.refraction).abs() < f32::EPSILON);
+        assert!((gpui_effect.dispersion - default.dispersion).abs() < f32::EPSILON);
+        assert!((gpui_effect.depth - default.depth).abs() < f32::EPSILON);
+        assert_eq!(gpui_effect.splay, default.splay);
+        assert!(
+            (gpui_effect.light_angle_radians - default.light_angle_radians).abs() < f32::EPSILON
+        );
+        assert!((gpui_effect.light_intensity - default.light_intensity).abs() < f32::EPSILON);
+        assert_eq!(gpui_effect.kernel_levels, default.kernel_levels);
     }
 
     // ── Standard Material Layering Tests ──────────────────────────────────

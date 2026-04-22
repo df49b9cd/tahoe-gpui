@@ -135,9 +135,10 @@ pub fn render(
                 .text_color(theme.text_muted)
                 .child(
                     "Soft fades the content out gradually; Hard keeps content \
-                     legible up to the edge then drops abruptly. Until GPUI ships \
-                     a backdrop-blur primitive both fall back to a colour-fade \
-                     gradient.",
+                     legible up to the edge then drops abruptly. Both use a \
+                     colour-fade gradient today; a future upgrade will use \
+                     `paint_blur_rect` with a variable-radius mask for the \
+                     HIG-correct scroll-edge blur.",
                 ),
         )
         .child(

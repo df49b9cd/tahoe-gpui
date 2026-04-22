@@ -261,12 +261,12 @@ impl RenderOnce for Panel {
         // ── Backdrop ────────────────────────────────────────────────────────
         // HIG `#panels`: inspector / dashboard / text-style panels dim the
         // window behind them; Tool and HUD panels do not (the underlying
-        // content stays interactive). We route the dimmed path through the
-        // shared `backdrop_overlay` helper, which today tints with
-        // `theme.overlay_bg` and, once GPUI ships `paint_blur_rect()`,
-        // automatically applies Liquid Glass backdrop blur. Non-dimming
-        // variants render a transparent positioned div so click-outside
-        // dismiss still lands without a visible scrim.
+        // content stays interactive). The dimmed path routes through the
+        // shared `backdrop_overlay` helper, which composites a dual-Kawase
+        // backdrop blur via `Window::paint_blur_rect` on top of
+        // `theme.overlay_bg`. Non-dimming variants render a transparent
+        // positioned div so click-outside dismiss still lands without a
+        // visible scrim.
         let backdrop = if dims_backdrop {
             backdrop_overlay(theme)
         } else {

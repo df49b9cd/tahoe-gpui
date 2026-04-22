@@ -8,6 +8,20 @@ Thanks for your interest in contributing! This document covers the development w
 - **cargo-nextest** for running the test suite — `cargo install cargo-nextest`.
 - **cargo-deny** (optional, for dependency audits) — `cargo install cargo-deny`.
 - macOS 14+ is recommended for running the examples (GPUI's platform support is most mature on Apple Silicon).
+- **Vendored GPUI fork at `.context/zed`** (temporary — see below).
+
+### Vendored GPUI fork
+
+`crates/tahoe-gpui/Cargo.toml` currently points `gpui` (and `gpui_platform`) at a local path — `.context/zed/crates/gpui` — rather than a tagged release. The fork carries `Primitive::BlurRect` / `Primitive::LensRect` (and the corresponding `Window::paint_blur_rect` / `paint_lens_rect` entry points) that the Liquid Glass blur/lens surfaces depend on. Until those primitives land upstream in a tagged Zed release, every clone needs the fork present at `.context/zed`:
+
+```bash
+git clone https://github.com/zed-industries/zed .context/zed
+# Check out whichever branch contains the BlurRect/LensRect primitives
+# (currently the `dual-kawase` working branch — confirm with the maintainer).
+cd .context/zed && git checkout <branch>
+```
+
+`.context/zed` is gitignored and excluded from the workspace (`Cargo.toml` → `exclude`), so it stays out of `git status` and doesn't participate in cargo resolution at the tahoe-gpui workspace level. When the primitives merge upstream, `crates/tahoe-gpui/Cargo.toml` rebases back to a tagged `git = "..."` dep and this step goes away.
 
 ## Repository layout
 

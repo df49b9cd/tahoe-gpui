@@ -482,8 +482,7 @@ fn paint_selection_quads(
 /// One-shot warning when `global_id` is `None` at paint time — indicates a
 /// GPUI framework contract violation (should never happen since `id()` always
 /// returns `Some`). `OnceLock` prevents log spam across frames.
-/// Release builds compile this to a no-op (matches `warn_blur_fallback_once`
-/// in `materials.rs`).
+/// `#[cfg(debug_assertions)]` keeps this out of release builds.
 #[cfg(debug_assertions)]
 fn warn_global_id_missing_once() {
     use std::sync::OnceLock;

@@ -4,6 +4,10 @@ members = [
     "crates/tahoe-gpui",
     "crates/mdstitch",
 ]
+# The upstream GPUI fork lives at `.context/zed` as a nested Cargo workspace.
+# Exclude it so cargo resolves `gpui` / `gpui_platform` path deps through the
+# zed workspace root (where shared `workspace.dependencies` are defined).
+exclude = [".context/zed"]
 
 [workspace.package]
 version = "0.1.0"

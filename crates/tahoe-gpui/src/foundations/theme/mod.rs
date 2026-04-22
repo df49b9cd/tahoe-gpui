@@ -296,9 +296,10 @@ pub struct TahoeTheme {
     /// uses `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) — set
     /// via [`Self::apply_in_window`] or by passing `theme.glass.window_background`
     /// in `WindowOptions` — this fill is translucent to the **desktop wallpaper
-    /// behind the window**, not to sibling GPUI elements inside it. GPUI
-    /// exposes no per-element backdrop blur; see
-    /// [`crate::foundations::materials::glass_surface`] for the full caveat.
+    /// behind the window**, not to sibling GPUI elements inside it. For
+    /// per-element backdrop blur against sibling content, use
+    /// [`crate::foundations::materials::glass_blur_surface`] or
+    /// [`crate::foundations::materials::glass_lens_surface`].
     pub panel_surface: Hsla,
 
     // ─── Liquid Glass ────────────────────────────────────────────────────────
