@@ -15,9 +15,10 @@ follow SemVer once the crate reaches 1.0.
   translucent tinted fill + shadows. Each blur/lens primitive forces a
   render-pass break — prefer one primitive per glass surface; do not use
   them for per-list-row backgrounds. Until the upstream Zed PR merges,
-  `crates/tahoe-gpui/Cargo.toml` points `gpui` / `gpui_platform` at a
-  local checkout of the fork in `.context/zed` (see
-  [CONTRIBUTING.md](CONTRIBUTING.md) → "Vendored GPUI fork" for setup).
+  `crates/tahoe-gpui/Cargo.toml` tracks the `df49b9cd/zed` fork's
+  `tahoe-gpui/blur-primitive` branch
+  ([df49b9cd/zed#1](https://github.com/df49b9cd/zed/pull/1)); cargo
+  resolves it over the network, so no local fork checkout is required.
 
 - **Breaking (signature)** — `glass_blur_surface` and `glass_lens_surface`
   no longer take an `el: Div` parameter. Each returns a `.relative()`

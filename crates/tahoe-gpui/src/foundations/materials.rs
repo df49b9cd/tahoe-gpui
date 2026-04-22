@@ -330,7 +330,7 @@ impl From<&LensEffect> for gpui::LensEffect {
             depth: effect.depth,
             dispersion: effect.dispersion * 100.0,
             splay: px(effect.splay),
-            light_angle_radians: effect.light_angle.to_radians(),
+            light_angle: gpui::radians(effect.light_angle.to_radians()),
             light_intensity: effect.light_intensity,
             tint: effect.blur.tint,
         }
@@ -2264,7 +2264,7 @@ mod tests {
         };
         let gpui_effect = gpui::LensEffect::from(&effect);
         let expected = -std::f32::consts::FRAC_PI_4;
-        assert!((gpui_effect.light_angle_radians - expected).abs() < 1e-6);
+        assert!((gpui_effect.light_angle.0 - expected).abs() < 1e-6);
     }
 
     #[test]
@@ -2302,9 +2302,7 @@ mod tests {
         assert!((gpui_effect.dispersion - default.dispersion).abs() < f32::EPSILON);
         assert!((gpui_effect.depth - default.depth).abs() < f32::EPSILON);
         assert_eq!(gpui_effect.splay, default.splay);
-        assert!(
-            (gpui_effect.light_angle_radians - default.light_angle_radians).abs() < f32::EPSILON
-        );
+        assert!((gpui_effect.light_angle.0 - default.light_angle.0).abs() < f32::EPSILON);
         assert!((gpui_effect.light_intensity - default.light_intensity).abs() < f32::EPSILON);
         assert_eq!(gpui_effect.kernel_levels, default.kernel_levels);
     }
