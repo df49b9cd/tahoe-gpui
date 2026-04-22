@@ -196,6 +196,25 @@ pub(crate) const BAR_GAP: f32 = 1.0;
 /// Vertical gap between chart title/subtitle and the plot area.
 pub(crate) const TITLE_GAP: f32 = 4.0;
 
+/// Width of a single bar given the slot width and number of series per slot.
+///
+/// Floor at 1 px so a very-dense multi-series chart still draws a visible
+/// mark at every slot. Shared between `render.rs` and unit tests so a change
+/// to the formula is picked up in both places.
+pub(crate) fn bar_width(slot_width: f32, n_series: usize) -> f32 {
+    let count = n_series.max(1) as f32;
+    let total_gap = BAR_GAP * (count - 1.0);
+    ((slot_width * BAR_WIDTH_RATIO - total_gap) / count).max(1.0)
+}
+
+/// Diameter of a point marker given the slot width.
+///
+/// Clamped to `[MIN_POINT_SIZE, MAX_POINT_SIZE]` so points stay visible in
+/// dense charts and readable in sparse ones.
+pub(crate) fn point_size(slot_width: f32) -> f32 {
+    MIN_POINT_SIZE.max(slot_width.min(MAX_POINT_SIZE))
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AxisConfig
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -212,8 +231,10 @@ pub struct AxisConfig {
     pub y_tick_count: usize,
     /// Override tick positions with explicit values.
     pub y_ticks: Option<Vec<f32>>,
-    /// Category labels for the X-axis (one per data point).
-    pub x_labels: Option<Vec<SharedString>>,
+    /// Category labels for the X-axis (one per data point). `Arc<[_]>` so
+    /// `AxisConfig::clone` only bumps a refcount — charts that redraw on
+    /// every hover-frame (see `ChartView`) don't re-allocate the Vec.
+    pub x_labels: Option<Arc<[SharedString]>>,
     /// Show the Y-axis line.
     pub show_y_line: bool,
     /// Show the X-axis baseline.
@@ -252,6 +273,22 @@ impl AxisConfig {
         self
     }
 
+    /// Y-axis label column width, derived from the platform's Mini control
+    /// tier so callers get consistent label gutters across platforms without
+    /// hardcoding a pt value. `control_height(Mini)` is ~16pt on macOS and
+    /// ~24pt on touch platforms; doubling lets `~5` Caption1 digits render
+    /// right-aligned with a small gutter to the plot area.
+    pub(crate) fn y_label_width(theme: &crate::foundations::theme::TahoeTheme) -> f32 {
+        theme.control_height(crate::foundations::layout::ControlSize::Mini) * 2.5
+    }
+
+    /// X-axis label row height, derived from Caption1's line-height on the
+    /// active platform. Using `control_height(Mini)` keeps the row tall
+    /// enough to avoid clipping descenders across Dynamic Type scales.
+    pub(crate) fn x_label_height(theme: &crate::foundations::theme::TahoeTheme) -> f32 {
+        theme.control_height(crate::foundations::layout::ControlSize::Mini) * 1.25
+    }
+
     pub fn show_y_line(mut self) -> Self {
         self.show_y_line = true;
         self
@@ -281,11 +318,6 @@ impl AxisConfig {
         }
         nice_ticks(min, max, self.y_tick_count)
     }
-
-    /// Y-axis label column width in pixels.
-    pub(crate) const Y_LABEL_WIDTH: f32 = 40.0;
-    /// X-axis label row height in pixels.
-    pub(crate) const X_LABEL_HEIGHT: f32 = 20.0;
 }
 
 /// Compute "nice" tick values for a range.

@@ -179,12 +179,12 @@ const DEMOS: &[Demo] = &[
         render: gallery::buttons::render,
     },
     Demo {
-        label: "Checkboxes",
-        render: gallery::checkboxes::render,
-    },
-    Demo {
         label: "Charts",
         render: gallery::charts::render,
+    },
+    Demo {
+        label: "Checkboxes",
+        render: gallery::checkboxes::render,
     },
     Demo {
         label: "Collections",

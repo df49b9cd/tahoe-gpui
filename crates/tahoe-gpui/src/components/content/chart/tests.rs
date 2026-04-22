@@ -9,8 +9,8 @@ use crate::test_helpers::helpers::setup_test_window;
 
 use super::render::Chart;
 use super::types::{
-    AxisConfig, BAR_WIDTH_RATIO, ChartDataSeries, ChartDataSet, ChartSeries, ChartType,
-    GridlineConfig, MIN_POINT_SIZE, nice_ticks,
+    AxisConfig, ChartDataSeries, ChartDataSet, ChartSeries, ChartType, GridlineConfig, bar_width,
+    nice_ticks, point_size,
 };
 
 fn series() -> ChartDataSeries {
@@ -102,17 +102,29 @@ fn line_point_rule_do_not_anchor_at_zero() {
 }
 
 #[test]
-fn bar_width_always_at_least_one_pixel() {
-    let slot_width = 1.0;
-    let bar_width = (slot_width * BAR_WIDTH_RATIO).max(1.0);
-    assert!(bar_width >= 1.0);
+fn bar_width_floors_at_one_pixel_even_for_tiny_slots() {
+    // The helper is the single source of truth; asserting it here catches
+    // any future refactor that accidentally drops the `.max(1.0)` floor.
+    assert!(bar_width(1.0, 1) >= 1.0);
+    assert!(bar_width(0.5, 3) >= 1.0);
 }
 
 #[test]
-fn point_size_always_at_least_min() {
-    let narrow_slot: f32 = 2.0;
-    let size = MIN_POINT_SIZE.max(narrow_slot.min(10.0));
-    assert!(size >= MIN_POINT_SIZE);
+fn bar_width_shares_slot_fairly_across_series() {
+    // Three series in a 60px slot with BAR_WIDTH_RATIO 0.7 + BAR_GAP 1.0
+    // should each get roughly (60*0.7 - 2*1.0) / 3 = 13.33 px.
+    let w = bar_width(60.0, 3);
+    assert!((12.0..=15.0).contains(&w), "bar width was {w}");
+}
+
+#[test]
+fn point_size_clamps_to_min_and_max() {
+    // Tiny slots floor at MIN_POINT_SIZE (4.0); huge slots cap at
+    // MAX_POINT_SIZE (10.0).
+    assert_eq!(point_size(1.0), 4.0);
+    assert_eq!(point_size(100.0), 10.0);
+    // Mid-range slots pass through unchanged.
+    assert_eq!(point_size(7.0), 7.0);
 }
 
 // ─── HIG: Full Keyboard Access ───────────────────────────────────
@@ -298,6 +310,77 @@ async fn dwc_renders_point_without_panic(cx: &mut TestAppContext) {
     host.update(_vcx, |_h, _cx| {
         // Render completed without panic — DwC border styling applied.
     });
+}
+
+// Canvas marks (Line/Area/Range/Rule) paint via the GPUI canvas path and
+// share a separate DwC code branch from the div-based Bar/Point marks.
+// Each render smoke-tests that branch so a regression in shape rotation
+// or ring overlay surfaces as a panic instead of going unnoticed.
+
+#[gpui::test]
+async fn dwc_renders_line_without_panic(cx: &mut TestAppContext) {
+    let (host, _vcx) = cx.add_window_view(|_window, cx| {
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR;
+        cx.set_global(theme);
+        ChartDwcHarness::new(ChartType::Line)
+    });
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn dwc_renders_area_without_panic(cx: &mut TestAppContext) {
+    let (host, _vcx) = cx.add_window_view(|_window, cx| {
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR;
+        cx.set_global(theme);
+        ChartDwcHarness::new(ChartType::Area)
+    });
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn dwc_renders_range_without_panic(cx: &mut TestAppContext) {
+    struct RangeDwcHarness;
+    impl Render for RangeDwcHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::range(
+                "Band",
+                vec![5.0, 8.0, 10.0],
+                vec![15.0, 20.0, 18.0],
+            ))
+            .id("dwc-range")
+            .chart_type(ChartType::Range)
+            .size(px(200.0), px(100.0))
+        }
+    }
+    let (host, _vcx) = cx.add_window_view(|_window, cx| {
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR;
+        cx.set_global(theme);
+        RangeDwcHarness
+    });
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn dwc_renders_rule_without_panic(cx: &mut TestAppContext) {
+    struct RuleDwcHarness;
+    impl Render for RuleDwcHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::new("Target", vec![50.0]))
+                .id("dwc-rule")
+                .chart_type(ChartType::Rule)
+                .size(px(200.0), px(100.0))
+        }
+    }
+    let (host, _vcx) = cx.add_window_view(|_window, cx| {
+        let mut theme = TahoeTheme::dark();
+        theme.accessibility_mode = AccessibilityMode::DIFFERENTIATE_WITHOUT_COLOR;
+        cx.set_global(theme);
+        RuleDwcHarness
+    });
+    host.update(_vcx, |_h, _cx| {});
 }
 
 // ─── Empty series ──────────────────────────────────────────────────
@@ -533,6 +616,25 @@ proptest::proptest! {
     ) {
         let ticks = nice_ticks(min, max, count);
         proptest::prop_assert!(ticks.iter().all(|t| t.is_finite()));
+    }
+
+    // Axis-renderer contract: ticks must be strictly increasing so the
+    // Y-label column paints top-to-bottom without duplicates. Restrict to
+    // a clean numeric strategy (nice_min/nice_max are only well-defined on
+    // finite inputs; the degenerate-inputs property above already covers
+    // NaN/Inf/overflow).
+    #[test]
+    fn nice_ticks_are_monotonically_increasing(
+        min in -1e6f32..1e6f32,
+        delta in 1e-3f32..1e6f32,
+        count in 2usize..10,
+    ) {
+        let max = min + delta;
+        let ticks = nice_ticks(min, max, count);
+        proptest::prop_assert!(
+            ticks.windows(2).all(|w| w[0] < w[1]),
+            "ticks not strictly increasing: {ticks:?}"
+        );
     }
 }
 

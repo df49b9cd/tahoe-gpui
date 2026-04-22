@@ -18,9 +18,12 @@ use super::marks::canvas_paint_callback;
 #[allow(unused_imports)] // Used in doc links.
 use super::types::ChartDataSeries;
 use super::types::{
-    AxisConfig, BAR_GAP, BAR_WIDTH_RATIO, ChartDataSet, ChartType, GridlineConfig, MAX_POINT_SIZE,
-    MIN_POINT_SIZE, TITLE_GAP,
+    AxisConfig, BAR_GAP, ChartDataSet, ChartType, GridlineConfig, TITLE_GAP, bar_width, point_size,
 };
+
+// BAR_WIDTH_RATIO / MIN_POINT_SIZE / MAX_POINT_SIZE aren't imported at the
+// module level — the `bar_width` / `point_size` helpers in `types.rs` fold
+// them into their return values so the formulas live in exactly one place.
 
 /// Palette order for auto-assigned multi-series colours.
 const PALETTE: &[&str] = &[
@@ -189,6 +192,35 @@ impl Chart {
     }
 }
 
+fn build_fka_labels(
+    chart_type: ChartType,
+    data_set: &ChartDataSet,
+    multi_series: bool,
+    total: usize,
+) -> Arc<[SharedString]> {
+    let voice = chart_type.voice_label();
+    let mut labels: Vec<SharedString> = Vec::with_capacity(total);
+    for series in data_set.series.iter() {
+        for v in series.inner.values.iter() {
+            let global_idx = labels.len();
+            let label = if multi_series {
+                format!(
+                    "{} {}: {} of {}, {:.2}",
+                    series.inner.name,
+                    voice,
+                    global_idx + 1,
+                    total,
+                    v
+                )
+            } else {
+                format!("{}: {} of {}, {:.2}", voice, global_idx + 1, total, v)
+            };
+            labels.push(SharedString::from(label));
+        }
+    }
+    labels.into()
+}
+
 pub(crate) fn palette_color(idx: usize, theme: &crate::foundations::theme::TahoeTheme) -> Hsla {
     let p = &theme.palette;
     match PALETTE[idx % PALETTE.len()] {
@@ -239,13 +271,21 @@ impl RenderOnce for Chart {
 
         let raw_min = self.data_set.global_min();
         let raw_max = self.data_set.global_max();
-        let min = if chart_type.anchors_at_zero() {
-            raw_min.min(0.0)
+        // Anchor Bar/Area/Range at zero; let Line/Point/Rule breathe around
+        // their actual data so all-negative series still fill the plot area
+        // instead of collapsing against the top edge.
+        let (mut min, mut max) = if chart_type.anchors_at_zero() {
+            (raw_min.min(0.0), raw_max.max(0.0))
         } else {
-            raw_min
+            (raw_min, raw_max)
         };
-        let max = raw_max.max(1e-3);
-        let range = (max - min).max(1e-3);
+        // Fallback for empty / NaN / zero-width ranges. Without this the
+        // divisor in `(v - min) / range` would be zero or non-finite.
+        if !(min.is_finite() && max.is_finite()) || (max - min).abs() < f32::EPSILON {
+            min = min.min(0.0);
+            max = (min + 1.0).max(max);
+        }
+        let range = max - min;
 
         let a11y_label: SharedString = match self.accessibility_label.take() {
             Some(label) => label,
@@ -304,41 +344,15 @@ impl RenderOnce for Chart {
         let subtitle = self.subtitle.take();
         let multi_series = data_set.is_multi();
 
-        // Precompute per-point VoiceOver labels once. The canvas / div
-        // paint paths call `attach_fka` inside tight loops, so building
-        // labels on each call re-allocates a String per data point on
-        // every redraw. One pass here lets `attach_fka` clone a cheap
-        // `SharedString`.
-        let fka_labels: Vec<SharedString> = if fka_points.is_some() {
-            let voice = chart_type.voice_label();
-            let mut labels = Vec::with_capacity(total_fka_points);
-            for series in data_set.series.iter() {
-                for v in series.inner.values.iter() {
-                    let global_idx = labels.len();
-                    let label = if multi_series {
-                        format!(
-                            "{} {}: {} of {}, {:.2}",
-                            series.inner.name,
-                            voice,
-                            global_idx + 1,
-                            total_fka_points,
-                            v
-                        )
-                    } else {
-                        format!(
-                            "{}: {} of {}, {:.2}",
-                            voice,
-                            global_idx + 1,
-                            total_fka_points,
-                            v
-                        )
-                    };
-                    labels.push(SharedString::from(label));
-                }
-            }
-            labels
+        // Build per-point VoiceOver labels for this render pass. `Chart`
+        // is `RenderOnce` so we can't cache across renders; the win here is
+        // one pass per redraw instead of per inner paint-loop iteration.
+        // `attach_fka` then takes a slice and clones a cheap `SharedString`
+        // (Arc bump) per point, not a `String`.
+        let fka_labels: Arc<[SharedString]> = if fka_points.is_some() {
+            build_fka_labels(chart_type, &data_set, multi_series, total_fka_points)
         } else {
-            Vec::new()
+            Arc::from([] as [SharedString; 0])
         };
 
         let has_gridlines = gridline_config.as_ref().is_some_and(|g| g.is_active());
@@ -365,12 +379,12 @@ impl RenderOnce for Chart {
         };
 
         let y_margin = if has_y_axis {
-            px(AxisConfig::Y_LABEL_WIDTH)
+            px(AxisConfig::y_label_width(theme))
         } else {
             px(0.0)
         };
         let x_margin = if has_x_labels {
-            px(AxisConfig::X_LABEL_HEIGHT)
+            px(AxisConfig::x_label_height(theme))
         } else {
             px(0.0)
         };
@@ -584,8 +598,11 @@ impl RenderOnce for Chart {
             );
         }
 
-        // Auto-show legend for multi-series charts.
-        if show_legend && data_set.series.len() > 1 {
+        // `show_legend` already encodes auto-hide semantics (None = auto-
+        // hide on single-series). Keep the extra `> 1` guard off so a
+        // caller that explicitly forces `show_legend(true)` on a single
+        // series still renders the swatch.
+        if show_legend && !data_set.series.is_empty() {
             let mut legend_row = div()
                 .flex()
                 .flex_row()
@@ -692,9 +709,8 @@ fn render_bars(
 
     let bar_count_per_slot = n_series.max(1);
     let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1) as f32;
-    let bar_width =
-        ((slot_width * BAR_WIDTH_RATIO - total_bar_gap) / bar_count_per_slot as f32).max(1.0);
-    let group_width = bar_width * bar_count_per_slot as f32 + total_bar_gap;
+    let bar_w = bar_width(slot_width, n_series);
+    let group_width = bar_w * bar_count_per_slot as f32 + total_bar_gap;
     let group_pad = (slot_width - group_width) / 2.0;
 
     let mut row = div()
@@ -720,7 +736,7 @@ fn render_bars(
             let bar_h = f32::from(height) * norm;
             let color = series_color(data_set, global_color, si, theme);
             let mut bar = div()
-                .w(px(bar_width))
+                .w(px(bar_w))
                 .h(px(bar_h))
                 .bg(color)
                 .rounded(theme.radius_sm);
@@ -744,6 +760,7 @@ fn render_bars(
                             total: total_fka_points,
                             theme,
                             labels: fka_labels,
+                            slot_width,
                         },
                         fka_idx,
                         window,
@@ -783,7 +800,7 @@ fn render_points(
         .unwrap_or(0)
         .max(1);
     let slot_width = f32::from(width) / max_points as f32;
-    let point_size = MIN_POINT_SIZE.max(slot_width.min(MAX_POINT_SIZE));
+    let point_sz = point_size(slot_width);
 
     let mut row = div().flex().flex_row().items_end().w(width).h(height);
 
@@ -793,17 +810,21 @@ fn render_points(
         for (si, series) in data_set.series.iter().enumerate() {
             let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
             let norm = ((v - min) / range).clamp(0.0, 1.0);
-            let top_offset = f32::from(height) * (1.0 - norm) - point_size / 2.0;
+            let top_offset = f32::from(height) * (1.0 - norm) - point_sz / 2.0;
             let color = series_color(data_set, global_color, si, theme);
 
-            let mut dot = div()
+            let dot = div()
                 .absolute()
                 .top(px(top_offset.max(0.0)))
-                .left(px((slot_width - point_size) / 2.0))
-                .size(px(point_size))
+                .left(px((slot_width - point_sz) / 2.0))
+                .size(px(point_sz))
                 .bg(color);
 
-            dot = apply_marker_shape(dot, si, point_size, theme);
+            // Route the per-series shape/fill through apply_marker_shape so
+            // outlined markers inherit the series colour for their ring.
+            // The DwC border (above the fill) is applied after so it stacks
+            // on top of the filled shape.
+            let mut dot = apply_marker_shape(dot, si, point_sz, theme, color);
 
             if dwc {
                 dot = dot.border_1().border_color(theme.text);
@@ -823,6 +844,7 @@ fn render_points(
                             total: total_fka_points,
                             theme,
                             labels: fka_labels,
+                            slot_width,
                         },
                         fka_idx,
                         window,
@@ -852,11 +874,18 @@ fn render_points(
 /// Three geometric shapes plus an orthogonal solid/outlined axis covers
 /// six distinct encodings without introducing rotated or clipped shapes
 /// that GPUI `div` cannot express without a canvas draw.
+///
+/// `color` is the series' fill colour. Outlined markers draw their ring
+/// in the series colour (so the legend swatch still matches the mark)
+/// rather than the generic `theme.text` — the previous implementation
+/// collapsed every outlined series onto the same foreground colour,
+/// defeating the point of the shape/outline rotation.
 fn apply_marker_shape(
     dot: gpui::Div,
     si: usize,
     point_size: f32,
     theme: &crate::foundations::theme::TahoeTheme,
+    color: Hsla,
 ) -> gpui::Div {
     let shape_slot = si % 3;
     let outlined = (si / 3) % 2 == 1;
@@ -873,7 +902,7 @@ fn apply_marker_shape(
         shaped
             .bg(theme.surface)
             .border(px((point_size * 0.22).max(1.0)))
-            .border_color(theme.text)
+            .border_color(color)
     } else {
         shaped
     }
@@ -938,17 +967,15 @@ fn render_canvas(
     .h(height);
 
     if let (Some((group, handles)), Some(prefix)) = (fka_points.as_ref(), point_prefix.as_ref()) {
-        let mut row = div()
-            .absolute()
-            .top_0()
-            .left_0()
-            .w(width)
-            .h(height)
-            .flex()
-            .flex_row();
-
-        // Hoist slot_width: independent of `si`.
         let slot_width = w_f / max_points.max(1) as f32;
+        let point_sz = point_size(slot_width);
+
+        // Absolute-position one hit div per (series, slot). A flex_row laid
+        // the same slots for every series end-to-end, so a two-series chart
+        // compressed each slot to half its width and the second series' hit
+        // region sat off the right edge of the plot area. Absolute
+        // positioning anchors every (si, slot_i) hit to its true x coord.
+        let mut overlay = div().absolute().top_0().left_0().w(width).h(height);
 
         for (si, series) in data_set.series.iter().enumerate() {
             for (slot_i, v) in series.inner.values.iter().enumerate() {
@@ -958,19 +985,23 @@ fn render_canvas(
                 if fka_idx >= handles.len() {
                     break;
                 }
-                let mut hit = div().w(px(slot_width)).h(height).opacity(0.0);
+                let mut hit = div()
+                    .absolute()
+                    .top_0()
+                    .left(px(slot_width * slot_i as f32))
+                    .w(px(slot_width))
+                    .h(height);
                 if dwc {
-                    let point_size = MIN_POINT_SIZE.max(slot_width.min(MAX_POINT_SIZE));
                     let norm = ((v - min) / range).clamp(0.0, 1.0);
-                    let top_offset = h_f * (1.0 - norm) - point_size / 2.0;
+                    let top_offset = h_f * (1.0 - norm) - point_sz / 2.0;
                     // Transparent ring overlay on top of the canvas mark;
                     // the shape rotates per series so ≥4-series charts stay
                     // distinguishable without colour.
                     let indicator = div()
                         .absolute()
                         .top(px(top_offset.max(0.0)))
-                        .left(px((slot_width - point_size) / 2.0))
-                        .size(px(point_size))
+                        .left(px((slot_width - point_sz) / 2.0))
+                        .size(px(point_sz))
                         .border_1()
                         .border_color(theme.text);
                     let indicator = match si % 3 {
@@ -989,11 +1020,12 @@ fn render_canvas(
                         total: total_fka_points,
                         theme,
                         labels: fka_labels,
+                        slot_width,
                     },
                     fka_idx,
                     window,
                 );
-                row = row.child(hit);
+                overlay = overlay.child(hit);
             }
         }
 
@@ -1002,7 +1034,7 @@ fn render_canvas(
             .w(width)
             .h(height)
             .child(canvas_el)
-            .child(row)
+            .child(overlay)
     } else {
         div().w(width).h(height).child(canvas_el)
     }

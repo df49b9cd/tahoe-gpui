@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
+use crate::foundations::materials::apply_focus_ring;
 use crate::foundations::theme::ActiveTheme;
 use crate::foundations::typography::{TextStyle, TextStyledExt};
 
@@ -31,7 +32,14 @@ pub struct ChartView {
     axis: Option<AxisConfig>,
     gridlines: Option<GridlineConfig>,
     focus_handle: FocusHandle,
-    hover_index: Option<usize>,
+    /// Pointer-driven hover index. Tracks the mouse and clears on
+    /// `on_hover(false)`; kept separate from `focus_index` so moving the
+    /// pointer off the chart doesn't erase a keyboard-selected slot (and
+    /// vice versa).
+    pointer_index: Option<usize>,
+    /// Keyboard-driven focus index. Advances on arrow/Home/End and clears
+    /// on Escape.
+    focus_index: Option<usize>,
     /// Wrapper's left edge in window coordinates, captured during paint
     /// so `on_mouse_move` can translate `event.position.x` (window space)
     /// into the wrapper-local `x` that `compute_hover_index` expects.
@@ -51,7 +59,8 @@ impl ChartView {
             axis: None,
             gridlines: None,
             focus_handle: cx.focus_handle(),
-            hover_index: None,
+            pointer_index: None,
+            focus_index: None,
             wrapper_origin_x: Rc::new(Cell::new(0.0)),
         }
     }
@@ -107,14 +116,16 @@ impl ChartView {
     /// Horizontal inset of the plot area from the wrapper's left edge.
     ///
     /// Matches `Chart::render`'s Y-label column so hover-x maps to the
-    /// correct data-point slot when an axis is configured.
-    fn y_margin(&self) -> f32 {
+    /// correct data-point slot when an axis is configured. The Y-label
+    /// column width is theme-derived (`control_height(Mini) * 2.5`) so
+    /// ChartView and Chart stay in step when the platform changes.
+    fn y_margin(&self, theme: &crate::foundations::theme::TahoeTheme) -> f32 {
         if self
             .axis
             .as_ref()
             .is_some_and(|a| a.y_tick_count > 0 || a.y_ticks.is_some())
         {
-            AxisConfig::Y_LABEL_WIDTH
+            AxisConfig::y_label_width(theme)
         } else {
             0.0
         }
@@ -122,7 +133,7 @@ impl ChartView {
 }
 
 impl Render for ChartView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
         let mut chart = super::Chart::new(self.data_set.clone())
@@ -139,13 +150,15 @@ impl Render for ChartView {
             chart = chart.gridlines(gl);
         }
 
-        let hover_index = self.hover_index;
+        // Pointer wins when both are live (the user is actively moving the
+        // mouse), otherwise fall back to the last keyboard-selected slot.
+        let hover_index = self.pointer_index.or(self.focus_index);
         let data_set = self.data_set.clone();
         let global_color = self.global_color;
         let width = self.width;
         let height = self.height;
         let max_pts = self.max_points();
-        let y_margin = self.y_margin();
+        let y_margin = self.y_margin(theme);
 
         let crosshair_color = theme.text_muted;
         let origin_tracker = self.wrapper_origin_x.clone();
@@ -245,28 +258,33 @@ impl Render for ChartView {
             None
         };
 
+        // y_margin is theme-derived and theme isn't reachable from listener
+        // closures — snapshot it each render and move the value into each
+        // closure.
+        let captured_width = f32::from(width);
+        let captured_y_margin = y_margin;
         let on_move = cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
             // Translate window-space pointer x into wrapper-local x using
             // the origin captured during the last paint.
             let local_x = f32::from(event.position.x) - this.wrapper_origin_x.get();
             let next = compute_hover_index(
                 local_x,
-                f32::from(this.width),
-                this.y_margin(),
+                captured_width,
+                captured_y_margin,
                 this.max_points(),
             );
             // P0: pixel-level mouse motion fires this listener 60+ times
             // per second. Re-rendering only when the slot actually changes
             // drops every intra-slot move to a no-op.
-            if this.hover_index != next {
-                this.hover_index = next;
+            if this.pointer_index != next {
+                this.pointer_index = next;
                 cx.notify();
             }
         });
 
         let on_hover = cx.listener(|this, hovered: &bool, _window, cx| {
-            if !hovered && this.hover_index.is_some() {
-                this.hover_index = None;
+            if !hovered && this.pointer_index.is_some() {
+                this.pointer_index = None;
                 cx.notify();
             }
         });
@@ -277,12 +295,15 @@ impl Render for ChartView {
                 return;
             }
             let last = max - 1;
+            // `up`/`down` alias `left`/`right` so a vertically-stacked chart
+            // layout stays keyboard-reachable without mapping two different
+            // axes to the same action.
             let next = match event.keystroke.key.as_str() {
-                "left" => Some(match this.hover_index {
+                "left" | "up" => Some(match this.focus_index.or(this.pointer_index) {
                     Some(i) => i.saturating_sub(1),
                     None => 0,
                 }),
-                "right" => Some(match this.hover_index {
+                "right" | "down" => Some(match this.focus_index.or(this.pointer_index) {
                     Some(i) => (i + 1).min(last),
                     None => 0,
                 }),
@@ -291,8 +312,8 @@ impl Render for ChartView {
                 "escape" => None,
                 _ => return,
             };
-            if this.hover_index != next {
-                this.hover_index = next;
+            if this.focus_index != next {
+                this.focus_index = next;
                 cx.notify();
             }
             // Consume the keystroke so a parent focus group / workflow pane
@@ -301,6 +322,7 @@ impl Render for ChartView {
         });
 
         let focus_handle = self.focus_handle.clone();
+        let is_focused = focus_handle.is_focused(window);
 
         let mut wrapper = div()
             .id(ElementId::Name(self.id.clone()))
@@ -315,10 +337,15 @@ impl Render for ChartView {
             wrapper = wrapper.child(tooltip);
         }
 
-        wrapper
+        let wrapper = wrapper
             .on_mouse_move(on_move)
             .on_hover(on_hover)
-            .on_key_down(on_key)
+            .on_key_down(on_key);
+
+        // Focus ring signals keyboard ownership of the chart so the tabstop
+        // is visible before any arrow key lands. Stateless Chart children
+        // already have no ring; this handles the outer wrapper.
+        apply_focus_ring(wrapper, theme, is_focused, &[])
     }
 }
 
