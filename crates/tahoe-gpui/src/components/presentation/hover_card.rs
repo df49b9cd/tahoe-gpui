@@ -26,14 +26,22 @@ pub const HOVER_CARD_DEFAULT_DELAY_MS: u64 = 300;
 /// trigger edge and the card (the configured `gap`) so a pointer
 /// traversal of the gap — which briefly leaves both hit regions — does
 /// not dismiss the card.
+///
+/// 80 ms ≈ 2× the pointer-travel time across a `spacing_xs` (8 pt) gap
+/// at typical desktop velocities (~200 pt/s pointer moves clear the
+/// gap in ~40 ms; doubling leaves a comfortable margin for slower
+/// pointers and higher-DPI cursors). Shortening below ~50 ms risks
+/// spurious closes during gap traversal; lengthening beyond ~150 ms
+/// starts to feel sticky on re-entry.
 const HOVER_CARD_CLOSE_DEBOUNCE_MS: u64 = 80;
 
 /// Positions the HoverCard renders relative to the trigger.
 ///
 /// Mirrors [`super::popover::PopoverPlacement`] so callers that know
-/// Popover's placement vocabulary can reuse it. Boundary clamping: if
-/// the requested placement would spill outside the viewport, callers
-/// should pick an alternate placement that stays inside bounds.
+/// Popover's placement vocabulary can reuse it. The preferred side may
+/// flip at render time: `AnchoredOverlay::realise_anchor` swaps
+/// Below↔Above when the opposite side has materially more room, so
+/// callers don't need to pre-compute edge clamping themselves.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HoverCardPlacement {
     /// Above the trigger, aligned to the left edge.
@@ -58,35 +66,6 @@ impl From<HoverCardPlacement> for OverlayAnchor {
     }
 }
 
-impl HoverCardPlacement {
-    fn is_above(self) -> bool {
-        matches!(self, Self::AboveLeft | Self::AboveRight)
-    }
-
-    fn aligns_left(self) -> bool {
-        matches!(self, Self::AboveLeft | Self::BelowLeft)
-    }
-
-    /// Returns a fallback placement that flips vertically or
-    /// horizontally when the caller detects a viewport edge conflict.
-    ///
-    /// The matrix is: flip the vertical side when `near_top_edge`;
-    /// flip the horizontal alignment when `near_right_edge`. Both
-    /// flags together flip both axes.
-    pub fn clamp_for_edges(self, near_top_edge: bool, near_right_edge: bool) -> Self {
-        let is_above = self.is_above();
-        let aligns_left = self.aligns_left();
-        let resolved_above = if near_top_edge { false } else { is_above };
-        let resolved_left = if near_right_edge { true } else { aligns_left };
-        match (resolved_above, resolved_left) {
-            (true, true) => Self::AboveLeft,
-            (true, false) => Self::AboveRight,
-            (false, true) => Self::BelowLeft,
-            (false, false) => Self::BelowRight,
-        }
-    }
-}
-
 /// A stateful hover card that shows rich content when the trigger is hovered.
 ///
 /// The card stays open while the mouse is over the trigger or the card content.
@@ -102,6 +81,11 @@ pub struct HoverCard {
     trigger_hovered: bool,
     /// Whether the mouse is over the content.
     content_hovered: bool,
+    /// Whether keyboard focus is on the trigger. Opened on focus-in so
+    /// keyboard-only users (no pointer, VoiceOver, switch control) can
+    /// surface the card's contents; mirrors the hover-in path,
+    /// including `open_delay` and close debounce.
+    trigger_focused: bool,
     /// Unique id for element identification.
     id: ElementId,
     /// Builder for the trigger element.
@@ -116,8 +100,8 @@ pub struct HoverCard {
     open_delay: Duration,
     /// Max content width (px). Defaults to [`HOVER_CARD_MAX_WIDTH`].
     max_width: gpui::Pixels,
-    /// Timestamp of the most recent trigger enter, used to defer the
-    /// open-visibility flip by `open_delay`.
+    /// Timestamp of the most recent trigger enter (hover or focus),
+    /// used to defer the open-visibility flip by `open_delay`.
     trigger_entered_at: Option<Instant>,
     /// Pending deferred wake that will re-run [`Self::update_visibility`]
     /// once `open_delay` has elapsed since `trigger_entered_at`. Storing
@@ -129,14 +113,24 @@ pub struct HoverCard {
     /// [`HOVER_CARD_CLOSE_DEBOUNCE_MS`] if neither region is re-entered.
     /// Dropped (cancelled) the moment hover resumes on either region.
     pending_close: Option<Task<()>>,
+    /// Focus handle attached to the trigger so the card has a keyboard
+    /// activation path (Tab into trigger → card opens after
+    /// `open_delay`; Tab out → close debounce fires).
+    focus_handle: gpui::FocusHandle,
+    /// Focus-in/out subscriptions, installed lazily on first render
+    /// because [`Context::on_focus_in`]/[`on_focus_out`] require a
+    /// `&mut Window` which isn't available inside [`Self::new`].
+    /// `None` until render runs once.
+    _focus_subscriptions: Option<[gpui::Subscription; 2]>,
 }
 
 impl HoverCard {
-    pub fn new(id: impl Into<ElementId>) -> Self {
+    pub fn new(id: impl Into<ElementId>, cx: &mut Context<Self>) -> Self {
         Self {
             is_open: false,
             trigger_hovered: false,
             content_hovered: false,
+            trigger_focused: false,
             id: id.into(),
             trigger: None,
             content: None,
@@ -146,6 +140,8 @@ impl HoverCard {
             trigger_entered_at: None,
             pending_open: None,
             pending_close: None,
+            focus_handle: cx.focus_handle(),
+            _focus_subscriptions: None,
         }
     }
 
@@ -188,16 +184,45 @@ impl HoverCard {
         cx.notify();
     }
 
+    /// Install the focus-in/out subscriptions that drive the keyboard
+    /// activation path. Idempotent — a no-op after the first call.
+    ///
+    /// `Context::on_focus_in` / `on_focus_out` require a `&mut Window`
+    /// which isn't available inside [`Self::new`], so the subscriptions
+    /// are wired lazily from [`Render::render`] on the first frame.
+    fn install_focus_subscriptions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self._focus_subscriptions.is_some() {
+            return;
+        }
+        let focus_in = cx.on_focus_in(&self.focus_handle, window, |this, _window, cx| {
+            this.trigger_focused = true;
+            this.trigger_entered_at = Some(Instant::now());
+            this.update_visibility(cx);
+        });
+        let focus_out = cx.on_focus_out(&self.focus_handle, window, |this, _event, _window, cx| {
+            this.trigger_focused = false;
+            if !this.trigger_hovered {
+                // Focus left and the pointer isn't on the trigger —
+                // drop the entered-at stamp so a subsequent re-entry
+                // restarts the delay rather than firing instantly.
+                this.trigger_entered_at = None;
+            }
+            this.update_visibility(cx);
+        });
+        self._focus_subscriptions = Some([focus_in, focus_out]);
+    }
+
     fn update_visibility(&mut self, cx: &mut Context<Self>) {
-        let should_open = self.trigger_hovered || self.content_hovered;
+        let should_open = self.trigger_hovered || self.content_hovered || self.trigger_focused;
 
         if !should_open {
-            // Hover left both regions. Drop any pending open so a
-            // lingering timer doesn't re-open the card after the user
-            // has moved away, then debounce the close so pointer
-            // traversal of the gap between the trigger and card (which
-            // leaves both hit regions briefly) doesn't dismiss the
-            // surface. When the card isn't open, just reset bookkeeping.
+            // Hover and focus both left the relevant regions. Drop any
+            // pending open so a lingering timer doesn't re-open the
+            // card after the user has moved away, then debounce the
+            // close so pointer traversal of the gap between the trigger
+            // and card (which leaves both hit regions briefly) doesn't
+            // dismiss the surface. When the card isn't open, just
+            // reset bookkeeping.
             self.pending_open = None;
             if !self.is_open {
                 self.pending_close = None;
@@ -237,17 +262,40 @@ impl HoverCard {
         // fires even when no subsequent pointer event arrives — without
         // this, a user who enters the trigger and holds still for longer
         // than `open_delay` would never see the card open.
-        if self.open_delay > Duration::ZERO
+        //
+        // Under Reduce Motion, the HIG-adjacent "prefer reduced
+        // transitions" signal collapses decorative motion-in-time —
+        // including hover dwell delays — to an immediate state change.
+        // Skip the delay so the card appears without a 300 ms kinetic
+        // pause. The close debounce is about pointer-traversal bridging,
+        // not motion, and is not affected.
+        let reduce_motion = cx.theme().accessibility_mode.reduce_motion();
+        if !reduce_motion
+            && self.open_delay > Duration::ZERO
             && let Some(entered_at) = self.trigger_entered_at
         {
             let elapsed = entered_at.elapsed();
             if elapsed < self.open_delay {
                 let remaining = self.open_delay - elapsed;
+                // The timer IS the delay — once it fires we trust that
+                // `open_delay` has elapsed and flip `is_open` directly
+                // instead of re-running `update_visibility` (which would
+                // compare `entered_at.elapsed()` against the delay again,
+                // and under a mocked background-executor clock that
+                // wall-time comparison would keep rescheduling forever).
+                // If the user leaves the trigger before the timer fires,
+                // the hover-out branch drops `pending_open`, cancelling
+                // the future.
                 self.pending_open = Some(cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(remaining).await;
                     this.update(cx, |this, cx| {
                         this.pending_open = None;
-                        this.update_visibility(cx);
+                        let still_should =
+                            this.trigger_hovered || this.content_hovered || this.trigger_focused;
+                        if still_should && !this.is_open {
+                            this.is_open = true;
+                            cx.notify();
+                        }
                     })
                     .ok();
                 }));
@@ -262,7 +310,9 @@ impl HoverCard {
 }
 
 impl Render for HoverCard {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.install_focus_subscriptions(window, cx);
+
         let theme = cx.theme();
         let spacing_xs = theme.spacing_xs;
 
@@ -282,11 +332,19 @@ impl Render for HoverCard {
 
         let trigger_div = div()
             .id(trigger_id)
+            // Keyboard-focusable so Tab reaches the card. `.focusable()`
+            // plus `.track_focus(&handle)` is the crate's canonical
+            // tabbable-trigger pattern (see popup_button.rs).
+            .focusable()
+            .track_focus(&self.focus_handle)
             .on_hover(cx.listener(|this, &hovered: &bool, _window, cx| {
                 this.trigger_hovered = hovered;
                 if hovered {
                     this.trigger_entered_at = Some(Instant::now());
-                } else {
+                } else if !this.trigger_focused {
+                    // Keep the entered-at stamp while focus is still on
+                    // the trigger — hover-out shouldn't erase the timer
+                    // the focus path is relying on.
                     this.trigger_entered_at = None;
                 }
                 this.update_visibility(cx);
@@ -324,8 +382,15 @@ impl Render for HoverCard {
 
 #[cfg(test)]
 mod tests {
-    use super::{HOVER_CARD_DEFAULT_DELAY_MS, HoverCardPlacement};
+    use super::{
+        HOVER_CARD_CLOSE_DEBOUNCE_MS, HOVER_CARD_DEFAULT_DELAY_MS, HoverCard, HoverCardPlacement,
+    };
+    use crate::foundations::accessibility::AccessibilityMode;
+    use crate::foundations::theme::TahoeTheme;
+    use crate::test_helpers::helpers::setup_test_window;
     use core::prelude::v1::test;
+    use gpui::{IntoElement, TestAppContext, div};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn placement_default_is_above_left() {
@@ -333,66 +398,183 @@ mod tests {
     }
 
     #[test]
-    fn placement_classifiers() {
-        assert!(HoverCardPlacement::AboveLeft.is_above());
-        assert!(HoverCardPlacement::AboveRight.is_above());
-        assert!(!HoverCardPlacement::BelowLeft.is_above());
-        assert!(HoverCardPlacement::AboveLeft.aligns_left());
-        assert!(!HoverCardPlacement::AboveRight.aligns_left());
-    }
-
-    #[test]
-    fn clamp_flips_vertical_near_top_edge() {
-        assert_eq!(
-            HoverCardPlacement::AboveLeft.clamp_for_edges(true, false),
-            HoverCardPlacement::BelowLeft
-        );
-        assert_eq!(
-            HoverCardPlacement::AboveRight.clamp_for_edges(true, false),
-            HoverCardPlacement::BelowRight
-        );
-    }
-
-    #[test]
-    fn clamp_flips_horizontal_near_right_edge() {
-        assert_eq!(
-            HoverCardPlacement::AboveRight.clamp_for_edges(false, true),
-            HoverCardPlacement::AboveLeft
-        );
-        assert_eq!(
-            HoverCardPlacement::BelowRight.clamp_for_edges(false, true),
-            HoverCardPlacement::BelowLeft
-        );
-    }
-
-    #[test]
-    fn clamp_flips_both_axes() {
-        // AboveRight near both edges (trigger is at top-right of the
-        // viewport): vertical flips from Above → Below (would spill
-        // above the top), horizontal flips from Right → Left (would
-        // spill past the right edge). Result: BelowLeft.
-        assert_eq!(
-            HoverCardPlacement::AboveRight.clamp_for_edges(true, true),
-            HoverCardPlacement::BelowLeft
-        );
-    }
-
-    #[test]
-    fn clamp_is_noop_when_already_safe() {
-        // A BelowLeft card near the top edge is already safe — we
-        // don't flip Below to Above, we just keep the card below.
-        assert_eq!(
-            HoverCardPlacement::BelowLeft.clamp_for_edges(true, false),
-            HoverCardPlacement::BelowLeft
-        );
-        assert_eq!(
-            HoverCardPlacement::AboveLeft.clamp_for_edges(false, true),
-            HoverCardPlacement::AboveLeft
-        );
-    }
-
-    #[test]
     fn default_delay_is_300ms() {
         assert_eq!(HOVER_CARD_DEFAULT_DELAY_MS, 300);
+    }
+
+    /// Builds a HoverCard with trivial trigger/content so `update_visibility`
+    /// has something to observe. The tests below drive state by poking
+    /// `trigger_hovered` / `content_hovered` / `trigger_focused` directly
+    /// (private fields — same module) and then calling `update_visibility`
+    /// as the real hover/focus listeners do.
+    fn build_hover_card(cx: &mut gpui::Context<HoverCard>) -> HoverCard {
+        let mut hc = HoverCard::new("test-hc", cx);
+        hc.set_trigger(|_app| div().into_any_element(), cx);
+        hc.set_content(|_app| div().into_any_element(), cx);
+        hc
+    }
+
+    #[gpui::test]
+    async fn hover_in_opens_card_after_delay(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(!hc.is_open, "card must not open inside the delay window");
+            assert!(hc.pending_open.is_some(), "open task should be scheduled");
+        });
+
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS + 20));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(hc.is_open, "card must open after delay elapses");
+            assert!(hc.pending_open.is_none(), "pending open must clear");
+        });
+    }
+
+    #[gpui::test]
+    async fn hover_out_before_delay_cancels_open(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(hc.pending_open.is_some());
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = false;
+            hc.trigger_entered_at = None;
+            hc.update_visibility(cx);
+            assert!(
+                hc.pending_open.is_none(),
+                "hover-out must drop the pending open task"
+            );
+        });
+
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS + 100));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(!hc.is_open, "card must never open after early hover-out");
+        });
+    }
+
+    #[gpui::test]
+    async fn hover_out_closes_card_after_debounce(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        hc.update(cx, |hc, cx| {
+            hc.set_open_delay(Duration::ZERO, cx);
+            hc.trigger_hovered = true;
+            hc.update_visibility(cx);
+            assert!(hc.is_open, "zero delay opens immediately");
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = false;
+            hc.update_visibility(cx);
+            assert!(hc.is_open, "card stays open during debounce");
+            assert!(hc.pending_close.is_some(), "close debounce must schedule");
+        });
+
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS + 20));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(!hc.is_open, "card must close after debounce elapses");
+            assert!(hc.pending_close.is_none());
+        });
+    }
+
+    #[gpui::test]
+    async fn re_enter_during_debounce_cancels_close(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        hc.update(cx, |hc, cx| {
+            hc.set_open_delay(Duration::ZERO, cx);
+            hc.trigger_hovered = true;
+            hc.update_visibility(cx);
+            assert!(hc.is_open);
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = false;
+            hc.update_visibility(cx);
+            assert!(hc.pending_close.is_some());
+        });
+
+        // Simulate the pointer bridging the gap into the card while the
+        // close debounce is still pending.
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS / 2));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, cx| {
+            hc.content_hovered = true;
+            hc.update_visibility(cx);
+            assert!(
+                hc.pending_close.is_none(),
+                "re-entry must cancel pending close"
+            );
+            assert!(hc.is_open);
+        });
+
+        // Advance past the original debounce deadline — card must persist.
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_CLOSE_DEBOUNCE_MS));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(hc.is_open, "card must remain open after re-entry");
+        });
+    }
+
+    #[gpui::test]
+    async fn reduce_motion_skips_open_delay(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        // Swap in a theme with REDUCE_MOTION so `update_visibility` sees it.
+        cx.update(|_window, cx| {
+            let mut theme = TahoeTheme::dark();
+            theme.accessibility_mode = AccessibilityMode::REDUCE_MOTION;
+            cx.set_global(theme);
+        });
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_hovered = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(hc.is_open, "reduce_motion must collapse open_delay");
+            assert!(hc.pending_open.is_none());
+        });
+    }
+
+    #[gpui::test]
+    async fn focus_in_opens_card_after_delay(cx: &mut TestAppContext) {
+        let (hc, cx) = setup_test_window(cx, |_w, cx| build_hover_card(cx));
+
+        hc.update(cx, |hc, cx| {
+            hc.trigger_focused = true;
+            hc.trigger_entered_at = Some(Instant::now());
+            hc.update_visibility(cx);
+            assert!(!hc.is_open, "focus-in still respects open_delay");
+            assert!(hc.pending_open.is_some());
+        });
+
+        cx.executor()
+            .advance_clock(Duration::from_millis(HOVER_CARD_DEFAULT_DELAY_MS + 20));
+        cx.run_until_parked();
+
+        hc.update(cx, |hc, _cx| {
+            assert!(hc.is_open, "card opens once the focus-in delay elapses");
+        });
     }
 }

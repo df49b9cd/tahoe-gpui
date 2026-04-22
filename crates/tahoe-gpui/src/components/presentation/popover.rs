@@ -14,11 +14,41 @@
 //! label. GPUI does not yet expose an AppKit "popover" role, so what
 //! VoiceOver announces when focus lands on the content surface is
 //! whatever role the contained elements surface (typically the
-//! content's own role rather than a "popover" hint). Consumers should
-//! supply semantic labeling on the `content` they pass in; the popover
-//! shell adds no announceable text of its own. Manual AX passes on
-//! macOS are the source of truth for this surface until GPUI ships
-//! richer role metadata.
+//! content's own role rather than a "popover" hint). Manual AX passes
+//! on macOS are the source of truth for this surface until GPUI ships
+//! richer role metadata (tracked by the shim in
+//! [`foundations::accessibility::voiceover`]).
+//!
+//! Consumers should label the content they pass in. The canonical
+//! pattern uses the project's [`AccessibleExt::with_accessibility`]
+//! shim, which is a no-op today but will wire through once GPUI lands
+//! an AX tree:
+//!
+//! ```ignore
+//! use tahoe_gpui::foundations::accessibility::{
+//!     AccessibilityProps, AccessibilityRole, AccessibleExt,
+//! };
+//!
+//! let props = AccessibilityProps::new()
+//!     .role(AccessibilityRole::Dialog)
+//!     .label("Formatting options");
+//! let labelled = div().with_accessibility(&props).child(/* content */);
+//! Popover::new(id, trigger, labelled.into_any_element())
+//! ```
+//!
+//! ## Escape-dismiss contract
+//!
+//! The `on_dismiss` handler is wired to Escape via a bubble-phase
+//! `on_key_down` on the content surface. This follows the same
+//! convention as [`Alert`](super::alert::Alert) and
+//! [`Modal`](super::modal::Modal). Content authors must *not* call
+//! `cx.stop_propagation()` on Escape inside popover children — doing so
+//! will break the popover's dismiss path. Components in this crate
+//! (TextField, Button, Icon, etc.) do not stop-propagate Escape, so
+//! the common case "just works".
+//!
+//! [`foundations::accessibility::voiceover`]: crate::foundations::accessibility::voiceover
+//! [`AccessibleExt::with_accessibility`]: crate::foundations::accessibility::AccessibleExt::with_accessibility
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
 use crate::foundations::motion::accessible_transition_animation;
@@ -193,6 +223,12 @@ impl RenderOnce for Popover {
             if let Some(handler) = self.on_dismiss {
                 let handler = std::rc::Rc::new(handler);
                 let key_handler = handler.clone();
+                // Bubble-phase Escape handler, same convention as Alert
+                // and Modal. A child that calls `cx.stop_propagation()` on
+                // Escape would suppress this — the crate's own components
+                // don't, and the docblock above ("Escape-dismiss
+                // contract") makes this a documented contract for
+                // consumer-authored content.
                 content_div = content_div.on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if crate::foundations::keyboard::is_escape_key(event) {
                         key_handler(window, cx);
@@ -650,6 +686,13 @@ mod interaction_tests {
         // GPUI's clip pipeline allowed it through. If `anchored()` were
         // removed from `AnchoredOverlay`, the content would lay out inline
         // inside the clip region and this assertion would fail.
+        //
+        // TODO(visual-regression): once the `test-support` harness exposes
+        // post-clip paint geometry (or a golden-image diff), extend this
+        // to assert that the pixels inside `content.bounds` are actually
+        // drawn — which is the real regression the 36aa389 fix addressed.
+        // The structural check below catches the "anchored() removed"
+        // regression but not "paint pipeline re-clips deferred children".
         assert!(
             content.bounds.right() > clip.bounds.right(),
             "content.right() {:?} should exceed clip.right() {:?}",

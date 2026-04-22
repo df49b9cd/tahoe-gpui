@@ -170,7 +170,7 @@ impl GlassMessenger {
             .enumerate()
             .map(|(i, contact)| {
                 cx.new(|cx| {
-                    let mut hc = HoverCard::new(format!("hc-{i}"));
+                    let mut hc = HoverCard::new(format!("hc-{i}"), cx);
                     let (h, s, l) = contact.color;
                     hc.set_trigger(
                         move |_cx| {

@@ -33,7 +33,7 @@
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, Corner, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, Size, Style, Window, anchored,
-    deferred, div, point, prelude::*,
+    deferred, div, point, prelude::*, px,
 };
 
 use crate::foundations::layout::DROPDOWN_SNAP_MARGIN;
@@ -56,9 +56,9 @@ impl OverlayLayer {
     /// [`AnchoredOverlay`].
     pub const DROPDOWN: usize = 1;
     /// Morphing glass surface transitions (see
-    /// `foundations::materials::glass_surface_morph`). Stacks one above
-    /// dropdowns so an in-flight morph doesn't get stamped under a
-    /// simultaneously-opening dropdown.
+    /// [`glass_morph`](crate::foundations::materials::glass_morph)).
+    /// Stacks one above dropdowns so an in-flight morph doesn't get
+    /// stamped under a simultaneously-opening dropdown.
     pub const GLASS_MORPH: usize = 2;
     /// Tooltip surfaces. Stacks above popovers so a tooltip over a
     /// popover's control renders on top.
@@ -258,6 +258,11 @@ impl AnchoredOverlay {
     }
 
     /// Window-edge snap margin. Defaults to [`DROPDOWN_SNAP_MARGIN`] (8pt).
+    ///
+    /// The configured value is an *upper bound*: on compact viewports the
+    /// overlay clamps the effective margin against the viewport's shorter
+    /// side so a wide margin plus a narrow window doesn't shove the
+    /// overlay on top of its trigger.
     pub fn snap_margin(mut self, margin: Pixels) -> Self {
         self.snap_margin = margin;
         self
@@ -441,11 +446,12 @@ impl Element for AnchoredOverlay {
 
         if let Some(raw_content) = raw_content {
             let effective_offset = apply_gap_to_offset(self.offset, self.gap, realised);
+            let effective_snap_margin = clamp_snap_margin(self.snap_margin, window_size);
             let mut anchored_content = build_overlay_subtree(
                 raw_content,
                 realised,
                 effective_offset,
-                self.snap_margin,
+                effective_snap_margin,
                 self.priority,
                 self.occlude,
                 trigger_bounds,
@@ -571,6 +577,31 @@ fn apply_gap_to_offset(
     point(base.x, base.y + signed)
 }
 
+/// Clamp the configured snap margin against the viewport so a compact
+/// window (Stage Manager tile, narrow inspector, 1/4-width split view)
+/// doesn't eat its own interior.
+///
+/// The rule: the snap margin may consume at most ~3% of the viewport's
+/// shorter side. On a 1200 pt desktop window that lets the full 8 pt
+/// default through; on a 200 pt compact viewport it floors to ~6 pt, and
+/// on a 40 pt sliver it floors to ~1 pt. The upper bound is the caller's
+/// configured `configured`, so passing a large value (say 16 pt) still
+/// honours that on wide viewports but degrades gracefully on narrow ones.
+fn clamp_snap_margin(configured: Pixels, window_size: Size<Pixels>) -> Pixels {
+    let shorter = window_size.width.min(window_size.height);
+    // `0.03` keeps the default 8 pt intact above a ~267 pt viewport,
+    // which is well below anything macOS or iPadOS would render at.
+    let ceiling = shorter * 0.03;
+    if ceiling <= px(0.0) {
+        return configured;
+    }
+    if configured < ceiling {
+        configured
+    } else {
+        ceiling
+    }
+}
+
 /// Wraps `content` in `deferred(anchored().child(occluded_content))`
 /// ready for layout/prepaint/paint. Positioning falls back to the
 /// anchored element's laid-out origin until `trigger_bounds` is populated
@@ -606,8 +637,8 @@ fn build_overlay_subtree(
 #[cfg(test)]
 mod tests {
     use super::{
-        AnchoredOverlay, OverlayAnchor, apply_gap_to_offset, build_overlay_subtree, realise_anchor,
-        resolve_anchor_point,
+        AnchoredOverlay, OverlayAnchor, apply_gap_to_offset, build_overlay_subtree,
+        clamp_snap_margin, realise_anchor, resolve_anchor_point,
     };
     use core::prelude::v1::test;
     use gpui::{AnyElement, Bounds, Corner, ElementId, IntoElement, Pixels, div, point, px, size};
@@ -1167,5 +1198,103 @@ mod tests {
         overlay.simulate_resolve(Some(trigger), window);
 
         assert_eq!(received.get(), Some(OverlayAnchor::BelowLeft));
+    }
+
+    #[test]
+    fn flip_handles_trigger_extending_past_viewport_bottom() {
+        // Resize-during-animation path: the viewport shrank mid-frame so
+        // the trigger's bottom is below the new viewport height, which
+        // makes `space_below = window.height - trigger.bottom()` negative.
+        // The `> space_preferred * 2.0` comparison must not silently flip
+        // against a negative number (which would always satisfy the check
+        // for preferred Below placements).
+        let window = size(px(100.0), px(100.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(50.0)),
+            size: size(px(20.0), px(150.0)),
+        };
+        // space_above = 50, space_below = -100. Preferred BelowLeft must
+        // flip to AboveLeft because there is strictly no room below.
+        assert_eq!(
+            realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
+            OverlayAnchor::AboveLeft,
+        );
+        // Preferred AboveLeft must stay: negative space_below cannot beat
+        // a positive space_above * 2.0.
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
+            OverlayAnchor::AboveLeft,
+        );
+    }
+
+    #[test]
+    fn flip_handles_trigger_with_negative_origin_y() {
+        // Scrolled-above-viewport path: the trigger sits above the
+        // viewport's top edge (origin.y < 0), so `space_above =
+        // trigger.origin.y` is negative. Preferred AboveLeft must flip
+        // because there is no room above.
+        let window = size(px(100.0), px(100.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(0.0), px(-20.0)),
+            size: size(px(20.0), px(15.0)),
+        };
+        // space_above = -20, space_below = 100 - (-20 + 15) = 105. Flip.
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
+            OverlayAnchor::BelowLeft,
+        );
+    }
+
+    #[test]
+    fn flip_noop_for_zero_sized_trigger() {
+        // Degenerate zero-size trigger (possible during first-frame
+        // bootstrap when layout hasn't run). `space_above + space_below`
+        // should cover the whole viewport; neither side should dominate
+        // by more than 2:1 unless the trigger is far from centre.
+        let window = size(px(100.0), px(100.0));
+        let trigger: Bounds<Pixels> = Bounds {
+            origin: point(px(50.0), px(50.0)),
+            size: size(px(0.0), px(0.0)),
+        };
+        // space_above = 50, space_below = 50. 2:1 check fails (ratio 1:1),
+        // so the preferred placement survives.
+        assert_eq!(
+            realise_anchor(OverlayAnchor::BelowLeft, Some(trigger), window),
+            OverlayAnchor::BelowLeft,
+        );
+        assert_eq!(
+            realise_anchor(OverlayAnchor::AboveLeft, Some(trigger), window),
+            OverlayAnchor::AboveLeft,
+        );
+    }
+
+    #[test]
+    fn clamp_snap_margin_passes_through_on_wide_viewport() {
+        // Default 8 pt margin on a 1200 pt window: shorter-side 0.03 ceiling
+        // is 36 pt, so the 8 pt configured value is returned unchanged.
+        let configured = px(8.0);
+        let window = size(px(1200.0), px(800.0));
+        assert_eq!(clamp_snap_margin(configured, window), configured);
+    }
+
+    #[test]
+    fn clamp_snap_margin_floors_on_compact_viewport() {
+        // 8 pt margin on a 200 pt-wide compact viewport: 3% of 200 = 6 pt,
+        // which is under the configured 8 pt — so the margin clamps to 6 pt.
+        let configured = px(8.0);
+        let window = size(px(200.0), px(800.0));
+        assert_eq!(clamp_snap_margin(configured, window), px(6.0));
+    }
+
+    #[test]
+    fn clamp_snap_margin_preserves_configured_on_degenerate_viewport() {
+        // Zero-size viewport (shouldn't happen in practice, but defensive
+        // against first-frame-before-layout). The ceiling is 0; rather
+        // than collapsing to 0 we fall through to the configured value —
+        // `anchored()` will snap against whatever viewport it finds at
+        // paint time.
+        let configured = px(8.0);
+        let window = size(px(0.0), px(0.0));
+        assert_eq!(clamp_snap_margin(configured, window), configured);
     }
 }

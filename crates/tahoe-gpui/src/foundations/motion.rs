@@ -97,14 +97,14 @@ impl SpringPreset {
 
 /// Motion tokens for Liquid Glass per HIG.
 ///
-/// The three `*_duration_ms` fields correspond to the [`MotionRamp`] ladder
+/// The `*_duration_ms` fields correspond to the [`MotionRamp`] ladder
 /// (short / medium / long) but carry Glass-specific names for historical
 /// reasons. Prefer reading via [`MotionTokens::duration_for`] so theme
 /// overrides propagate.
 ///
-/// Cheap to copy: three `u64` duration fields plus three `f32` spring
-/// parameters. `Copy` lets callers store a token snapshot in a closure
-/// without a visible `.clone()` at every capture site.
+/// All fields are `Copy` primitives, so callers can capture a token
+/// snapshot into a closure without a visible `.clone()` at the capture
+/// site.
 #[derive(Debug, Clone, Copy)]
 pub struct MotionTokens {
     /// Flex response press/release duration in ms (semantic: short ramp).
