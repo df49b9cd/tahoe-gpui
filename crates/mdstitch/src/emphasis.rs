@@ -52,9 +52,11 @@ fn should_skip_asterisk(text: &str, index: usize, prev: u8, next: u8) -> bool {
     }
 
     // Asymmetric: SOF is ws (so "* foo" stays a list bullet); EOF is not
-    // (so our own trailing `*` remains countable as a closer).
-    let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-    let next_ws = matches!(next, b' ' | b'\t' | b'\n');
+    // (so our own trailing `*` remains countable as a closer). CommonMark
+    // treats `\r`, `\n`, and `\r\n` as line terminators, so `\r` flanks
+    // like `\n` here.
+    let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+    let next_ws = matches!(next, b' ' | b'\t' | b'\n' | b'\r');
     if prev_ws && next_ws {
         return true;
     }
@@ -422,8 +424,8 @@ fn find_first_single_asterisk_index_with_ranges(
             }
 
             // Asymmetric: SOF is ws, EOF is not — see should_skip_asterisk.
-            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n');
-            let next_ws = matches!(next, b' ' | b'\t' | b'\n');
+            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+            let next_ws = matches!(next, b' ' | b'\t' | b'\n' | b'\r');
             if prev_ws && next_ws {
                 i += 1;
                 continue;
@@ -683,6 +685,38 @@ pub(crate) fn handle_italic_asterisk_with_ranges<'a>(
     if count % 2 == 1 {
         if ends_with_odd_backslashes(text) {
             return Cow::Borrowed(text);
+        }
+        // A trailing `***` run already contains a `*` that can serve as the
+        // italic closer. Appending another `*` extends the run; the new byte
+        // has `prev == '*'` so the counter ignores it, the count stays odd,
+        // and the next pass appends again — violating idempotency.
+        if text.ends_with("***") {
+            return Cow::Borrowed(text);
+        }
+        // When text ends with `**` that closes a balanced bold pair AND the
+        // orphan `*` is right-flanking only (prev=non-ws, next=ws/EOF — it
+        // can close but not open emphasis), appending `*` at EOF would turn
+        // the bold closer into `***` with no opener to pair with. On the
+        // next pass italic-underscore may insert `_` before the `**`,
+        // restoring a trailing `**` that re-triggers this branch and
+        // appends again — breaking idempotency. Leave literal `*` alone.
+        if text.ends_with("**") && count_double_asterisks(text).is_multiple_of(2) {
+            let bytes = text.as_bytes();
+            let prev = if first_idx > 0 {
+                bytes[first_idx - 1]
+            } else {
+                0
+            };
+            let next = if first_idx + 1 < bytes.len() {
+                bytes[first_idx + 1]
+            } else {
+                0
+            };
+            let prev_ws = prev == 0 || matches!(prev, b' ' | b'\t' | b'\n' | b'\r');
+            let next_ws = next == 0 || matches!(next, b' ' | b'\t' | b'\n' | b'\r');
+            if !prev_ws && next_ws {
+                return Cow::Borrowed(text);
+            }
         }
         return cow_append(text, "*");
     }

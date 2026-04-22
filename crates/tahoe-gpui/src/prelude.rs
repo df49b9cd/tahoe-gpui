@@ -5,7 +5,7 @@
 //! foundations types most host apps rely on. Organized by HIG taxonomy so
 //! coverage gaps are easy to spot.
 //!
-//! Stub modules (Chart, WebView, TabView, ColumnView, Lockup,
+//! Stub modules (WebView, TabView, ColumnView, Lockup,
 //! VirtualKeyboard, Ornament, and the `system_experiences` surface) do not
 //! re-export anything — they only carry HIG documentation URLs today.
 
@@ -25,14 +25,20 @@ pub use crate::foundations::layout::{
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
 pub use crate::foundations::theme::{
-    ActiveTheme, GlassSize, SurfaceContext, TahoeTheme, TextStyle, TextStyledExt,
+    ActiveTheme, FontDesign, GlassSize, LabelLevel, LeadingStyle, SurfaceContext, TahoeTheme,
+    TextStyle, TextStyledExt,
 };
 
 // ── Components > Content ───────────────────────────────────────────────────
 
 pub use crate::components::content::{
-    Avatar, AvatarSize, AvatarStatus, Badge, BadgeVariant, ContentMode, Label, LabelVariant,
-    TextView,
+    AnnotationContent, AnnotationPosition, AnnotationTarget, Avatar, AvatarSize, AvatarStatus,
+    AxisConfig, AxisDescriptor, AxisMarks, AxisPosition, AxisTickStyle, AxisValueFormatter, Badge,
+    BadgeVariant, BarOrientation, CategoryScale, Chart, ChartAnnotation, ChartDataSeries,
+    ChartDataSet, ChartDescriptor, ChartPoint, ChartScrollConfig, ChartSeries, ChartType,
+    ChartView, ContentMode, DateScale, GridLineStyle, GridlineConfig, InterpolationMethod, Label,
+    LabelVariant, LegendPosition, LinearScale, LogScale, MarkStackingMethod, PlottableValue, Scale,
+    SelectedPoint, SelectionBinding, SeriesDescriptor, TextView,
 };
 
 // ── Components > Layout and organization ───────────────────────────────────
@@ -78,6 +84,7 @@ pub use crate::components::selection_and_input::{
     TextContentType, TextField, TextFieldStyle, TextFieldValidation, TimePicker, TimePickerStyle,
     Toggle, ToggleSize,
 };
+pub use crate::foundations::accessibility::A11yTextContentType;
 
 // ── Components > Status ────────────────────────────────────────────────────
 
@@ -109,4 +116,4 @@ pub use crate::citation::{CitationSource, InlineCitation};
 
 // ── Keybindings ────────────────────────────────────────────────────────────
 
-pub use crate::{all_keybindings, text_keybindings, textfield_keybindings};
+pub use crate::{all_keybindings, text_keybindings, textfield_keybindings, textview_keybindings};

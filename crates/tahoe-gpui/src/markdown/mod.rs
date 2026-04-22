@@ -4,7 +4,7 @@
 //! it as a GPUI element tree. Designed for streaming AI responses where
 //! text arrives as deltas.
 //!
-//! Uses [`remend`] for auto-completing incomplete markdown syntax during
+//! Uses [`mdstitch`] for auto-completing incomplete markdown syntax during
 //! streaming, and provides word-level fade-in animation.
 //!
 //! # Heading anchors
@@ -17,9 +17,6 @@
 //! [`StreamingMarkdown::with_anchor_click`]. See
 //! [`StreamingMarkdown::with_anchor_click`] for the exact scroll contract and
 //! accessibility / motion caveats.
-
-use gpui::{App, Window};
-use std::rc::Rc;
 
 pub mod animation;
 pub mod caret;
@@ -43,19 +40,9 @@ pub use renderer::{
     GenerativeLoadingState, MarkdownSecurity, StreamingMarkdown, render_block,
     render_block_at_depth,
 };
+pub use selectable_text::AnchorClickHandler;
 pub use selection::MarkdownSelection;
 pub use settings::StreamSettings;
-
-/// Handler invoked when a reader clicks a `#fragment` link in rendered
-/// markdown. The first argument is the fragment string with the leading
-/// `#` stripped and any percent-encoding already decoded — it matches the
-/// slug stored on [`parser::MarkdownBlock::Heading::anchor_id`]. The
-/// `Window` and `App` handles are the same contexts a mouse handler
-/// receives, so the handler may call `cx.notify`, adjust a
-/// [`gpui::ScrollHandle`], or update host-level state.
-///
-/// Installed via [`StreamingMarkdown::with_anchor_click`].
-pub type AnchorClickHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 /// Element-id prefix emitted by the renderer for every addressable
 /// heading. The full id is `{HEADING_ID_PREFIX}{slug}` where `slug` comes

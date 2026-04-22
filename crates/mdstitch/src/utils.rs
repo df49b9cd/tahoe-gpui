@@ -156,13 +156,22 @@ pub fn is_part_of_triple_backtick(text: &str, pos: usize) -> bool {
 }
 
 /// Counts single backticks that are not part of triple backticks or escaped.
+///
+/// A backslash pairs with the following byte, so runs of backslashes
+/// resolve correctly: `\\` is an escaped backslash that leaves a
+/// subsequent `` ` `` unescaped, whereas `\` `` `` (odd backslash run)
+/// consumes the backtick.  The previous implementation only recognized
+/// `` \` `` as an escape pattern and therefore mis-counted strings like
+/// `` `>\\` `` as having an unclosed backtick — that broke idempotency
+/// in the inline-code completer.
 pub fn count_single_backticks(text: &str) -> usize {
     let bytes = text.as_bytes();
     let mut count = 0;
     let mut i = 0;
     while i < bytes.len() {
-        // Skip escaped backticks.
-        if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'`' {
+        if bytes[i] == b'\\' {
+            // Skip this backslash and whatever it pairs with.  Past the
+            // end of the string `i += 2` simply exits the loop.
             i += 2;
             continue;
         }

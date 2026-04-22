@@ -1,6 +1,7 @@
 //! Incomplete code fence and table detection for streaming markdown.
 //!
-//! Ported from Streamdown's `incomplete-code-utils.ts`.
+//! Detects unclosed fences (CommonMark §4.5) and GFM table delimiter rows so
+//! the downstream parser can keep or release code-block styling mid-stream.
 
 use crate::fence::FenceScanner;
 

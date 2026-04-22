@@ -30,6 +30,7 @@ pub mod right_to_left;
 pub mod sf_symbols;
 pub mod spatial_layout;
 pub mod surface_scope;
+pub mod text_truncation;
 pub mod theme;
 pub mod typography;
 pub mod writing;

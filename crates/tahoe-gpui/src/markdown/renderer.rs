@@ -382,7 +382,7 @@ pub struct StreamingMarkdown {
 }
 
 impl StreamingMarkdown {
-    /// Creates a new streaming markdown renderer (remend disabled).
+    /// Creates a new streaming markdown renderer (mdstitch disabled).
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             parser: IncrementalMarkdownParser::new(),
@@ -400,10 +400,10 @@ impl StreamingMarkdown {
         }
     }
 
-    /// Creates a new streaming markdown renderer with remend preprocessing.
-    pub fn with_remend(options: remend::RemendOptions, cx: &mut Context<Self>) -> Self {
+    /// Creates a new streaming markdown renderer with mdstitch preprocessing.
+    pub fn with_stitch(options: mdstitch::StitchOptions, cx: &mut Context<Self>) -> Self {
         Self {
-            parser: IncrementalMarkdownParser::with_remend(options),
+            parser: IncrementalMarkdownParser::with_stitch(options),
             is_streaming: false,
             loading_state: GenerativeLoadingState::Idle,
             citation_ctx: CitationContext::default(),
@@ -547,7 +547,7 @@ impl StreamingMarkdown {
         cx.notify();
     }
 
-    /// Marks the stream as finished. Re-parses without remend since the
+    /// Marks the stream as finished. Re-parses without mdstitch since the
     /// complete text should have valid syntax.
     pub fn finish(&mut self, cx: &mut Context<Self>) {
         self.parser.finish();
@@ -592,7 +592,7 @@ impl StreamingMarkdown {
     }
 
     /// Returns the detected text direction.
-    pub fn text_direction(&self) -> remend::TextDirection {
+    pub fn text_direction(&self) -> mdstitch::TextDirection {
         self.parser.text_direction()
     }
 

@@ -39,7 +39,7 @@ crates/
 │   ├── workflow/, voice/
 │   └── citation.rs, text_actions.rs
 │
-└── remend/              # Streaming Markdown preprocessor
+└── mdstitch/            # Streaming Markdown preprocessor
                          # Auto-completes incomplete syntax during
                          # token-by-token streaming.
 ```
@@ -85,7 +85,7 @@ cargo nextest run
 
 # Single-crate tests
 cargo nextest run -p tahoe-gpui
-cargo nextest run -p remend
+cargo nextest run -p mdstitch
 
 # Dependency audit
 cargo deny check
@@ -113,7 +113,7 @@ cargo run -p tahoe-gpui --example voice_demo --features voice
 
 - **Unit tests**: `#[cfg(test)] mod tests` at the bottom of the source file.
 - **GPUI tests**: `use core::prelude::v1::test;` at the top of the test module to override gpui's `#[test]` macro.
-- **Property tests**: `proptest!` macro (see `remend` and streaming-Markdown tests).
+- **Property tests**: `proptest!` macro (see `mdstitch` and streaming-Markdown tests).
 - **Visual regression**: `tahoe-gpui` `test-support` feature renders components to `RenderImage` bitmaps and diffs against goldens.
 - **No glob imports in tests** — always spell out `use crate::foo::{Bar, Baz};`.
 
@@ -171,7 +171,7 @@ docs(hig): sync Presentation page against the Apr 2026 HIG revision
 perf(code): cache tree-sitter highlight grammars across renders
 ```
 
-Common scopes: `foundations`, `components`, `markdown`, `code`, `theme`, `materials`, `voice`, `workflow`, `remend`.
+Common scopes: `foundations`, `components`, `markdown`, `code`, `theme`, `materials`, `voice`, `workflow`, `mdstitch`.
 
 ## PR Description Requirements
 
