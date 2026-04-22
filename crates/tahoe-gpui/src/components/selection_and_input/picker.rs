@@ -6,7 +6,6 @@
 use crate::callback_types::{OnSharedStringRefChange, OnToggle, rc_wrap};
 use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::components::selection_and_input::segmented_control::{SegmentItem, SegmentedControl};
-use crate::foundations::OverlayLayer;
 use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
 };
@@ -15,11 +14,12 @@ use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
     apply_focus_ring, apply_standard_control_styling, glass_surface,
 };
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent, SharedString, Window,
-    deferred, div, px,
+    div, px,
 };
 use std::rc::Rc;
 
@@ -951,9 +951,6 @@ impl RenderOnce for Picker {
             });
         }
 
-        // ── Container (trigger + optional dropdown) ─────────────────────────
-        let mut container = div().relative().child(trigger);
-
         // In Inline style the list is always open — it lives directly
         // under the trigger row instead of in a floating dropdown.
         // Segmented / Radio / Wheel / Palette all return above, so the
@@ -966,6 +963,11 @@ impl RenderOnce for Picker {
             _ => self.is_open,
         };
 
+        // Build the list element if visible; assembly into either a flow
+        // container (Inline) or an `AnchoredOverlay` (Menu) happens after
+        // the build block so the list-construction logic stays unchanged.
+        let mut list_el: Option<gpui::AnyElement> = None;
+
         if is_list_visible {
             let highlighted_index = self.highlighted_index;
             let item_count = flat_items.len();
@@ -976,22 +978,19 @@ impl RenderOnce for Picker {
 
             // ── Dropdown list ───────────────────────────────────────────────
             // Inline mode renders the list flow-positioned directly below
-            // the trigger (no `.absolute()`, no max-height clamp). Menu
-            // mode keeps the floating glass dropdown positioned by
-            // `theme.dropdown_top()`.
+            // the trigger (no max-height clamp, full width of the
+            // container). Menu mode is wrapped in `AnchoredOverlay` at
+            // assembly time — the list body just carries the max-height
+            // and the glass surface; positioning is owned by the overlay.
             let mut list_container = div().flex().flex_col().overflow_hidden();
             if style == PickerStyle::Inline {
                 list_container = list_container.w_full();
             } else {
-                list_container = list_container
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
-                    .w_full()
-                    .max_h(px(DROPDOWN_MAX_HEIGHT));
+                list_container = list_container.max_h(px(DROPDOWN_MAX_HEIGHT));
             }
             let mut list = glass_surface(list_container, theme, GlassSize::Medium)
                 .id(ElementId::from((self.id.clone(), "dropdown")))
+                .debug_selector(|| "picker-dropdown".into())
                 .focusable();
 
             // Keyboard nav: Up/Down/Enter/Home/End/Escape
@@ -1156,21 +1155,35 @@ impl RenderOnce for Picker {
                 list = list.child(row);
             }
 
-            if style == PickerStyle::Inline {
-                // Inline: the list participates in normal flow below
-                // the trigger — no deferred layer, no absolute positioning.
-                container = container.child(list);
-            } else {
-                // TODO(overlay-migration): port the non-inline picker to
-                // `AnchoredOverlay` so the list escapes parent
-                // `overflow_hidden()` clipping.
-                container = container.child(deferred(list).with_priority(OverlayLayer::DROPDOWN));
-            }
+            list_el = Some(list.into_any_element());
         }
 
+        // Assemble trigger + (optional) list. Inline keeps the normal-
+        // flow layout the legacy code had; Menu uses `AnchoredOverlay`
+        // so the dropdown escapes parent `overflow_hidden()` clipping
+        // and picks up the primitive's snap-margin + flip-on-overflow.
+        let body: gpui::AnyElement = if style == PickerStyle::Inline {
+            let mut c = div().relative().child(trigger);
+            if let Some(list) = list_el {
+                c = c.child(list);
+            }
+            c.into_any_element()
+        } else {
+            let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+            let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+                .anchor(OverlayAnchor::BelowLeft)
+                .gap(theme.dropdown_offset);
+            if let Some(list) = list_el {
+                overlay = overlay.content(list);
+            }
+            overlay.into_any_element()
+        };
+
         // Group-level VoiceOver landmark for Menu + Inline styles. The
-        // outer container wraps the trigger (and dropdown, when open), so
-        // the label reads before VoiceOver descends into either child.
+        // wrapper div carries the group role so VoiceOver announces it
+        // before descending into the trigger + dropdown children. The
+        // accessibility metadata can't live on `AnchoredOverlay` itself
+        // (the primitive is a custom `Element`, not an `InteractiveElement`).
         let mut group_props = AccessibilityProps::new().role(AccessibilityRole::Group);
         if let Some(label) = self.accessibility_label {
             group_props = group_props.label(label);
@@ -1178,9 +1191,10 @@ impl RenderOnce for Picker {
         if let Some(value) = selected_label {
             group_props = group_props.value(value);
         }
-        container = container.with_accessibility(&group_props);
-
-        container.into_any_element()
+        div()
+            .with_accessibility(&group_props)
+            .child(body)
+            .into_any_element()
     }
 }
 
@@ -1616,5 +1630,59 @@ mod tests {
             host.group.focus_last(window, cx);
             assert!(host.handles[TOTAL_TILES - 1].is_focused(window));
         });
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{Picker, PickerItem, PickerStyle};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Mirrors the PopupButton clip-escape pattern: the non-inline
+    /// picker dropdown must anchor past the parent clip region.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(160.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        Picker::new("picker")
+                            .items(vec![
+                                PickerItem::new("Alpha", "a"),
+                                PickerItem::new("Beta", "b"),
+                                PickerItem::new("Gamma", "c"),
+                            ])
+                            .style(PickerStyle::Menu)
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn menu_style_dropdown_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("picker-dropdown");
+
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }

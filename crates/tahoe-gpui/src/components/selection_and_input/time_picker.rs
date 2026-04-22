@@ -7,14 +7,14 @@
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, FontWeight, KeyDownEvent, MouseDownEvent, SharedString, Window,
-    deferred, div, px,
+    div, px,
 };
 
 use crate::callback_types::{OnTimeChange, OnToggle, rc_wrap};
-use crate::foundations::OverlayLayer;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
@@ -467,8 +467,15 @@ impl RenderOnce for TimePicker {
             });
         }
 
+        // Compact defers the trigger into an `AnchoredOverlay` at the
+        // end; other styles consume it into `container_root`.
+        let mut trigger_opt = Some(trigger);
+
         // ── StepperField variant: trigger + ± stepper buttons ──────────────
         let container_root = if matches!(style, TimePickerStyle::StepperField) {
+            let t = trigger_opt
+                .take()
+                .expect("trigger available for StepperField");
             let step = self.minute_granularity.max(1) as i32;
             let hour_now = self.hour;
             let minute_now = self.minute;
@@ -501,15 +508,21 @@ impl RenderOnce for TimePicker {
                 .flex_row()
                 .items_center()
                 .gap(theme.spacing_sm)
-                .child(div().flex_grow().child(trigger))
+                .child(div().flex_grow().child(t))
                 .child(dec_btn)
                 .child(inc_btn)
+        } else if matches!(style, TimePickerStyle::Compact) {
+            // Trigger stays in `trigger_opt` for AnchoredOverlay.
+            div()
         } else {
-            div().relative().child(trigger)
+            // Field
+            let t = trigger_opt.take().expect("trigger available for Field");
+            div().relative().child(t)
         };
 
         // ── Container ──────────────────────────────────────────────────────
-        let mut container = container_root;
+        let container = container_root;
+        let mut dropdown_el: Option<gpui::AnyElement> = None;
 
         // Only `Compact` shows the popover; `Field` / `StepperField` are
         // text-entry surfaces and ignore `is_open`.
@@ -716,15 +729,13 @@ impl RenderOnce for TimePicker {
 
             let mut dropdown = glass_surface(
                 div()
-                    .absolute()
-                    .left_0()
-                    .top(theme.dropdown_top())
                     .w(px(if use_24h { 136.0 } else { 188.0 }))
                     .overflow_hidden(),
                 theme,
                 GlassSize::Medium,
             )
             .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "time-picker-dropdown".into())
             .focusable();
 
             // Keyboard nav: Up/Down/Left/Right/Enter/Escape.
@@ -825,13 +836,27 @@ impl RenderOnce for TimePicker {
             }
 
             dropdown = dropdown.child(dropdown_content);
-
-            // TODO(overlay-migration): port to `AnchoredOverlay` so the
-            // dropdown escapes parent `overflow_hidden()` clipping.
-            container = container.child(deferred(dropdown).with_priority(OverlayLayer::DROPDOWN));
+            dropdown_el = Some(dropdown.into_any_element());
         }
 
-        container.into_any_element()
+        // Assemble: Compact uses `AnchoredOverlay` so the time popover
+        // escapes parent `overflow_hidden()`; Field and StepperField
+        // render container_root directly.
+        if matches!(style, TimePickerStyle::Compact) {
+            let trigger = trigger_opt
+                .take()
+                .expect("trigger reserved for Compact AnchoredOverlay");
+            let overlay_id = ElementId::from((self.id.clone(), "overlay"));
+            let mut overlay = AnchoredOverlay::new(overlay_id, trigger)
+                .anchor(OverlayAnchor::BelowLeft)
+                .gap(theme.dropdown_offset);
+            if let Some(dropdown) = dropdown_el {
+                overlay = overlay.content(dropdown);
+            }
+            overlay.into_any_element()
+        } else {
+            container.into_any_element()
+        }
     }
 }
 
@@ -1435,5 +1460,54 @@ mod tests {
     #[test]
     fn shift_minutes_wraps_midnight_backward() {
         assert_eq!(shift_minutes(0, 0, -5), (23, 55));
+    }
+}
+
+#[cfg(test)]
+mod clip_escape_tests {
+    use gpui::prelude::*;
+    use gpui::{Context, IntoElement, Render, TestAppContext, div, px};
+
+    use super::{TimePicker, TimePickerStyle};
+    use crate::test_helpers::helpers::{LocatorExt, setup_test_window};
+
+    /// Compact time picker with an open popover must anchor outside the
+    /// parent clip region.
+    struct ClipEscapeHarness;
+
+    impl Render for ClipEscapeHarness {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl IntoElement {
+            div().pt(px(120.0)).pl(px(40.0)).child(
+                div()
+                    .debug_selector(|| "clip-region".into())
+                    .w(px(120.0))
+                    .h(px(32.0))
+                    .overflow_hidden()
+                    .child(
+                        TimePicker::new("time-picker")
+                            .style(TimePickerStyle::Compact)
+                            .open(true),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    async fn compact_time_popover_anchors_outside_parent_clip(cx: &mut TestAppContext) {
+        let (_host, cx) = setup_test_window(cx, |_window, _cx| ClipEscapeHarness);
+
+        let clip = cx.get_element("clip-region");
+        let dropdown = cx.get_element("time-picker-dropdown");
+
+        assert!(
+            dropdown.bounds.top() >= clip.bounds.bottom(),
+            "dropdown.top() {:?} should be at or below clip.bottom() {:?}",
+            dropdown.bounds.top(),
+            clip.bounds.bottom(),
+        );
     }
 }
