@@ -46,6 +46,12 @@ follow SemVer once the crate reaches 1.0.
   `&TahoeTheme` argument, and `Icon::resolved_stroke_width` no longer takes one
   either. Both derive their result from the surface scope, not the theme.
   Call sites inside this crate and the two in-repo examples have been updated.
+- `LeadingStyle::Tight` / `LeadingStyle::Loose` now scale leading by
+  ±15% proportionally (`× 0.85` / `× 1.15`) instead of a flat ±2 pt
+  offset. The proportional delta keeps tight/loose visually consistent
+  across all [`TextStyle`] sizes — a 2 pt reduction on Body's 16 pt
+  leading was 12.5%, but only 6.25% on LargeTitle's 32 pt. Callers
+  relying on the exact pt delta will see different pixel values.
 
 ### Behavioural change (source-compatible but visible)
 

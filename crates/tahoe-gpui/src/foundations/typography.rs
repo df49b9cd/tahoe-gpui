@@ -442,13 +442,16 @@ impl TextStyleAttrs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LeadingStyle {
     /// Tighter line spacing for constrained areas (list rows, compact UI).
-    /// Reduces leading by ~2pt.
+    /// Scales leading by `0.85` (~15% tighter) so the delta stays
+    /// proportional across all [`TextStyle`] sizes — see
+    /// [`TextStyleAttrs::with_leading`] for the rationale.
     Tight,
     /// Default HIG leading for the text style.
     #[default]
     Standard,
     /// Looser line spacing for wide columns and long passages.
-    /// Increases leading by ~2pt.
+    /// Scales leading by `1.15` (~15% looser) so the delta stays
+    /// proportional across all [`TextStyle`] sizes.
     Loose,
 }
 

@@ -194,6 +194,10 @@ pub fn render(
             TextView::new("Quaternary text — watermark or placeholder-level content.")
                 .label_level(LabelLevel::Quaternary),
         )
+        .child(
+            TextView::new("Quinary text — the lightest HIG label tier (macOS Tahoe).")
+                .label_level(LabelLevel::Quinary),
+        )
         // ── Disabled ───────────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))
         .child(

@@ -47,7 +47,8 @@ pub enum LabelLevel {
     Tertiary,
     /// Quaternary/watermark text — `theme.text_quaternary()` (semantic `quaternaryLabel`).
     Quaternary,
-    /// Quinary text (macOS Tahoe / iOS 26) — `theme.text_quinary()` (semantic `quinaryLabel`).
+    /// Quinary text (macOS Tahoe; iOS equivalent where available) —
+    /// `theme.text_quinary()` (semantic `quinaryLabel`).
     Quinary,
 }
 
@@ -73,6 +74,33 @@ impl LabelLevel {
 /// provide a built-in selection API, but the crate implements it from scratch
 /// using raw mouse events, `TextLayout` hit-testing, and `window.paint_quad`,
 /// matching the approach Zed's editor uses.
+///
+/// # Capabilities
+///
+/// - Content: plain [`SharedString`] or rich [`StyledText`] via
+///   [`Self::styled_text`].
+/// - Typography: [`Self::text_style`], [`Self::emphasize`],
+///   [`Self::font_design`], [`Self::leading_style`].
+/// - Layout: [`Self::max_lines`] (line-clamp),
+///   [`Self::readable_width`] (544 pt cap scaled by Dynamic Type),
+///   [`Self::scrollable`] (vertical scroll), [`Self::text_align`].
+/// - State / color: [`Self::disabled`], [`Self::color`] (explicit),
+///   [`Self::label_level`] (semantic HIG hierarchy).
+/// - Accessibility: [`Self::accessibility_label`] override for rich-text
+///   content.
+///
+/// # Color precedence
+///
+/// `disabled()` &gt; `color()` &gt; `label_level()` &gt; default `theme.text`.
+/// The first set wins — e.g. `disabled(true).color(red)` still renders
+/// with `theme.text_disabled()`.
+///
+/// # Layout precedence
+///
+/// `max_lines()` and `scrollable()` are mutually exclusive: clamped content
+/// cannot scroll because its height is already bounded by GPUI's
+/// `line_clamp`. When both are set, `max_lines()` wins and a one-shot
+/// debug-build warning fires via `tracing`.
 #[derive(IntoElement)]
 pub struct TextView {
     content: TextViewContent,
@@ -89,6 +117,7 @@ pub struct TextView {
     text_align: Option<TextAlign>,
     scroll_id: Option<ElementId>,
     readable_width: bool,
+    accessibility_label: Option<SharedString>,
 }
 
 impl TextView {
@@ -107,6 +136,7 @@ impl TextView {
             text_align: None,
             scroll_id: None,
             readable_width: false,
+            accessibility_label: None,
         }
     }
 
@@ -192,6 +222,12 @@ impl TextView {
     /// HIG: "text within a text view is aligned to the leading edge" by
     /// default, but centered or trailing alignment may be appropriate in
     /// specific contexts.
+    ///
+    /// Prefer leading alignment for running paragraphs — centered or
+    /// right-aligned body copy breaks scanning rhythm. Reserve
+    /// [`TextAlign::Center`] for short decorative labels (a single headline
+    /// over a hero image) and [`TextAlign::Right`] for tabular right-aligned
+    /// numerics.
     pub fn text_align(mut self, align: TextAlign) -> Self {
         self.text_align = Some(align);
         self
@@ -199,21 +235,34 @@ impl TextView {
 
     /// Enable vertical scrolling when the text content is taller than the
     /// view. Requires an [`ElementId`] because GPUI tracks scroll state
-    /// per-element. Follows the same pattern as
-    /// [`crate::components::presentation::ScrollView`].
+    /// per-element.
     ///
     /// No-op when [`Self::max_lines`] is also set — clamped content cannot
-    /// scroll because it is already height-constrained by GPUI's
-    /// `line_clamp`.
+    /// scroll because its height is already bounded by GPUI's `line_clamp`.
+    /// Combining the two emits a one-shot `tracing::warn!` in debug builds
+    /// so the silent no-op is visible.
     pub fn scrollable(mut self, id: impl Into<ElementId>) -> Self {
         self.scroll_id = Some(id.into());
         self
     }
 
     /// Constrain the view to the HIG readable-content optimal width
-    /// (544 pt) for comfortable long-form reading.
+    /// ([`READABLE_OPTIMAL_WIDTH`], 544 pt) for comfortable long-form
+    /// reading. Scales with Dynamic Type via
+    /// [`TahoeTheme::effective_font_scale_factor`] so the column widens
+    /// proportionally when the user enables a Larger Text accessibility
+    /// mode.
     pub fn readable_width(mut self) -> Self {
         self.readable_width = true;
+        self
+    }
+
+    /// Override the VoiceOver label. Defaults to the plain-text content
+    /// for [`TextViewContent::Plain`]; [`TextViewContent::Rich`] content
+    /// has no automatic label and relies on this override to stay
+    /// accessible.
+    pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessibility_label = Some(label.into());
         self
     }
 }
@@ -222,8 +271,8 @@ impl RenderOnce for TextView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        if cfg!(debug_assertions) && self.selectable {
-            warn_once_selectable_unimplemented(std::panic::Location::caller());
+        if self.selectable {
+            warn_selectable_unimplemented_once();
         }
 
         // Pick the correct TextStyledExt method based on emphasize × font_design.
@@ -282,15 +331,22 @@ impl RenderOnce for TextView {
         }
 
         if self.readable_width {
-            el = el.max_w(gpui::px(READABLE_OPTIMAL_WIDTH));
+            // Scale the optimal width by Dynamic Type so Larger-Text
+            // accessibility modes keep ~65 characters per line.
+            let scale = theme.effective_font_scale_factor();
+            el = el.max_w(gpui::px(READABLE_OPTIMAL_WIDTH * scale));
         }
 
         // Accessibility role — currently a no-op in GPUI but declares intent.
+        // Label resolution: explicit override > plain-text content > none
+        // (rich content has no reliable auto-label; see the Rich arm of
+        // TextViewContent).
         let mut a11y = AccessibilityProps::new().role(AccessibilityRole::StaticText);
-        if let TextViewContent::Plain(ref text) = self.content {
+        if let Some(ref label) = self.accessibility_label {
+            a11y = a11y.label(label.clone());
+        } else if let TextViewContent::Plain(ref text) = self.content {
             a11y = a11y.label(text.clone());
         }
-        el = el.with_accessibility(&a11y);
 
         el = match self.content {
             TextViewContent::Plain(text) => el.child(text),
@@ -298,38 +354,66 @@ impl RenderOnce for TextView {
         };
 
         // Wrap in a scrollable container when an id is provided and no
-        // line_clamp is active (clamped content cannot scroll).
-        let should_scroll = self.scroll_id.is_some() && self.max_lines.is_none();
-        if should_scroll {
-            div()
-                .id(self.scroll_id.unwrap())
+        // line_clamp is active (clamped content cannot scroll). Attach a11y
+        // to the outermost element so VoiceOver reports the full bounding
+        // region, including the scroll viewport.
+        match (self.scroll_id, self.max_lines.is_some()) {
+            (Some(id), false) => div()
+                .id(id)
                 .overflow_y_scroll()
                 .child(el)
-                .into_any_element()
-        } else {
-            el.into_any_element()
+                .with_accessibility(&a11y)
+                .into_any_element(),
+            (Some(_), true) => {
+                warn_scrollable_with_max_lines_once();
+                el.with_accessibility(&a11y).into_any_element()
+            }
+            (None, _) => el.with_accessibility(&a11y).into_any_element(),
         }
     }
 }
 
-/// Emits at most one stderr warning per process when `.selectable(true)` is
+/// Emits at most one `tracing::warn!` per process when `.selectable(true)` is
 /// called on a `TextView`, reminding developers that selection is not yet
-/// implemented.
-fn warn_once_selectable_unimplemented(loc: &'static std::panic::Location<'static>) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static WARNED: AtomicBool = AtomicBool::new(false);
-    if WARNED.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    eprintln!(
-        "[tahoe-gpui] TextView::selectable(true) at {}:{} — text selection \
-         is not yet implemented; the field is stored for future use. \
-         See the struct-level doc for the implementation path. \
-         (This warning fires once per process.)",
-        loc.file(),
-        loc.line(),
-    );
+/// implemented. Debug builds only — the `cfg(not(debug_assertions))` stub
+/// compiles out in release.
+#[cfg(debug_assertions)]
+fn warn_selectable_unimplemented_once() {
+    use std::sync::OnceLock;
+    static WARNED: OnceLock<()> = OnceLock::new();
+    WARNED.get_or_init(|| {
+        tracing::warn!(
+            target: "tahoe_gpui::text_view",
+            "TextView::selectable(true) — text selection is not yet \
+             implemented; the field is stored for future use. See the \
+             TextView struct-level doc for the implementation path. \
+             Fires once per process."
+        );
+    });
 }
+
+#[cfg(not(debug_assertions))]
+fn warn_selectable_unimplemented_once() {}
+
+/// Emits at most one `tracing::warn!` per process when both
+/// [`TextView::max_lines`] and [`TextView::scrollable`] are set on the same
+/// view. `max_lines` wins; the scroll id is ignored. Debug builds only.
+#[cfg(debug_assertions)]
+fn warn_scrollable_with_max_lines_once() {
+    use std::sync::OnceLock;
+    static WARNED: OnceLock<()> = OnceLock::new();
+    WARNED.get_or_init(|| {
+        tracing::warn!(
+            target: "tahoe_gpui::text_view",
+            "TextView::scrollable() is a no-op when max_lines() is also \
+             set — clamped content cannot scroll. Drop one of the two to \
+             silence this warning. Fires once per process."
+        );
+    });
+}
+
+#[cfg(not(debug_assertions))]
+fn warn_scrollable_with_max_lines_once() {}
 
 #[cfg(test)]
 mod tests {
@@ -360,6 +444,7 @@ mod tests {
         assert!(tv.text_align.is_none());
         assert!(tv.scroll_id.is_none());
         assert!(!tv.readable_width);
+        assert!(tv.accessibility_label.is_none());
     }
 
     #[test]
@@ -487,5 +572,61 @@ mod tests {
         // Both are stored; the render method resolves color > label_level.
         assert_eq!(tv.color, Some(color));
         assert_eq!(tv.label_level, Some(LabelLevel::Secondary));
+    }
+
+    #[test]
+    fn text_view_accessibility_label_builder() {
+        let tv = TextView::new("visible").accessibility_label("alt");
+        assert_eq!(
+            tv.accessibility_label.as_ref().map(|s| s.as_ref()),
+            Some("alt"),
+        );
+    }
+
+    #[test]
+    fn label_level_resolve_all_variants() {
+        use crate::foundations::theme::TahoeTheme;
+        let theme = TahoeTheme::dark();
+
+        assert_eq!(LabelLevel::Primary.resolve(&theme), theme.text);
+        assert_eq!(LabelLevel::Secondary.resolve(&theme), theme.text_muted);
+        assert_eq!(LabelLevel::Tertiary.resolve(&theme), theme.text_tertiary());
+        assert_eq!(
+            LabelLevel::Quaternary.resolve(&theme),
+            theme.text_quaternary(),
+        );
+        assert_eq!(LabelLevel::Quinary.resolve(&theme), theme.text_quinary());
+    }
+
+    #[test]
+    fn label_level_resolve_variants_are_distinct() {
+        use crate::foundations::theme::TahoeTheme;
+        let theme = TahoeTheme::dark();
+        let colors = [
+            LabelLevel::Primary.resolve(&theme),
+            LabelLevel::Secondary.resolve(&theme),
+            LabelLevel::Tertiary.resolve(&theme),
+            LabelLevel::Quaternary.resolve(&theme),
+            LabelLevel::Quinary.resolve(&theme),
+        ];
+        // Each HIG tier resolves to a different color; if two collapse to
+        // the same value, the hierarchy has broken.
+        for (i, a) in colors.iter().enumerate() {
+            for (j, b) in colors.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "variants {i} and {j} collapsed");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn text_view_scrollable_and_max_lines_both_stored() {
+        // Contract: the render method prefers max_lines over scrollable when
+        // both are set. Both fields remain populated on the builder so
+        // introspection tools can detect the combination.
+        let tv = TextView::new("x").scrollable("id").max_lines(3);
+        assert!(tv.scroll_id.is_some());
+        assert_eq!(tv.max_lines, Some(3));
     }
 }
