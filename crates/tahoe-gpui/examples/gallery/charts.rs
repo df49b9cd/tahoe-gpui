@@ -85,7 +85,7 @@ pub fn render(
                     div()
                         .text_style(TextStyle::Title3, theme)
                         .text_color(theme.text)
-                        .child("Area chart (v1: bar fallback)"),
+                        .child("Area chart"),
                 )
                 .child(
                     Chart::new(sales.clone())
@@ -111,7 +111,7 @@ pub fn render(
                     div()
                         .text_style(TextStyle::Title3, theme)
                         .text_color(theme.text)
-                        .child("Rule chart (v1: point fallback)"),
+                        .child("Rule chart"),
                 )
                 .child(
                     Chart::new(trend)

@@ -462,6 +462,51 @@ fn nice_ticks_single_value_range() {
 }
 
 #[test]
+fn nice_ticks_handles_inverted_range() {
+    // Swapping min/max must not change the output beyond tolerance.
+    let forward = nice_ticks(0.0, 100.0, 5);
+    let inverted = nice_ticks(100.0, 0.0, 5);
+    assert_eq!(forward, inverted, "inverted ranges should normalise");
+}
+
+#[test]
+fn nice_ticks_handles_nan_and_infinity() {
+    // All degenerate inputs must terminate and return a finite (possibly
+    // singleton) tick list. Prior to the guard, NaN step sizes drove an
+    // unbounded loop on certain inputs.
+    let cases = [
+        (f32::NAN, 10.0, 5),
+        (0.0, f32::NAN, 5),
+        (f32::INFINITY, 10.0, 5),
+        (0.0, f32::INFINITY, 5),
+        (f32::NEG_INFINITY, f32::INFINITY, 5),
+        (0.0, 10.0, 0),
+    ];
+    for (lo, hi, n) in cases {
+        let ticks = nice_ticks(lo, hi, n);
+        assert!(
+            ticks.iter().all(|t| t.is_finite()),
+            "non-finite tick from ({lo}, {hi}, {n}): {ticks:?}"
+        );
+    }
+}
+
+proptest::proptest! {
+    // Guards against the infinite-loop / NaN-propagation classes from
+    // P1.1. Inputs sweep the f32 domain including negatives; the
+    // function must terminate with finite ticks for every sample.
+    #[test]
+    fn nice_ticks_terminates_for_arbitrary_ranges(
+        min in -1e9f32..1e9f32,
+        max in -1e9f32..1e9f32,
+        count in 0usize..10,
+    ) {
+        let ticks = nice_ticks(min, max, count);
+        proptest::prop_assert!(ticks.iter().all(|t| t.is_finite()));
+    }
+}
+
+#[test]
 fn axis_config_default_is_not_active_for_zero_ticks() {
     let cfg = AxisConfig::new().y_tick_count(0);
     // y_tick_count 0 but no other axis features — still not very useful.
@@ -553,6 +598,22 @@ async fn chart_with_title_renders_without_panic(cx: &mut TestAppContext) {
         }
     }
     let (host, _vcx) = setup_test_window(cx, |_, _| TitleHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_with_title_only_renders_without_panic(cx: &mut TestAppContext) {
+    struct TitleOnlyHarness;
+    impl Render for TitleOnlyHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::new("Sales", vec![10.0, 20.0, 15.0]))
+                .id("title-only")
+                .chart_type(ChartType::Bar)
+                .size(px(200.0), px(100.0))
+                .title("Quarterly Sales")
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| TitleOnlyHarness);
     host.update(_vcx, |_h, _cx| {});
 }
 
@@ -705,6 +766,42 @@ async fn legend_with_three_series_renders(cx: &mut TestAppContext) {
         }
     }
     let (host, _vcx) = setup_test_window(cx, |_, _| ThreeLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── Range / Rule ─────────────────────────────────────────────────
+
+#[gpui::test]
+async fn chart_range_renders_without_panic(cx: &mut TestAppContext) {
+    struct RangeHarness;
+    impl Render for RangeHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::range(
+                "Confidence",
+                vec![5.0, 12.0, 8.0, 22.0, 18.0],
+                vec![15.0, 28.0, 22.0, 38.0, 32.0],
+            ))
+            .id("range-test")
+            .chart_type(ChartType::Range)
+            .size(px(300.0), px(160.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RangeHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn chart_rule_renders_without_panic(cx: &mut TestAppContext) {
+    struct RuleHarness;
+    impl Render for RuleHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(ChartDataSeries::new("Target", vec![50.0]))
+                .id("rule-test")
+                .chart_type(ChartType::Rule)
+                .size(px(300.0), px(160.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RuleHarness);
     host.update(_vcx, |_h, _cx| {});
 }
 

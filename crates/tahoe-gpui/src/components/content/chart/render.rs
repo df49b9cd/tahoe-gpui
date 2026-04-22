@@ -14,7 +14,8 @@ use crate::foundations::typography::{TextStyle, TextStyledExt};
 use super::accessibility::{FkaAttachContext, attach_fka};
 use super::marks::canvas_paint_callback;
 use super::types::{
-    AxisConfig, BAR_WIDTH_RATIO, ChartDataSet, ChartType, GridlineConfig, MIN_POINT_SIZE,
+    AxisConfig, BAR_GAP, BAR_WIDTH_RATIO, ChartDataSet, ChartType, GridlineConfig, MAX_POINT_SIZE,
+    MIN_POINT_SIZE, TITLE_GAP,
 };
 
 /// Palette order for auto-assigned multi-series colours.
@@ -262,6 +263,20 @@ impl RenderOnce for Chart {
             .map(|s| s.inner.values.len())
             .sum();
 
+        // Prefix-sum offsets so each series occupies a contiguous slice of
+        // focus handles regardless of per-series length. Indexing with
+        // `si * max_points + slot_i` was wrong for unequal-length series.
+        let series_offsets: Vec<usize> = self
+            .data_set
+            .series
+            .iter()
+            .scan(0usize, |acc, s| {
+                let start = *acc;
+                *acc += s.inner.values.len();
+                Some(start)
+            })
+            .collect();
+
         let fka_points = FocusGroup::bind_if_fka(
             theme.full_keyboard_access(),
             self.point_focus_group,
@@ -286,6 +301,7 @@ impl RenderOnce for Chart {
         let show_legend = self.show_legend || data_set.is_multi();
         let title = self.title.take();
         let subtitle = self.subtitle.take();
+        let multi_series = data_set.is_multi();
 
         let has_gridlines = gridline_config.as_ref().is_some_and(|g| g.is_active());
 
@@ -295,6 +311,20 @@ impl RenderOnce for Chart {
             .as_ref()
             .is_some_and(|a| a.y_tick_count > 0 || a.y_ticks.is_some());
         let has_x_labels = axis_config.as_ref().is_some_and(|a| a.x_labels.is_some());
+
+        // Compute Y-ticks once — shared by the gridline canvas and the
+        // Y-label column. Sort defensively so caller-supplied y_ticks(…)
+        // render top-to-bottom even when passed out of order.
+        let y_ticks: Vec<f32> = if has_y_axis || has_gridlines {
+            let mut ticks = axis_config
+                .as_ref()
+                .map(|a| a.compute_y_ticks(min, max))
+                .unwrap_or_default();
+            ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            ticks
+        } else {
+            Vec::new()
+        };
 
         let y_margin = if has_y_axis {
             px(AxisConfig::Y_LABEL_WIDTH)
@@ -327,6 +357,8 @@ impl RenderOnce for Chart {
                     &fka_points,
                     &point_prefix,
                     total_fka_points,
+                    &series_offsets,
+                    multi_series,
                     chart_type,
                     dwc,
                 ),
@@ -342,6 +374,8 @@ impl RenderOnce for Chart {
                     &fka_points,
                     &point_prefix,
                     total_fka_points,
+                    &series_offsets,
+                    multi_series,
                     chart_type,
                     dwc,
                 ),
@@ -358,6 +392,8 @@ impl RenderOnce for Chart {
                         &fka_points,
                         &point_prefix,
                         total_fka_points,
+                        &series_offsets,
+                        multi_series,
                         chart_type,
                         dwc,
                     )
@@ -374,15 +410,6 @@ impl RenderOnce for Chart {
             .unwrap_or(0);
         let show_y_line = axis_config.as_ref().is_some_and(|a| a.show_y_line);
 
-        let y_ticks_for_grid = if has_gridlines {
-            axis_config
-                .as_ref()
-                .map(|a| a.compute_y_ticks(min, max))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         let overlay_canvas = if has_gridlines || show_y_line {
             let gl = gridline_config.as_ref();
             let show_h = gl.is_some_and(|g| g.horizontal);
@@ -392,7 +419,7 @@ impl RenderOnce for Chart {
             let y_line_color = theme.text_muted;
             let pw = f32::from(plot_width);
             let ph = f32::from(plot_height);
-            let h_ticks = y_ticks_for_grid.clone();
+            let h_ticks = y_ticks.clone();
 
             Some(
                 canvas(
@@ -449,11 +476,6 @@ impl RenderOnce for Chart {
             };
 
             if has_y_axis || has_x_labels {
-                let y_ticks = axis_config
-                    .as_ref()
-                    .map(|a| a.compute_y_ticks(min, max))
-                    .unwrap_or_default();
-
                 let mut top_row = div().flex().flex_row().w_full();
 
                 if has_y_axis {
@@ -572,7 +594,7 @@ fn wrap_with_title(
     if title.is_none() && subtitle.is_none() {
         return chart_el.into_any_element();
     }
-    let mut wrapper = div().flex().flex_col().gap(px(4.0));
+    let mut wrapper = div().flex().flex_col().gap(px(TITLE_GAP));
     if let Some(t) = title {
         wrapper = wrapper.child(
             div()
@@ -605,6 +627,7 @@ fn format_y_tick(v: f32) -> String {
 
 // ─── Render helpers ─────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn render_bars(
     data_set: &ChartDataSet,
     global_color: Option<Hsla>,
@@ -617,6 +640,8 @@ fn render_bars(
     fka_points: &Option<(FocusGroup, Vec<FocusHandle>)>,
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
+    series_offsets: &[usize],
+    multi_series: bool,
     chart_type: ChartType,
     dwc: bool,
 ) -> gpui::Div {
@@ -631,8 +656,7 @@ fn render_bars(
     let slot_width = f32::from(width) / max_points as f32;
 
     let bar_count_per_slot = n_series.max(1);
-    let bar_gap = 1.0;
-    let total_bar_gap = bar_gap * (bar_count_per_slot - 1).max(0) as f32;
+    let total_bar_gap = BAR_GAP * (bar_count_per_slot - 1).max(0) as f32;
     let bar_width =
         ((slot_width * BAR_WIDTH_RATIO - total_bar_gap) / bar_count_per_slot as f32).max(1.0);
     let group_width = bar_width * bar_count_per_slot as f32 + total_bar_gap;
@@ -653,7 +677,7 @@ fn render_bars(
             .items_end()
             .w(px(slot_width))
             .h(height)
-            .gap(px(bar_gap));
+            .gap(px(BAR_GAP));
 
         for (si, series) in data_set.series.iter().enumerate() {
             let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
@@ -669,7 +693,9 @@ fn render_bars(
                 bar = bar.border_1().border_color(theme.text);
             }
 
-            let fka_idx = si * max_points + slot_i;
+            // Contiguous handle offset per series — works correctly when
+            // series have different lengths (unlike `si * max_points + slot_i`).
+            let fka_idx = series_offsets[si] + slot_i;
             let bar = match (fka_points.as_ref(), point_prefix.as_ref()) {
                 (Some((group, handles)), Some(prefix))
                     if fka_idx < handles.len() && slot_i < series.inner.values.len() =>
@@ -683,6 +709,8 @@ fn render_bars(
                             total: total_fka_points,
                             chart_type,
                             theme,
+                            series_name: &series.inner.name,
+                            multi_series,
                         },
                         fka_idx,
                         v,
@@ -698,6 +726,7 @@ fn render_bars(
     row
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_points(
     data_set: &ChartDataSet,
     global_color: Option<Hsla>,
@@ -710,6 +739,8 @@ fn render_points(
     fka_points: &Option<(FocusGroup, Vec<FocusHandle>)>,
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
+    series_offsets: &[usize],
+    multi_series: bool,
     chart_type: ChartType,
     dwc: bool,
 ) -> gpui::Div {
@@ -721,7 +752,7 @@ fn render_points(
         .unwrap_or(0)
         .max(1);
     let slot_width = f32::from(width) / max_points as f32;
-    let point_size = MIN_POINT_SIZE.max(slot_width.min(10.0));
+    let point_size = MIN_POINT_SIZE.max(slot_width.min(MAX_POINT_SIZE));
 
     let mut row = div().flex().flex_row().items_end().w(width).h(height);
 
@@ -734,7 +765,6 @@ fn render_points(
             let top_offset = f32::from(height) * (1.0 - norm) - point_size / 2.0;
             let color = Chart::series_color(data_set, global_color, si, theme);
 
-            // Per-series marker shape for DwC compliance.
             let mut dot = div()
                 .absolute()
                 .top(px(top_offset.max(0.0)))
@@ -742,17 +772,13 @@ fn render_points(
                 .size(px(point_size))
                 .bg(color);
 
-            match si % 3 {
-                0 => dot = dot.rounded(theme.radius_full), // circle
-                1 => dot = dot.rounded(px(1.0)),           // square
-                _ => dot = dot.rounded(theme.radius_sm),   // rounded square
-            }
+            dot = apply_marker_shape(dot, si, point_size, theme);
 
             if dwc {
                 dot = dot.border_1().border_color(theme.text);
             }
 
-            let fka_idx = si * max_points + slot_i;
+            let fka_idx = series_offsets[si] + slot_i;
             let dot = match (fka_points.as_ref(), point_prefix.as_ref()) {
                 (Some((group, handles)), Some(prefix))
                     if fka_idx < handles.len() && slot_i < series.inner.values.len() =>
@@ -766,6 +792,8 @@ fn render_points(
                             total: total_fka_points,
                             chart_type,
                             theme,
+                            series_name: &series.inner.name,
+                            multi_series,
                         },
                         fka_idx,
                         v,
@@ -781,6 +809,49 @@ fn render_points(
     row
 }
 
+/// Apply a per-series marker treatment so charts remain distinguishable
+/// without colour. Six encodings are interleaved across series:
+///
+/// | `si % 6` | shape               | treatment      |
+/// |----------|---------------------|----------------|
+/// | 0        | circle              | solid          |
+/// | 1        | square              | solid          |
+/// | 2        | rounded square      | solid          |
+/// | 3        | circle ring         | outlined       |
+/// | 4        | square ring         | outlined       |
+/// | 5        | rounded square ring | outlined       |
+///
+/// Three geometric shapes plus an orthogonal solid/outlined axis covers
+/// six distinct encodings without introducing rotated or clipped shapes
+/// that GPUI `div` cannot express without a canvas draw.
+fn apply_marker_shape(
+    dot: gpui::Div,
+    si: usize,
+    point_size: f32,
+    theme: &crate::foundations::theme::TahoeTheme,
+) -> gpui::Div {
+    let shape_slot = si % 3;
+    let outlined = (si / 3) % 2 == 1;
+    let shaped = match shape_slot {
+        0 => dot.rounded(theme.radius_full),
+        1 => dot.rounded(px(1.0)),
+        _ => dot.rounded(theme.radius_sm),
+    };
+    if outlined {
+        // Knock out the fill to leave a ring; `bg(transparent())` would
+        // drop the colour entirely, so render the ring by inverting the
+        // fill to the surface colour and stroking the edge in the series
+        // colour via an inset shadow-style border.
+        shaped
+            .bg(theme.surface)
+            .border(px((point_size * 0.22).max(1.0)))
+            .border_color(theme.text)
+    } else {
+        shaped
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_canvas(
     data_set: &ChartDataSet,
     global_color: Option<Hsla>,
@@ -793,6 +864,8 @@ fn render_canvas(
     fka_points: &Option<(FocusGroup, Vec<FocusHandle>)>,
     point_prefix: &Option<SharedString>,
     total_fka_points: usize,
+    series_offsets: &[usize],
+    multi_series: bool,
     chart_type: ChartType,
     dwc: bool,
 ) -> gpui::Div {
@@ -824,17 +897,9 @@ fn render_canvas(
             let origin = bounds.origin;
             let bw = f32::from(bounds.size.width);
             let bh = f32::from(bounds.size.height);
-            for (values, range_low, color) in &series_data {
+            for (values, range_low, color) in series_data {
                 if let Some(paint) = canvas_paint_callback(
-                    chart_type,
-                    origin,
-                    bw,
-                    bh,
-                    values,
-                    range_low.as_deref(),
-                    min,
-                    range,
-                    *color,
+                    chart_type, origin, bw, bh, values, range_low, min, range, color,
                 ) {
                     paint(window);
                 }
@@ -854,26 +919,37 @@ fn render_canvas(
             .flex()
             .flex_row();
 
+        // Hoist slot_width: independent of `si`.
+        let slot_width = w_f / max_points.max(1) as f32;
+
         for (si, series) in data_set.series.iter().enumerate() {
-            let slot_width = w_f / max_points.max(1) as f32;
             for (slot_i, v) in series.inner.values.iter().enumerate() {
-                let fka_idx = si * max_points + slot_i;
+                // Contiguous handle offset — indexing as `si * max_points +
+                // slot_i` is wrong for unequal-length series.
+                let fka_idx = series_offsets[si] + slot_i;
                 if fka_idx >= handles.len() {
                     break;
                 }
                 let mut hit = div().w(px(slot_width)).h(height).opacity(0.0);
                 if dwc {
-                    let point_size = MIN_POINT_SIZE.max(slot_width.min(10.0));
+                    let point_size = MIN_POINT_SIZE.max(slot_width.min(MAX_POINT_SIZE));
                     let norm = ((v - min) / range).clamp(0.0, 1.0);
                     let top_offset = h_f * (1.0 - norm) - point_size / 2.0;
+                    // Transparent ring overlay on top of the canvas mark;
+                    // the shape rotates per series so ≥4-series charts stay
+                    // distinguishable without colour.
                     let indicator = div()
                         .absolute()
                         .top(px(top_offset.max(0.0)))
                         .left(px((slot_width - point_size) / 2.0))
                         .size(px(point_size))
-                        .rounded(theme.radius_full)
                         .border_1()
                         .border_color(theme.text);
+                    let indicator = match si % 3 {
+                        0 => indicator.rounded(theme.radius_full),
+                        1 => indicator.rounded(px(1.0)),
+                        _ => indicator.rounded(theme.radius_sm),
+                    };
                     hit = hit.child(indicator);
                 }
                 let hit = attach_fka(
@@ -885,6 +961,8 @@ fn render_canvas(
                         total: total_fka_points,
                         chart_type,
                         theme,
+                        series_name: &series.inner.name,
+                        multi_series,
                     },
                     fka_idx,
                     *v,

@@ -235,41 +235,41 @@ pub(crate) type PaintFn = Box<dyn FnOnce(&mut Window)>;
 ///
 /// Returns `None` for Bar and Point (those use div-based rendering).
 /// For Range charts, `range_low` provides the lower-bound values.
+///
+/// Takes `values` / `range_low` by value so callers that have already
+/// cloned the series data can move it in without a second `.to_vec()`
+/// inside each variant arm.
 pub(crate) fn canvas_paint_callback(
     chart_type: ChartType,
     origin: Point<Pixels>,
     w: f32,
     h: f32,
-    values: &[f32],
-    range_low: Option<&[f32]>,
+    values: Vec<f32>,
+    range_low: Option<Vec<f32>>,
     min: f32,
     range: f32,
     color: Hsla,
 ) -> Option<PaintFn> {
     match chart_type {
-        ChartType::Line => {
-            let values = values.to_vec();
-            Some(Box::new(move |window: &mut Window| {
-                paint_line(window, origin, w, h, &values, min, range, color);
-            }))
-        }
-        ChartType::Area => {
-            let values = values.to_vec();
-            Some(Box::new(move |window: &mut Window| {
-                paint_area(window, origin, w, h, &values, min, range, color);
-            }))
-        }
+        ChartType::Line => Some(Box::new(move |window: &mut Window| {
+            paint_line(window, origin, w, h, &values, min, range, color);
+        })),
+        ChartType::Area => Some(Box::new(move |window: &mut Window| {
+            paint_area(window, origin, w, h, &values, min, range, color);
+        })),
         ChartType::Rule => {
+            debug_assert!(
+                values.len() <= 1,
+                "ChartType::Rule draws only values[0] — extra values are ignored"
+            );
             let value = values.first().copied().unwrap_or(0.0);
             Some(Box::new(move |window: &mut Window| {
                 paint_rule(window, origin, w, h, value, min, range, color);
             }))
         }
         ChartType::Range => {
-            let high = values.to_vec();
-            let low = range_low
-                .map(|l| l.to_vec())
-                .unwrap_or_else(|| high.clone());
+            let high = values;
+            let low = range_low.unwrap_or_else(|| high.clone());
             Some(Box::new(move |window: &mut Window| {
                 paint_range(window, origin, w, h, &low, &high, min, range, color);
             }))
@@ -279,6 +279,10 @@ pub(crate) fn canvas_paint_callback(
 }
 
 /// Paint horizontal gridlines at Y-axis tick positions.
+///
+/// All ticks are batched into a single `PathBuilder` (one `move_to` +
+/// `line_to` per tick) and painted in a single `paint_path` call, so a
+/// 5-tick axis costs 1 path instead of 5.
 pub(crate) fn paint_horizontal_gridlines(
     window: &mut Window,
     origin: Point<Pixels>,
@@ -289,19 +293,25 @@ pub(crate) fn paint_horizontal_gridlines(
     range: f32,
     color: Hsla,
 ) {
+    if ticks.is_empty() {
+        return;
+    }
+    let mut pb = PathBuilder::stroke(px(0.5));
     for tick in ticks {
         let norm = ((tick - min) / range).clamp(0.0, 1.0);
         let y = origin.y + px(h * (1.0 - norm));
-        let mut pb = PathBuilder::stroke(px(0.5));
         pb.move_to(point(origin.x, y));
         pb.line_to(point(origin.x + px(w), y));
-        if let Ok(path) = pb.build() {
-            window.paint_path(path, color);
-        }
+    }
+    if let Ok(path) = pb.build() {
+        window.paint_path(path, color);
     }
 }
 
 /// Paint vertical gridlines at each data point slot.
+///
+/// Batches all subpaths into a single `PathBuilder` for a single
+/// `paint_path` call.
 pub(crate) fn paint_vertical_gridlines(
     window: &mut Window,
     origin: Point<Pixels>,
@@ -314,14 +324,14 @@ pub(crate) fn paint_vertical_gridlines(
         return;
     }
     let slot_width = w / count as f32;
+    let mut pb = PathBuilder::stroke(px(0.5));
     for i in 1..count {
         let x = origin.x + px(slot_width * i as f32);
-        let mut pb = PathBuilder::stroke(px(0.5));
         pb.move_to(point(x, origin.y));
         pb.line_to(point(x, origin.y + px(h)));
-        if let Ok(path) = pb.build() {
-            window.paint_path(path, color);
-        }
+    }
+    if let Ok(path) = pb.build() {
+        window.paint_path(path, color);
     }
 }
 

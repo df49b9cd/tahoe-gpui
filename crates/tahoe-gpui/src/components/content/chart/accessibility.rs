@@ -19,6 +19,13 @@ pub(crate) struct FkaAttachContext<'a> {
     pub total: usize,
     pub chart_type: ChartType,
     pub theme: &'a crate::foundations::theme::TahoeTheme,
+    /// Name of the series that owns the data point, used as a VoiceOver
+    /// prefix when the chart has more than one series.
+    pub series_name: &'a SharedString,
+    /// Whether the chart has more than one series. Flips the label format
+    /// to include the series name so multi-series points don't sound
+    /// identical to VoiceOver.
+    pub multi_series: bool,
 }
 
 /// Wire a bar or point div up for Full Keyboard Access: per-value element
@@ -35,14 +42,26 @@ pub(crate) fn attach_fka(
     // C2: Use DataPoint role instead of Button — chart data points are not
     // activatable buttons. C3: Populate posinset/setsize so VoiceOver can
     // announce "row 1 of 5" structurally.
-    let a11y = AccessibilityProps::new()
-        .label(SharedString::from(format!(
+    let label = if ctx.multi_series {
+        format!(
+            "{} {}: {} of {}, {:.2}",
+            ctx.series_name,
+            ctx.chart_type.voice_label(),
+            index + 1,
+            ctx.total,
+            value
+        )
+    } else {
+        format!(
             "{}: {} of {}, {:.2}",
             ctx.chart_type.voice_label(),
             index + 1,
             ctx.total,
             value
-        )))
+        )
+    };
+    let a11y = AccessibilityProps::new()
+        .label(SharedString::from(label))
         .role(AccessibilityRole::DataPoint)
         .posinset(index + 1)
         .setsize(ctx.total);

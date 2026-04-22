@@ -2,10 +2,11 @@
 
 use gpui::prelude::*;
 use gpui::{
-    Context, ElementId, FocusHandle, Hsla, IntoElement, MouseMoveEvent, Pixels, SharedString,
-    Window, canvas, div, px,
+    Context, ElementId, FocusHandle, Hsla, IntoElement, KeyDownEvent, MouseMoveEvent, Pixels,
+    SharedString, Window, canvas, div, px,
 };
 
+use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::theme::ActiveTheme;
 use crate::foundations::typography::{TextStyle, TextStyledExt};
 
@@ -85,6 +86,22 @@ impl ChartView {
             .max()
             .unwrap_or(0)
     }
+
+    /// Horizontal inset of the plot area from the wrapper's left edge.
+    ///
+    /// Matches `Chart::render`'s Y-label column so hover-x maps to the
+    /// correct data-point slot when an axis is configured.
+    fn y_margin(&self) -> f32 {
+        if self
+            .axis
+            .as_ref()
+            .is_some_and(|a| a.y_tick_count > 0 || a.y_ticks.is_some())
+        {
+            AxisConfig::Y_LABEL_WIDTH
+        } else {
+            0.0
+        }
+    }
 }
 
 impl Render for ChartView {
@@ -111,6 +128,7 @@ impl Render for ChartView {
         let width = self.width;
         let height = self.height;
         let max_pts = self.max_points();
+        let y_margin = self.y_margin();
 
         let crosshair_color = theme.text_muted;
         let crosshair = canvas(
@@ -120,9 +138,11 @@ impl Render for ChartView {
                 if max_pts == 0 {
                     return;
                 }
-                let w = f32::from(bounds.size.width);
-                let slot_w = w / max_pts as f32;
-                let x = bounds.origin.x + gpui::px(slot_w * (idx as f32 + 0.5));
+                // Crosshair x lives inside the plot area (wrapper width
+                // minus the Y-label column).
+                let plot_w = (f32::from(bounds.size.width) - y_margin).max(0.0);
+                let slot_w = plot_w / max_pts as f32;
+                let x = bounds.origin.x + gpui::px(y_margin + slot_w * (idx as f32 + 0.5));
 
                 let mut pb = gpui::PathBuilder::stroke(gpui::px(1.0));
                 pb.move_to(gpui::point(x, bounds.origin.y));
@@ -146,6 +166,23 @@ impl Render for ChartView {
                 items.push((series.inner.name.clone(), value, color));
             }
 
+            // Build a single concatenated VoiceOver label so the tooltip
+            // carries a Tooltip role with meaningful content. Without this
+            // the hover value is invisible to assistive tech.
+            let tooltip_label: SharedString = SharedString::from(
+                items
+                    .iter()
+                    .map(|(name, value, _)| match value {
+                        Some(v) => format!("{name}: {v:.1}"),
+                        None => format!("{name}: —"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            let a11y = AccessibilityProps::new()
+                .role(AccessibilityRole::Tooltip)
+                .label(tooltip_label);
+
             let mut tooltip_div = div()
                 .absolute()
                 .top(px(4.0))
@@ -157,7 +194,8 @@ impl Render for ChartView {
                 .p(px(6.0))
                 .gap(px(2.0))
                 .flex()
-                .flex_col();
+                .flex_col()
+                .with_accessibility(&a11y);
 
             for (name, value, color) in items {
                 let label = match value {
@@ -184,27 +222,51 @@ impl Render for ChartView {
             None
         };
 
-        let max_pts_capture = self.max_points();
         let on_move = cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
-            if max_pts_capture == 0 {
-                this.hover_index = None;
+            let next = compute_hover_index(
+                f32::from(event.position.x),
+                f32::from(this.width),
+                this.y_margin(),
+                this.max_points(),
+            );
+            // P0: pixel-level mouse motion fires this listener 60+ times
+            // per second. Re-rendering only when the slot actually changes
+            // drops every intra-slot move to a no-op.
+            if this.hover_index != next {
+                this.hover_index = next;
                 cx.notify();
-                return;
             }
-            let local_x = f32::from(event.position.x);
-            let slot_w = f32::from(this.width) / max_pts_capture as f32;
-            let idx = (local_x / slot_w).floor() as usize;
-            this.hover_index = if idx < max_pts_capture {
-                Some(idx)
-            } else {
-                None
-            };
-            cx.notify();
         });
 
         let on_hover = cx.listener(|this, hovered: &bool, _window, cx| {
-            if !hovered {
+            if !hovered && this.hover_index.is_some() {
                 this.hover_index = None;
+                cx.notify();
+            }
+        });
+
+        let on_key = cx.listener(|this, event: &KeyDownEvent, _window, cx| {
+            let max = this.max_points();
+            if max == 0 {
+                return;
+            }
+            let last = max - 1;
+            let next = match event.keystroke.key.as_str() {
+                "left" => Some(match this.hover_index {
+                    Some(i) => i.saturating_sub(1),
+                    None => 0,
+                }),
+                "right" => Some(match this.hover_index {
+                    Some(i) => (i + 1).min(last),
+                    None => 0,
+                }),
+                "home" => Some(0),
+                "end" => Some(last),
+                "escape" => None,
+                _ => return,
+            };
+            if this.hover_index != next {
+                this.hover_index = next;
                 cx.notify();
             }
         });
@@ -224,6 +286,68 @@ impl Render for ChartView {
             wrapper = wrapper.child(tooltip);
         }
 
-        wrapper.on_mouse_move(on_move).on_hover(on_hover)
+        wrapper
+            .on_mouse_move(on_move)
+            .on_hover(on_hover)
+            .on_key_down(on_key)
+    }
+}
+
+/// Map a pointer x (relative to the wrapper's left edge) to the hovered
+/// data-point slot. Returns `None` when the pointer is inside the Y-label
+/// column, past the right edge, or the chart has no data.
+fn compute_hover_index(
+    local_x: f32,
+    width: f32,
+    y_margin: f32,
+    max_points: usize,
+) -> Option<usize> {
+    if max_points == 0 {
+        return None;
+    }
+    let plot_x = local_x - y_margin;
+    if plot_x < 0.0 {
+        return None;
+    }
+    let plot_w = (width - y_margin).max(0.0);
+    if plot_w <= 0.0 {
+        return None;
+    }
+    let slot_w = plot_w / max_points as f32;
+    let idx = (plot_x / slot_w).floor() as usize;
+    (idx < max_points).then_some(idx)
+}
+
+#[cfg(test)]
+mod tests {
+    use core::prelude::v1::test;
+
+    use super::compute_hover_index;
+
+    #[test]
+    fn hover_with_no_axis_covers_full_width() {
+        assert_eq!(compute_hover_index(0.0, 200.0, 0.0, 5), Some(0));
+        assert_eq!(compute_hover_index(120.0, 200.0, 0.0, 5), Some(3));
+        assert_eq!(compute_hover_index(199.9, 200.0, 0.0, 5), Some(4));
+    }
+
+    #[test]
+    fn hover_inside_y_label_column_returns_none() {
+        // y_margin = 40 means the plot starts at x=40.
+        assert_eq!(compute_hover_index(20.0, 240.0, 40.0, 5), None);
+        assert_eq!(compute_hover_index(39.9, 240.0, 40.0, 5), None);
+    }
+
+    #[test]
+    fn hover_with_axis_offsets_plot_area_left_edge() {
+        // plot area is 240 - 40 = 200 wide, 5 slots of 40.
+        assert_eq!(compute_hover_index(40.0, 240.0, 40.0, 5), Some(0));
+        assert_eq!(compute_hover_index(160.0, 240.0, 40.0, 5), Some(3));
+        assert_eq!(compute_hover_index(239.0, 240.0, 40.0, 5), Some(4));
+    }
+
+    #[test]
+    fn hover_with_empty_series_returns_none() {
+        assert_eq!(compute_hover_index(100.0, 200.0, 0.0, 0), None);
     }
 }

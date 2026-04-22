@@ -27,7 +27,10 @@ pub enum ChartType {
     Point,
     /// Canvas-filled band between lower/upper values.
     Range,
-    /// Canvas-stroked horizontal reference line.
+    /// Canvas-stroked horizontal reference line. Only the first value of
+    /// the series is drawn (mirrors Swift Charts' `RuleMark(y:)`); extra
+    /// values are ignored. In debug builds a `debug_assert!` surfaces calls
+    /// that pass more than one value so the misuse is caught in tests.
     Rule,
 }
 
@@ -175,6 +178,12 @@ impl From<ChartDataSeries> for ChartDataSet {
 pub(crate) const BAR_WIDTH_RATIO: f32 = 0.7;
 /// Minimum point-marker diameter for sparkline marks.
 pub(crate) const MIN_POINT_SIZE: f32 = 4.0;
+/// Maximum point-marker diameter (caps the growth from a large slot width).
+pub(crate) const MAX_POINT_SIZE: f32 = 10.0;
+/// Horizontal gap between bars inside a multi-series slot.
+pub(crate) const BAR_GAP: f32 = 1.0;
+/// Vertical gap between chart title/subtitle and the plot area.
+pub(crate) const TITLE_GAP: f32 = 4.0;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AxisConfig
@@ -272,12 +281,20 @@ impl AxisConfig {
 ///
 /// Rounds to 1, 2, or 5 multiples of powers of 10 so axes show clean
 /// values like 0, 20, 40, 60 instead of 0, 17.3, 34.6, …
+///
+/// Degenerate inputs (`NaN`, infinities, `min > max`, zero-width ranges,
+/// zero count) return a singleton `[min]` rather than looping — the caller
+/// is responsible for drawing a single-tick axis, not this function.
 pub(crate) fn nice_ticks(min: f32, max: f32, count: usize) -> Vec<f32> {
-    if count == 0 || (max - min).abs() < f32::EPSILON {
-        return vec![min];
+    if count == 0 || !min.is_finite() || !max.is_finite() {
+        return vec![if min.is_finite() { min } else { 0.0 }];
+    }
+    let (lo, hi) = if max < min { (max, min) } else { (min, max) };
+    if (hi - lo).abs() < f32::EPSILON {
+        return vec![lo];
     }
 
-    let range = max - min;
+    let range = hi - lo;
     let rough_step = range / count.max(1) as f32;
     let mag = 10_f32.powf(rough_step.log10().floor());
     let nice_step = if rough_step / mag < 1.5 {
@@ -290,12 +307,26 @@ pub(crate) fn nice_ticks(min: f32, max: f32, count: usize) -> Vec<f32> {
         10.0 * mag
     };
 
-    let nice_min = (min / nice_step).floor() * nice_step;
-    let nice_max = (max / nice_step).ceil() * nice_step;
+    // Guard: log10 / powf round-trips can produce non-finite or zero
+    // steps for extreme inputs. Without this the `while` loop below would
+    // either spin forever (step == 0) or never advance (step NaN).
+    if !nice_step.is_finite() || nice_step <= 0.0 {
+        return vec![lo];
+    }
+
+    let nice_min = (lo / nice_step).floor() * nice_step;
+    let nice_max = (hi / nice_step).ceil() * nice_step;
+    let stop = nice_max + nice_step * 0.01;
 
     let mut ticks = Vec::new();
     let mut v = nice_min;
-    while v <= nice_max + nice_step * 0.01 {
+    // Hard cap on iterations — defends against pathological floating-point
+    // cases where `v += nice_step` stalls due to catastrophic cancellation.
+    let max_iters = count.saturating_mul(4).max(32);
+    for _ in 0..max_iters {
+        if v > stop {
+            break;
+        }
         ticks.push(v);
         v += nice_step;
     }

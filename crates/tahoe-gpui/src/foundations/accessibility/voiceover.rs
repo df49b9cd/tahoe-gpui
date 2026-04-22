@@ -114,6 +114,15 @@ pub enum AccessibilityRole {
     /// within the series (e.g. "10, row 1 of 5") rather than a
     /// generic "button."
     DataPoint,
+    /// Contextual tooltip that appears on hover or focus (WAI-ARIA
+    /// `role="tooltip"` / NSAccessibility `AXHelpTag`). Distinct from
+    /// [`Alert`](AccessibilityRole::Alert) and
+    /// [`AlertDialog`](AccessibilityRole::AlertDialog): a tooltip is a
+    /// transient descriptor of its associated element, not a standalone
+    /// announcement — VoiceOver should read it in relation to the thing
+    /// the user is hovering/focusing rather than interrupting with an
+    /// alert announcement on every update.
+    Tooltip,
     /// Heading at the given depth. Carries the level so VoiceOver's
     /// "next heading" and "headings at level N" gestures can land on the
     /// right rung of the document outline when GPUI exposes an AX tree.
