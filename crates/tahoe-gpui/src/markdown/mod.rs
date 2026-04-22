@@ -4,7 +4,7 @@
 //! it as a GPUI element tree. Designed for streaming AI responses where
 //! text arrives as deltas.
 //!
-//! Uses [`remend`] for auto-completing incomplete markdown syntax during
+//! Uses [`mdstitch`] for auto-completing incomplete markdown syntax during
 //! streaming, and provides word-level fade-in animation.
 //!
 //! # Heading anchors

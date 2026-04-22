@@ -1,6 +1,4 @@
 //! Text direction detection using the "first strong character" Unicode algorithm.
-//!
-//! Ported from Streamdown's `detect-direction.ts`.
 
 /// Text direction: left-to-right or right-to-left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

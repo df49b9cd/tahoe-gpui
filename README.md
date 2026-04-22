@@ -22,7 +22,7 @@ A component library that brings Tahoe HIG to applications built on [Zed's GPUI f
 | Crate | Description |
 | --- | --- |
 | [`tahoe-gpui`](crates/tahoe-gpui) | HIG-aligned UI components (buttons, alerts, toolbars, streaming markdown, …). |
-| [`remend`](crates/remend) | Streaming Markdown preprocessor that auto-completes incomplete syntax during token-by-token rendering. Used internally by `tahoe-gpui`. |
+| [`mdstitch`](crates/mdstitch) | Streaming Markdown preprocessor that auto-completes incomplete syntax during token-by-token rendering. Used internally by `tahoe-gpui`. |
 
 ## Quick start
 

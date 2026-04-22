@@ -1,6 +1,6 @@
 [package]
-name = "remend"
-description = "Streaming markdown preprocessor — auto-completes incomplete syntax during token-by-token streaming"
+name = "mdstitch"
+description = "Streaming markdown preprocessor that closes unterminated syntax token-by-token."
 publish = false
 version.workspace = true
 edition.workspace = true

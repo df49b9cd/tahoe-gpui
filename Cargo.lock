@@ -3178,6 +3178,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdstitch"
+version = "0.1.0"
+dependencies = [
+ "proptest 1.11.0",
+]
+
+[[package]]
 name = "media"
 version = "0.1.0"
 source = "git+https://github.com/zed-industries/zed?tag=v0.231.1-pre#c8a91564e8bc30251fc9a15901c33af3c3ddf7e0"
@@ -4549,13 +4556,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
-name = "remend"
-version = "0.1.0"
-dependencies = [
- "proptest 1.11.0",
-]
-
-[[package]]
 name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5376,11 +5376,11 @@ dependencies = [
  "gpui_platform",
  "image",
  "itoa",
+ "mdstitch",
  "mermaid-rs-renderer",
  "objc2",
  "proptest 1.11.0",
  "pulldown-cmark",
- "remend",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",

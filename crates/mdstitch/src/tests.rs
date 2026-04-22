@@ -4,15 +4,15 @@ use std::sync::{Arc, Mutex};
 use proptest::prelude::*;
 
 use super::{
-    LinkMode, RemendHandler, RemendOptions, has_incomplete_code_fence, is_inside_code_block, remend,
+    LinkMode, StitchHandler, StitchOptions, has_incomplete_code_fence, is_inside_code_block, stitch,
 };
 
-fn opts() -> RemendOptions {
-    RemendOptions::default()
+fn opts() -> StitchOptions {
+    StitchOptions::default()
 }
 
 fn r(text: &str) -> Cow<'_, str> {
-    remend(text, &opts())
+    stitch(text, &opts())
 }
 
 // ===========================================================================
@@ -367,7 +367,7 @@ fn inline_code_empty() {
 fn link_incomplete_url() {
     assert_eq!(
         r("[Click here](http://exam").as_ref(),
-        "[Click here](streamdown:incomplete-link)"
+        "[Click here](stitch:incomplete-link)"
     );
 }
 
@@ -375,7 +375,7 @@ fn link_incomplete_url() {
 fn link_incomplete_text() {
     assert_eq!(
         r("[Click here").as_ref(),
-        "[Click here](streamdown:incomplete-link)"
+        "[Click here](stitch:incomplete-link)"
     );
 }
 
@@ -399,7 +399,7 @@ fn link_multiple_complete() {
 fn link_nested_brackets_incomplete_url() {
     assert_eq!(
         r("[outer [nested] text](incomplete").as_ref(),
-        "[outer [nested] text](streamdown:incomplete-link)"
+        "[outer [nested] text](stitch:incomplete-link)"
     );
 }
 
@@ -415,7 +415,7 @@ fn link_nested_brackets_complete() {
 fn link_partial_boundary() {
     assert_eq!(
         r("Check out [this lin").as_ref(),
-        "Check out [this lin](streamdown:incomplete-link)"
+        "Check out [this lin](stitch:incomplete-link)"
     );
 }
 
@@ -423,7 +423,7 @@ fn link_partial_boundary() {
 fn link_partial_url_boundary() {
     assert_eq!(
         r("Visit [our site](https://exa").as_ref(),
-        "Visit [our site](streamdown:incomplete-link)"
+        "Visit [our site](stitch:incomplete-link)"
     );
 }
 
@@ -431,7 +431,7 @@ fn link_partial_url_boundary() {
 fn link_no_matching_bracket() {
     assert_eq!(
         r("Text [outer [inner").as_ref(),
-        "Text [outer [inner](streamdown:incomplete-link)"
+        "Text [outer [inner](stitch:incomplete-link)"
     );
 }
 
@@ -579,36 +579,36 @@ fn katex_inline_default_no_completion() {
 
 #[test]
 fn katex_inline_enabled_completes() {
-    let opts = RemendOptions::default().inline_katex(true);
+    let opts = StitchOptions::default().inline_katex(true);
     assert_eq!(
-        remend("Text with $formula", &opts).as_ref(),
+        stitch("Text with $formula", &opts).as_ref(),
         "Text with $formula$"
     );
-    assert_eq!(remend("$incomplete", &opts).as_ref(), "$incomplete$");
+    assert_eq!(stitch("$incomplete", &opts).as_ref(), "$incomplete$");
 }
 
 #[test]
 fn katex_inline_enabled_complete_unchanged() {
-    let opts = RemendOptions::default().inline_katex(true);
+    let opts = StitchOptions::default().inline_katex(true);
     assert_eq!(
-        remend("$x^2 + y^2 = z^2$", &opts).as_ref(),
+        stitch("$x^2 + y^2 = z^2$", &opts).as_ref(),
         "$x^2 + y^2 = z^2$"
     );
 }
 
 #[test]
 fn katex_inline_enabled_odd() {
-    let opts = RemendOptions::default().inline_katex(true);
+    let opts = StitchOptions::default().inline_katex(true);
     assert_eq!(
-        remend("$first$ and $second", &opts).as_ref(),
+        stitch("$first$ and $second", &opts).as_ref(),
         "$first$ and $second$"
     );
 }
 
 #[test]
 fn katex_inline_enabled_escaped() {
-    let opts = RemendOptions::default().inline_katex(true);
-    assert_eq!(remend("Price is \\$100", &opts).as_ref(), "Price is \\$100");
+    let opts = StitchOptions::default().inline_katex(true);
+    assert_eq!(stitch("Price is \\$100", &opts).as_ref(), "Price is \\$100");
 }
 
 #[test]
@@ -619,9 +619,8 @@ fn katex_math_with_underscores_unchanged() {
 #[test]
 fn katex_dollar_in_inline_code() {
     assert_eq!(
-        r("Streamdown uses double dollar signs (`$$`) to delimit mathematical expressions.")
-            .as_ref(),
-        "Streamdown uses double dollar signs (`$$`) to delimit mathematical expressions."
+        r("Markdown uses double dollar signs (`$$`) to delimit mathematical expressions.").as_ref(),
+        "Markdown uses double dollar signs (`$$`) to delimit mathematical expressions."
     );
 }
 
@@ -780,22 +779,22 @@ fn comparison_not_in_list() {
 
 #[test]
 fn bold_disabled() {
-    let opts = RemendOptions::default().bold(false);
-    assert_eq!(remend("**bold text", &opts).as_ref(), "**bold text");
+    let opts = StitchOptions::default().bold(false);
+    assert_eq!(stitch("**bold text", &opts).as_ref(), "**bold text");
 }
 
 #[test]
 fn links_disabled() {
-    let opts = RemendOptions::default().links(false).images(false);
+    let opts = StitchOptions::default().links(false).images(false);
     assert_eq!(
-        remend("[Click here](http://exam", &opts).as_ref(),
+        stitch("[Click here](http://exam", &opts).as_ref(),
         "[Click here](http://exam"
     );
 }
 
 #[test]
 fn all_disabled() {
-    let opts = RemendOptions::default()
+    let opts = StitchOptions::default()
         .bold(false)
         .italic(false)
         .bold_italic(false)
@@ -809,7 +808,7 @@ fn all_disabled() {
         .single_tilde(false)
         .comparison_operators(false);
     assert_eq!(
-        remend("**bold *italic `code [link", &opts).as_ref(),
+        stitch("**bold *italic `code [link", &opts).as_ref(),
         "**bold *italic `code [link"
     );
 }
@@ -892,9 +891,9 @@ fn mid_line_backtick_run_does_not_open_fence_for_italic() {
 fn mid_line_tilde_run_does_not_open_fence_for_bold() {
     // Disable strikethrough so the test isolates the fence-vs-prose decision:
     // the `~~~` must NOT open a fenced code block, so `**bold` gets closed.
-    let opts = RemendOptions::default().strikethrough(false);
+    let opts = StitchOptions::default().strikethrough(false);
     assert_eq!(
-        remend("text ~~~ more\n**bold", &opts).as_ref(),
+        stitch("text ~~~ more\n**bold", &opts).as_ref(),
         "text ~~~ more\n**bold**"
     );
 }
@@ -968,7 +967,7 @@ fn mixed_link_priority() {
     // Link handler has early return — further handlers don't run.
     assert_eq!(
         r("Text with [link and **bold").as_ref(),
-        "Text with [link and **bold](streamdown:incomplete-link)"
+        "Text with [link and **bold](stitch:incomplete-link)"
     );
 }
 
@@ -1155,7 +1154,7 @@ fn escaped_asterisk() {
 fn very_long_text() {
     let long = "a".repeat(10_000);
     let text = format!("{long} **bold");
-    assert_eq!(remend(&text, &opts()).as_ref(), format!("{long} **bold**"));
+    assert_eq!(stitch(&text, &opts()).as_ref(), format!("{long} **bold**"));
 }
 
 #[test]
@@ -1179,35 +1178,35 @@ fn whitespace_before_incomplete() {
 
 #[test]
 fn link_text_only_mode() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
     assert_eq!(
-        remend("Text with [incomplete link", &opts).as_ref(),
+        stitch("Text with [incomplete link", &opts).as_ref(),
         "Text with incomplete link"
     );
 }
 
 #[test]
 fn link_text_only_incomplete_url() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
     assert_eq!(
-        remend("Visit [our site](https://exa", &opts).as_ref(),
+        stitch("Visit [our site](https://exa", &opts).as_ref(),
         "Visit our site"
     );
 }
 
 #[test]
 fn link_text_only_complete_unchanged() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
     assert_eq!(
-        remend("[text](http://example.com)", &opts).as_ref(),
+        stitch("[text](http://example.com)", &opts).as_ref(),
         "[text](http://example.com)"
     );
 }
 
 #[test]
 fn link_text_only_image_removed() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
-    assert_eq!(remend("Text ![incomplete image", &opts).as_ref(), "Text");
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
+    assert_eq!(stitch("Text ![incomplete image", &opts).as_ref(), "Text");
 }
 
 #[test]
@@ -1216,8 +1215,8 @@ fn link_text_only_rebuilds_ranges_after_bracket_strip() {
     // subsequent byte and invalidates pre-computed CodeBlockRanges. The italic
     // handler must see fresh ranges so it correctly classifies `*` as outside
     // the inline-code span and closes the emphasis.
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
-    assert_eq!(remend("[abc`def`*xyz", &opts).as_ref(), "abc`def`*xyz*");
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
+    assert_eq!(stitch("[abc`def`*xyz", &opts).as_ref(), "abc`def`*xyz*");
 }
 
 // ===========================================================================
@@ -1282,9 +1281,9 @@ fn katex_escaped_dollar_pairs() {
 
 #[test]
 fn inline_katex_inside_fenced_code() {
-    let opts = RemendOptions::default().inline_katex(true);
+    let opts = StitchOptions::default().inline_katex(true);
     assert_eq!(
-        remend("```\n$x + y\n```", &opts).as_ref(),
+        stitch("```\n$x + y\n```", &opts).as_ref(),
         "```\n$x + y\n```"
     );
 }
@@ -1295,20 +1294,20 @@ fn inline_katex_inside_fenced_code() {
 
 #[test]
 fn text_only_link_with_preceding_complete_link() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
     // The first link is complete; only the second bracket should be stripped.
     assert_eq!(
-        remend("[done](http://ok) and [incomplete", &opts).as_ref(),
+        stitch("[done](http://ok) and [incomplete", &opts).as_ref(),
         "[done](http://ok) and incomplete"
     );
 }
 
 #[test]
 fn text_only_nested_brackets() {
-    let opts = RemendOptions::default().link_mode(LinkMode::TextOnly);
+    let opts = StitchOptions::default().link_mode(LinkMode::TextOnly);
     // Both [outer and [inner are incomplete — all stripped in one pass for idempotency.
     assert_eq!(
-        remend("Text [outer [inner", &opts).as_ref(),
+        stitch("Text [outer [inner", &opts).as_ref(),
         "Text outer inner"
     );
 }
@@ -1320,7 +1319,7 @@ fn text_only_nested_brackets() {
 #[test]
 fn custom_handler_runs() {
     struct UpperHandler;
-    impl RemendHandler for UpperHandler {
+    impl StitchHandler for UpperHandler {
         fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
             if text.contains("UPPER") {
                 Cow::Borrowed(text)
@@ -1336,8 +1335,8 @@ fn custom_handler_runs() {
         }
     }
 
-    let opts = RemendOptions::default().handler(Box::new(UpperHandler));
-    let result = remend("hello **world", &opts);
+    let opts = StitchOptions::default().handler(Box::new(UpperHandler));
+    let result = stitch("hello **world", &opts);
     // Built-in bold handler closes **, then custom handler uppercases.
     assert_eq!(result.as_ref(), "HELLO **WORLD**");
 }
@@ -1345,7 +1344,7 @@ fn custom_handler_runs() {
 #[test]
 fn custom_handler_priority_before_builtin() {
     struct PrependHandler;
-    impl RemendHandler for PrependHandler {
+    impl StitchHandler for PrependHandler {
         fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
             if text.starts_with("PREFIX: ") {
                 Cow::Borrowed(text)
@@ -1361,10 +1360,10 @@ fn custom_handler_priority_before_builtin() {
         }
     }
 
-    let opts = RemendOptions::default()
+    let opts = StitchOptions::default()
         .bold(false) // disable bold so we can test just the prepend
         .handler(Box::new(PrependHandler));
-    let result = remend("hello", &opts);
+    let result = stitch("hello", &opts);
     assert_eq!(result.as_ref(), "PREFIX: hello");
 }
 
@@ -1372,7 +1371,7 @@ fn custom_handler_priority_before_builtin() {
 // Property-based tests (fuzz invariants)
 // ===========================================================================
 
-/// Biases toward characters remend actively inspects — markdown punctuation,
+/// Biases toward characters stitch actively inspects — markdown punctuation,
 /// KaTeX/HTML/table delimiters, URL punctuation, CR/LF, and plain prose.
 /// Capped at 80 chars so shrunk counterexamples stay readable.
 fn markdown_soup() -> impl Strategy<Value = String> {
@@ -1438,8 +1437,8 @@ struct OptionFlags {
 }
 
 impl OptionFlags {
-    fn to_options(&self) -> RemendOptions {
-        RemendOptions::default()
+    fn to_options(&self) -> StitchOptions {
+        StitchOptions::default()
             .bold(self.bold)
             .italic(self.italic)
             .bold_italic(self.bold_italic)
@@ -1519,7 +1518,7 @@ struct Recorder {
     log: Arc<Mutex<String>>,
 }
 
-impl RemendHandler for Recorder {
+impl StitchHandler for Recorder {
     fn handle<'a>(&self, text: &'a str) -> Cow<'a, str> {
         self.log.lock().unwrap().push(self.tag);
         Cow::Borrowed(text)
@@ -1535,18 +1534,94 @@ impl RemendHandler for Recorder {
 /// Direct tripwire for issue #144 (idempotency violation on `"*0\t"`).
 #[test]
 fn idempotency_regression_0144() {
-    let opts = RemendOptions::default();
-    let once = remend("*0\t", &opts).into_owned();
-    let twice = remend(&once, &opts).into_owned();
+    let opts = StitchOptions::default();
+    let once = stitch("*0\t", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
+/// Idempotency violation on `"*'***a"` with `bold_italic` but `bold` disabled:
+/// bold_italic appends `***`, then italic_asterisk sees an odd single-count
+/// and appended `*` — but the new `*` has `prev == '*'` so the counter keeps
+/// ignoring it, the count stays odd, and each pass extends the trailing run.
+#[test]
+fn idempotency_regression_0145() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: true,
+        bold_italic: true,
+        ..StitchOptions::default()
+    };
+    let once = stitch("*'***a", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
+/// Idempotency violation on `"*0*>$$**\r*\n"` with `italic` + `katex`.
+/// The `*` at pos 9 is between `\r` (CR) and `\n` (LF). The whitespace
+/// flanking check treated `\n` as ws but not `\r`, so the `*` was counted
+/// as a floating italic opener. italic_asterisk appended a `*`, katex then
+/// wrapped the tail in `\n$$`, and on the next pass the new `*` (inside
+/// complete math) plus the `\r`-flanked `*` counted as odd, triggering
+/// another append. Fix: `\r` flanks like `\n` in should_skip_asterisk.
+#[test]
+fn idempotency_regression_0146() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: true,
+        bold_italic: false,
+        inline_code: false,
+        strikethrough: false,
+        links: false,
+        images: false,
+        katex: true,
+        inline_katex: false,
+        setext_headings: false,
+        html_tags: false,
+        single_tilde: false,
+        comparison_operators: false,
+        link_mode: LinkMode::Protocol,
+        handlers: Vec::new(),
+    };
+    let once = stitch("*0*>$$**\r*\n", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
+    assert_eq!(twice, once);
+}
+
+/// Companion regression to 0146: the proptest also shrinks to `"*\r$"`
+/// with `italic` + `inline_katex`. The `*` at pos 0 has `prev==SOF` (ws)
+/// and `next==\r`. If `\r` isn't whitespace, the `*` is counted as a
+/// floating opener and italic appends `*`, which inline_katex then wraps.
+#[test]
+fn idempotency_regression_0147() {
+    let opts = StitchOptions {
+        bold: false,
+        italic: true,
+        bold_italic: false,
+        inline_code: false,
+        strikethrough: false,
+        links: false,
+        images: false,
+        katex: false,
+        inline_katex: true,
+        setext_headings: false,
+        html_tags: false,
+        single_tilde: false,
+        comparison_operators: false,
+        link_mode: LinkMode::Protocol,
+        handlers: Vec::new(),
+    };
+    let once = stitch("*\r$", &opts).into_owned();
+    let twice = stitch(&once, &opts).into_owned();
     assert_eq!(twice, once);
 }
 
 /// Pipeline-level idempotency tripwires for each proptest regression seed.
-/// These exercise the full remend() pipeline (not individual handlers).
+/// These exercise the full stitch() pipeline (not individual handlers).
 #[test]
 fn idempotency_seeds_pipeline() {
-    fn only(f: impl FnOnce(&mut RemendOptions)) -> RemendOptions {
-        let mut o = RemendOptions {
+    fn only(f: impl FnOnce(&mut StitchOptions)) -> StitchOptions {
+        let mut o = StitchOptions {
             bold: false,
             italic: false,
             bold_italic: false,
@@ -1567,7 +1642,7 @@ fn idempotency_seeds_pipeline() {
         o
     }
 
-    let seeds: &[(&str, RemendOptions)] = &[
+    let seeds: &[(&str, StitchOptions)] = &[
         (
             "_$",
             only(|o| {
@@ -1634,11 +1709,32 @@ fn idempotency_seeds_pipeline() {
                 o.katex = true;
             }),
         ),
+        (
+            "*'***a",
+            only(|o| {
+                o.italic = true;
+                o.bold_italic = true;
+            }),
+        ),
+        (
+            "*0*>$$**\r*\n",
+            only(|o| {
+                o.italic = true;
+                o.katex = true;
+            }),
+        ),
+        (
+            "*\r$",
+            only(|o| {
+                o.italic = true;
+                o.inline_katex = true;
+            }),
+        ),
     ];
 
     for (input, opts) in seeds {
-        let once = remend(input, opts).into_owned();
-        let twice = remend(&once, opts).into_owned();
+        let once = stitch(input, opts).into_owned();
+        let twice = stitch(&once, opts).into_owned();
         assert_eq!(
             twice, once,
             "idempotency violated for seed {input:?} with opts {opts:?}"
@@ -1650,10 +1746,10 @@ fn idempotency_seeds_pipeline() {
 #[test]
 fn idempotency_trailing_backslash_combos() {
     let inputs = ["**\\", "~~\\", "$*\\", "$$\\", "***\\"];
-    let opts = RemendOptions::default();
+    let opts = StitchOptions::default();
     for input in inputs {
-        let once = remend(input, &opts).into_owned();
-        let twice = remend(&once, &opts).into_owned();
+        let once = stitch(input, &opts).into_owned();
+        let twice = stitch(&once, &opts).into_owned();
         assert_eq!(
             twice, once,
             "idempotency violated for trailing-backslash input {input:?}"
@@ -1667,7 +1763,7 @@ proptest! {
     #[test]
     fn fuzz_never_panics_on_arbitrary_utf8(chars in prop::collection::vec(any::<char>(), 0..256)) {
         let s: String = chars.iter().collect();
-        let _ = remend(&s, &RemendOptions::default());
+        let _ = stitch(&s, &StitchOptions::default());
     }
 
     #[test]
@@ -1675,13 +1771,13 @@ proptest! {
         // Streaming hits every prefix as tokens arrive; iterate all boundaries
         // per input rather than a single random cut.
         let s: String = chars.iter().collect();
-        let opts = RemendOptions::default();
+        let opts = StitchOptions::default();
         let boundaries = s
             .char_indices()
             .map(|(i, _)| i)
             .chain(std::iter::once(s.len()));
         for cut in boundaries {
-            let _ = remend(&s[..cut], &opts);
+            let _ = stitch(&s[..cut], &opts);
         }
     }
 
@@ -1693,8 +1789,8 @@ proptest! {
         s in markdown_soup(),
         flags in arbitrary_options(),
     ) {
-        let once = remend(&s, &flags.to_options()).into_owned();
-        let twice = remend(&once, &flags.to_options()).into_owned();
+        let once = stitch(&s, &flags.to_options()).into_owned();
+        let twice = stitch(&once, &flags.to_options()).into_owned();
         prop_assert_eq!(twice, once);
     }
 
@@ -1705,14 +1801,14 @@ proptest! {
         suffix in markdown_soup(),
     ) {
         let s = format!("{prefix}{url}{suffix}");
-        let _ = remend(&s, &RemendOptions::default());
+        let _ = stitch(&s, &StitchOptions::default());
     }
 
     #[test]
     fn fuzz_reference_style_links_never_panic(
         s in r"\[[a-zA-Z0-9 ]{0,20}\](\[[a-zA-Z0-9]{0,10}\])?(\n\[[a-zA-Z0-9]{0,10}\]: https?://[a-zA-Z0-9./\-]{0,30})?",
     ) {
-        let _ = remend(&s, &RemendOptions::default());
+        let _ = stitch(&s, &StitchOptions::default());
     }
 
     #[test]
@@ -1722,7 +1818,7 @@ proptest! {
         suffix in markdown_soup(),
     ) {
         let s = format!("{prefix}{math}{suffix}");
-        let _ = remend(&s, &RemendOptions::default());
+        let _ = stitch(&s, &StitchOptions::default());
     }
 
     #[test]
@@ -1732,7 +1828,7 @@ proptest! {
         suffix in markdown_soup(),
     ) {
         let s = format!("{prefix}{math}{suffix}");
-        let _ = remend(&s, &RemendOptions::default().inline_katex(true));
+        let _ = stitch(&s, &StitchOptions::default().inline_katex(true));
     }
 
     #[test]
@@ -1742,7 +1838,7 @@ proptest! {
         let log = Arc::new(Mutex::new(String::new()));
 
         // Disable every built-in so only the custom recorders run.
-        let mut opts = RemendOptions::default()
+        let mut opts = StitchOptions::default()
             .bold(false)
             .italic(false)
             .bold_italic(false)
@@ -1765,7 +1861,7 @@ proptest! {
             }));
         }
 
-        let _ = remend("x", &opts);
+        let _ = stitch("x", &opts);
 
         let actual = log.lock().unwrap().clone();
 
@@ -1789,7 +1885,7 @@ proptest! {
         // handlers; assert recorder-relative order still matches priority sort
         // (stable sort preserves insertion order on ties).
         let log = Arc::new(Mutex::new(String::new()));
-        let mut opts = RemendOptions::default();
+        let mut opts = StitchOptions::default();
         for (i, &pri) in priorities.iter().enumerate() {
             opts.handlers.push(Box::new(Recorder {
                 tag: (b'a' + i as u8) as char,
@@ -1798,7 +1894,7 @@ proptest! {
             }));
         }
 
-        let _ = remend("plain text", &opts);
+        let _ = stitch("plain text", &opts);
 
         let actual = log.lock().unwrap().clone();
 
@@ -1817,7 +1913,7 @@ proptest! {
         // Force exactly one trailing space (not two, which would be a line break).
         let trimmed = s.trim_end_matches(' ');
         let input = format!("{trimmed} ");
-        let result = remend(&input, &RemendOptions::default()).into_owned();
+        let result = stitch(&input, &StitchOptions::default()).into_owned();
         prop_assert!(
             !result.ends_with(' '),
             "single trailing space should be stripped; got {result:?}",
@@ -1889,7 +1985,7 @@ proptest! {
         // markers; 64 bytes of headroom catches unbounded-growth regressions
         // without depending on #144.
         let opts = flags.to_options();
-        let result = remend(&s, &opts);
+        let result = stitch(&s, &opts);
         prop_assert!(
             result.len() <= s.len() + 64,
             "output grew by more than 64 bytes: input len={}, output len={}, input={s:?}",
