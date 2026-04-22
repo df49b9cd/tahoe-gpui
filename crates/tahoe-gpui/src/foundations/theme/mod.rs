@@ -53,7 +53,7 @@ pub use super::materials::LiquidGlassPreference;
 // Typography types — canonical definitions in `super::typography`
 pub use super::typography::{
     DynamicTypeSize, FontDesign, LabelLevel, LeadingStyle, TextCase, TextStyle, TextStyleAttrs,
-    TextStyledExt, bold_step, macos_tracking, platform_text_size,
+    TextStyledExt, TruncationMode, bold_step, macos_tracking, platform_text_size,
 };
 
 // Accessibility types — canonical definitions in `super::accessibility`

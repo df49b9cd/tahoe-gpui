@@ -52,9 +52,10 @@ use crate::components::menus_and_actions::context_menu::{
 };
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::layout::READABLE_OPTIMAL_WIDTH;
+use crate::foundations::text_truncation::truncate_middle;
 use crate::foundations::theme::{
     ActiveTheme, FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle,
-    TextStyledExt,
+    TextStyledExt, TruncationMode,
 };
 use crate::text_actions::{
     Copy, Down, End, Home, PageDown, PageUp, SelectAll, ShowContextMenu, Up,
@@ -67,6 +68,13 @@ use crate::text_actions::{
 /// scope-specific raw-key or modifier-key bindings live under a named
 /// context so they don't collide with global bindings.
 pub const TEXT_VIEW_CONTEXT: &str = "TextView";
+
+/// Character budget used by [`TruncationMode::Middle`] when the caller
+/// does not set one via [`TextView::truncation_char_budget`]. 32 chars is
+/// comfortable for typical path labels and breadcrumbs — long enough to
+/// preserve context on both sides of the ellipsis, short enough that a
+/// narrow sidebar cell still clips.
+const DEFAULT_MIDDLE_TRUNCATION_CHARS: usize = 32;
 
 /// Returns the raw-key and modifier-key bindings scoped to
 /// [`TEXT_VIEW_CONTEXT`]. Install alongside [`crate::text_keybindings`]
@@ -434,6 +442,19 @@ impl TextViewContent {
             },
         }
     }
+
+    /// Returns a plain-text clone with the middle-truncation helper
+    /// applied. Rich content is returned unchanged — replacing the string
+    /// would invalidate the stored `HighlightStyle` byte ranges.
+    fn truncate_middle_content(&self, max_chars: usize) -> Self {
+        match self {
+            Self::Plain(t) => Self::Plain(SharedString::from(truncate_middle(t, max_chars))),
+            Self::Rich { text, highlights } => Self::Rich {
+                text: text.clone(),
+                highlights: highlights.clone(),
+            },
+        }
+    }
 }
 
 /// A read-only text display view per HIG.
@@ -504,6 +525,15 @@ pub struct TextView {
     /// ligatures like `=>`, `!=`).
     ligatures_enabled: Option<bool>,
     text_case: Option<TextCase>,
+    // Phase B — SwiftUI `Text.TruncationMode` parity. `None` keeps
+    // GPUI's default (`TextOverflow::Truncate` applied implicitly when
+    // `line_clamp` clips the string). `Some(mode)` pairs the mode with an
+    // explicit `text_ellipsis` / `text_ellipsis_start` / `truncate_middle`
+    // render-path decision.
+    truncation_mode: Option<TruncationMode>,
+    /// Character budget used by [`TruncationMode::Middle`]. Falls back to
+    /// a conservative default when the caller does not supply one.
+    truncation_char_budget: Option<usize>,
 }
 
 impl TextView {
@@ -541,6 +571,8 @@ impl TextView {
             monospaced_digit: false,
             ligatures_enabled: None,
             text_case: None,
+            truncation_mode: None,
+            truncation_char_budget: None,
         }
     }
 
@@ -820,6 +852,46 @@ impl TextView {
         self
     }
 
+    // ── Phase B — SwiftUI `Text.truncationMode` parity ────────────────
+    //
+    // [`TruncationMode::Tail`] and [`Head`](TruncationMode::Head) route to
+    // GPUI's native `TextOverflow::Truncate` / `TruncateStart`. Middle has
+    // no GPUI primitive, so the render path rewrites the string via
+    // [`crate::foundations::text_truncation::truncate_middle`] — this
+    // matches the pattern Zed already uses for path labels
+    // (see `util::truncate_and_remove_front`).
+    //
+    // The mode is a no-op unless the view is also constrained (by
+    // `max_lines(1)` or by a surrounding width cap) — GPUI only invokes
+    // the overflow strategy when the text actually exceeds the element's
+    // width.
+
+    /// Control where the ellipsis is placed when text overflows its
+    /// container. Matches SwiftUI's `.truncationMode(_:)` modifier.
+    ///
+    /// - [`TruncationMode::Tail`] (default) clips the end: `"a/long/pa…"`.
+    /// - [`TruncationMode::Head`] clips the start: `"…g/path/file.rs"`.
+    ///   Best for file paths where the tail is more informative.
+    /// - [`TruncationMode::Middle`] clips the middle: `"a/lo…file.rs"`.
+    ///   Best for breadcrumbs / path labels where both ends matter.
+    ///
+    /// Middle uses a character-budget heuristic (default 32 characters,
+    /// override with [`Self::truncation_char_budget`]) rather than exact
+    /// pixel measurement. Close enough for the typical use cases; a
+    /// pixel-exact variant would need hook-in to the post-layout pass.
+    pub fn truncation_mode(mut self, mode: TruncationMode) -> Self {
+        self.truncation_mode = Some(mode);
+        self
+    }
+
+    /// Set the character budget used by [`TruncationMode::Middle`].
+    /// No effect unless [`Self::truncation_mode`] is set to
+    /// [`TruncationMode::Middle`]. Defaults to 32 characters.
+    pub fn truncation_char_budget(mut self, budget: usize) -> Self {
+        self.truncation_char_budget = Some(budget);
+        self
+    }
+
     /// Immutable access to the underlying selection coordinator.
     /// Exposed so host apps can programmatically clear the selection or
     /// inspect its state (e.g. to enable/disable a Copy menu item).
@@ -990,16 +1062,31 @@ impl TextView {
         self.show_context_menu_at(position, window, cx);
     }
 
-    /// Test-only helper that mirrors the render-path case-transform
-    /// logic without running a paint. Returns the string the view would
-    /// hand to [`SelectableText`] / [`StyledText`] given the current
-    /// [`Self::text_case`] setting.
+    /// Test-only helper that mirrors the render-path content pipeline
+    /// (case transform then middle-truncation) without running a paint.
+    /// Returns the string the view would hand to [`SelectableText`] /
+    /// [`StyledText`] given the current [`Self::text_case`] and
+    /// [`Self::truncation_mode`] settings.
     #[cfg(test)]
     fn effective_text_for_test(&self) -> SharedString {
-        match self.text_case {
-            Some(case) => self.content.with_case(case).text().clone(),
-            None => self.content.text().clone(),
-        }
+        let content = match self.text_case {
+            Some(case) => self.content.with_case(case),
+            None => match &self.content {
+                TextViewContent::Plain(t) => TextViewContent::Plain(t.clone()),
+                TextViewContent::Rich { text, highlights } => TextViewContent::Rich {
+                    text: text.clone(),
+                    highlights: highlights.clone(),
+                },
+            },
+        };
+        let content = match self.truncation_mode {
+            Some(TruncationMode::Middle) => content.truncate_middle_content(
+                self.truncation_char_budget
+                    .unwrap_or(DEFAULT_MIDDLE_TRUNCATION_CHARS),
+            ),
+            _ => content,
+        };
+        content.text().clone()
     }
 
     fn show_context_menu_at(
@@ -1167,7 +1254,7 @@ impl Render for TextView {
         // `TextView::text_case`). `effective_content` flows to both the
         // a11y label and the styled child, so every downstream consumer
         // sees the same string.
-        let effective_content = match self.text_case {
+        let mut effective_content = match self.text_case {
             Some(case) => self.content.with_case(case),
             None => match &self.content {
                 TextViewContent::Plain(t) => TextViewContent::Plain(t.clone()),
@@ -1177,6 +1264,29 @@ impl Render for TextView {
                 },
             },
         };
+
+        // Phase B — truncation. Head / Tail use GPUI's native
+        // `TextOverflow` (wired on the enclosing element's `TextStyle`).
+        // Middle has no GPUI primitive, so rewrite the plain-text content
+        // through `truncate_middle` ahead of rendering. Rich content is a
+        // no-op for Middle because any byte-range shift would invalidate
+        // the stored `HighlightStyle` spans — same rationale as
+        // `TextView::text_case`.
+        match self.truncation_mode {
+            Some(TruncationMode::Tail) => {
+                typography = typography.text_ellipsis();
+            }
+            Some(TruncationMode::Head) => {
+                typography = typography.text_ellipsis_start();
+            }
+            Some(TruncationMode::Middle) => {
+                let budget = self
+                    .truncation_char_budget
+                    .unwrap_or(DEFAULT_MIDDLE_TRUNCATION_CHARS);
+                effective_content = effective_content.truncate_middle_content(budget);
+            }
+            None => {}
+        }
 
         // A11y label falls back to effective text (post-case-transform).
         let label = self
@@ -1687,6 +1797,9 @@ mod gpui_tests {
             assert!(!tv.monospaced_digit);
             assert!(tv.ligatures_enabled.is_none());
             assert!(tv.text_case.is_none());
+            // Phase B defaults — truncation off; budget unset.
+            assert!(tv.truncation_mode.is_none());
+            assert!(tv.truncation_char_budget.is_none());
         });
     }
 
@@ -2136,6 +2249,84 @@ mod gpui_tests {
                 "Hello",
                 "rich content must not be case-transformed",
             );
+        });
+    }
+
+    // ── Phase B — truncation mode ─────────────────────────────────
+
+    #[gpui::test]
+    async fn truncation_mode_builder_stores_mode(cx: &mut gpui::TestAppContext) {
+        use crate::foundations::theme::TruncationMode;
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "x").truncation_mode(TruncationMode::Head)
+        });
+        handle.update(cx, |tv, _| {
+            assert_eq!(tv.truncation_mode, Some(TruncationMode::Head));
+        });
+    }
+
+    #[gpui::test]
+    async fn truncation_middle_rewrites_plain_content(cx: &mut gpui::TestAppContext) {
+        use crate::foundations::theme::TruncationMode;
+        // 44 chars, budget 12 → "abcde…wxyz" with 12 total chars.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::new(cx, "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH")
+                .truncation_mode(TruncationMode::Middle)
+                .truncation_char_budget(12)
+        });
+        handle.update(cx, |tv, _| {
+            // Raw content is untouched so the caller's input remains
+            // inspectable — same contract as `text_case`.
+            assert_eq!(tv.content.text().len(), 44);
+            let rendered = tv.effective_text_for_test();
+            assert_eq!(rendered.chars().count(), 12);
+            assert!(rendered.contains('…'));
+            assert!(rendered.starts_with('a'));
+            assert!(rendered.ends_with('H'));
+        });
+    }
+
+    #[gpui::test]
+    async fn truncation_middle_is_noop_for_rich_content(cx: &mut gpui::TestAppContext) {
+        use crate::foundations::theme::TruncationMode;
+        // Rich content keeps byte-ranged HighlightStyle spans — rewriting
+        // the string would shift those ranges off their target characters.
+        let (handle, cx) = setup_test_window(cx, |_window, cx| {
+            TextView::styled(
+                cx,
+                "abcdefghijklmnopqrstuvwxyz0123456789",
+                vec![(
+                    0..4,
+                    HighlightStyle {
+                        font_weight: Some(gpui::FontWeight::BOLD),
+                        ..Default::default()
+                    },
+                )],
+            )
+            .truncation_mode(TruncationMode::Middle)
+            .truncation_char_budget(10)
+        });
+        handle.update(cx, |tv, _| {
+            let rendered = tv.effective_text_for_test();
+            assert_eq!(
+                rendered.as_ref(),
+                "abcdefghijklmnopqrstuvwxyz0123456789",
+                "rich content must not be truncated in the middle",
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn truncation_middle_uses_default_budget_when_unset(cx: &mut gpui::TestAppContext) {
+        use crate::foundations::theme::TruncationMode;
+        let long = "a".repeat(80);
+        let (handle, cx) = setup_test_window(cx, {
+            let long = long.clone();
+            move |_window, cx| TextView::new(cx, long).truncation_mode(TruncationMode::Middle)
+        });
+        handle.update(cx, |tv, _| {
+            // Falls back to DEFAULT_MIDDLE_TRUNCATION_CHARS (32).
+            assert_eq!(tv.effective_text_for_test().chars().count(), 32);
         });
     }
 }

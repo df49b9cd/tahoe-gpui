@@ -6,6 +6,7 @@ use gpui::{AnyElement, Context, HighlightStyle, StrikethroughStyle, UnderlineSty
 use tahoe_gpui::components::content::text_view::TextView;
 use tahoe_gpui::foundations::theme::{
     FontDesign, LabelLevel, LeadingStyle, TahoeTheme, TextCase, TextStyle, TextStyledExt,
+    TruncationMode,
 };
 
 use crate::ComponentGallery;
@@ -401,6 +402,41 @@ pub fn render(
         .child(cx.new(|cx| {
             TextView::new(cx, "Trailing alignment — numeric columns, timestamps.")
                 .text_align(gpui::TextAlign::Right)
+        }))
+        // ── Truncation mode ────────────────────────────────────────────────
+        .child(div().h(theme.spacing_sm))
+        .child(
+            div()
+                .text_style(TextStyle::Headline, theme)
+                .text_color(theme.text)
+                .child("Truncation mode (Tail / Head / Middle)"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption1, theme)
+                .text_color(theme.text_muted)
+                .child(
+                    "Head / Tail map to GPUI's native text-overflow. \
+                     Middle emulates NSLineBreakMode.byTruncatingMiddle via \
+                     a character-budget helper — useful for file paths and \
+                     breadcrumbs where both ends matter.",
+                ),
+        )
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "crates/tahoe-gpui/src/components/content/text_view.rs",
+            )
+            .truncation_mode(TruncationMode::Middle)
+            .truncation_char_budget(32)
+        }))
+        .child(cx.new(|cx| {
+            TextView::new(
+                cx,
+                "/Users/example/projects/tahoe/crates/tahoe-gpui/src/components/content/text_view.rs",
+            )
+            .truncation_mode(TruncationMode::Middle)
+            .truncation_char_budget(40)
         }))
         // ── Non-selectable ────────────────────────────────────────────────
         .child(div().h(theme.spacing_sm))

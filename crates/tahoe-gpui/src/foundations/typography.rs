@@ -528,6 +528,34 @@ impl TextCase {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TruncationMode
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Where to place the ellipsis when text overflows its container.
+///
+/// Mirrors SwiftUI's `Text.TruncationMode` enum. Head and tail map directly
+/// to GPUI's [`TextOverflow::TruncateStart`] and [`TextOverflow::Truncate`].
+/// Middle has no native GPUI primitive, so the render path emulates it by
+/// replacing the string with a head+ellipsis+tail form via
+/// [`foundations::text_truncation::truncate_middle`].
+///
+/// [`foundations::text_truncation::truncate_middle`]: crate::foundations::text_truncation::truncate_middle
+/// [`TextOverflow::Truncate`]: gpui::TextOverflow::Truncate
+/// [`TextOverflow::TruncateStart`]: gpui::TextOverflow::TruncateStart
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TruncationMode {
+    /// Truncate at the end: "long text h…".
+    #[default]
+    Tail,
+    /// Truncate at the start: "…ext here". Typical for file paths where
+    /// the trailing name is more informative than the leading directories.
+    Head,
+    /// Truncate in the middle: "long…here". Useful for breadcrumb labels
+    /// and file paths that want to show both ends.
+    Middle,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LabelLevel
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
