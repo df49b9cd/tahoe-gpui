@@ -15,10 +15,13 @@
 //! participating in a document-wide selection.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{App, ClipboardItem, ElementId, SharedString};
+
+use crate::components::content::selectable_text::{SelectionCoordinator, word_range_at};
 
 /// The selection gesture mode set at mouse-down time. Determines how
 /// subsequent drag moves extend the selection — character-granular
@@ -80,6 +83,20 @@ struct MarkdownSelectionState {
     /// [`MarkdownSelection::register`]; cleared by
     /// [`MarkdownSelection::begin_frame`].
     paragraphs: Vec<ParagraphInfo>,
+    /// `element_id → index` lookup into `paragraphs`. Kept in sync with
+    /// the vector so `range_for_element`, `selected_text`, and
+    /// drag-extend helpers can resolve a paragraph position in O(1)
+    /// instead of scanning the registration list on every paint.
+    paragraph_index: HashMap<ElementId, usize>,
+}
+
+impl MarkdownSelectionState {
+    /// O(1) lookup: returns the index into `paragraphs` of the paragraph
+    /// identified by `element_id`, or `None` when not registered in the
+    /// current frame.
+    fn paragraph_position(&self, element_id: &ElementId) -> Option<usize> {
+        self.paragraph_index.get(element_id).copied()
+    }
 }
 
 /// Shared selection coordinator. Cheap to clone — internally an
@@ -102,7 +119,9 @@ impl MarkdownSelection {
     /// parse) re-register in fresh order. Anchor / focus / pending
     /// state is preserved.
     pub fn begin_frame(&self) {
-        self.inner.borrow_mut().paragraphs.clear();
+        let mut state = self.inner.borrow_mut();
+        state.paragraphs.clear();
+        state.paragraph_index.clear();
     }
 
     /// Register a paragraph as part of the current frame. `element_id`
@@ -115,9 +134,11 @@ impl MarkdownSelection {
         // Guard against duplicate ids (shouldn't happen, but be
         // defensive so a caller bug doesn't produce confusing
         // selection coordinates).
-        if state.paragraphs.iter().any(|p| p.element_id == element_id) {
+        if state.paragraph_index.contains_key(&element_id) {
             return;
         }
+        let index = state.paragraphs.len();
+        state.paragraph_index.insert(element_id.clone(), index);
         state.paragraphs.push(ParagraphInfo { element_id, text });
     }
 
@@ -140,18 +161,9 @@ impl MarkdownSelection {
         let anchor = state.anchor.as_ref()?;
         let focus = state.focus.as_ref()?;
 
-        let anchor_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == anchor.element_id)?;
-        let focus_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == focus.element_id)?;
-        let my_pos = state
-            .paragraphs
-            .iter()
-            .position(|p| &p.element_id == element_id)?;
+        let anchor_pos = state.paragraph_position(&anchor.element_id)?;
+        let focus_pos = state.paragraph_position(&focus.element_id)?;
+        let my_pos = state.paragraph_position(element_id)?;
 
         // Normalise anchor / focus into (start, end) by paragraph index
         // then character index within.
@@ -355,18 +367,10 @@ impl MarkdownSelection {
             return String::new();
         };
 
-        let Some(anchor_pos) = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == anchor.element_id)
-        else {
+        let Some(anchor_pos) = state.paragraph_position(&anchor.element_id) else {
             return String::new();
         };
-        let Some(focus_pos) = state
-            .paragraphs
-            .iter()
-            .position(|p| p.element_id == focus.element_id)
-        else {
+        let Some(focus_pos) = state.paragraph_position(&focus.element_id) else {
             return String::new();
         };
 
@@ -429,6 +433,43 @@ impl MarkdownSelection {
     }
 }
 
+impl SelectionCoordinator for MarkdownSelection {
+    fn register(&self, element_id: ElementId, text: SharedString) {
+        MarkdownSelection::register(self, element_id, text);
+    }
+
+    fn range_for_element(&self, element_id: &ElementId, text_len: usize) -> Option<Range<usize>> {
+        MarkdownSelection::range_for_element(self, element_id, text_len)
+    }
+
+    fn mouse_down(
+        &self,
+        element_id: ElementId,
+        text: &str,
+        char_index: usize,
+        click_count: usize,
+        shift: bool,
+    ) {
+        MarkdownSelection::mouse_down(self, element_id, text, char_index, click_count, shift);
+    }
+
+    fn drag_to(&self, element_id: ElementId, text: &str, char_index: usize) {
+        MarkdownSelection::drag_to(self, element_id, text, char_index);
+    }
+
+    fn end_drag(&self) {
+        MarkdownSelection::end_drag(self);
+    }
+
+    fn is_pending(&self) -> bool {
+        MarkdownSelection::is_pending(self)
+    }
+
+    fn begin_frame(&self) {
+        MarkdownSelection::begin_frame(self);
+    }
+}
+
 fn normalise(a: (usize, usize), b: (usize, usize)) -> ((usize, usize), (usize, usize)) {
     if a <= b { (a, b) } else { (b, a) }
 }
@@ -448,18 +489,10 @@ fn extend_with_range(
         return;
     };
 
-    let Some(anchor_pos) = state
-        .paragraphs
-        .iter()
-        .position(|p| p.element_id == orig_start.element_id)
-    else {
+    let Some(anchor_pos) = state.paragraph_position(&orig_start.element_id) else {
         return;
     };
-    let Some(head_pos) = state
-        .paragraphs
-        .iter()
-        .position(|p| p.element_id == head_start.element_id)
-    else {
+    let Some(head_pos) = state.paragraph_position(&head_start.element_id) else {
         return;
     };
 
@@ -473,109 +506,14 @@ fn extend_with_range(
     }
 }
 
-/// Kind used by [`word_range_at`] to identify consecutive runs of
-/// same-kind characters. `Word` covers Unicode alphanumerics and
-/// underscores; `Whitespace` is `char::is_whitespace`; everything
-/// else is `Punctuation`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CharKind {
-    Whitespace,
-    Punctuation,
-    Word,
-}
-
-impl CharKind {
-    fn of(c: char) -> Self {
-        if c.is_whitespace() {
-            Self::Whitespace
-        } else if c.is_alphanumeric() || c == '_' {
-            Self::Word
-        } else {
-            Self::Punctuation
-        }
-    }
-
-    /// Priority for picking the kind at a boundary: Word beats
-    /// Punctuation which beats Whitespace — matches the convention
-    /// used by Zed's `CharClassifier` and macOS NSTextView double-
-    /// click behaviour (prefer the word when hovering the boundary).
-    fn priority(self) -> u8 {
-        match self {
-            Self::Whitespace => 0,
-            Self::Punctuation => 1,
-            Self::Word => 2,
-        }
-    }
-}
-
-/// Return the byte range of the "word" surrounding `index` in `text`.
-/// A word is a maximal run of consecutive same-kind characters
-/// (Word > Punctuation > Whitespace, with priority at boundaries).
-///
-/// `index` is clamped to `[0, text.len()]` and must lie on a UTF-8
-/// char boundary (as GPUI's `TextLayout::index_for_position`
-/// guarantees).
-pub fn word_range_at(text: &str, index: usize) -> Range<usize> {
-    let index = index.min(text.len());
-    if text.is_empty() {
-        return 0..0;
-    }
-    if !text.is_char_boundary(index) {
-        // Defensive: the caller should never pass a non-boundary
-        // index, but if they do, snap to the nearest previous
-        // boundary.
-        let mut snapped = index;
-        while snapped > 0 && !text.is_char_boundary(snapped) {
-            snapped -= 1;
-        }
-        return word_range_at(text, snapped);
-    }
-
-    let before = &text[..index];
-    let after = &text[index..];
-
-    let prev_kind = before.chars().next_back().map(CharKind::of);
-    let next_kind = after.chars().next().map(CharKind::of);
-    let kind = match (prev_kind, next_kind) {
-        (Some(p), Some(n)) => {
-            if p.priority() >= n.priority() {
-                p
-            } else {
-                n
-            }
-        }
-        (Some(k), None) | (None, Some(k)) => k,
-        (None, None) => return 0..0,
-    };
-
-    // Expand backwards.
-    let mut start = index;
-    for (i, c) in before.char_indices().rev() {
-        if CharKind::of(c) == kind {
-            start = i;
-        } else {
-            break;
-        }
-    }
-
-    // Expand forwards.
-    let mut end = index;
-    for (i, c) in after.char_indices() {
-        if CharKind::of(c) == kind {
-            end = index + i + c.len_utf8();
-        } else {
-            break;
-        }
-    }
-
-    start..end
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::prelude::v1::test;
-    use gpui::SharedString;
+
+    use gpui::{ElementId, SharedString};
+
+    use super::MarkdownSelection;
+    use crate::components::content::selectable_text::word_range_at;
 
     fn make_id(name: &'static str) -> ElementId {
         ElementId::Name(name.into())
