@@ -6,7 +6,7 @@ use gpui::{FocusHandle, SharedString, Window, px};
 use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
 };
-use crate::foundations::layout::{ControlSize, hit_region};
+use crate::foundations::layout::hit_region;
 use crate::foundations::materials::apply_focus_ring;
 
 /// Context shared between the bar and point FKA attachment paths.
@@ -54,8 +54,11 @@ pub(crate) fn attach_fka(
     // size so focus rings render at a reasonable dimension and pointer
     // users can click comfortably — but never past the slot's own width,
     // or each hit region would spill into the next slot and focus would
-    // skip two indices at a time.
-    let target_min = ctx.theme.control_height(ControlSize::Small);
+    // skip two indices at a time. `min_target_size` follows the active
+    // platform's tier (28pt on macOS, 44pt on iOS/iPadOS/watchOS, etc.)
+    // so touch platforms get a finger-sized target without macOS growing
+    // its focus ring past the bar it surrounds.
+    let target_min = ctx.theme.min_target_size();
     let min_target = px(ctx.slot_width.min(target_min).max(1.0));
     let group_for_keys = ctx.group.clone();
     let el = hit_region(

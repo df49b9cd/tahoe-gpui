@@ -901,6 +901,66 @@ async fn legend_with_three_series_renders(cx: &mut TestAppContext) {
     host.update(_vcx, |_h, _cx| {});
 }
 
+#[test]
+fn show_legend_defaults_to_auto() {
+    // No explicit `show_legend` call — field remains `None` so the render
+    // path can apply the "multi → on, single → off" auto rule.
+    let chart = Chart::new(series());
+    assert_eq!(chart.show_legend, None);
+}
+
+#[test]
+fn show_legend_true_overrides_single_series_auto_hide() {
+    let chart = Chart::new(series()).show_legend(true);
+    assert_eq!(chart.show_legend, Some(true));
+}
+
+#[test]
+fn show_legend_false_overrides_multi_series_auto_show() {
+    let ds = ChartDataSet::multi(vec![
+        ChartSeries::new(ChartDataSeries::new("A", vec![1.0, 2.0])),
+        ChartSeries::new(ChartDataSeries::new("B", vec![3.0, 4.0])),
+    ]);
+    let chart = Chart::new(ds).show_legend(false);
+    assert_eq!(chart.show_legend, Some(false));
+}
+
+#[gpui::test]
+async fn show_legend_true_on_single_series_renders_without_panic(cx: &mut TestAppContext) {
+    struct ForcedLegendHarness;
+    impl Render for ForcedLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            Chart::new(series())
+                .id("forced-legend")
+                .chart_type(ChartType::Bar)
+                .size(px(200.0), px(100.0))
+                .show_legend(true)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| ForcedLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn show_legend_false_on_multi_series_renders_without_panic(cx: &mut TestAppContext) {
+    struct SuppressedLegendHarness;
+    impl Render for SuppressedLegendHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let ds = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("A", vec![1.0, 2.0])),
+                ChartSeries::new(ChartDataSeries::new("B", vec![3.0, 4.0])),
+            ]);
+            Chart::new(ds)
+                .id("suppressed-legend")
+                .chart_type(ChartType::Line)
+                .size(px(200.0), px(100.0))
+                .show_legend(false)
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| SuppressedLegendHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
 // ─── Range / Rule ─────────────────────────────────────────────────
 
 #[gpui::test]
@@ -934,6 +994,150 @@ async fn chart_rule_renders_without_panic(cx: &mut TestAppContext) {
         }
     }
     let (host, _vcx) = setup_test_window(cx, |_, _| RuleHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+// ─── Paint callbacks ───────────────────────────────────────────────
+
+#[test]
+fn paint_callback_empty_rule_returns_none() {
+    // An empty Rule used to paint a phantom reference line at the zero
+    // baseline. Contract now: no values → no paint callback, so the
+    // canvas stays untouched when callers render an empty Rule.
+    use std::sync::Arc;
+
+    use gpui::point;
+
+    use super::marks::canvas_paint_callback;
+
+    let empty: Arc<[f32]> = Arc::from(Vec::<f32>::new());
+    let callback = canvas_paint_callback(
+        ChartType::Rule,
+        point(px(0.0), px(0.0)),
+        100.0,
+        50.0,
+        empty,
+        None,
+        0.0,
+        100.0,
+        hsla(0.0, 0.0, 0.0, 1.0),
+    );
+    assert!(callback.is_none(), "empty Rule must not register a paint");
+}
+
+#[test]
+fn paint_callback_rule_with_value_returns_some() {
+    use std::sync::Arc;
+
+    use gpui::point;
+
+    use super::marks::canvas_paint_callback;
+
+    let values: Arc<[f32]> = Arc::from(vec![50.0]);
+    let callback = canvas_paint_callback(
+        ChartType::Rule,
+        point(px(0.0), px(0.0)),
+        100.0,
+        50.0,
+        values,
+        None,
+        0.0,
+        100.0,
+        hsla(0.0, 0.0, 0.0, 1.0),
+    );
+    assert!(callback.is_some(), "Rule with value must register a paint");
+}
+
+#[test]
+fn paint_callback_bar_and_point_return_none() {
+    // Bar and Point render via div fallback, not the canvas path.
+    // A non-None callback would cause double-paint.
+    use std::sync::Arc;
+
+    use gpui::point;
+
+    use super::marks::canvas_paint_callback;
+
+    let values: Arc<[f32]> = Arc::from(vec![10.0, 20.0, 30.0]);
+    for chart_type in [ChartType::Bar, ChartType::Point] {
+        let callback = canvas_paint_callback(
+            chart_type,
+            point(px(0.0), px(0.0)),
+            100.0,
+            50.0,
+            values.clone(),
+            None,
+            0.0,
+            30.0,
+            hsla(0.0, 0.0, 0.0, 1.0),
+        );
+        assert!(
+            callback.is_none(),
+            "{chart_type:?} must not register a canvas paint — div fallback handles it"
+        );
+    }
+}
+
+// ─── Ragged multi-series ───────────────────────────────────────────
+
+// Apple Charts tolerates series with different lengths in the same dataset
+// (e.g. a 7-day "Sales" series alongside a 5-day "Target"). The render
+// path must not panic when indexing beyond the shortest series.
+
+#[gpui::test]
+async fn ragged_multi_series_bar_renders_without_panic(cx: &mut TestAppContext) {
+    struct RaggedBarHarness;
+    impl Render for RaggedBarHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let ds = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("Long", vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+                ChartSeries::new(ChartDataSeries::new("Short", vec![3.0, 1.0])),
+            ]);
+            Chart::new(ds)
+                .id("ragged-bar")
+                .chart_type(ChartType::Bar)
+                .size(px(200.0), px(100.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RaggedBarHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn ragged_multi_series_line_renders_without_panic(cx: &mut TestAppContext) {
+    struct RaggedLineHarness;
+    impl Render for RaggedLineHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let ds = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("Long", vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+                ChartSeries::new(ChartDataSeries::new("Short", vec![3.0, 1.0])),
+            ]);
+            Chart::new(ds)
+                .id("ragged-line")
+                .chart_type(ChartType::Line)
+                .size(px(200.0), px(100.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RaggedLineHarness);
+    host.update(_vcx, |_h, _cx| {});
+}
+
+#[gpui::test]
+async fn ragged_multi_series_with_empty_series_renders(cx: &mut TestAppContext) {
+    struct RaggedEmptyHarness;
+    impl Render for RaggedEmptyHarness {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let ds = ChartDataSet::multi(vec![
+                ChartSeries::new(ChartDataSeries::new("Data", vec![1.0, 2.0, 3.0])),
+                ChartSeries::new(ChartDataSeries::new("Empty", vec![])),
+            ]);
+            Chart::new(ds)
+                .id("ragged-empty")
+                .chart_type(ChartType::Bar)
+                .size(px(200.0), px(100.0))
+        }
+    }
+    let (host, _vcx) = setup_test_window(cx, |_, _| RaggedEmptyHarness);
     host.update(_vcx, |_h, _cx| {});
 }
 

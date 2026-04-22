@@ -69,7 +69,11 @@ impl ChartType {
 /// `From<Vec<T>> for Arc<[T]>`.
 #[derive(Debug, Clone)]
 pub struct ChartDataSeries {
+    /// Display name — shown in legends, FKA labels, and the default
+    /// VoiceOver announcement.
     pub name: SharedString,
+    /// Data samples. For Range charts this is the upper bound; see
+    /// [`range_low`](Self::range_low).
     pub values: Arc<[f32]>,
     /// Lower-bound values for Range charts. When `None`, the series is
     /// treated as a simple value series (Bar, Line, Area, Point, Rule).
@@ -77,6 +81,7 @@ pub struct ChartDataSeries {
 }
 
 impl ChartDataSeries {
+    /// Create a single-value series.
     pub fn new(name: impl Into<SharedString>, values: impl Into<Arc<[f32]>>) -> Self {
         Self {
             name: name.into(),
@@ -119,11 +124,15 @@ impl ChartDataSeries {
 /// A series with an optional per-series colour override.
 #[derive(Debug, Clone)]
 pub struct ChartSeries {
+    /// The underlying data series.
     pub inner: ChartDataSeries,
+    /// Override the auto-assigned palette colour. Takes priority over the
+    /// global `Chart::color(…)` for this series.
     pub color: Option<Hsla>,
 }
 
 impl ChartSeries {
+    /// Wrap a [`ChartDataSeries`] with no colour override (palette-assigned).
     pub fn new(series: ChartDataSeries) -> Self {
         Self {
             inner: series,
@@ -131,6 +140,7 @@ impl ChartSeries {
         }
     }
 
+    /// Override the series colour.
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
         self
@@ -143,16 +153,19 @@ impl ChartSeries {
 /// the theme's categorical palette and a legend is shown automatically.
 #[derive(Debug, Clone)]
 pub struct ChartDataSet {
+    /// The series rendered on the chart, in legend order.
     pub series: Vec<ChartSeries>,
 }
 
 impl ChartDataSet {
+    /// Create a single-series dataset.
     pub fn single(series: ChartDataSeries) -> Self {
         Self {
             series: vec![ChartSeries::new(series)],
         }
     }
 
+    /// Create a multi-series dataset.
     pub fn multi(series: Vec<ChartSeries>) -> Self {
         Self { series }
     }
@@ -160,6 +173,15 @@ impl ChartDataSet {
     /// Whether this data set contains multiple series.
     pub fn is_multi(&self) -> bool {
         self.series.len() > 1
+    }
+
+    /// The longest series length — drives slot width and FKA focus count.
+    pub(crate) fn max_points(&self) -> usize {
+        self.series
+            .iter()
+            .map(|s| s.inner.values.len())
+            .max()
+            .unwrap_or(0)
     }
 
     /// Global min across all series.
@@ -193,8 +215,6 @@ pub(crate) const MIN_POINT_SIZE: f32 = 4.0;
 pub(crate) const MAX_POINT_SIZE: f32 = 10.0;
 /// Horizontal gap between bars inside a multi-series slot.
 pub(crate) const BAR_GAP: f32 = 1.0;
-/// Vertical gap between chart title/subtitle and the plot area.
-pub(crate) const TITLE_GAP: f32 = 4.0;
 
 /// Width of a single bar given the slot width and number of series per slot.
 ///
@@ -254,20 +274,24 @@ impl Default for AxisConfig {
 }
 
 impl AxisConfig {
+    /// Create a default axis configuration (5 Y-ticks, no X labels).
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Approximate Y-axis tick count for the "nice numbers" rounding.
     pub fn y_tick_count(mut self, count: usize) -> Self {
         self.y_tick_count = count;
         self
     }
 
+    /// Override the auto-computed Y-axis ticks with explicit values.
     pub fn y_ticks(mut self, ticks: Vec<f32>) -> Self {
         self.y_ticks = Some(ticks);
         self
     }
 
+    /// Supply one X-axis category label per data point.
     pub fn x_labels(mut self, labels: Vec<impl Into<SharedString>>) -> Self {
         self.x_labels = Some(labels.into_iter().map(|l| l.into()).collect());
         self
@@ -289,11 +313,13 @@ impl AxisConfig {
         theme.control_height(crate::foundations::layout::ControlSize::Mini) * 1.25
     }
 
+    /// Draw a thin line along the Y-axis at the plot area's left edge.
     pub fn show_y_line(mut self) -> Self {
         self.show_y_line = true;
         self
     }
 
+    /// Draw the X-axis baseline along the bottom of the plot area.
     pub fn x_baseline(mut self) -> Self {
         self.x_baseline = true;
         self
@@ -404,10 +430,12 @@ pub struct GridlineConfig {
 }
 
 impl GridlineConfig {
+    /// Create a configuration with no gridlines (same as `default()`).
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Horizontal gridlines only.
     pub fn horizontal() -> Self {
         Self {
             horizontal: true,
@@ -415,6 +443,7 @@ impl GridlineConfig {
         }
     }
 
+    /// Vertical gridlines only.
     pub fn vertical() -> Self {
         Self {
             vertical: true,
@@ -422,11 +451,13 @@ impl GridlineConfig {
         }
     }
 
+    /// Override the gridline colour.
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
         self
     }
 
+    /// Whether any gridlines are enabled.
     pub fn is_active(&self) -> bool {
         self.horizontal || self.vertical
     }

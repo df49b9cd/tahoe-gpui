@@ -100,6 +100,9 @@ use tahoe_gpui::components::selection_and_input::checkbox::CheckboxState;
 use tahoe_gpui::components::selection_and_input::date_picker::SimpleDate;
 use tahoe_gpui::foundations::accessibility::{AccessibilityMode, FocusGroup};
 
+use tahoe_gpui::components::content::chart::{
+    AxisConfig, ChartDataSeries, ChartDataSet, ChartSeries, ChartType, ChartView, GridlineConfig,
+};
 use tahoe_gpui::components::layout_and_organization::split_view::SplitView;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use tahoe_gpui::components::navigation_and_search::sidebar::{Sidebar, SidebarItem};
@@ -465,6 +468,9 @@ pub struct ComponentGallery {
     pub hover_card: Entity<tahoe_gpui::components::presentation::hover_card::HoverCard>,
     pub page_current: usize,
     pub token_field: Entity<TokenField>,
+    /// Live `ChartView` for the charts demo — demonstrates the hover
+    /// crosshair, keyboard arrow/Home/End navigation, and tooltip flip.
+    pub chart_view: Entity<ChartView>,
     /// Open-state booleans for the overlay-style demo pages so the live
     /// `Sheet`, `Modal`, `Dialog`, and `Panel` components can be exercised
     /// inside the gallery rather than approximated with static mockups
@@ -659,6 +665,28 @@ impl ComponentGallery {
                 });
                 entity
             },
+            chart_view: cx.new(|cx| {
+                let series = ChartDataSet::multi(vec![
+                    ChartSeries::new(ChartDataSeries::new(
+                        "Sales",
+                        vec![10.0, 20.0, 15.0, 30.0, 25.0, 28.0, 22.0],
+                    )),
+                    ChartSeries::new(ChartDataSeries::new(
+                        "Target",
+                        vec![12.0, 18.0, 20.0, 25.0, 26.0, 24.0, 28.0],
+                    )),
+                ]);
+                ChartView::new(cx, series)
+                    .chart_type(ChartType::Line)
+                    .size(px(360.0), px(200.0))
+                    .axis(
+                        AxisConfig::new()
+                            .y_tick_count(5)
+                            .x_labels(vec!["M", "T", "W", "T", "F", "S", "S"])
+                            .show_y_line(),
+                    )
+                    .gridlines(GridlineConfig::horizontal())
+            }),
         }
     }
 

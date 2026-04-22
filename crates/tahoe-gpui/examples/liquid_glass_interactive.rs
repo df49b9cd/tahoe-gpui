@@ -734,7 +734,7 @@ impl GlassMessenger {
         Modal::new("new-chat-modal", content)
             .open(self.show_new_chat_modal)
             .width(px(380.0))
-            .accessibility_label("Start a conversation")
+            .accessibility_label("New conversation")
             .on_dismiss(move |_, cx| {
                 entity_close.update(cx, |this, cx| {
                     this.show_new_chat_modal = false;

@@ -11,8 +11,7 @@ use gpui::{
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::theme::ActiveTheme;
-use crate::foundations::typography::{TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 use super::render::series_color;
 use super::types::{AxisConfig, ChartDataSet, ChartType, GridlineConfig};
@@ -48,6 +47,12 @@ pub struct ChartView {
 }
 
 impl ChartView {
+    /// Create a new interactive chart view for the given series.
+    ///
+    /// The returned view is an `Entity<ChartView>`-capable struct: wrap it in
+    /// `cx.new(|cx| ChartView::new(cx, series))` to obtain the GPUI entity
+    /// that owns the hover/focus state. Defaults mirror [`super::Chart`]:
+    /// `Bar` marks at `320×180`, no axis, no gridlines, palette-assigned colours.
     pub fn new(cx: &mut Context<Self>, data_set: impl Into<ChartDataSet>) -> Self {
         Self {
             id: SharedString::from("chart-view"),
@@ -138,6 +143,20 @@ impl ChartView {
     fn plot_inset(&self, theme: &crate::foundations::theme::TahoeTheme) -> f32 {
         f32::from(theme.radius_md)
     }
+
+    /// Height of the X-axis label row at the bottom of the wrapper.
+    ///
+    /// Returns 0 when no `x_labels` are configured, matching the layout
+    /// decision in `Chart::render`. The crosshair must subtract this from
+    /// the plot-area bottom so the vertical line stops where data stops,
+    /// not inside the category-label row.
+    fn x_margin(&self, theme: &crate::foundations::theme::TahoeTheme) -> f32 {
+        if self.axis.as_ref().is_some_and(|a| a.x_labels.is_some()) {
+            AxisConfig::x_label_height(theme)
+        } else {
+            0.0
+        }
+    }
 }
 
 impl Render for ChartView {
@@ -161,13 +180,14 @@ impl Render for ChartView {
         // Pointer wins when both are live (the user is actively moving the
         // mouse), otherwise fall back to the last keyboard-selected slot.
         let hover_index = self.pointer_index.or(self.focus_index);
-        let data_set = self.data_set.clone();
         let global_color = self.global_color;
         let width = self.width;
         let height = self.height;
         let max_pts = self.max_points();
         let y_margin = self.y_margin(theme);
+        let x_margin = self.x_margin(theme);
         let plot_inset = self.plot_inset(theme);
+        let chart_type = self.chart_type;
 
         let crosshair_color = theme.text_muted;
         let origin_tracker = self.wrapper_origin_x.clone();
@@ -185,18 +205,21 @@ impl Render for ChartView {
                 }
                 // Crosshair x lives inside the plot area (wrapper width
                 // minus the plot inset on both sides and the Y-label
-                // column).
+                // column). Line/Area/Range paint marks at
+                // `plot_w * i / (n-1)`; Bar/Point/Rule paint at slot
+                // centres `slot_w * (i + 0.5)`. Branching here keeps the
+                // crosshair over the actual data point.
                 let plot_w = (f32::from(bounds.size.width) - 2.0 * plot_inset - y_margin).max(0.0);
-                let slot_w = plot_w / max_pts as f32;
-                let x =
-                    bounds.origin.x + gpui::px(plot_inset + y_margin + slot_w * (idx as f32 + 0.5));
+                let x_offset = crosshair_x_offset(chart_type, plot_w, idx, max_pts);
+                let x = bounds.origin.x + gpui::px(plot_inset + y_margin + x_offset);
 
                 // Keep the crosshair vertically inside the plot area so it
                 // matches where data paints (Chart insets by `plot_inset`
-                // on top and bottom too).
+                // on top and bottom, and reserves `x_margin` at the bottom
+                // for the X-axis category labels when configured).
                 let top = bounds.origin.y + gpui::px(plot_inset);
                 let bottom = bounds.origin.y
-                    + gpui::px((f32::from(bounds.size.height) - plot_inset).max(0.0));
+                    + gpui::px((f32::from(bounds.size.height) - plot_inset - x_margin).max(0.0));
                 let mut pb = gpui::PathBuilder::stroke(gpui::px(1.0));
                 pb.move_to(gpui::point(x, top));
                 pb.line_to(gpui::point(x, bottom));
@@ -209,23 +232,34 @@ impl Render for ChartView {
         .h(height);
 
         let tooltip_el = if let Some(idx) = hover_index {
-            let mut items = Vec::new();
-            for (si, series) in data_set.series.iter().enumerate() {
-                let value = series.inner.values.get(idx).copied();
-                let color = series_color(&data_set, global_color, si, theme);
-                items.push((series.inner.name.clone(), value, color));
-            }
+            // Single pass: format each row label once and keep the colour
+            // for the legend swatch. The per-series `format!` calls used
+            // to happen twice (once for the VoiceOver summary and once per
+            // child row) on every hover tick — consolidating saves the
+            // duplicate allocations.
+            let items: Vec<(String, Hsla)> = self
+                .data_set
+                .series
+                .iter()
+                .enumerate()
+                .map(|(si, series)| {
+                    let value = series.inner.values.get(idx).copied();
+                    let color = series_color(&self.data_set, global_color, si, theme);
+                    let label = match value {
+                        Some(v) => format!("{}: {v:.1}", series.inner.name),
+                        None => format!("{}: —", series.inner.name),
+                    };
+                    (label, color)
+                })
+                .collect();
 
-            // Build a single concatenated VoiceOver label so the tooltip
-            // carries a Tooltip role with meaningful content. Without this
-            // the hover value is invisible to assistive tech.
+            // Single concatenated VoiceOver label so the tooltip's Tooltip
+            // role carries meaningful content. Without this the hover
+            // value is invisible to assistive tech.
             let tooltip_label: SharedString = SharedString::from(
                 items
                     .iter()
-                    .map(|(name, value, _)| match value {
-                        Some(v) => format!("{name}: {v:.1}"),
-                        None => format!("{name}: —"),
-                    })
+                    .map(|(l, _)| l.as_str())
                     .collect::<Vec<_>>()
                     .join(", "),
             );
@@ -233,10 +267,14 @@ impl Render for ChartView {
                 .role(AccessibilityRole::Tooltip)
                 .label(tooltip_label);
 
+            // Auto-flip: park the tooltip on the opposite side of the
+            // hovered data point so it doesn't cover the mark the user is
+            // inspecting. Integer midpoint (< max / 2) is exact for both
+            // even and odd series lengths.
+            let place_right = max_pts > 0 && idx < max_pts / 2;
             let mut tooltip_div = div()
                 .absolute()
                 .top(px(4.0))
-                .right(px(4.0))
                 .bg(theme.surface)
                 .rounded(theme.radius_sm)
                 .border_1()
@@ -246,12 +284,13 @@ impl Render for ChartView {
                 .flex()
                 .flex_col()
                 .with_accessibility(&a11y);
+            tooltip_div = if place_right {
+                tooltip_div.right(px(4.0))
+            } else {
+                tooltip_div.left(px(4.0))
+            };
 
-            for (name, value, color) in items {
-                let label = match value {
-                    Some(v) => format!("{name}: {v:.1}"),
-                    None => format!("{name}: —"),
-                };
+            for (label, color) in items {
                 tooltip_div = tooltip_div.child(
                     div()
                         .flex()
@@ -305,6 +344,9 @@ impl Render for ChartView {
             }
         });
 
+        // `on_key_down` only fires while the wrapper holds focus (see
+        // `track_focus(&focus_handle)` on the wrapper below), so we don't
+        // need to gate on `is_focused` explicitly here.
         let on_key = cx.listener(|this, event: &KeyDownEvent, _window, cx| {
             let max = this.max_points();
             if max == 0 {
@@ -345,6 +387,9 @@ impl Render for ChartView {
             .track_focus(&focus_handle)
             .w(width)
             .h(height)
+            // Match `Chart::render`'s container radius so the focus ring
+            // traces the same corners the plot itself is clipped to.
+            .rounded(theme.radius_md)
             .relative()
             .child(chart)
             .child(crosshair);
@@ -362,6 +407,27 @@ impl Render for ChartView {
         // is visible before any arrow key lands. Stateless Chart children
         // already have no ring; this handles the outer wrapper.
         apply_focus_ring(wrapper, theme, is_focused, &[])
+    }
+}
+
+/// Where the crosshair should paint horizontally inside the plot area.
+///
+/// Line/Area/Range paint data points at `plot_w * i / (n - 1)` (the first
+/// at x=0, the last at x=plot_w). Bar/Point/Rule paint at slot centres
+/// `slot_w * (i + 0.5)`. Keeping the crosshair over the actual mark — not
+/// the slot the pointer lives in — matters most at the plot edges, where a
+/// slot-centred crosshair for a Line chart would sit ~half a slot-width
+/// away from the first/last data point.
+fn crosshair_x_offset(chart_type: ChartType, plot_w: f32, idx: usize, max_pts: usize) -> f32 {
+    let is_point_based = matches!(
+        chart_type,
+        ChartType::Line | ChartType::Area | ChartType::Range
+    );
+    if is_point_based && max_pts > 1 {
+        plot_w * idx as f32 / (max_pts - 1) as f32
+    } else {
+        let slot_w = plot_w / max_pts.max(1) as f32;
+        slot_w * (idx as f32 + 0.5)
     }
 }
 
@@ -398,7 +464,7 @@ fn compute_hover_index(
 mod tests {
     use core::prelude::v1::test;
 
-    use super::compute_hover_index;
+    use super::{ChartType, compute_hover_index, crosshair_x_offset};
 
     #[test]
     fn hover_with_no_axis_covers_plot_width_minus_insets() {
@@ -435,5 +501,42 @@ mod tests {
     #[test]
     fn hover_with_empty_series_returns_none() {
         assert_eq!(compute_hover_index(100.0, 200.0, 0.0, 8.0, 0), None);
+    }
+
+    #[test]
+    fn crosshair_bar_uses_slot_center() {
+        // 5 slots across 200px → slot_w=40. Slot centers at 20, 60, 100, 140, 180.
+        assert_eq!(crosshair_x_offset(ChartType::Bar, 200.0, 0, 5), 20.0);
+        assert_eq!(crosshair_x_offset(ChartType::Bar, 200.0, 2, 5), 100.0);
+        assert_eq!(crosshair_x_offset(ChartType::Bar, 200.0, 4, 5), 180.0);
+    }
+
+    #[test]
+    fn crosshair_point_uses_slot_center() {
+        // Point marks also draw at slot centers (render_points uses slot_w
+        // bands with the dot centered inside each band).
+        assert_eq!(crosshair_x_offset(ChartType::Point, 200.0, 0, 5), 20.0);
+        assert_eq!(crosshair_x_offset(ChartType::Point, 200.0, 4, 5), 180.0);
+    }
+
+    #[test]
+    fn crosshair_line_uses_data_points() {
+        // Line marks sit at plot_w * i / (n - 1): 0, 50, 100, 150, 200.
+        assert_eq!(crosshair_x_offset(ChartType::Line, 200.0, 0, 5), 0.0);
+        assert_eq!(crosshair_x_offset(ChartType::Line, 200.0, 2, 5), 100.0);
+        assert_eq!(crosshair_x_offset(ChartType::Line, 200.0, 4, 5), 200.0);
+    }
+
+    #[test]
+    fn crosshair_area_and_range_use_data_points() {
+        assert_eq!(crosshair_x_offset(ChartType::Area, 200.0, 4, 5), 200.0);
+        assert_eq!(crosshair_x_offset(ChartType::Range, 200.0, 0, 5), 0.0);
+    }
+
+    #[test]
+    fn crosshair_single_point_line_falls_back_to_slot_center() {
+        // With n=1 the data-point formula divides by zero; we fall back
+        // to slot-center math which places the mark at plot_w/2.
+        assert_eq!(crosshair_x_offset(ChartType::Line, 200.0, 0, 1), 100.0);
     }
 }

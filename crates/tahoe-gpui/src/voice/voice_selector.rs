@@ -866,7 +866,7 @@ impl Render for VoiceSelectorView {
                         Modal::new("voice-selector-dialog", panel_content)
                             .open(is_open)
                             .width(px(500.0))
-                            .accessibility_label("Select voice")
+                            .accessibility_label("Voice selection")
                             .scroll(false)
                             .focus_handle(self.focus_handle.clone())
                             .on_dismiss(move |_window, cx| {

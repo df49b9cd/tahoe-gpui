@@ -173,6 +173,11 @@ pub(crate) fn paint_range(
         return;
     }
 
+    // Single allocation for the band-fill path. The upper edge is walked
+    // forward; the lower edge is appended by reversing `low_pts` in place
+    // before building the close. `rev()` on an iterator would save the
+    // allocation but `append_catmull_rom` needs a slice so it can peek at
+    // neighbour points for the spline tangents.
     let high_pts: Vec<Point<Pixels>> = values_high
         .iter()
         .take(count)
@@ -184,7 +189,7 @@ pub(crate) fn paint_range(
             point(x, y)
         })
         .collect();
-    let low_pts: Vec<Point<Pixels>> = values_low
+    let mut low_pts: Vec<Point<Pixels>> = values_low
         .iter()
         .take(count)
         .enumerate()
@@ -210,13 +215,14 @@ pub(crate) fn paint_range(
         pb.line_to(high_pts[1]);
     }
 
-    // Lower edge, right to left.
-    let rev_low: Vec<Point<Pixels>> = low_pts.iter().copied().rev().collect();
-    pb.line_to(rev_low[0]);
-    if rev_low.len() >= 3 {
-        append_catmull_rom(&mut pb, &rev_low);
-    } else if rev_low.len() == 2 {
-        pb.line_to(rev_low[1]);
+    // Lower edge, right to left — reverse in place so we don't allocate a
+    // second Vec just to walk backwards through the same data.
+    low_pts.reverse();
+    pb.line_to(low_pts[0]);
+    if low_pts.len() >= 3 {
+        append_catmull_rom(&mut pb, &low_pts);
+    } else if low_pts.len() == 2 {
+        pb.line_to(low_pts[1]);
     }
 
     pb.close();
@@ -225,9 +231,30 @@ pub(crate) fn paint_range(
         window.paint_path(path, fill_color);
     }
 
-    // Stroke upper and lower edges for definition.
-    paint_line(window, origin, w, h, values_high, min, range, color);
-    paint_line(window, origin, w, h, values_low, min, range, color);
+    // Stroke upper and lower edges for definition. Truncate to `count` so a
+    // caller whose low/high arrays disagree in length draws the band and
+    // both edge-strokes on the same shared prefix — otherwise the stroke
+    // overshoots past the filled band's right edge.
+    paint_line(
+        window,
+        origin,
+        w,
+        h,
+        &values_high[..count],
+        min,
+        range,
+        color,
+    );
+    paint_line(
+        window,
+        origin,
+        w,
+        h,
+        &values_low[..count],
+        min,
+        range,
+        color,
+    );
 }
 
 /// The canvas callback type expected by the render path.
@@ -263,7 +290,11 @@ pub(crate) fn canvas_paint_callback(
                 values.len() <= 1,
                 "ChartType::Rule draws only values[0] — extra values are ignored"
             );
-            let value = values.first().copied().unwrap_or(0.0);
+            // Rule with no values is nothing to paint — returning a closure
+            // that drew `0.0` added a phantom reference line at the chart's
+            // zero baseline, which a caller inspecting the empty case would
+            // mistake for data.
+            let value = values.first().copied()?;
             Some(Box::new(move |window: &mut Window| {
                 paint_rule(window, origin, w, h, value, min, range, color);
             }))

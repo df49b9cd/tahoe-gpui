@@ -10,15 +10,14 @@ use gpui::{
 use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup,
 };
-use crate::foundations::theme::ActiveTheme;
-use crate::foundations::typography::{TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 use super::accessibility::{FkaAttachContext, attach_fka};
 use super::marks::canvas_paint_callback;
 #[allow(unused_imports)] // Used in doc links.
 use super::types::ChartDataSeries;
 use super::types::{
-    AxisConfig, BAR_GAP, ChartDataSet, ChartType, GridlineConfig, TITLE_GAP, bar_width, point_size,
+    AxisConfig, BAR_GAP, ChartDataSet, ChartType, GridlineConfig, bar_width, point_size,
 };
 
 // BAR_WIDTH_RATIO / MIN_POINT_SIZE / MAX_POINT_SIZE aren't imported at the
@@ -84,32 +83,43 @@ impl Chart {
         self
     }
 
+    /// Set the mark type (Bar, Line, Area, Point, Range, or Rule).
     pub fn chart_type(mut self, chart_type: ChartType) -> Self {
         self.chart_type = chart_type;
         self
     }
 
+    /// Set the chart's overall size. Plot area is this minus any axis
+    /// margins and the container's corner-radius inset.
     pub fn size(mut self, width: Pixels, height: Pixels) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 
+    /// Override the single-series mark colour. Multi-series charts auto-
+    /// assign palette colours; this value only applies to series index 0.
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
         self
     }
 
+    /// Override the auto-generated VoiceOver label.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.accessibility_label = Some(label.into());
         self
     }
 
+    /// Register a focus group so each data point becomes a Tab stop under
+    /// Full Keyboard Access.
     pub fn point_focus_group(mut self, group: FocusGroup) -> Self {
         self.point_focus_group = Some(group);
         self
     }
 
+    /// Supply one [`FocusHandle`] per data point across all series.
+    /// The length must equal the sum of series lengths; otherwise focus
+    /// registration is skipped.
     pub fn point_focus_handles(mut self, handles: Vec<FocusHandle>) -> Self {
         self.point_focus_handles = handles;
         self
@@ -202,18 +212,14 @@ fn build_fka_labels(
     let mut labels: Vec<SharedString> = Vec::with_capacity(total);
     for series in data_set.series.iter() {
         for v in series.inner.values.iter() {
-            let global_idx = labels.len();
+            // Per-point label is content-only — position is carried
+            // structurally by `posinset` / `setsize` on the DataPoint role,
+            // so VoiceOver can synthesise "row N of M" on its own. Leaving
+            // "N of M" in the label made VoiceOver read it twice.
             let label = if multi_series {
-                format!(
-                    "{} {}: {} of {}, {:.2}",
-                    series.inner.name,
-                    voice,
-                    global_idx + 1,
-                    total,
-                    v
-                )
+                format!("{}: {v:.2}", series.inner.name)
             } else {
-                format!("{}: {} of {}, {:.2}", voice, global_idx + 1, total, v)
+                format!("{voice}: {v:.2}")
             };
             labels.push(SharedString::from(label));
         }
@@ -463,12 +469,7 @@ impl RenderOnce for Chart {
         };
 
         // Build optional gridline canvas layer.
-        let max_data_points = data_set
-            .series
-            .iter()
-            .map(|s| s.inner.values.len())
-            .max()
-            .unwrap_or(0);
+        let max_data_points = data_set.max_points();
         let show_y_line = axis_config.as_ref().is_some_and(|a| a.show_y_line);
 
         let overlay_canvas = if has_gridlines || show_y_line {
@@ -551,7 +552,7 @@ impl RenderOnce for Chart {
                         .justify_between()
                         .w(y_margin)
                         .h(plot_height)
-                        .pr(px(4.0));
+                        .pr(theme.spacing_xs);
 
                     for tick in y_ticks.iter().rev() {
                         let label = format_y_tick(*tick);
@@ -571,13 +572,7 @@ impl RenderOnce for Chart {
                 if has_x_labels {
                     let x_labels = axis_config.as_ref().and_then(|a| a.x_labels.clone());
                     if let Some(labels) = x_labels {
-                        let max_points = data_set
-                            .series
-                            .iter()
-                            .map(|s| s.inner.values.len())
-                            .max()
-                            .unwrap_or(0)
-                            .max(1);
+                        let max_points = max_data_points.max(1);
                         let mut x_row = div().flex().flex_row().w_full().h(x_margin).ml(y_margin);
 
                         for label in labels.iter().take(max_points) {
@@ -622,9 +617,9 @@ impl RenderOnce for Chart {
             let mut legend_row = div()
                 .flex()
                 .flex_row()
-                .gap(px(12.0))
-                .px(px(8.0))
-                .pt(px(4.0))
+                .gap(theme.spacing_sm_md)
+                .px(theme.spacing_sm)
+                .pt(theme.spacing_xs)
                 .w(total_width);
 
             for (si, series) in data_set.series.iter().enumerate() {
@@ -634,8 +629,13 @@ impl RenderOnce for Chart {
                         .flex()
                         .flex_row()
                         .items_center()
-                        .gap(px(4.0))
-                        .child(div().size(px(8.0)).rounded(theme.radius_full).bg(color))
+                        .gap(theme.spacing_xs)
+                        .child(
+                            div()
+                                .size(theme.spacing_sm)
+                                .rounded(theme.radius_full)
+                                .bg(color),
+                        )
                         .child(
                             div()
                                 .text_style(TextStyle::Caption1, theme)
@@ -663,7 +663,7 @@ fn wrap_with_title(
     if title.is_none() && subtitle.is_none() {
         return chart_el.into_any_element();
     }
-    let mut wrapper = div().flex().flex_col().gap(px(TITLE_GAP));
+    let mut wrapper = div().flex().flex_col().gap(theme.spacing_xs);
     if let Some(t) = title {
         wrapper = wrapper.child(
             div()
@@ -714,13 +714,7 @@ fn render_bars(
     dwc: bool,
 ) -> gpui::Div {
     let n_series = data_set.series.len();
-    let max_points = data_set
-        .series
-        .iter()
-        .map(|s| s.inner.values.len())
-        .max()
-        .unwrap_or(0)
-        .max(1);
+    let max_points = data_set.max_points().max(1);
     let slot_width = f32::from(width) / max_points as f32;
 
     let bar_count_per_slot = n_series.max(1);
@@ -747,7 +741,14 @@ fn render_bars(
             .gap(px(BAR_GAP));
 
         for (si, series) in data_set.series.iter().enumerate() {
-            let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
+            // Ragged multi-series: a series that runs out of values in this
+            // slot renders an empty spacer, not a phantom 0-valued bar —
+            // otherwise a short series would bottom-anchor a visible mark
+            // at the zero baseline that VoiceOver would also announce.
+            let Some(v) = series.inner.values.get(slot_i).copied() else {
+                group = group.child(div().w(px(bar_w)));
+                continue;
+            };
             let norm = ((v - min) / range).clamp(0.0, 1.0);
             let bar_h = f32::from(height) * norm;
             let color = series_color(data_set, global_color, si, theme);
@@ -764,24 +765,20 @@ fn render_bars(
             // series have different lengths (unlike `si * max_points + slot_i`).
             let fka_idx = series_offsets[si] + slot_i;
             let bar = match (fka_points.as_ref(), point_prefix.as_ref()) {
-                (Some((group, handles)), Some(prefix))
-                    if fka_idx < handles.len() && slot_i < series.inner.values.len() =>
-                {
-                    attach_fka(
-                        bar,
-                        &FkaAttachContext {
-                            group,
-                            handles,
-                            prefix,
-                            total: total_fka_points,
-                            theme,
-                            labels: fka_labels,
-                            slot_width,
-                        },
-                        fka_idx,
-                        window,
-                    )
-                }
+                (Some((group, handles)), Some(prefix)) if fka_idx < handles.len() => attach_fka(
+                    bar,
+                    &FkaAttachContext {
+                        group,
+                        handles,
+                        prefix,
+                        total: total_fka_points,
+                        theme,
+                        labels: fka_labels,
+                        slot_width,
+                    },
+                    fka_idx,
+                    window,
+                ),
                 _ => bar.into_any_element(),
             };
             group = group.child(bar);
@@ -808,13 +805,7 @@ fn render_points(
     fka_labels: &[SharedString],
     dwc: bool,
 ) -> gpui::Div {
-    let max_points = data_set
-        .series
-        .iter()
-        .map(|s| s.inner.values.len())
-        .max()
-        .unwrap_or(0)
-        .max(1);
+    let max_points = data_set.max_points().max(1);
     let slot_width = f32::from(width) / max_points as f32;
     let point_sz = point_size(slot_width);
 
@@ -824,7 +815,12 @@ fn render_points(
         let mut cell = div().w(px(slot_width)).h(height).relative();
 
         for (si, series) in data_set.series.iter().enumerate() {
-            let v = series.inner.values.get(slot_i).copied().unwrap_or(0.0);
+            // Ragged multi-series: skip slots past this series' own length so
+            // a short series doesn't plant a phantom dot at zero for every
+            // trailing slot.
+            let Some(v) = series.inner.values.get(slot_i).copied() else {
+                continue;
+            };
             let norm = ((v - min) / range).clamp(0.0, 1.0);
             let top_offset = f32::from(height) * (1.0 - norm) - point_sz / 2.0;
             let color = series_color(data_set, global_color, si, theme);
@@ -848,24 +844,20 @@ fn render_points(
 
             let fka_idx = series_offsets[si] + slot_i;
             let dot = match (fka_points.as_ref(), point_prefix.as_ref()) {
-                (Some((group, handles)), Some(prefix))
-                    if fka_idx < handles.len() && slot_i < series.inner.values.len() =>
-                {
-                    attach_fka(
-                        dot,
-                        &FkaAttachContext {
-                            group,
-                            handles,
-                            prefix,
-                            total: total_fka_points,
-                            theme,
-                            labels: fka_labels,
-                            slot_width,
-                        },
-                        fka_idx,
-                        window,
-                    )
-                }
+                (Some((group, handles)), Some(prefix)) if fka_idx < handles.len() => attach_fka(
+                    dot,
+                    &FkaAttachContext {
+                        group,
+                        handles,
+                        prefix,
+                        total: total_fka_points,
+                        theme,
+                        labels: fka_labels,
+                        slot_width,
+                    },
+                    fka_idx,
+                    window,
+                ),
                 _ => dot.into_any_element(),
             };
             cell = cell.child(dot);
@@ -958,11 +950,7 @@ fn render_canvas(
         })
         .collect();
 
-    let max_points = series_data
-        .iter()
-        .map(|(v, _, _)| v.len())
-        .max()
-        .unwrap_or(0);
+    let max_points = data_set.max_points();
 
     let canvas_el = canvas(
         |_info, _window, _cx| {},

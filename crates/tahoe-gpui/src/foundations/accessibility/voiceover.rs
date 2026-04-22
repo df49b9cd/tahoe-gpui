@@ -110,9 +110,13 @@ pub enum AccessibilityRole {
     /// Individual data point within a chart or graph. Maps to
     /// NSAccessibility `AXDataPoint`. No direct WAI-ARIA equivalent;
     /// the closest analogue is the WAI-ARIA Graphics Module
-    /// `graphics-symbol`. VoiceOver announces the value and position
-    /// within the series (e.g. "10, row 1 of 5") rather than a
-    /// generic "button."
+    /// `graphics-symbol`. Callers should populate the label with the
+    /// content only (e.g. `"bar: 10.00"` or `"Sales: 10.00"`) and let
+    /// [`posinset`](AccessibilityProps::posinset) /
+    /// [`setsize`](AccessibilityProps::setsize) carry position so
+    /// VoiceOver announces "1 of 5" structurally rather than having the
+    /// caller fold it into the label (which makes VoiceOver read it
+    /// twice).
     DataPoint,
     /// Contextual tooltip that appears on hover or focus (WAI-ARIA
     /// `role="tooltip"` / NSAccessibility `AXHelpTag`). Distinct from
