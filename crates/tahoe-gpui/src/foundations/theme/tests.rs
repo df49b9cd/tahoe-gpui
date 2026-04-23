@@ -2315,3 +2315,29 @@ fn activity_ring_backdrop_is_system_dark_gray_in_every_theme() {
         );
     }
 }
+
+// ── Phase 2 — `Color::resolve(&App)` routes through `color_environment` ──
+//
+// Covers the plan's §6.2 check "resolve_in matches resolve via App": that
+// resolving against the App global produces the same pixel value as
+// resolving directly against the theme's `color_environment()`.
+
+#[gpui::test]
+async fn color_resolve_via_app_matches_resolve_in_color_environment(cx: &mut gpui::TestAppContext) {
+    use crate::foundations::color::Color;
+    cx.update(|cx| {
+        cx.set_global(TahoeTheme::dark());
+        let theme = cx.theme();
+        let env = theme.color_environment();
+        // Semantic token (needs env), system palette (needs appearance),
+        // and accent (needs env.accent) — all three branches must match.
+        for color in [Color::LABEL, Color::RED, Color::ACCENT] {
+            let via_app = color.resolve(cx);
+            let via_env = color.resolve_in(&env);
+            assert_eq!(
+                via_app, via_env,
+                "Color::resolve(&App) must match Color::resolve_in(env) for {color:?}"
+            );
+        }
+    });
+}

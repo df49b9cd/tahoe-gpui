@@ -441,6 +441,22 @@ impl TahoeTheme {
         Self::with_accent(appearance, AccentColor::default())
     }
 
+    /// Borrow this theme as a [`crate::foundations::color::ColorEnvironment`].
+    ///
+    /// The environment is the minimal read-only view the deferred
+    /// [`crate::foundations::color::Color`] token needs to resolve. Used by
+    /// `Color::resolve(&App)` internally and available to callers that want
+    /// to resolve a `Color` without going through a GPUI context (e.g. unit
+    /// tests).
+    pub fn color_environment(&self) -> crate::foundations::color::ColorEnvironment<'_> {
+        crate::foundations::color::ColorEnvironment::new(
+            self.appearance,
+            self.accent,
+            &self.semantic,
+            &self.palette,
+        )
+    }
+
     /// Create a theme with a specific accent color.
     pub fn with_accent(appearance: Appearance, accent_color: AccentColor) -> Self {
         let palette = SystemPalette::new(appearance);

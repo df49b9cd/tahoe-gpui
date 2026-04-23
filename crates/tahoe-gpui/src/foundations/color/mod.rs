@@ -29,20 +29,25 @@
 //! - [`contrast`] — WCAG relative-luminance and contrast-ratio utilities.
 
 pub mod contrast;
+pub mod environment;
+pub mod gpui_bridge;
 pub mod ops;
 pub mod palette;
 pub mod resolved;
 pub mod settings;
 pub mod srgb;
+pub mod token;
 
 // ── Public re-exports — preserve the pre-split `foundations::color::X` surface. ──
 
 pub use contrast::{contrast_ratio, meets_contrast};
+pub use environment::ColorEnvironment;
 pub use ops::{HslaAlphaExt, darken, fade_out, lighten, opacity, text_on_background, with_alpha};
 pub use palette::{SystemColor, SystemGray, SystemPalette};
 pub use resolved::{ResolvedColor, RgbColorSpace};
 pub use settings::{AccentColor, HighlightColor, IconAndWidgetStyle, SidebarIconSize};
 pub use srgb::compose_black_tint_linear;
+pub use token::{Color, MixColorSpace, SemanticToken};
 
 // ── Crate-internal re-exports — these helpers stay `pub(crate)` and were
 //    reached via `crate::foundations::color::*` before the split; preserve that
