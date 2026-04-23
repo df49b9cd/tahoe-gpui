@@ -33,6 +33,7 @@ pub mod environment;
 pub mod gpui_bridge;
 pub mod ops;
 pub mod palette;
+pub mod parse;
 pub mod resolved;
 pub mod settings;
 pub mod srgb;
@@ -44,6 +45,10 @@ pub use contrast::{contrast_ratio, meets_contrast};
 pub use environment::ColorEnvironment;
 pub use ops::{HslaAlphaExt, darken, fade_out, lighten, opacity, text_on_background, with_alpha};
 pub use palette::{SystemColor, SystemGray, SystemPalette};
+pub use parse::{
+    ParseColorError, hex_to_hsla, hex_to_rgba_bytes, hsb_to_hsla, hsla_to_hex, hsla_to_hsb,
+    hsla_to_rgb_bytes,
+};
 pub use resolved::{ResolvedColor, RgbColorSpace};
 pub use settings::{AccentColor, HighlightColor, IconAndWidgetStyle, SidebarIconSize};
 pub use srgb::compose_black_tint_linear;

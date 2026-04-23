@@ -8,8 +8,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    App, ElementId, FocusHandle, Hsla, KeyDownEvent, MouseDownEvent, Rgba, SharedString, Window,
-    div, hsla, px,
+    App, ElementId, FocusHandle, Hsla, KeyDownEvent, MouseDownEvent, SharedString, Window, div,
+    hsla, px,
 };
 
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
@@ -270,86 +270,15 @@ fn hsla_eq(a: Hsla, b: Hsla) -> bool {
         && (a.a - b.a).abs() < 0.01
 }
 
-/// Render an `Hsla` colour as `#RRGGBB` (or `#RRGGBBAA` when alpha < 1).
-fn hsla_to_hex(color: Hsla) -> String {
-    let rgba = Rgba::from(color);
-    let r = (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8;
-    let g = (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8;
-    let b = (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8;
-    let a = (rgba.a * 255.0).round().clamp(0.0, 255.0) as u8;
-    if a == 255 {
-        format!("#{:02X}{:02X}{:02X}", r, g, b)
-    } else {
-        format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
-    }
-}
+// Hex / HSB helpers moved to `foundations::color::parse`; re-export as
+// local aliases so the rest of this file needs no textual change.
+use crate::foundations::color::{hsla_to_hex, hsla_to_hsb, hsla_to_rgb_bytes};
 
-/// Parse `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` into `Hsla`. Whitespace
-/// around the leading `#` is tolerated; the leading `#` itself is optional.
+/// Parse `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` into `Hsla`. Thin
+/// wrapper over [`crate::foundations::color::hex_to_hsla`] that normalises
+/// the error return to `Option` for existing call sites.
 fn parse_hex(input: &str) -> Option<Hsla> {
-    let trimmed = input.trim().trim_start_matches('#');
-    if !trimmed.is_ascii() {
-        return None;
-    }
-    let (r, g, b, a) = match trimmed.len() {
-        3 => {
-            let r = u8::from_str_radix(&trimmed[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&trimmed[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&trimmed[2..3].repeat(2), 16).ok()?;
-            (r, g, b, 255)
-        }
-        4 => {
-            let r = u8::from_str_radix(&trimmed[0..1].repeat(2), 16).ok()?;
-            let g = u8::from_str_radix(&trimmed[1..2].repeat(2), 16).ok()?;
-            let b = u8::from_str_radix(&trimmed[2..3].repeat(2), 16).ok()?;
-            let a = u8::from_str_radix(&trimmed[3..4].repeat(2), 16).ok()?;
-            (r, g, b, a)
-        }
-        6 => {
-            let r = u8::from_str_radix(&trimmed[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&trimmed[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&trimmed[4..6], 16).ok()?;
-            (r, g, b, 255)
-        }
-        8 => {
-            let r = u8::from_str_radix(&trimmed[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&trimmed[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&trimmed[4..6], 16).ok()?;
-            let a = u8::from_str_radix(&trimmed[6..8], 16).ok()?;
-            (r, g, b, a)
-        }
-        _ => return None,
-    };
-    let rgba = Rgba {
-        r: r as f32 / 255.0,
-        g: g as f32 / 255.0,
-        b: b as f32 / 255.0,
-        a: a as f32 / 255.0,
-    };
-    Some(rgba.into())
-}
-
-/// Return the R, G, B (each 0-255) components of an Hsla colour.
-fn hsla_to_rgb_bytes(color: Hsla) -> (u8, u8, u8) {
-    let rgba = Rgba::from(color);
-    let r = (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8;
-    let g = (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8;
-    let b = (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8;
-    (r, g, b)
-}
-
-/// Convert HSL (0..=1 hue/sat/light) to HSB (hue in degrees 0-360,
-/// saturation 0-100, brightness 0-100). Matches NSColorPanel's HSB tab.
-fn hsla_to_hsb(color: Hsla) -> (u32, u32, u32) {
-    let h = (color.h * 360.0).round().clamp(0.0, 360.0) as u32;
-    let l = color.l.clamp(0.0, 1.0);
-    let s = color.s.clamp(0.0, 1.0);
-    // HSL -> HSV conversion. v = l + s * min(l, 1 - l)
-    let v = l + s * l.min(1.0 - l);
-    let sv = if v == 0.0 { 0.0 } else { 2.0 * (1.0 - l / v) };
-    let s_pct = (sv * 100.0).round().clamp(0.0, 100.0) as u32;
-    let b_pct = (v * 100.0).round().clamp(0.0, 100.0) as u32;
-    (h, s_pct, b_pct)
+    crate::foundations::color::hex_to_hsla(input).ok()
 }
 
 impl RenderOnce for ColorWell {
