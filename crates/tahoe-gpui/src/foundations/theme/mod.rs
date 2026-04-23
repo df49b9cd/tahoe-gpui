@@ -482,11 +482,12 @@ impl TahoeTheme {
             // default and high-contrast appearances.
             selected_bg: Self::selected_bg_for(accent, is_dark),
             text_on_accent: text_colors.text_on_accent,
-            overlay_bg: if is_dark {
-                hsla(0.0, 0.0, 0.0, 0.5)
-            } else {
-                hsla(0.0, 0.0, 0.0, 0.3)
-            },
+            // Modal dim scrim. Figma Tahoe UI Kit: `#000000 @ 20%` for
+            // both light and dark — the scrim is a flat tint, not a
+            // blur-plus-tint (the modal's own lens composite handles the
+            // backdrop refraction). Single alpha across appearances matches
+            // the kit.
+            overlay_bg: hsla(0.0, 0.0, 0.0, 0.20),
 
             spacing_xs: spacing.xs,
             spacing_sm: spacing.sm,
@@ -837,11 +838,18 @@ impl TahoeTheme {
             blur_radius: px(blur),
             spread_radius: px(0.),
         };
-        let (small_shadow_a, medium_shadow_a, large_shadow_a, medium_shadow_y) = if is_dark {
-            (0.06, 0.10, 0.12, 4.0)
-        } else {
-            (0.04, 0.06, 0.10, 3.0)
+        // Rim shadow: 1pt spread, zero blur — the Figma Tahoe UI Kit uses a
+        // second shadow layer with these parameters to give every panel a
+        // crisp 1pt edge definition that survives rendering on arbitrary
+        // backgrounds. Applied on top of the ambient shadow so the edge
+        // reads even when the ambient is diffused by a light backdrop.
+        let rim_shadow = |alpha: f32| BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, alpha),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
         };
+        let (small_shadow_a, large_shadow_a) = if is_dark { (0.06, 0.12) } else { (0.04, 0.10) };
 
         // Colored tints share a canonical hue/saturation per color, with
         // per-appearance alpha and a couple of hue/saturation tweaks for
@@ -926,7 +934,12 @@ impl TahoeTheme {
             ultra_thick_bg,
             chrome_bg,
             small_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
-            medium_shadows: vec![shadow(medium_shadow_y, 16.0, medium_shadow_a)],
+            // Medium UI (alerts, dialogs, ≤400pt panels) per the Figma
+            // Tahoe UI Kit: an ambient shadow (Y=8, Blur=40, #000 @ 12%)
+            // plus a 1pt rim (#000 @ 23%) for edge definition. The rim
+            // keeps the panel legible against low-contrast backdrops
+            // where the ambient blur fades into the underlying content.
+            medium_shadows: vec![shadow(8.0, 40.0, 0.12), rim_shadow(0.23)],
             large_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
             small_radius: px(20.0),
             medium_radius: px(34.0),

@@ -39,7 +39,7 @@ use crate::callback_types::{OnMutCallback, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::{INSPECTOR_PANEL_WIDTH, MACOS_PANEL_TITLE_BAR_HEIGHT};
 use crate::foundations::materials::{
-    LensEffect, backdrop_overlay, glass_lens_surface, glass_surface_hud,
+    Elevation, Glass, Shape, backdrop_overlay, glass_effect_lens, glass_surface_hud,
 };
 use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
 
@@ -369,21 +369,26 @@ impl RenderOnce for Panel {
         }
 
         // ── Panel surface (glass) ───────────────────────────────────────────
-        // Non-HUD panels paint a real Liquid Glass lens composite; HUD
-        // panels keep `glass_surface_hud` so the dark tint + light-text
-        // recipe matches every other HUD surface in the crate.
+        // Non-HUD panels use Elevated tier (Medium UI fill + ambient + rim);
+        // HUD panels keep `glass_surface_hud` for the dark tint + light-text
+        // recipe that matches other HUD surfaces.
         let panel_id = ElementId::from((self.id.clone(), "panel"));
         let panel_body = div().w(width).h_full().flex().flex_col();
         let mut panel = if is_hud {
             glass_surface_hud(panel_body, theme, GlassSize::Large).id(panel_id)
         } else {
-            let panel_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
-            glass_lens_surface(theme, &panel_effect, GlassSize::Large)
-                .w(width)
-                .h_full()
-                .flex()
-                .flex_col()
-                .id(panel_id)
+            glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .w(width)
+            .h_full()
+            .flex()
+            .flex_col()
+            .id(panel_id)
         };
 
         if let Some(bar) = title_bar {

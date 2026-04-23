@@ -29,7 +29,7 @@ use std::rc::Rc;
 use crate::callback_types::OnMutCallback;
 use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Where the action sheet attaches on screen. Choose
@@ -394,14 +394,18 @@ fn render_bottom_drawer(
     focus_handle: FocusHandle,
     focus_group: FocusGroup,
 ) -> gpui::AnyElement {
-    // Cancel container (Liquid Glass lens composite).
-    let mut cancel_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
-    cancel_effect.blur.corner_radius = f32::from(glass_radius);
-    let cancel_group = glass_lens_surface(theme, &cancel_effect, GlassSize::Large)
-        .w_full()
-        .overflow_hidden()
-        .rounded(glass_radius)
-        .child(cancel_row);
+    // Cancel container — Elevated tier (Medium UI fill + ambient + rim).
+    let cancel_group = glass_effect_lens(
+        theme,
+        Glass::Regular,
+        Shape::RoundedRectangle(glass_radius),
+        Elevation::Elevated,
+        None,
+    )
+    .w_full()
+    .overflow_hidden()
+    .rounded(glass_radius)
+    .child(cancel_row);
 
     // Early return when there are no action items.
     if item_rows.is_empty() {
@@ -421,14 +425,18 @@ fn render_bottom_drawer(
             .into_any_element();
     }
 
-    // Item group container (only reached when items exist).
-    let mut item_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
-    item_effect.blur.corner_radius = f32::from(glass_radius);
-    let item_group = glass_lens_surface(theme, &item_effect, GlassSize::Large)
-        .w_full()
-        .overflow_hidden()
-        .rounded(glass_radius)
-        .children(item_rows);
+    // Item group container (only reached when items exist) — Elevated.
+    let item_group = glass_effect_lens(
+        theme,
+        Glass::Regular,
+        Shape::RoundedRectangle(glass_radius),
+        Elevation::Elevated,
+        None,
+    )
+    .w_full()
+    .overflow_hidden()
+    .rounded(glass_radius)
+    .children(item_rows);
 
     // Overall container stacks item group and cancel group with spacing.
     let container = div()
@@ -489,13 +497,19 @@ fn render_centered(
     focus_handle: FocusHandle,
     focus_group: FocusGroup,
 ) -> gpui::AnyElement {
-    let panel_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
-    let mut panel = glass_lens_surface(theme, &panel_effect, GlassSize::Large)
-        .w(px(320.0))
-        .overflow_hidden()
-        .id(ElementId::from((id.clone(), "panel")))
-        .flex()
-        .flex_col();
+    // macOS centered action sheet is a 320pt panel — Elevated tier.
+    let mut panel = glass_effect_lens(
+        theme,
+        Glass::Regular,
+        Shape::RoundedRectangle(theme.radius_lg),
+        Elevation::Elevated,
+        None,
+    )
+    .w(px(320.0))
+    .overflow_hidden()
+    .id(ElementId::from((id.clone(), "panel")))
+    .flex()
+    .flex_col();
 
     // Separator between items (reuse existing per-row top border on rows > 0)
     for row in item_rows {

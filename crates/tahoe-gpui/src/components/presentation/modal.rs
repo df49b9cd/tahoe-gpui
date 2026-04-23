@@ -8,8 +8,9 @@ use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
 };
 use crate::foundations::layout::{MODAL_MAX_HEIGHT, MODAL_WIDTH};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
 use crate::foundations::motion::accessible_transition_animation;
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, AnyEntity, App, DismissEvent, ElementId, EventEmitter, FocusHandle,
@@ -402,12 +403,15 @@ impl RenderOnce for Modal {
         // Build content container with optional focus tracking and escape key support
         let content_id =
             ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "content".into());
-        let modal_effect =
-            crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Large, theme);
-        let mut content_div = crate::foundations::materials::glass_lens_surface(
+        // Elevated tier (Medium UI fill + ambient 40pt blur + 1pt rim) per
+        // the Figma Tahoe UI Kit. Panel radius picks up `theme.radius_lg`
+        // via `Shape::Default` for a modal-sized surface.
+        let mut content_div = glass_effect_lens(
             theme,
-            &modal_effect,
-            GlassSize::Large,
+            Glass::Regular,
+            Shape::RoundedRectangle(theme.radius_lg),
+            Elevation::Elevated,
+            None,
         )
         .w(width)
         .max_h(px(MODAL_MAX_HEIGHT))

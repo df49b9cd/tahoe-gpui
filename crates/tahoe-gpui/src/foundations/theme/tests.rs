@@ -325,13 +325,34 @@ fn large_shadow_count() {
 }
 
 #[test]
-fn medium_shadow_count() {
+fn medium_shadow_stack_matches_figma() {
+    // Figma Tahoe UI Kit "BG - Medium UI" uses a two-layer shadow stack:
+    //   1. Ambient  — Y=8, Blur=40, Spread=0, #000 @ 12%
+    //   2. Rim      — Y=0, Blur=0, Spread=1, #000 @ 23%
+    // The rim keeps the panel edge legible against low-contrast backdrops
+    // where the ambient blur fades into the underlying content.
     let glass = TahoeTheme::liquid_glass().glass;
-    assert_eq!(glass.medium_shadows.len(), 1);
+    assert_eq!(glass.medium_shadows.len(), 2, "expected ambient + rim");
+
+    let ambient = &glass.medium_shadows[0];
+    assert!((f32::from(ambient.offset.y) - 8.0).abs() < f32::EPSILON);
+    assert!((f32::from(ambient.blur_radius) - 40.0).abs() < f32::EPSILON);
+    assert!((f32::from(ambient.spread_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((ambient.color.a - 0.12).abs() < 1e-5);
+
+    let rim = &glass.medium_shadows[1];
+    assert!((f32::from(rim.offset.y) - 0.0).abs() < f32::EPSILON);
+    assert!((f32::from(rim.blur_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((f32::from(rim.spread_radius) - 1.0).abs() < f32::EPSILON);
+    assert!((rim.color.a - 0.23).abs() < 1e-5);
 }
 
 #[test]
 fn shadows_scale_by_size() {
+    // Figma spec: small shadow is 4pt blur (tight, for controls), medium
+    // and large both use the 40pt ambient per the Tahoe UI Kit (Medium UI
+    // is the standard panel tier). Assert the ordering small < medium ==
+    // large for the ambient layer (index 0 in each stack).
     let glass = TahoeTheme::liquid_glass().glass;
     let small_blur = f32::from(glass.small_shadows[0].blur_radius);
     let medium_blur = f32::from(glass.medium_shadows[0].blur_radius);
@@ -341,8 +362,8 @@ fn shadows_scale_by_size() {
         "small blur ({small_blur}) should be less than medium ({medium_blur})"
     );
     assert!(
-        medium_blur < large_blur,
-        "medium blur ({medium_blur}) should be less than large ({large_blur})"
+        (medium_blur - large_blur).abs() < f32::EPSILON,
+        "medium blur ({medium_blur}) should match large ({large_blur}) per Figma Medium UI"
     );
 }
 

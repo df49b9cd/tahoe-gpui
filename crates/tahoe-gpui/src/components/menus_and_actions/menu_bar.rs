@@ -50,7 +50,7 @@ use crate::callback_types::rc_wrap;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
 use crate::foundations::materials::{
-    LensEffect, apply_focus_ring, apply_high_contrast_border, glass_lens_surface,
+    Elevation, Glass, Shape, apply_focus_ring, apply_high_contrast_border, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
 use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
@@ -400,21 +400,26 @@ impl RenderOnce for MenuBar {
             }
         }
 
-        // Wrap the stateful bar in a relative parent that layers the
-        // Liquid Glass lens composite behind it. `subtle` keeps the
-        // render-pass cost bounded for always-visible chrome. The
-        // wrapper becomes the overlay's trigger so `AnchoredOverlay`
+        // Wrap the stateful bar in a relative parent that layers a
+        // Glass::Clear lens composite behind it. Clear keeps the material
+        // translucent enough that always-visible chrome doesn't dominate.
+        // The wrapper becomes the overlay's trigger so `AnchoredOverlay`
         // anchors the dropdown to the bar's bottom edge.
-        let bar_lens = LensEffect::subtle(GlassSize::Small, theme);
         let bar_with_lens = div()
             .relative()
             .child(
-                glass_lens_surface(theme, &bar_lens, GlassSize::Small)
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .w_full()
-                    .h(px(theme.target_size())),
+                glass_effect_lens(
+                    theme,
+                    Glass::Clear,
+                    Shape::Default,
+                    Elevation::Resting,
+                    None,
+                )
+                .absolute()
+                .left_0()
+                .top_0()
+                .w_full()
+                .h(px(theme.target_size())),
             )
             .child(bar);
 
@@ -428,14 +433,19 @@ impl RenderOnce for MenuBar {
                 .offset(point(open_offset, px(0.0)));
 
         if let Some(content) = open_content {
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .min_w(px(MENU_MIN_WIDTH))
-                .max_h(px(DROPDOWN_MAX_HEIGHT))
-                .flex()
-                .flex_col()
-                .debug_selector(|| "menu-bar-dropdown".into())
-                .child(content);
+            let dropdown = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .min_w(px(MENU_MIN_WIDTH))
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .flex()
+            .flex_col()
+            .debug_selector(|| "menu-bar-dropdown".into())
+            .child(content);
             overlay = overlay.content(dropdown);
         }
 

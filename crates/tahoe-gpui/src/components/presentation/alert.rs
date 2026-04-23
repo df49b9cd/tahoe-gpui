@@ -29,11 +29,11 @@ use crate::components::menus_and_actions::button::{Button, ButtonVariant};
 use crate::components::selection_and_input::checkbox::{Checkbox, CheckboxState};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::Icon;
-use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
+use crate::foundations::layout::{ALERT_WIDTH, Platform};
 use crate::foundations::materials::{
-    LensEffect, SurfaceContext, backdrop_overlay, glass_lens_surface,
+    Elevation, Glass, Shape, SurfaceContext, backdrop_overlay, glass_effect_lens,
 };
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Maximum number of actions an alert may contain per HIG.
 const MAX_ACTIONS: usize = 3;
@@ -97,17 +97,14 @@ impl AlertAction {
     }
 }
 
-/// Returns the HIG default width (in points) for an alert panel on
-/// the given platform.
+/// Returns the canonical alert panel width.
 ///
-/// macOS uses 320 pt to match `NSAlert`; iOS/iPadOS use 270 pt
-/// (`UIAlertController`). Other platforms fall back to the macOS width
-/// since they closely match Apple's desktop / spatial conventions.
-pub fn alert_width_for(platform: Platform) -> f32 {
-    match platform {
-        Platform::IOS | Platform::WatchOS => ALERT_WIDTH_IOS,
-        Platform::MacOS | Platform::TvOS | Platform::VisionOS => ALERT_WIDTH_MACOS,
-    }
+/// GPUI renders to desktop hosts only, so there is no iOS-vs-macOS width
+/// split. Returns [`ALERT_WIDTH`] (260 pt) from the Figma Tahoe UI Kit.
+/// Kept as a function rather than a re-export so callers stay on a stable
+/// symbol if the spec grows a platform dimension (e.g. tvOS) later.
+pub fn alert_width_for(_platform: Platform) -> f32 {
+    ALERT_WIDTH
 }
 
 /// A centered alert dialog with semi-transparent backdrop.
@@ -344,16 +341,27 @@ impl RenderOnce for Alert {
             .justify_center();
 
         // -- Content container (Liquid Glass lens composite) ------------------
+        // Figma Tahoe UI Kit: the alert background frame is tagged
+        // `BG - Medium UI`, composed of a `Glass Effect` layer over a
+        // `Fill + Shadow` layer. Panel corner radius is 10pt per the
+        // Figma prototype — smaller than the default glass radius
+        // because the alert panel is only 260pt wide.
+        const ALERT_CORNER_RADIUS: f32 = 10.0;
         let content_id = ElementId::from((self.id.clone(), "content"));
-        let alert_effect = LensEffect::liquid_glass(GlassSize::Large, theme);
-        let mut content_div = glass_lens_surface(theme, &alert_effect, GlassSize::Large)
-            .w(px(width))
-            .overflow_hidden()
-            .id(content_id)
-            .focusable()
-            .flex()
-            .flex_col()
-            .items_center();
+        let mut content_div = glass_effect_lens(
+            theme,
+            Glass::Regular,
+            Shape::RoundedRectangle(px(ALERT_CORNER_RADIUS)),
+            Elevation::Elevated,
+            None,
+        )
+        .w(px(width))
+        .overflow_hidden()
+        .id(content_id)
+        .focusable()
+        .flex()
+        .flex_col()
+        .items_center();
 
         content_div = content_div
             .track_focus(&focus_handle)
@@ -395,10 +403,13 @@ impl RenderOnce for Alert {
         };
 
         // -- Title ------------------------------------------------------------
+        // Figma Tahoe UI Kit: alert top padding is 20pt (`spacing_md_lg`)
+        // when no icon is present; shrinks to `spacing_sm` below an icon
+        // so the icon+title pair stays visually balanced.
         let title_pt = if icon_el.is_some() {
             theme.spacing_sm
         } else {
-            theme.spacing_lg
+            theme.spacing_md_lg
         };
         let title_el = div()
             .w_full()
@@ -638,7 +649,7 @@ mod tests {
     use core::prelude::v1::test;
 
     use super::{Alert, AlertAction, AlertActionRole, MAX_ACTIONS, alert_width_for};
-    use crate::foundations::layout::{ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, Platform};
+    use crate::foundations::layout::{ALERT_WIDTH, Platform};
 
     #[test]
     fn alert_new_defaults() {
@@ -898,11 +909,19 @@ mod tests {
     }
 
     #[test]
-    fn alert_width_for_platform() {
-        assert!((alert_width_for(Platform::IOS) - ALERT_WIDTH_IOS).abs() < f32::EPSILON);
-        assert!((alert_width_for(Platform::MacOS) - ALERT_WIDTH_MACOS).abs() < f32::EPSILON);
-        assert!((alert_width_for(Platform::VisionOS) - ALERT_WIDTH_MACOS).abs() < f32::EPSILON);
-        assert!((alert_width_for(Platform::WatchOS) - ALERT_WIDTH_IOS).abs() < f32::EPSILON);
+    fn alert_width_is_platform_invariant_desktop() {
+        // GPUI is desktop-only — `alert_width_for(platform)` returns the
+        // Figma Tahoe UI Kit's single canonical width regardless of the
+        // `Platform` value the caller passes.
+        for platform in [
+            Platform::MacOS,
+            Platform::IOS,
+            Platform::VisionOS,
+            Platform::WatchOS,
+            Platform::TvOS,
+        ] {
+            assert!((alert_width_for(platform) - ALERT_WIDTH).abs() < f32::EPSILON);
+        }
     }
 }
 

@@ -60,9 +60,10 @@
 //! [`AccessibleExt::with_accessibility`]: crate::foundations::accessibility::AccessibleExt::with_accessibility
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Window,
@@ -228,18 +229,15 @@ impl RenderOnce for Popover {
         overlay = overlay.gap(theme.spacing_xs);
 
         if self.is_open {
-            // Popovers are mid-layer overlay surfaces: one depth level above
-            // content, one below sheets/modals. `Large` (34pt radius, 40pt
-            // shadow blur) is reserved for full-screen sheets and alerts;
-            // applying it to a narrow popover bleeds the shadow into
-            // adjacent content and flattens the depth hierarchy.
+            // Popovers are Elevated tier — one depth level above content,
+            // one below full-screen sheets (Floating).
             let max_w = self.max_width.unwrap_or(px(POPOVER_MAX_WIDTH));
-            let popover_effect =
-                crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut content_div = crate::foundations::materials::glass_lens_surface(
+            let mut content_div = glass_effect_lens(
                 theme,
-                &popover_effect,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
             )
             .overflow_hidden()
             .max_w(max_w)
@@ -289,9 +287,11 @@ impl RenderOnce for Popover {
             // content-builder closure (invoked later from `prepaint`) has
             // no lingering borrow on `cx`.
             let arrow_enabled = self.arrow;
-            let arrow_bg = theme
-                .glass
-                .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+            let arrow_bg = if theme.accessibility_mode.reduce_transparency() {
+                theme.glass.accessibility.reduced_transparency_bg
+            } else {
+                theme.glass.medium_bg
+            };
             let spacing_sm = theme.spacing_sm;
             let accessibility = theme.accessibility_mode;
             let motion = theme.glass.motion;

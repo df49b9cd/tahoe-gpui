@@ -99,6 +99,17 @@ use gpui::{
 
 use crate::foundations::accessibility::{AccessibilityMode, AccessibilityTokens};
 use crate::foundations::layout::ShapeType;
+
+/// Per-surface geometry — re-exported alias of [`ShapeType`] to mirror
+/// SwiftUI's `Shape` parameter on [`glassEffect(_:in:)`][apple].
+///
+/// Callers pick a shape independently from the glass material, so a
+/// [`Glass::Regular`] surface can render as a rounded rectangle or as a
+/// capsule without changing the material recipe.
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/View/glassEffect(_:in:)
+pub use crate::foundations::layout::ShapeType as Shape;
+
 use crate::foundations::motion::{
     MorphState, MotionTokens, REDUCE_MOTION_CROSSFADE, accessible_spring_animation,
 };
@@ -135,16 +146,91 @@ pub enum GlassSize {
     Large,
 }
 
-/// Glass material variant per HIG.
-/// Regular = full adaptive glass with lensing. Clear = more transparent, for media-rich content only.
-/// Identity = no glass effect (conditional disable).
+/// Liquid Glass material identity — mirrors SwiftUI's
+/// [`Glass`][apple-glass] type.
+///
+/// - `Regular` — the default variant; adaptive blur + luminosity correction
+///   for legibility. Per Apple: "for alerts, sidebars, or popovers."
+/// - `Clear` — highly translucent; prioritises visibility of media-rich
+///   underlying content.
+/// - `Identity` — no glass effect, pass-through. Use to conditionally
+///   disable the material.
+///
+/// Pair with a [`Shape`] and an [`Elevation`] at a call site —
+/// [`glass_effect`] / [`glass_effect_lens`] / [`glass_effect_blur`] are
+/// the Apple-aligned entry points.
+///
+/// [apple-glass]: https://developer.apple.com/documentation/SwiftUI/Glass
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GlassVariant {
+pub enum Glass {
     Regular,
     Clear,
     /// No glass effect — pass-through. Use to conditionally disable glass.
     Identity,
 }
+
+impl Glass {
+    /// Attach the `interactive` modifier — returns a [`GlassMaterial`]
+    /// with the flag set and defaults for the other fields.
+    pub const fn interactive(self, v: bool) -> GlassMaterial {
+        GlassMaterial {
+            variant: self,
+            interactive: v,
+            tint: None,
+        }
+    }
+
+    /// Attach a tint override — returns a [`GlassMaterial`].
+    pub const fn tint(self, c: Option<Hsla>) -> GlassMaterial {
+        GlassMaterial {
+            variant: self,
+            interactive: false,
+            tint: c,
+        }
+    }
+}
+
+/// Liquid Glass material with optional SwiftUI-style modifiers.
+///
+/// Mirrors the method-chain form `Glass::Regular.interactive(true).tint(Some(color))`.
+/// Most callers pass a bare [`Glass`] variant — the conversion to
+/// `GlassMaterial` happens via `impl Into<GlassMaterial> for Glass` at
+/// the entry-point boundary.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlassMaterial {
+    pub variant: Glass,
+    pub interactive: bool,
+    pub tint: Option<Hsla>,
+}
+
+impl From<Glass> for GlassMaterial {
+    fn from(variant: Glass) -> Self {
+        Self {
+            variant,
+            interactive: false,
+            tint: None,
+        }
+    }
+}
+
+impl GlassMaterial {
+    /// Set the `interactive` flag — mirrors SwiftUI's `Glass.interactive(_:)`.
+    pub const fn interactive(mut self, v: bool) -> Self {
+        self.interactive = v;
+        self
+    }
+
+    /// Set the tint override — mirrors SwiftUI's `Glass.tint(_:)`.
+    pub const fn tint(mut self, c: Option<Hsla>) -> Self {
+        self.tint = c;
+        self
+    }
+}
+
+/// Legacy name for [`Glass`]. Kept as an alias during the migration to
+/// the Apple-aligned name; remove once all callers are updated.
+#[deprecated(note = "use `Glass` instead — matches Apple's SwiftUI API")]
+pub type GlassVariant = Glass;
 
 /// Material thickness level per HIG.
 /// Controls the blur/frost intensity of glass surfaces.
@@ -503,6 +589,61 @@ impl ElevationIndex {
             Self::ElevatedSurface => GlassSize::Small,
             Self::ModalSurface => GlassSize::Medium,
             Self::OverlaySurface => GlassSize::Large,
+        }
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Elevation — shadow tier axis (orthogonal to Glass material)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Shadow tier for a Liquid Glass surface. Decoupled from [`Glass`]
+/// because SwiftUI's `glassEffect(_:in:)` does not bundle shadow with
+/// material — shadows come from the view's elevation context, not from
+/// the material recipe itself.
+///
+/// Maps to the three shadow stacks on [`GlassStyle`]:
+/// `resting_shadows` / `elevated_shadows` / `floating_shadows`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Elevation {
+    /// No shadow.
+    None,
+    /// Resting controls — Figma "Liquid Glass – Small UI" tier (single
+    /// 4pt drop shadow). Buttons, toggles, segmented-control tracks.
+    #[default]
+    Resting,
+    /// Elevated panels — Figma "BG - Medium UI" tier (ambient Y=8
+    /// Blur=40 @12% + 1pt rim @23%). Alerts, modals, dropdowns,
+    /// popovers, action-sheet groups, non-HUD panels.
+    Elevated,
+    /// Floating sheets — full-screen sheets, large overlays. Shares the
+    /// 40pt ambient with `Elevated` today; reserved as a separate tier
+    /// so sheets can diverge if Apple's Large-UI spec lands.
+    Floating,
+}
+
+impl Elevation {
+    /// Returns the appropriate shadow stack from the active theme. Maps
+    /// to the three underlying shadow slots on [`GlassStyle`]; the field
+    /// names on `GlassStyle` are `small_shadows` / `medium_shadows` /
+    /// `large_shadows` today but will be renamed to match this enum in a
+    /// follow-up (see the refactor plan).
+    pub fn shadows<'a>(self, theme: &'a TahoeTheme) -> &'a [gpui::BoxShadow] {
+        match self {
+            Self::None => &[],
+            Self::Resting => &theme.glass.small_shadows,
+            Self::Elevated => &theme.glass.medium_shadows,
+            Self::Floating => &theme.glass.large_shadows,
+        }
+    }
+}
+
+impl From<ElevationIndex> for Elevation {
+    fn from(index: ElevationIndex) -> Self {
+        match index {
+            ElevationIndex::Background | ElevationIndex::Surface => Self::Resting,
+            ElevationIndex::ElevatedSurface => Self::Elevated,
+            ElevationIndex::ModalSurface | ElevationIndex::OverlaySurface => Self::Floating,
         }
     }
 }
@@ -1231,6 +1372,224 @@ fn lens_rect_canvas(effect: gpui::LensEffect, corner_radius: Pixels) -> impl Int
     })
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// glass_effect — Apple-aligned entry points
+// (mirrors SwiftUI's `glassEffect(_:in:)` — material × shape × elevation)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Resolve the fill color for a [`GlassMaterial`], respecting
+/// ReduceTransparency. One canonical fill per Liquid Glass variant —
+/// Regular uses the Figma "BG - Medium UI" fill; Clear uses the
+/// highest-translucency fill; Identity is transparent.
+fn glass_fill_for(theme: &TahoeTheme, material: GlassMaterial) -> Hsla {
+    if theme.accessibility_mode.reduce_transparency() {
+        return theme.glass.accessibility.reduced_transparency_bg;
+    }
+    if let Some(tint) = material.tint {
+        return tint;
+    }
+    match material.variant {
+        // Regular: the canonical Medium UI fill from the Figma Tahoe UI Kit.
+        Glass::Regular => theme.glass.medium_bg,
+        // Clear: the lightest Clear fill — matches Apple's "highly
+        // translucent" description.
+        Glass::Clear => theme.glass.clear_small_bg,
+        // Identity: no fill at all; callers typically skip the material
+        // entirely.
+        Glass::Identity => hsla(0.0, 0.0, 0.0, 0.0),
+    }
+}
+
+/// Build the lens recipe for a [`GlassMaterial`]. Regular picks the full
+/// Figma "BG - Medium UI" refractive params; Clear picks a HIG-aligned
+/// high-translucency recipe (lighter frost, lower refraction).
+fn lens_effect_for(theme: &TahoeTheme, material: GlassMaterial, radius: Pixels) -> LensEffect {
+    let corner_radius = f32::from(radius);
+    let tint = glass_fill_for(theme, material);
+    match material.variant {
+        Glass::Regular => LensEffect {
+            blur: BlurEffect {
+                radius: 12.0,
+                corner_radius,
+                tint,
+            },
+            refraction: 1.0,
+            depth: 16.0,
+            dispersion: 0.0,
+            splay: 6.0,
+            light_angle: -45.0,
+            light_intensity: 0.67,
+        },
+        // Apple "Clear": highly translucent — lighter frost, lower
+        // refraction, softer edge highlight. Keeps the lens readable
+        // over media-rich backdrops without dominating.
+        Glass::Clear => LensEffect {
+            blur: BlurEffect {
+                radius: 6.0,
+                corner_radius,
+                tint,
+            },
+            refraction: 0.4,
+            depth: 4.0,
+            dispersion: 0.0,
+            splay: 2.0,
+            light_angle: -45.0,
+            light_intensity: 0.30,
+        },
+        // Identity: callers short-circuit before reaching this path.
+        Glass::Identity => LensEffect {
+            blur: BlurEffect {
+                radius: 0.0,
+                corner_radius,
+                tint: hsla(0.0, 0.0, 0.0, 0.0),
+            },
+            refraction: 0.0,
+            depth: 0.0,
+            dispersion: 0.0,
+            splay: 0.0,
+            light_angle: -45.0,
+            light_intensity: 0.0,
+        },
+    }
+}
+
+/// Build the blur recipe for a [`GlassMaterial`] — same frost as the
+/// lens recipe but without refraction.
+fn blur_effect_for(theme: &TahoeTheme, material: GlassMaterial, radius: Pixels) -> BlurEffect {
+    let lens = lens_effect_for(theme, material, radius);
+    lens.blur
+}
+
+/// Apply the elevation-driven border contract. Elevated/Floating tiers
+/// receive the 1pt specular top-edge highlight (HIG "frosted edge");
+/// Resting/None tiers only get the IncreaseContrast fallback border.
+fn apply_glass_border_by_elevation(mut el: Div, theme: &TahoeTheme, elevation: Elevation) -> Div {
+    let mode = theme.accessibility_mode;
+    if mode.increase_contrast() {
+        el = el
+            .border_1()
+            .border_color(theme.glass.accessibility.high_contrast_border);
+    } else if !mode.reduce_transparency()
+        && matches!(elevation, Elevation::Elevated | Elevation::Floating)
+    {
+        el = el.border_t(px(1.0)).border_color(hsla(0.0, 0.0, 1.0, 0.18));
+    }
+    el
+}
+
+/// Fill-only Liquid Glass — no render-pass break. Apple-aligned entry
+/// point mirroring SwiftUI's `glassEffect(_:in:)` for the cheap path.
+///
+/// Use this for content-dense surfaces (input rows, upload dropzones)
+/// where the full lens composite would cost a render-pass break for
+/// little visual gain. For real refraction + blur sampling, use
+/// [`glass_effect_lens`]. For blur without refraction, use
+/// [`glass_effect_blur`].
+pub fn glass_effect(
+    el: Div,
+    theme: &TahoeTheme,
+    glass: impl Into<GlassMaterial>,
+    shape: Shape,
+    elevation: Elevation,
+) -> Div {
+    let material = glass.into();
+    if matches!(material.variant, Glass::Identity) {
+        return el;
+    }
+    let radius = compute_shape_radius(theme, shape, None);
+    let bg = glass_fill_for(theme, material);
+    let composited =
+        crate::foundations::color::compose_black_tint_linear(bg, GLASS_LAYER_TINT_ALPHA);
+    let shadows = elevation.shadows(theme).to_vec();
+    let el = el.bg(composited).rounded(radius).shadow(shadows);
+    apply_glass_border_by_elevation(el, theme, elevation)
+}
+
+/// Real Liquid Glass lens composite (refraction + blur + specular edge).
+/// Breaks one render pass — keep the total number of concurrent lens
+/// surfaces in a frame bounded per the rendering-pipeline guidance at
+/// the top of this module.
+///
+/// Apple-aligned entry point mirroring SwiftUI's
+/// `glassEffect(_:in:)` with the lens compositing default.
+pub fn glass_effect_lens(
+    theme: &TahoeTheme,
+    glass: impl Into<GlassMaterial>,
+    shape: Shape,
+    elevation: Elevation,
+    container_height: Option<Pixels>,
+) -> Div {
+    let material = glass.into();
+    let radius = compute_shape_radius(theme, shape, container_height);
+
+    if matches!(material.variant, Glass::Identity) {
+        return gpui::div().rounded(radius);
+    }
+
+    if theme.accessibility_mode.reduce_transparency() {
+        return apply_glass_border_by_elevation(
+            gpui::div()
+                .bg(theme.glass.accessibility.reduced_transparency_bg)
+                .rounded(radius),
+            theme,
+            elevation,
+        );
+    }
+
+    let effect = lens_effect_for(theme, material, radius);
+    let shadows = elevation.shadows(theme).to_vec();
+    apply_glass_border_by_elevation(
+        gpui::div()
+            .relative()
+            .rounded(radius)
+            .shadow(shadows)
+            .child(lens_rect_canvas(gpui::LensEffect::from(&effect), radius)),
+        theme,
+        elevation,
+    )
+}
+
+/// Backdrop blur without refraction — cheaper than [`glass_effect_lens`]
+/// but still breaks one render pass. Use for surfaces that want a
+/// backdrop blur and tint but don't need the full Liquid Glass lens
+/// (status-indicator HUDs, simple frosted overlays).
+pub fn glass_effect_blur(
+    theme: &TahoeTheme,
+    glass: impl Into<GlassMaterial>,
+    shape: Shape,
+    elevation: Elevation,
+    container_height: Option<Pixels>,
+) -> Div {
+    let material = glass.into();
+    let radius = compute_shape_radius(theme, shape, container_height);
+
+    if matches!(material.variant, Glass::Identity) {
+        return gpui::div().rounded(radius);
+    }
+
+    if theme.accessibility_mode.reduce_transparency() {
+        return apply_glass_border_by_elevation(
+            gpui::div()
+                .bg(theme.glass.accessibility.reduced_transparency_bg)
+                .rounded(radius),
+            theme,
+            elevation,
+        );
+    }
+
+    let effect = blur_effect_for(theme, material, radius);
+    let shadows = elevation.shadows(theme).to_vec();
+    apply_glass_border_by_elevation(
+        gpui::div()
+            .relative()
+            .rounded(radius)
+            .shadow(shadows)
+            .child(blur_rect_canvas(gpui::BlurEffect::from(&effect), radius)),
+        theme,
+        elevation,
+    )
+}
+
 /// Apply accent-tinted glass surface styling.
 /// Uses the theme's accent color as the glass tint, suitable for
 /// primary action areas like toolbars and navigation bars.
@@ -1261,21 +1620,26 @@ pub fn glass_shaped_surface(
 
 /// Computes the corner radius for an HIG shape type.
 ///
-/// - **Fixed**: Returns the constant radius.
+/// - **Fixed** / **RoundedRectangle**: Returns the constant radius.
 /// - **Capsule**: Returns half the container height (pill shape).
 /// - **Concentric**: Returns `parent_radius - padding`, minimum 0.
+/// - **Default**: Returns `theme.radius_md` when no `container_height`
+///   is supplied, or the capsule radius (`height / 2`) when one is —
+///   mirrors SwiftUI's `DefaultGlassEffectShape` behaviour for
+///   interactive vs embedded surfaces.
 pub fn compute_shape_radius(
     theme: &TahoeTheme,
     shape: ShapeType,
     container_height: Option<Pixels>,
 ) -> Pixels {
     match shape {
-        ShapeType::Fixed(r) => r,
+        ShapeType::Fixed(r) | ShapeType::RoundedRectangle(r) => r,
         ShapeType::Capsule => container_height.map_or(theme.radius_full, |h| h / 2.0),
         ShapeType::Concentric {
             parent_radius,
             padding,
         } => (parent_radius - padding).max(px(0.0)),
+        ShapeType::Default => container_height.map_or(theme.radius_md, |h| h / 2.0),
     }
 }
 
@@ -1787,18 +2151,25 @@ pub fn card_surface(theme: &crate::foundations::theme::TahoeTheme) -> gpui::Div 
 
 /// Create a full-screen backdrop overlay for modal components.
 ///
-/// Returns an absolutely positioned div covering the full viewport. The
-/// tint is [`TahoeTheme::overlay_bg`] — the standard modal dim scrim.
+/// Returns an absolutely positioned div covering the full viewport,
+/// filled with [`TahoeTheme::overlay_bg`] — the standard modal dim scrim.
 ///
-/// # Backdrop blur (HIG Materials)
+/// # No Kawase blur
 ///
-/// Apple inspector / sheet / alert backdrops composite a dual-Kawase
-/// blurred view of the window content *behind* the overlay tint
-/// (vibrancy / material layer). This function delegates to
-/// [`backdrop_blur_overlay`] with a HIG-default [`BlurEffect`], so every
-/// call site automatically gets the real backdrop blur.
+/// Per the Figma Tahoe UI Kit overlay spec the scrim is a flat tint with
+/// no backdrop blur of its own. Every modal panel in the crate now paints
+/// its own lens composite via [`glass_lens_surface`], so blurring the
+/// full viewport beneath would both double-blur (once under the scrim and
+/// once under the modal) and cost a second render-pass break. Callers
+/// that want an explicit blurred scrim can still use
+/// [`backdrop_blur_overlay`] directly.
 pub fn backdrop_overlay(theme: &crate::foundations::theme::TahoeTheme) -> gpui::Div {
-    backdrop_blur_overlay(theme, &default_backdrop_blur_effect(theme))
+    gpui::div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .bg(theme.overlay_bg)
 }
 
 /// Create a full-screen backdrop overlay with an explicit backdrop-blur

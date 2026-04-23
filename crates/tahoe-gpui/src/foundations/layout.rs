@@ -576,17 +576,14 @@ pub const MENU_MAX_WIDTH: f32 = 280.0;
 // Modal sizing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Standard iOS/iPadOS alert dialog width per HIG (270 pt).
+/// Standard alert dialog width per the Figma Tahoe UI Kit (260 pt).
 ///
-/// Matches `UIAlertController` default width in portrait presentations.
-pub const ALERT_WIDTH_IOS: f32 = 270.0;
-
-/// Standard macOS alert dialog width per HIG (320 pt).
-///
-/// HIG `#alerts` macOS: `NSAlert` panels range 260–420 pt depending
-/// on message length. 320 pt is the default used by `NSAlert.runModal`
-/// for single-line titles and one- or two-sentence messages.
-pub const ALERT_WIDTH_MACOS: f32 = 320.0;
+/// GPUI targets desktop hosts (macOS, Linux, Windows) only, so there is no
+/// iOS vs macOS sizing to branch on — the kit's canonical width is 260 pt
+/// regardless of the renderer. Callers may still override via
+/// [`Alert::width`](crate::components::presentation::alert::Alert::width)
+/// for wider content.
+pub const ALERT_WIDTH: f32 = 260.0;
 
 /// Standard modal dialog width per HIG.
 ///
@@ -780,11 +777,27 @@ impl LayoutDirection {
 // ShapeType
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Shape type per HIG concentricity principle.
+/// Per-surface geometry — mirrors SwiftUI's `Shape` parameter on
+/// [`glassEffect(_:in:)`][apple-glassEffect]. Callers pick a shape
+/// independently from the glass material, so a `Glass::Regular` surface
+/// can be rendered as a rounded rectangle or as a capsule without
+/// changing the material recipe.
+///
+/// Re-exported as `Shape` from [`foundations::materials`](crate::foundations::materials)
+/// for the Apple-named surface.
+///
+/// [apple-glassEffect]: https://developer.apple.com/documentation/SwiftUI/View/glassEffect(_:in:)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShapeType {
-    /// Constant corner radius.
+    /// Constant corner radius. Equivalent to
+    /// [`ShapeType::RoundedRectangle`]; kept for back-compat with the
+    /// concentricity helpers.
     Fixed(Pixels),
+    /// Rounded rectangle with an explicit corner radius. Sugar that reads
+    /// closer to SwiftUI's `RoundedRectangle(cornerRadius:)` at call
+    /// sites — resolves identically to [`ShapeType::Fixed`] via
+    /// `compute_shape_radius`.
+    RoundedRectangle(Pixels),
     /// Radius equals half the container height (pill/capsule).
     Capsule,
     /// Radius = parent_radius - padding, aligned to shared center.
@@ -792,15 +805,20 @@ pub enum ShapeType {
         parent_radius: Pixels,
         padding: Pixels,
     },
+    /// HIG default shape. Mirrors SwiftUI's `DefaultGlassEffectShape`.
+    /// Resolves to `theme.radius_md` when no `container_height` is
+    /// supplied, or to a capsule when a height is supplied — the same
+    /// rule the SwiftUI default follows for interactive controls.
+    Default,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ALERT_WIDTH_IOS, ALERT_WIDTH_MACOS, ControlSize, HOVER_CARD_MAX_WIDTH,
-        MACOS_DEFAULT_TOUCH_TARGET, MACOS_MIN_TOUCH_TARGET, MACOS_PANEL_TITLE_BAR_HEIGHT,
-        MACOS_TITLE_BAR_HEIGHT, MACOS_TOOLBAR_UNIFIED_HEIGHT, POPOVER_MAX_WIDTH, Platform,
-        SIDEBAR_MIN_WIDTH, SizeClass, SurfaceRole, TvOsGridColumns, WatchOsSize,
+        ALERT_WIDTH, ControlSize, HOVER_CARD_MAX_WIDTH, MACOS_DEFAULT_TOUCH_TARGET,
+        MACOS_MIN_TOUCH_TARGET, MACOS_PANEL_TITLE_BAR_HEIGHT, MACOS_TITLE_BAR_HEIGHT,
+        MACOS_TOOLBAR_UNIFIED_HEIGHT, POPOVER_MAX_WIDTH, Platform, SIDEBAR_MIN_WIDTH, SizeClass,
+        SurfaceRole, TvOsGridColumns, WatchOsSize,
     };
     use core::prelude::v1::test;
 
@@ -866,13 +884,9 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::assertions_on_constants)]
-    fn alert_widths_match_platform_hig() {
-        assert!((ALERT_WIDTH_IOS - 270.0).abs() < f32::EPSILON);
-        assert!((ALERT_WIDTH_MACOS - 320.0).abs() < f32::EPSILON);
-        // Macs show wider alerts than phones per HIG — if this ever
-        // flips, callers on macOS will get iPhone-sized alerts.
-        assert!(ALERT_WIDTH_MACOS > ALERT_WIDTH_IOS);
+    fn alert_width_matches_figma_tahoe_kit() {
+        // Figma Tahoe UI Kit — stacked alert width is 260pt on desktop.
+        assert!((ALERT_WIDTH - 260.0).abs() < f32::EPSILON);
     }
 
     #[test]

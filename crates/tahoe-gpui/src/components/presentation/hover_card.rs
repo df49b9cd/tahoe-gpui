@@ -12,8 +12,9 @@
 use std::time::{Duration, Instant};
 
 use crate::foundations::layout::HOVER_CARD_MAX_WIDTH;
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Context, ElementId, Task, Window, div, px};
 
@@ -480,15 +481,14 @@ impl Render for HoverCard {
             .gap(spacing_xs);
 
         if let Some(content) = content_el {
-            // Hover cards share popover layering: mid-depth overlay surface,
-            // not a sheet/modal. `GlassSize::Large` over-shadows the card
-            // and breaks the HIG depth hierarchy — use `Medium` instead.
-            let card_effect =
-                crate::foundations::materials::LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let card = crate::foundations::materials::glass_lens_surface(
+            // Hover cards share popover layering: Elevated tier — one
+            // depth level above content, one below full-screen sheets.
+            let card = glass_effect_lens(
                 theme,
-                &card_effect,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
             )
             .overflow_hidden()
             .max_w(self.max_width)
