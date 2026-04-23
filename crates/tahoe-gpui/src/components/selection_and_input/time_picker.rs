@@ -732,7 +732,7 @@ impl RenderOnce for TimePicker {
             let mut dropdown = glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )
@@ -1085,7 +1085,12 @@ fn build_time_wheel(
     if let Some(handle) = focus_handle {
         wrapper = wrapper.track_focus(handle);
     }
-    wrapper = apply_standard_control_styling(wrapper, theme, Shape::Default, focused);
+    wrapper = apply_standard_control_styling(
+        wrapper,
+        theme,
+        Shape::RoundedRectangle(theme.radius_md),
+        focused,
+    );
 
     let has_ampm = !use_24h;
     let hour_rows = if use_24h { 24 } else { 12 };

@@ -164,6 +164,45 @@ impl ButtonVariant {
     }
 }
 
+/// SwiftUI-aligned `ButtonStyle` marker — implementors map to a
+/// [`ButtonVariant`]. Mirrors the pattern of `.buttonStyle(.glass)` /
+/// `.buttonStyle(.glassProminent)` from SwiftUI's [`ButtonStyle`][apple]
+/// protocol — callers pass `Button::style(GlassButtonStyle)` instead of
+/// reaching into the enum.
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassButtonStyle
+pub trait ButtonStyle {
+    /// The variant this style maps to.
+    fn variant(self) -> ButtonVariant;
+}
+
+/// Marker for SwiftUI's [`GlassButtonStyle`][apple] — Liquid Glass
+/// button. Maps to [`ButtonVariant::Glass`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassButtonStyle
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlassButtonStyle;
+
+impl ButtonStyle for GlassButtonStyle {
+    fn variant(self) -> ButtonVariant {
+        ButtonVariant::Glass
+    }
+}
+
+/// Marker for SwiftUI's [`GlassProminentButtonStyle`][apple] — accent-
+/// tinted Liquid Glass button for primary CTAs. Maps to
+/// [`ButtonVariant::GlassProminent`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassProminentButtonStyle
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlassProminentButtonStyle;
+
+impl ButtonStyle for GlassProminentButtonStyle {
+    fn variant(self) -> ButtonVariant {
+        ButtonVariant::GlassProminent
+    }
+}
+
 /// Button shape per HIG.
 ///
 /// Controls the corner radius and proportions of the button.
@@ -372,6 +411,16 @@ impl Button {
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
+        self
+    }
+
+    /// Adopt a SwiftUI-style button style marker. Mirrors the
+    /// `Button(...).buttonStyle(...)` chain — pass [`GlassButtonStyle`]
+    /// or [`GlassProminentButtonStyle`] (or any caller-defined
+    /// [`ButtonStyle`] impl) to map to a `ButtonVariant` without exposing
+    /// the enum directly.
+    pub fn style(mut self, style: impl ButtonStyle) -> Self {
+        self.variant = style.variant();
         self
     }
 
@@ -915,7 +964,9 @@ impl RenderOnce for Button {
 
 #[cfg(test)]
 mod tests {
-    use super::{Button, ButtonSize, ButtonVariant};
+    use super::{
+        Button, ButtonSize, ButtonStyle, ButtonVariant, GlassButtonStyle, GlassProminentButtonStyle,
+    };
     use core::prelude::v1::test;
     use gpui::InteractiveElement;
     use gpui::div;
@@ -941,6 +992,19 @@ mod tests {
     #[test]
     fn button_variant_default() {
         assert_eq!(ButtonVariant::default(), ButtonVariant::Primary);
+    }
+
+    #[test]
+    fn glass_button_style_marker_maps_to_glass_variant() {
+        assert_eq!(GlassButtonStyle.variant(), ButtonVariant::Glass);
+    }
+
+    #[test]
+    fn glass_prominent_button_style_marker_maps_to_glass_prominent_variant() {
+        assert_eq!(
+            GlassProminentButtonStyle.variant(),
+            ButtonVariant::GlassProminent,
+        );
     }
 
     #[test]

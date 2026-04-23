@@ -375,12 +375,18 @@ impl RenderOnce for Panel {
         let panel_id = ElementId::from((self.id.clone(), "panel"));
         let panel_body = div().w(width).h_full().flex().flex_col();
         let mut panel = if is_hud {
-            glass_surface_hud(panel_body, theme, Shape::Default, Elevation::Elevated).id(panel_id)
+            glass_surface_hud(
+                panel_body,
+                theme,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+            )
+            .id(panel_id)
         } else {
             glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )

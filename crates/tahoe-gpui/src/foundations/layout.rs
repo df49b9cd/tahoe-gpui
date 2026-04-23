@@ -805,11 +805,47 @@ pub enum ShapeType {
         parent_radius: Pixels,
         padding: Pixels,
     },
-    /// HIG default shape. Mirrors SwiftUI's `DefaultGlassEffectShape`.
-    /// Resolves to `theme.radius_md` when no `container_height` is
-    /// supplied, or to a capsule when a height is supplied — the same
-    /// rule the SwiftUI default follows for interactive controls.
+    /// HIG default shape. Mirrors SwiftUI's `DefaultGlassEffectShape`,
+    /// which Apple documents as a Capsule regardless of host geometry.
+    /// `compute_shape_radius` returns `theme.radius_full` (the renderer
+    /// clamps to half the smaller dimension at paint time) or `h / 2`
+    /// when a container height is supplied.
     Default,
+    /// Per-corner rounding — parity with SwiftUI's
+    /// `rect(corners:isUniform:)` builder. `compute_shape_radius`
+    /// returns the largest corner so callers laying out around the
+    /// shape pick a width-safe inset; the actual per-corner rendering
+    /// is plumbed through `gpui::Corners`.
+    RoundedCorners {
+        top_leading: Pixels,
+        top_trailing: Pixels,
+        bottom_leading: Pixels,
+        bottom_trailing: Pixels,
+    },
+}
+
+impl ShapeType {
+    /// Returns the per-corner radii as a [`gpui::Corners`] suitable for
+    /// passing into the GPUI render primitives (e.g.
+    /// [`gpui::Window::paint_lens_rect`]). For non-`RoundedCorners`
+    /// shapes the corners are uniform, falling back to the
+    /// single-radius value resolved by `compute_shape_radius`.
+    pub fn corners(self, uniform: Pixels) -> gpui::Corners<Pixels> {
+        match self {
+            Self::RoundedCorners {
+                top_leading,
+                top_trailing,
+                bottom_leading,
+                bottom_trailing,
+            } => gpui::Corners {
+                top_left: top_leading,
+                top_right: top_trailing,
+                bottom_left: bottom_leading,
+                bottom_right: bottom_trailing,
+            },
+            _ => gpui::Corners::all(uniform),
+        }
+    }
 }
 
 #[cfg(test)]

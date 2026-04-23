@@ -302,8 +302,21 @@ fn liquid_glass_root_bg_is_semi_transparent() {
 #[test]
 fn resting_shadow_count() {
     let glass = TahoeTheme::liquid_glass().glass;
-    // Per Figma: single 4pt drop shadow for the Resting tier (controls).
+    // Per Figma "Liquid Glass – Small UI": single Y=8 Blur=40 @12% drop
+    // shadow for the Resting tier (controls, toolbars, tab bars).
     assert_eq!(glass.resting_shadows.len(), 1);
+}
+
+#[test]
+fn resting_shadow_matches_figma_small_ui() {
+    // Figma Tahoe UI Kit "Liquid Glass – Small UI" pins Resting at:
+    //   Y=8, Blur=40, Spread=0, #000 @ 12% (no rim).
+    let glass = TahoeTheme::liquid_glass().glass;
+    let resting = &glass.resting_shadows[0];
+    assert!((f32::from(resting.offset.y) - 8.0).abs() < f32::EPSILON);
+    assert!((f32::from(resting.blur_radius) - 40.0).abs() < f32::EPSILON);
+    assert!((f32::from(resting.spread_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((resting.color.a - 0.12).abs() < 1e-5);
 }
 
 #[test]
@@ -338,21 +351,29 @@ fn elevated_shadow_stack_matches_figma() {
 
 #[test]
 fn shadows_scale_by_elevation() {
-    // Figma spec: Resting is a tight 4pt drop shadow (controls), Elevated
-    // and Floating both use the 40pt ambient per the Tahoe UI Kit (Medium
-    // UI is the canonical elevated panel tier). Assert the ordering
-    // Resting < Elevated == Floating for the ambient layer (index 0).
+    // Figma "Liquid Glass – Small UI" tunes Resting to the same Y=8
+    // Blur=40 @12% ambient that Elevated/Floating use — the elevation
+    // separation comes from Elevated's added 1pt rim and from the lens
+    // frost split (Resting=7, Elevated/Floating=12), not from the drop-
+    // shadow blur itself. Assert the ambient parity here so any future
+    // tune-up keeps the three tiers visually anchored together.
     let glass = TahoeTheme::liquid_glass().glass;
     let resting_blur = f32::from(glass.resting_shadows[0].blur_radius);
     let elevated_blur = f32::from(glass.elevated_shadows[0].blur_radius);
     let floating_blur = f32::from(glass.floating_shadows[0].blur_radius);
     assert!(
-        resting_blur < elevated_blur,
-        "resting blur ({resting_blur}) should be less than elevated ({elevated_blur})"
+        (resting_blur - elevated_blur).abs() < f32::EPSILON,
+        "resting blur ({resting_blur}) should match elevated ({elevated_blur}) per Figma Small UI"
     );
     assert!(
         (elevated_blur - floating_blur).abs() < f32::EPSILON,
         "elevated blur ({elevated_blur}) should match floating ({floating_blur}) per Figma Medium UI"
+    );
+    assert_eq!(glass.elevated_shadows.len(), 2, "Elevated has rim layer");
+    assert_eq!(
+        glass.resting_shadows.len(),
+        1,
+        "Resting has no rim per Small UI spec"
     );
 }
 
@@ -672,6 +693,56 @@ fn liquid_glass_light_all_tints_semi_transparent() {
         assert!(tint.bg.a > 0.0 && tint.bg.a < 0.2);
         assert!(tint.bg_hover.a > tint.bg.a);
     }
+}
+
+#[test]
+fn hc_promotion_raises_glass_fill_alpha() {
+    // HIG §Accessibility Increase Contrast: translucent surfaces step
+    // toward opaque under the flag. `for_appearance_glass_with_a11y`
+    // must rebuild the glass tokens against the HC appearance so the
+    // higher-alpha `regular_fill` / `clear_fill` actually surface.
+    use crate::foundations::accessibility::AccessibilityMode;
+    use gpui::WindowAppearance;
+    let baseline = TahoeTheme::for_appearance_glass(WindowAppearance::Dark).glass;
+    let hc = TahoeTheme::for_appearance_glass_with_a11y(
+        WindowAppearance::Dark,
+        AccessibilityMode::INCREASE_CONTRAST,
+    )
+    .glass;
+    assert!(
+        hc.regular_fill.a > baseline.regular_fill.a,
+        "HC regular_fill alpha {} should exceed baseline {}",
+        hc.regular_fill.a,
+        baseline.regular_fill.a,
+    );
+    assert!(
+        hc.clear_fill.a > baseline.clear_fill.a,
+        "HC clear_fill alpha {} should exceed baseline {}",
+        hc.clear_fill.a,
+        baseline.clear_fill.a,
+    );
+}
+
+#[test]
+fn hc_promotion_preserves_glass_accent_tint() {
+    // The glass constructors set a custom accent on `theme.glass.accent_tint`.
+    // HC promotion rebuilds glass tokens, so the test pins that the
+    // accent override survives the rebuild — losing it would silently
+    // re-introduce the default `Multicolor` blue under HC.
+    use crate::foundations::accessibility::AccessibilityMode;
+    use gpui::WindowAppearance;
+    let baseline = TahoeTheme::for_appearance_glass(WindowAppearance::Dark)
+        .glass
+        .accent_tint
+        .bg;
+    let hc = TahoeTheme::for_appearance_glass_with_a11y(
+        WindowAppearance::Dark,
+        AccessibilityMode::INCREASE_CONTRAST,
+    )
+    .glass
+    .accent_tint
+    .bg;
+    assert_eq!(baseline, hc);
 }
 
 #[test]

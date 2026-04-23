@@ -40,7 +40,7 @@ impl Render for TooltipView {
         let mut el = glass_effect_lens(
             theme,
             Glass::Clear,
-            Shape::Default,
+            Shape::RoundedRectangle(theme.radius_md),
             Elevation::Resting,
             None,
         )

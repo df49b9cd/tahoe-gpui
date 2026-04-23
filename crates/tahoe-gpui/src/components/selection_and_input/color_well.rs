@@ -454,7 +454,7 @@ impl RenderOnce for ColorWell {
             let mut grid = glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )

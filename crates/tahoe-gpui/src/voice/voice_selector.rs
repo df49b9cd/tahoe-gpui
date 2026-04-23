@@ -851,7 +851,7 @@ impl Render for VoiceSelectorView {
                             .overflow_hidden(),
                         theme,
                         Glass::Regular,
-                        Shape::Default,
+                        Shape::RoundedRectangle(theme.radius_lg),
                         Elevation::Elevated,
                     );
                     let dropdown = glass_panel

@@ -411,7 +411,7 @@ impl RenderOnce for MenuBar {
                 glass_effect_lens(
                     theme,
                     Glass::Clear,
-                    Shape::Default,
+                    Shape::RoundedRectangle(theme.radius_lg),
                     Elevation::Resting,
                     None,
                 )
@@ -436,7 +436,7 @@ impl RenderOnce for MenuBar {
             let dropdown = glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )

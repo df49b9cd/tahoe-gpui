@@ -307,7 +307,11 @@ impl RenderOnce for Toolbar {
         // params); Inline stays Clear/Resting so the render-pass cost of
         // the always-visible chrome is bounded.
         let (glass, shape, elevation) = match self.style {
-            ToolbarStyle::Inline => (Glass::Clear, Shape::Default, Elevation::Resting),
+            ToolbarStyle::Inline => (
+                Glass::Clear,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Resting,
+            ),
             ToolbarStyle::Floating => (Glass::Regular, Shape::Capsule, Elevation::Elevated),
         };
 

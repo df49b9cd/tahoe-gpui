@@ -130,7 +130,7 @@ impl RenderOnce for NavigationBarIOS {
         glass_effect_lens(
             theme,
             Glass::Clear,
-            Shape::Default,
+            Shape::RoundedRectangle(theme.radius_lg),
             Elevation::Resting,
             None,
         )

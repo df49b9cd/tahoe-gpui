@@ -402,7 +402,7 @@ impl RenderOnce for PulldownButton {
             let mut list = glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )

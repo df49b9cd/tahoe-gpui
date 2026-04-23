@@ -759,12 +759,33 @@ impl TahoeTheme {
         //   #F5F5F5@67% + #262626.
         // `clear_fill`: lightest Clear tier — matches Apple's "highly
         //   translucent" description for media-rich backdrops.
+        //
+        // High-contrast variants raise the fill alpha so text on glass
+        // stays legible without the standard vibrancy compositing. Apple
+        // documents this in HIG §Accessibility "Increase Contrast":
+        // translucent surfaces step toward opaque under the flag.
         let (regular_fill, clear_fill, hover_bg, root_bg) = if is_dark {
+            if is_hc {
+                (
+                    hsla(0.0, 0.0, 0.20, 0.92),
+                    hsla(0.0, 0.0, 1.0, 0.20),
+                    hsla(0.0, 0.0, 0.0, 0.60),
+                    hsla(0.0, 0.0, 0.0, 0.95),
+                )
+            } else {
+                (
+                    hsla(0.0, 0.0, 0.28, 0.67),
+                    hsla(0.0, 0.0, 1.0, 0.09),
+                    hsla(0.0, 0.0, 0.0, 0.50),
+                    hsla(0.0, 0.0, 0.0, 0.80),
+                )
+            }
+        } else if is_hc {
             (
-                hsla(0.0, 0.0, 0.28, 0.67),
-                hsla(0.0, 0.0, 1.0, 0.09),
-                hsla(0.0, 0.0, 0.0, 0.50),
-                hsla(0.0, 0.0, 0.0, 0.80),
+                hsla(0.0, 0.0, 0.97, 0.92),
+                hsla(0.0, 0.0, 1.0, 0.55),
+                hsla(0.0, 0.0, 0.0, 0.10),
+                hsla(0.0, 0.0, 1.0, 1.0),
             )
         } else {
             (
@@ -828,7 +849,7 @@ impl TahoeTheme {
             blur_radius: px(0.),
             spread_radius: px(1.),
         };
-        let (small_shadow_a, large_shadow_a) = if is_dark { (0.06, 0.12) } else { (0.04, 0.10) };
+        let large_shadow_a = if is_dark { 0.12 } else { 0.10 };
 
         // Colored tints share a canonical hue/saturation per color, with
         // per-appearance alpha and a couple of hue/saturation tweaks for
@@ -908,7 +929,12 @@ impl TahoeTheme {
             thick_bg,
             ultra_thick_bg,
             chrome_bg,
-            resting_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
+            // Resting (toolbars, tab bars, small controls) per Figma Tahoe
+            // UI Kit "Liquid Glass – Small UI": ambient Y=8 Blur=40 @12%
+            // (no rim). HIG §Materials notes Liquid Glass is "thinner /
+            // lighter frost" on small elements; the soft 40 pt ambient
+            // anchors the surface without adding visual weight.
+            resting_shadows: vec![shadow(8.0, 40.0, 0.12)],
             // Elevated (alerts, dialogs, ≤400pt panels) per the Figma
             // Tahoe UI Kit "BG - Medium UI": an ambient shadow
             // (Y=8, Blur=40, #000 @ 12%) plus a 1pt rim (#000 @ 23%) for
@@ -1523,13 +1549,11 @@ impl TahoeTheme {
     /// [`AccessibilityMode::INCREASE_CONTRAST`](crate::foundations::accessibility::AccessibilityMode::INCREASE_CONTRAST)
     /// without additional plumbing.
     ///
-    /// Note: when HC is requested this helper currently only swaps
-    /// `theme.appearance` and `theme.palette` to the HC variant. The glass
-    /// surface / accent / semantic tokens produced by [`Self::liquid_glass`]
-    /// and [`Self::liquid_glass_light`] do not yet have HC-adjusted
-    /// counterparts in the library, so `is_high_contrast()` will return true
-    /// but most glass surfaces remain visually unchanged. Adding HC-adjusted
-    /// glass design tokens is tracked as a follow-up.
+    /// When HC is requested, `Self::build_glass` produces higher-alpha
+    /// `regular_fill` / `clear_fill` and a stronger label palette so glass
+    /// surfaces step toward opaque per HIG §Accessibility "Increase
+    /// Contrast"; `apply_glass_border_by_elevation` already drops the
+    /// specular 1pt rim under the flag.
     pub fn for_appearance_glass_with_a11y(
         appearance: WindowAppearance,
         mode: crate::foundations::accessibility::AccessibilityMode,
@@ -1543,6 +1567,18 @@ impl TahoeTheme {
             };
             theme.appearance = hc_appearance;
             theme.palette = SystemPalette::new(hc_appearance);
+            // Rebuild glass tokens against the HC appearance so the
+            // higher-alpha fills + stronger label palette wired up in
+            // `build_glass` actually surface here. Preserve the
+            // glass-theme accent override (the existing glass
+            // constructors set their own accent) so HC promotion does
+            // not regress the glass colour pipeline.
+            let preserved_accent = theme.glass.accent_tint.bg;
+            theme.glass = Self::build_glass(hc_appearance, &theme.palette, preserved_accent);
+            theme.glass.accent_tint = GlassTint {
+                bg: preserved_accent,
+                bg_hover: crate::foundations::color::lighten(preserved_accent, 0.08),
+            };
         }
         theme.accessibility_mode = mode;
         theme

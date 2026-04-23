@@ -527,7 +527,8 @@ pub enum Elevation {
     /// No shadow.
     None,
     /// Resting controls — Figma "Liquid Glass – Small UI" tier (single
-    /// 4pt drop shadow). Buttons, toggles, segmented-control tracks.
+    /// Y=8 Blur=40 @12% drop shadow, no rim, frost-7 lens). Buttons,
+    /// toggles, segmented-control tracks, toolbars, tab bars.
     #[default]
     Resting,
     /// Elevated panels — Figma "BG - Medium UI" tier (ambient Y=8
@@ -980,26 +981,42 @@ fn glass_fill_for(theme: &TahoeTheme, material: GlassMaterial) -> Hsla {
     theme.glass.fill(material.variant)
 }
 
-/// Build the lens recipe for a [`GlassMaterial`]. Regular picks the full
-/// Figma "BG - Medium UI" refractive params; Clear picks a HIG-aligned
-/// high-translucency recipe (lighter frost, lower refraction).
-fn lens_effect_for(theme: &TahoeTheme, material: GlassMaterial, radius: Pixels) -> LensEffect {
+/// Build the lens recipe for a [`GlassMaterial`] at the given
+/// [`Elevation`] tier. Regular picks the full Figma "BG - Medium UI"
+/// refractive params on Elevated/Floating, but drops to the Figma
+/// "Liquid Glass – Small UI" frost (7) on Resting so toolbars and small
+/// controls feel lighter per HIG §Materials ("Liquid Glass appears more
+/// opaque in larger elements like sidebars to preserve legibility").
+/// Clear keeps a single high-translucency recipe across tiers — Apple's
+/// Small UI reference does not include a separate Clear-Small.
+fn lens_effect_for(
+    theme: &TahoeTheme,
+    material: GlassMaterial,
+    elevation: Elevation,
+    radius: Pixels,
+) -> LensEffect {
     let corner_radius = f32::from(radius);
     let tint = glass_fill_for(theme, material);
     match material.variant {
-        Glass::Regular => LensEffect {
-            blur: BlurEffect {
-                radius: 12.0,
-                corner_radius,
-                tint,
-            },
-            refraction: 1.0,
-            depth: 16.0,
-            dispersion: 0.0,
-            splay: 6.0,
-            light_angle: -45.0,
-            light_intensity: 0.67,
-        },
+        Glass::Regular => {
+            let frost = match elevation {
+                Elevation::None | Elevation::Resting => 7.0,
+                Elevation::Elevated | Elevation::Floating => 12.0,
+            };
+            LensEffect {
+                blur: BlurEffect {
+                    radius: frost,
+                    corner_radius,
+                    tint,
+                },
+                refraction: 1.0,
+                depth: 16.0,
+                dispersion: 0.0,
+                splay: 6.0,
+                light_angle: -45.0,
+                light_intensity: 0.67,
+            }
+        }
         // Apple "Clear": highly translucent — lighter frost, lower
         // refraction, softer edge highlight. Keeps the lens readable
         // over media-rich backdrops without dominating.
@@ -1035,8 +1052,13 @@ fn lens_effect_for(theme: &TahoeTheme, material: GlassMaterial, radius: Pixels) 
 
 /// Build the blur recipe for a [`GlassMaterial`] — same frost as the
 /// lens recipe but without refraction.
-fn blur_effect_for(theme: &TahoeTheme, material: GlassMaterial, radius: Pixels) -> BlurEffect {
-    let lens = lens_effect_for(theme, material, radius);
+fn blur_effect_for(
+    theme: &TahoeTheme,
+    material: GlassMaterial,
+    elevation: Elevation,
+    radius: Pixels,
+) -> BlurEffect {
+    let lens = lens_effect_for(theme, material, elevation, radius);
     lens.blur
 }
 
@@ -1057,6 +1079,28 @@ fn apply_glass_border_by_elevation(mut el: Div, theme: &TahoeTheme, elevation: E
     el
 }
 
+/// Apply the [`GlassMaterial::interactive`] hover layer to a Div.
+///
+/// Apple documents `Glass.interactive(_:)` as "reacts to touch / pointer
+/// interactions in real time." On macOS that surfaces as a brightened
+/// fill on hover and a press tint on activation. GPUI's `.hover()` /
+/// `.active()` style API is binary today (no transition duration); the
+/// spring-timed cross-fade of `flex_duration_ms` is tracked under
+/// Phase 3.6 ("Animated hover").
+///
+/// `.active()` requires the Div to be interactive (i.e. have an `id`),
+/// which `glass_effect*` callers stamp downstream. We therefore only
+/// emit `.hover()` here — the press tint is layered automatically
+/// when callers chain `.id(...).active(|s| s.bg(theme.glass.accent_tint.bg))`
+/// on the returned Div.
+fn apply_interactive(el: Div, theme: &TahoeTheme, material: GlassMaterial) -> Div {
+    if !material.interactive {
+        return el;
+    }
+    let hover_bg = theme.glass.hover_bg;
+    el.hover(move |style| style.bg(hover_bg).cursor_pointer())
+}
+
 /// Fill-only Liquid Glass — no render-pass break. Apple-aligned entry
 /// point mirroring SwiftUI's `glassEffect(_:in:)` for the cheap path.
 ///
@@ -1065,6 +1109,9 @@ fn apply_glass_border_by_elevation(mut el: Div, theme: &TahoeTheme, elevation: E
 /// little visual gain. For real refraction + blur sampling, use
 /// [`glass_effect_lens`]. For blur without refraction, use
 /// [`glass_effect_blur`].
+///
+/// Pass `Glass::Regular.interactive(true)` (or the bare flag on
+/// [`GlassMaterial`]) to attach the hover layer automatically.
 pub fn glass_effect(
     el: Div,
     theme: &TahoeTheme,
@@ -1082,7 +1129,8 @@ pub fn glass_effect(
         crate::foundations::color::compose_black_tint_linear(bg, GLASS_LAYER_TINT_ALPHA);
     let shadows = elevation.shadows(theme).to_vec();
     let el = el.bg(composited).rounded(radius).shadow(shadows);
-    apply_glass_border_by_elevation(el, theme, elevation)
+    let el = apply_glass_border_by_elevation(el, theme, elevation);
+    apply_interactive(el, theme, material)
 }
 
 /// Real Liquid Glass lens composite (refraction + blur + specular edge).
@@ -1116,9 +1164,9 @@ pub fn glass_effect_lens(
         );
     }
 
-    let effect = lens_effect_for(theme, material, radius);
+    let effect = lens_effect_for(theme, material, elevation, radius);
     let shadows = elevation.shadows(theme).to_vec();
-    apply_glass_border_by_elevation(
+    let el = apply_glass_border_by_elevation(
         gpui::div()
             .relative()
             .rounded(radius)
@@ -1126,7 +1174,8 @@ pub fn glass_effect_lens(
             .child(lens_rect_canvas(gpui::LensEffect::from(&effect), radius)),
         theme,
         elevation,
-    )
+    );
+    apply_interactive(el, theme, material)
 }
 
 /// Backdrop blur without refraction — cheaper than [`glass_effect_lens`]
@@ -1157,9 +1206,9 @@ pub fn glass_effect_blur(
         );
     }
 
-    let effect = blur_effect_for(theme, material, radius);
+    let effect = blur_effect_for(theme, material, elevation, radius);
     let shadows = elevation.shadows(theme).to_vec();
-    apply_glass_border_by_elevation(
+    let el = apply_glass_border_by_elevation(
         gpui::div()
             .relative()
             .rounded(radius)
@@ -1167,7 +1216,8 @@ pub fn glass_effect_blur(
             .child(blur_rect_canvas(gpui::BlurEffect::from(&effect), radius)),
         theme,
         elevation,
-    )
+    );
+    apply_interactive(el, theme, material)
 }
 
 /// Computes the corner radius for an HIG shape type.
@@ -1175,10 +1225,14 @@ pub fn glass_effect_blur(
 /// - **Fixed** / **RoundedRectangle**: Returns the constant radius.
 /// - **Capsule**: Returns half the container height (pill shape).
 /// - **Concentric**: Returns `parent_radius - padding`, minimum 0.
-/// - **Default**: Returns `theme.radius_md` when no `container_height`
-///   is supplied, or the capsule radius (`height / 2`) when one is —
-///   mirrors SwiftUI's `DefaultGlassEffectShape` behaviour for
-///   interactive vs embedded surfaces.
+/// - **Default**: Always returns the capsule radius — mirrors
+///   SwiftUI's `DefaultGlassEffectShape`, which Apple documents as
+///   "a Capsule" regardless of host geometry. Returns `height / 2`
+///   when `container_height` is supplied so the renderer still receives
+///   an exact pill radius; otherwise returns `theme.radius_full`
+///   (the renderer clamps to half the smaller dimension at paint time).
+///   Callers that intended a "rounded rectangle" default should pass
+///   [`ShapeType::RoundedRectangle`] explicitly.
 pub fn compute_shape_radius(
     theme: &TahoeTheme,
     shape: ShapeType,
@@ -1186,12 +1240,22 @@ pub fn compute_shape_radius(
 ) -> Pixels {
     match shape {
         ShapeType::Fixed(r) | ShapeType::RoundedRectangle(r) => r,
-        ShapeType::Capsule => container_height.map_or(theme.radius_full, |h| h / 2.0),
+        ShapeType::Capsule | ShapeType::Default => {
+            container_height.map_or(theme.radius_full, |h| h / 2.0)
+        }
         ShapeType::Concentric {
             parent_radius,
             padding,
         } => (parent_radius - padding).max(px(0.0)),
-        ShapeType::Default => container_height.map_or(theme.radius_md, |h| h / 2.0),
+        ShapeType::RoundedCorners {
+            top_leading,
+            top_trailing,
+            bottom_leading,
+            bottom_trailing,
+        } => top_leading
+            .max(top_trailing)
+            .max(bottom_leading)
+            .max(bottom_trailing),
     }
 }
 
@@ -1209,15 +1273,47 @@ pub fn accessible_tint_bg(tint: &GlassTint, mode: AccessibilityMode) -> gpui::Hs
 
 pub use super::accessibility::{apply_high_contrast_border, effective_duration};
 
+/// Apply a Standard-Material backdrop to a Div, mirroring SwiftUI's
+/// [`background(_:in:fillStyle:)`][apple] called with one of the
+/// `Material.*` shape styles (`.ultraThin`, `.thin`, `.regular`,
+/// `.thick`, `.ultraThick`, `.bar`).
+///
+/// This is the *content-layer* analog of [`glass_effect`] —
+/// `material_background` paints a Standard Material fill (per
+/// [`MaterialThickness`]) at [`Elevation::Resting`] with the
+/// IncreaseContrast border fallback. Use for inline content surfaces
+/// (cards, list backgrounds) where Liquid Glass would violate the HIG
+/// content-layer rule. For controls / navigation surfaces, prefer
+/// [`glass_effect`] / [`glass_effect_lens`] / [`glass_effect_blur`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/View/background(_:in:fillStyle:)
+pub fn material_background(
+    el: Div,
+    theme: &TahoeTheme,
+    thickness: MaterialThickness,
+    shape: Shape,
+) -> Div {
+    let bg = if theme.accessibility_mode.reduce_transparency() {
+        theme.glass.accessibility.reduced_transparency_bg
+    } else {
+        theme.glass.material_bg(thickness)
+    };
+    let radius = compute_shape_radius(theme, shape, None);
+    let shadows = Elevation::Resting.shadows(theme).to_vec();
+    let el = el.bg(bg).rounded(radius).shadow(shadows);
+    apply_high_contrast_border(el, theme)
+}
+
 /// Apply the standard glass-control styling triplet.
 ///
 /// Fills the control with [`Glass::Regular`] at [`Elevation::Resting`],
-/// rounds it with `shape` ([`Shape::Default`] for rectangular triggers,
-/// [`Shape::Capsule`] for pill controls), stacks the resting shadows,
-/// layers the focus ring when `focused`, and applies the IncreaseContrast
-/// border fallback. Use for any control whose chrome is a glass trigger —
-/// popup buttons, pickers, date/time pickers, combo boxes, steppers,
-/// segmented controls, and similar.
+/// rounds it with `shape` ([`Shape::Default`] / [`Shape::Capsule`] for
+/// pill controls — the macOS Tahoe default per `DefaultGlassEffectShape`,
+/// or [`Shape::RoundedRectangle`] for explicitly rectangular controls),
+/// stacks the resting shadows, layers the focus ring when `focused`, and
+/// applies the IncreaseContrast border fallback. Use for any control
+/// whose chrome is a glass trigger — popup buttons, pickers, date/time
+/// pickers, combo boxes, steppers, segmented controls, and similar.
 ///
 /// Matches the fill-only contract of [`glass_effect`] but stays
 /// [`gpui::Styled`]-generic so callers can chain it onto typed builders
@@ -1421,9 +1517,32 @@ pub fn scroll_edge_bottom(theme: &TahoeTheme, height: Pixels, style: ScrollEdgeS
     scroll_edge(theme, height, style, ScrollEdgeSide::Bottom)
 }
 
+/// Edge selector for scroll-edge-aware bar wrappers.
+///
+/// Mirrors SwiftUI's `VerticalEdge` for the
+/// [`safeAreaBar(edge:content:)`][apple] modifier. We only model the two
+/// vertical edges Apple ships on macOS 26 — leading/trailing safe-area
+/// bars are not part of the macOS Tahoe HIG.
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/View/safeAreaBar(edge:alignment:spacing:content:)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarEdge {
+    Top,
+    Bottom,
+}
+
 enum ScrollEdgeSide {
     Top,
     Bottom,
+}
+
+impl From<BarEdge> for ScrollEdgeSide {
+    fn from(edge: BarEdge) -> Self {
+        match edge {
+            BarEdge::Top => Self::Top,
+            BarEdge::Bottom => Self::Bottom,
+        }
+    }
 }
 
 fn scroll_edge(
@@ -1480,6 +1599,51 @@ fn scroll_edge(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// safe_area_bar — SwiftUI safeAreaBar(edge:…) parity
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Compose a custom bar with the matching scroll-edge effect, mirroring
+/// SwiftUI's [`safeAreaBar(edge:alignment:spacing:content:)`][apple].
+///
+/// The returned `Div` stacks the scroll-edge gradient under a glass-tinted
+/// bar that fills the requested edge of its parent. Use this whenever a
+/// custom toolbar / status bar should pick up the scroll-edge fade
+/// without the caller plumbing both pieces by hand.
+///
+/// `bar` is the caller-supplied bar content; this helper only handles
+/// the chrome (edge gradient + glass fill + Resting elevation). Pair
+/// with [`crate::components::ScrollView`] or any sibling scroll surface
+/// — the scroll-edge fade reads against `theme.background`, so opaque
+/// scroll content beneath produces the cleanest effect.
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/View/safeAreaBar(edge:alignment:spacing:content:)
+pub fn safe_area_bar(
+    theme: &TahoeTheme,
+    edge: BarEdge,
+    height: Pixels,
+    style: ScrollEdgeStyle,
+    glass: impl Into<GlassMaterial>,
+    bar: Div,
+) -> Div {
+    let edge_overlay = scroll_edge(theme, height, style, edge.into());
+    let glass_bar = glass_effect(
+        bar,
+        theme,
+        glass,
+        Shape::RoundedRectangle(theme.radius_lg),
+        Elevation::Resting,
+    )
+    .absolute()
+    .left_0()
+    .right_0();
+    let glass_bar = match edge {
+        BarEdge::Top => glass_bar.top_0(),
+        BarEdge::Bottom => glass_bar.bottom_0(),
+    };
+    gpui::div().relative().child(edge_overlay).child(glass_bar)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Glass Morphing Transitions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1488,11 +1652,12 @@ fn scroll_edge(
 /// Interpolates between `from` and `to` morph states using spring timing.
 /// The element renders in a deferred overlay layer during the transition.
 ///
-/// When `theme.accessibility_mode` has `REDUCE_MOTION` set, the spring morph
-/// is replaced with a short linear cross-fade (per HIG:
-/// "replace large, dramatic transitions with subtle cross-fades") — the
-/// element jumps to `to`'s geometry and only opacity animates. This matches
-/// the guidance in `foundations.md:1100`.
+/// When `theme.accessibility_mode` has `REDUCE_MOTION` *or*
+/// `PREFER_CROSS_FADE_TRANSITIONS` set, the spring morph is replaced with
+/// a short linear cross-fade (per HIG: "replace large, dramatic
+/// transitions with subtle cross-fades") — the element jumps to `to`'s
+/// geometry and only opacity animates. This matches the guidance in
+/// `foundations.md:1100`.
 ///
 /// The child is wrapped in a `div()` that receives the animation styles,
 /// then placed in a `deferred()` with priority 2 for overlay rendering.
@@ -1514,15 +1679,16 @@ pub fn glass_morph(
     theme: &TahoeTheme,
     child: impl IntoElement,
 ) -> Deferred {
-    let reduce_motion = theme.accessibility_mode.reduce_motion();
-    let animation = accessible_spring_animation(&theme.glass.motion, reduce_motion);
+    let mode = theme.accessibility_mode;
+    let crossfade_only = mode.reduce_motion() || mode.prefer_cross_fade_transitions();
+    let animation = accessible_spring_animation(&theme.glass.motion, crossfade_only);
     let child_el = child.into_any_element();
 
     deferred(gpui::div().size_full().child(child_el).with_animation(
         id,
         animation,
         move |el, delta| {
-            if reduce_motion {
+            if crossfade_only {
                 // Cross-fade only: snap geometry to `to`, animate opacity.
                 el.absolute()
                     .left(px(to.x))
@@ -1557,8 +1723,10 @@ pub fn glass_morph(
 /// should keep calling [`glass_effect`] directly — this helper is opt-in.
 ///
 /// The element renders the `to`-tier surface throughout; only opacity
-/// animates from 0→1 on tier change. Under Reduce Motion the animation
-/// still runs but at the short 150ms cross-fade duration.
+/// animates from 0→1 on tier change. When the accessibility mode has
+/// `REDUCE_MOTION` *or* `PREFER_CROSS_FADE_TRANSITIONS` set the animation
+/// collapses to the short 150 ms cross-fade duration so motion-sensitive
+/// users still see a stable swap rather than a long fade.
 pub fn glass_tier_transition<E>(
     el: E,
     id: impl Into<ElementId>,
@@ -1568,8 +1736,8 @@ where
     E: IntoElement + gpui::Styled + 'static,
 {
     use std::time::Duration;
-    let reduce_motion = theme.accessibility_mode.reduce_motion();
-    let duration = if reduce_motion {
+    let mode = theme.accessibility_mode;
+    let duration = if mode.reduce_motion() || mode.prefer_cross_fade_transitions() {
         REDUCE_MOTION_CROSSFADE
     } else {
         Duration::from_millis(theme.glass.motion.shape_shift_duration_ms)
@@ -1856,6 +2024,45 @@ mod tests {
     }
 
     #[test]
+    fn rounded_corners_returns_max_radius() {
+        // RoundedCorners is the per-corner rendering shape; the
+        // single-radius `compute_shape_radius` returns the largest
+        // corner so callers laying out around the shape pick a
+        // width-safe inset. The actual per-corner geometry is plumbed
+        // via `ShapeType::corners`.
+        let theme = TahoeTheme::dark();
+        let r = compute_shape_radius(
+            &theme,
+            Shape::RoundedCorners {
+                top_leading: px(4.0),
+                top_trailing: px(8.0),
+                bottom_leading: px(20.0),
+                bottom_trailing: px(12.0),
+            },
+            None,
+        );
+        assert!((f32::from(r) - 20.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn rounded_corners_emit_per_corner_corners() {
+        // RoundedCorners exposes the per-corner radii through the
+        // `ShapeType::corners` helper so render code can pass a
+        // `gpui::Corners` directly to the GPUI primitives.
+        let shape = Shape::RoundedCorners {
+            top_leading: px(4.0),
+            top_trailing: px(8.0),
+            bottom_leading: px(20.0),
+            bottom_trailing: px(12.0),
+        };
+        let corners = shape.corners(px(0.0));
+        assert_eq!(corners.top_left, px(4.0));
+        assert_eq!(corners.top_right, px(8.0));
+        assert_eq!(corners.bottom_left, px(20.0));
+        assert_eq!(corners.bottom_right, px(12.0));
+    }
+
+    #[test]
     fn concentric_minimum_zero() {
         let theme = TahoeTheme::dark();
         let r = compute_shape_radius(
@@ -1870,10 +2077,14 @@ mod tests {
     }
 
     #[test]
-    fn default_shape_without_height_resolves_to_radius_md() {
+    fn default_shape_resolves_to_capsule() {
+        // Apple's `DefaultGlassEffectShape` is documented as a Capsule.
+        // With no container height, `Shape::Default` resolves to the
+        // theme's `radius_full` so the renderer clamps to a pill at paint
+        // time.
         let theme = TahoeTheme::dark();
         let r = compute_shape_radius(&theme, Shape::Default, None);
-        assert_eq!(r, theme.radius_md);
+        assert_eq!(r, theme.radius_full);
     }
 
     #[test]
@@ -2039,7 +2250,8 @@ mod tests {
     fn lens_effect_regular_matches_figma_params() {
         let theme = TahoeTheme::liquid_glass();
         let radius = theme.radius_md;
-        let lens = lens_effect_for(&theme, Glass::Regular.into(), radius);
+        // Elevated tier picks up the full Figma "BG - Medium UI" frost (12).
+        let lens = lens_effect_for(&theme, Glass::Regular.into(), Elevation::Elevated, radius);
         assert_eq!(lens.refraction, 1.0);
         assert_eq!(lens.depth, 16.0);
         assert_eq!(lens.dispersion, 0.0);
@@ -2050,11 +2262,29 @@ mod tests {
     }
 
     #[test]
+    fn lens_effect_regular_resting_uses_small_ui_frost() {
+        // Figma "Liquid Glass – Small UI" pins the Regular Resting frost
+        // at 7 (lighter than the 12 used by Elevated/Floating panels).
+        let theme = TahoeTheme::liquid_glass();
+        let radius = theme.radius_md;
+        let lens = lens_effect_for(&theme, Glass::Regular.into(), Elevation::Resting, radius);
+        assert_eq!(lens.blur.radius, 7.0);
+    }
+
+    #[test]
+    fn lens_effect_regular_floating_uses_medium_ui_frost() {
+        let theme = TahoeTheme::liquid_glass();
+        let radius = theme.radius_md;
+        let lens = lens_effect_for(&theme, Glass::Regular.into(), Elevation::Floating, radius);
+        assert_eq!(lens.blur.radius, 12.0);
+    }
+
+    #[test]
     fn lens_effect_clear_is_more_translucent_than_regular() {
         let theme = TahoeTheme::liquid_glass();
         let radius = theme.radius_md;
-        let regular = lens_effect_for(&theme, Glass::Regular.into(), radius);
-        let clear = lens_effect_for(&theme, Glass::Clear.into(), radius);
+        let regular = lens_effect_for(&theme, Glass::Regular.into(), Elevation::Elevated, radius);
+        let clear = lens_effect_for(&theme, Glass::Clear.into(), Elevation::Elevated, radius);
         assert!(clear.refraction < regular.refraction);
         assert!(clear.depth < regular.depth);
         assert!(clear.light_intensity < regular.light_intensity);
@@ -2064,7 +2294,12 @@ mod tests {
     #[test]
     fn lens_effect_identity_produces_noop_recipe() {
         let theme = TahoeTheme::liquid_glass();
-        let lens = lens_effect_for(&theme, Glass::Identity.into(), theme.radius_md);
+        let lens = lens_effect_for(
+            &theme,
+            Glass::Identity.into(),
+            Elevation::Elevated,
+            theme.radius_md,
+        );
         assert_eq!(lens.refraction, 0.0);
         assert_eq!(lens.depth, 0.0);
         assert_eq!(lens.light_intensity, 0.0);
@@ -2076,8 +2311,8 @@ mod tests {
         let theme = TahoeTheme::liquid_glass();
         let radius = theme.radius_md;
         let material: GlassMaterial = Glass::Regular.into();
-        let lens = lens_effect_for(&theme, material, radius);
-        let blur = blur_effect_for(&theme, material, radius);
+        let lens = lens_effect_for(&theme, material, Elevation::Elevated, radius);
+        let blur = blur_effect_for(&theme, material, Elevation::Elevated, radius);
         assert_eq!(blur.radius, lens.blur.radius);
         assert_eq!(blur.tint, lens.blur.tint);
     }
@@ -2151,6 +2386,45 @@ mod tests {
                 None,
             );
         }
+    }
+
+    // ── Glass::interactive ───────────────────────────────────────────────
+
+    #[test]
+    fn glass_effect_interactive_builds_for_all_three_entry_points() {
+        // The interactive flag wires a hover layer on top of glass_effect /
+        // glass_effect_lens / glass_effect_blur. Smoke-test that the three
+        // entry points still build cleanly when the flag is set.
+        let theme = TahoeTheme::liquid_glass();
+        let _: gpui::Div = glass_effect(
+            gpui::div(),
+            &theme,
+            Glass::Regular.interactive(true),
+            Shape::Default,
+            Elevation::Resting,
+        );
+        let _: gpui::Div = glass_effect_lens(
+            &theme,
+            Glass::Regular.interactive(true),
+            Shape::Default,
+            Elevation::Resting,
+            None,
+        );
+        let _: gpui::Div = glass_effect_blur(
+            &theme,
+            Glass::Regular.interactive(true),
+            Shape::Default,
+            Elevation::Resting,
+            None,
+        );
+    }
+
+    #[test]
+    fn glass_material_interactive_default_is_false() {
+        // Bare-variant conversion must not silently opt in to the hover
+        // layer — surfaces stay non-interactive unless the caller asks.
+        let material: GlassMaterial = Glass::Regular.into();
+        assert!(!material.interactive);
     }
 
     // ── (Glass, Elevation) matrix pin test ───────────────────────────────
@@ -2443,6 +2717,43 @@ mod tests {
     // ── Standard Material layering ───────────────────────────────────────
 
     #[test]
+    fn material_background_builds_for_each_thickness() {
+        use super::{MaterialThickness, material_background};
+        let theme = TahoeTheme::liquid_glass();
+        for thickness in [
+            MaterialThickness::UltraThin,
+            MaterialThickness::Thin,
+            MaterialThickness::Regular,
+            MaterialThickness::Thick,
+            MaterialThickness::UltraThick,
+            MaterialThickness::Chrome,
+        ] {
+            let _: gpui::Div = material_background(
+                gpui::div(),
+                &theme,
+                thickness,
+                Shape::RoundedRectangle(px(8.0)),
+            );
+        }
+    }
+
+    #[test]
+    fn material_background_falls_back_under_reduce_transparency() {
+        use super::material_background;
+        let mut theme = TahoeTheme::liquid_glass();
+        theme.accessibility_mode = AccessibilityMode::REDUCE_TRANSPARENCY;
+        // The fall-back fill is `accessibility.reduced_transparency_bg`,
+        // not a translucent material — pin the build path even though
+        // the Div hides the bg in its private style.
+        let _: gpui::Div = material_background(
+            gpui::div(),
+            &theme,
+            super::MaterialThickness::Regular,
+            Shape::RoundedRectangle(px(8.0)),
+        );
+    }
+
+    #[test]
     fn material_regular_uses_standard_fill_not_glass_regular() {
         use super::MaterialThickness;
         let theme = TahoeTheme::dark();
@@ -2631,6 +2942,30 @@ mod tests {
         let theme = TahoeTheme::dark();
         let _top = scroll_edge_top(&theme, SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle::Soft);
         let _bottom = scroll_edge_bottom(&theme, px(24.0), ScrollEdgeStyle::Hard);
+    }
+
+    // ── safe_area_bar ────────────────────────────────────────────────────
+
+    #[test]
+    fn safe_area_bar_builds_for_top_and_bottom() {
+        use super::{BarEdge, SCROLL_EDGE_HEIGHT, ScrollEdgeStyle, safe_area_bar};
+        let theme = TahoeTheme::liquid_glass();
+        let _top = safe_area_bar(
+            &theme,
+            BarEdge::Top,
+            SCROLL_EDGE_HEIGHT,
+            ScrollEdgeStyle::Soft,
+            Glass::Regular,
+            gpui::div(),
+        );
+        let _bottom = safe_area_bar(
+            &theme,
+            BarEdge::Bottom,
+            SCROLL_EDGE_HEIGHT,
+            ScrollEdgeStyle::Hard,
+            Glass::Clear,
+            gpui::div(),
+        );
     }
 
     // ── clear_glass_dimmed ───────────────────────────────────────────────

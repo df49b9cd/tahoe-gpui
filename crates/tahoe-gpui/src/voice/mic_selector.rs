@@ -466,7 +466,7 @@ impl Render for MicSelectorView {
                     .overflow_hidden(),
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
             );
             let mut dropdown =

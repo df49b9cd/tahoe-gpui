@@ -777,7 +777,7 @@ impl Render for ContextMenu {
         let menu = glass_effect_lens(
             theme_for_surface,
             Glass::Regular,
-            Shape::Default,
+            Shape::RoundedRectangle(theme_for_surface.radius_lg),
             Elevation::Elevated,
             None,
         )
@@ -820,7 +820,7 @@ impl Render for ContextMenu {
                 let nested = glass_effect_lens(
                     theme_for_sub,
                     Glass::Regular,
-                    Shape::Default,
+                    Shape::RoundedRectangle(theme_for_sub.radius_lg),
                     Elevation::Elevated,
                     None,
                 )

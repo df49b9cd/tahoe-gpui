@@ -233,6 +233,23 @@ type OnCloseTab = Option<Box<dyn Fn(SharedString, &mut Window, &mut App) + 'stat
 /// Tab cross the widget at a single roving-tabindex stop (the active
 /// tab), matching ARIA Authoring Practices. Mixing tabs with and without
 /// handles falls back to the legacy bar-level focus model.
+/// Mirrors SwiftUI's [`TabBarMinimizeBehavior`][apple] — when the bar
+/// should recede on scroll. macOS 26+. Hosts wire the scroll observer
+/// (the bar itself is `RenderOnce`); pass the resulting `minimized`
+/// bool back via [`TabBar::minimized`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/View/tabBarMinimizeBehavior(_:)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TabBarMinimizeBehavior {
+    /// Never minimise. Default.
+    #[default]
+    Never,
+    /// Minimise as the user scrolls *down* (content slides up).
+    OnScrollDown,
+    /// Minimise as the user scrolls *up* (content slides down).
+    OnScrollUp,
+}
+
 #[derive(IntoElement)]
 pub struct TabBar {
     id: ElementId,
@@ -248,6 +265,8 @@ pub struct TabBar {
     /// [`focused`](Self::focused) bool.
     focus_handle: Option<FocusHandle>,
     style: TabBarStyle,
+    minimize_behavior: TabBarMinimizeBehavior,
+    minimized: bool,
 }
 
 impl TabBar {
@@ -261,6 +280,8 @@ impl TabBar {
             focused: false,
             focus_handle: None,
             style: TabBarStyle::default(),
+            minimize_behavior: TabBarMinimizeBehavior::default(),
+            minimized: false,
         }
     }
 
@@ -317,6 +338,25 @@ impl TabBar {
     /// [`TabBarStyle::Document`] (macOS document tabs with underline).
     pub fn style(mut self, style: TabBarStyle) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Declare whether the bar should recede in response to scrolling,
+    /// mirroring SwiftUI's `tabBarMinimizeBehavior(_:)`. The bar itself
+    /// is `RenderOnce`, so the host owns the scroll observer — toggle
+    /// [`Self::minimized`] from there once the scroll direction matches
+    /// the chosen behaviour.
+    pub fn minimize_on_scroll(mut self, behavior: TabBarMinimizeBehavior) -> Self {
+        self.minimize_behavior = behavior;
+        self
+    }
+
+    /// Drive the minimised visual state. The host computes this from a
+    /// scroll observer keyed off [`TabBarMinimizeBehavior`] —
+    /// `OnScrollDown` minimises after a downward scroll past a threshold,
+    /// `OnScrollUp` after an upward scroll, and `Never` never sets it.
+    pub fn minimized(mut self, minimized: bool) -> Self {
+        self.minimized = minimized;
         self
     }
 }
@@ -607,6 +647,25 @@ impl RenderOnce for TabBar {
                     .child(tab_bar)
                     .into_any_element()
             }
+        };
+
+        // `tabBarMinimizeBehavior(_:)`: collapse the bar by zeroing
+        // opacity + height when the host signals `minimized: true`.
+        // GPUI doesn't expose a CSS-style transition window for binary
+        // visibility flips on a stateless component, so the height +
+        // opacity change snaps; hosts wanting the spring-timed recede
+        // wrap this in their own `AnimationElement` driven by the same
+        // scroll observer that toggles `minimized`.
+        let bar_visible =
+            matches!(self.minimize_behavior, TabBarMinimizeBehavior::Never) || !self.minimized;
+        let tab_bar_el = if bar_visible {
+            tab_bar_el
+        } else {
+            div()
+                .h(px(0.0))
+                .opacity(0.0)
+                .child(tab_bar_el)
+                .into_any_element()
         };
 
         let mut container = div().flex().flex_col().child(tab_bar_el);

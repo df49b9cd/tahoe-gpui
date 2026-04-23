@@ -372,7 +372,7 @@ impl RenderOnce for ImageWell {
                     inner,
                     theme,
                     Glass::Regular,
-                    Shape::Default,
+                    Shape::RoundedRectangle(theme.radius_md),
                     Elevation::Resting,
                 );
             } else {

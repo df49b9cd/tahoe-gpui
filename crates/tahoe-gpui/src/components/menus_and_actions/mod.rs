@@ -20,7 +20,10 @@ pub mod pulldown_button;
 pub mod share_button;
 
 pub use crate::foundations::keyboard_shortcuts::{MenuShortcut, ModifierKey};
-pub use button::{Button, ButtonShape, ButtonSize, ButtonVariant};
+pub use button::{
+    Button, ButtonShape, ButtonSize, ButtonStyle, ButtonVariant, GlassButtonStyle,
+    GlassProminentButtonStyle,
+};
 pub use button_group::ButtonGroup;
 pub use button_like::ButtonLike;
 pub use context_menu::{ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuItemStyle};

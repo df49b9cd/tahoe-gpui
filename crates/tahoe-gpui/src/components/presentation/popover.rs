@@ -235,7 +235,7 @@ impl RenderOnce for Popover {
             let mut content_div = glass_effect_lens(
                 theme,
                 Glass::Regular,
-                Shape::Default,
+                Shape::RoundedRectangle(theme.radius_lg),
                 Elevation::Elevated,
                 None,
             )
