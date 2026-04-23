@@ -109,6 +109,8 @@ use gpui::{
 };
 
 use crate::foundations::accessibility::{AccessibilityMode, AccessibilityTokens};
+use crate::foundations::color::Color;
+use crate::foundations::color::gradient::{Gradient, GradientStop, LinearGradient, UnitPoint};
 use crate::foundations::layout::ShapeType;
 
 /// Per-surface geometry — re-exported alias of [`ShapeType`] to mirror
@@ -183,7 +185,7 @@ impl Glass {
     }
 
     /// Attach a tint override — returns a [`GlassMaterial`].
-    pub const fn tint(self, c: Option<Hsla>) -> GlassMaterial {
+    pub const fn tint(self, c: Option<Color>) -> GlassMaterial {
         GlassMaterial {
             variant: self,
             interactive: false,
@@ -202,7 +204,7 @@ impl Glass {
 pub struct GlassMaterial {
     pub variant: Glass,
     pub interactive: bool,
-    pub tint: Option<Hsla>,
+    pub tint: Option<Color>,
 }
 
 impl From<Glass> for GlassMaterial {
@@ -223,7 +225,7 @@ impl GlassMaterial {
     }
 
     /// Set the tint override — mirrors SwiftUI's `Glass.tint(_:)`.
-    pub const fn tint(mut self, c: Option<Hsla>) -> Self {
+    pub const fn tint(mut self, c: Option<Color>) -> Self {
         self.tint = c;
         self
     }
@@ -276,7 +278,7 @@ pub struct BlurEffect {
     /// Corner radius for the blur region mask.
     pub corner_radius: f32,
     /// Tint color overlaid on the blurred content.
-    pub tint: Hsla,
+    pub tint: Color,
 }
 
 impl From<&BlurEffect> for gpui::BlurEffect {
@@ -284,7 +286,7 @@ impl From<&BlurEffect> for gpui::BlurEffect {
         Self {
             radius: px(effect.radius),
             kernel_levels: DEFAULT_BLUR_KERNEL_LEVELS,
-            tint: effect.tint,
+            tint: effect.tint.into(),
         }
     }
 }
@@ -351,7 +353,7 @@ impl From<&LensEffect> for gpui::LensEffect {
             splay: px(effect.splay),
             light_angle: gpui::radians(effect.light_angle.to_radians()),
             light_intensity: effect.light_intensity,
-            tint: effect.blur.tint,
+            tint: effect.blur.tint.into(),
         }
     }
 }
@@ -363,18 +365,18 @@ impl From<&LensEffect> for gpui::LensEffect {
 /// UI Kit: Primary → Secondary → Tertiary → Quaternary → Quinary.
 #[derive(Debug, Clone)]
 pub struct GlassLabels {
-    pub primary: Hsla,
-    pub secondary: Hsla,
-    pub tertiary: Hsla,
-    pub quaternary: Hsla,
-    pub quinary: Hsla,
+    pub primary: Color,
+    pub secondary: Color,
+    pub tertiary: Color,
+    pub quaternary: Color,
+    pub quinary: Color,
 }
 
 /// Tinted glass variant colors for colored glass surfaces.
 #[derive(Debug, Clone)]
 pub struct GlassTint {
-    pub bg: Hsla,
-    pub bg_hover: Hsla,
+    pub bg: Color,
+    pub bg_hover: Color,
 }
 
 /// Named tint colors for glass surfaces.
@@ -616,20 +618,20 @@ impl GlassRole {
 pub fn resolve_label(theme: &TahoeTheme, context: SurfaceContext, level: usize) -> Hsla {
     match context {
         SurfaceContext::Opaque => match level {
-            0 => theme.semantic.label,
-            1 => theme.semantic.secondary_label,
-            2 => theme.semantic.tertiary_label,
-            3 => theme.semantic.quaternary_label,
-            _ => theme.semantic.quinary_label,
+            0 => theme.semantic.label.into(),
+            1 => theme.semantic.secondary_label.into(),
+            2 => theme.semantic.tertiary_label.into(),
+            3 => theme.semantic.quaternary_label.into(),
+            _ => theme.semantic.quinary_label.into(),
         },
         SurfaceContext::GlassDim | SurfaceContext::GlassBright => {
             let labels = theme.glass.labels(context);
             match level {
-                0 => labels.primary,
-                1 => labels.secondary,
-                2 => labels.tertiary,
-                3 => labels.quaternary,
-                _ => labels.quinary,
+                0 => labels.primary.into(),
+                1 => labels.secondary.into(),
+                2 => labels.tertiary.into(),
+                3 => labels.quaternary.into(),
+                _ => labels.quinary.into(),
             }
         }
     }
@@ -660,11 +662,11 @@ pub struct GlassStyle {
 
     /// Canonical Regular Liquid Glass fill — Figma Tahoe UI Kit
     /// "BG - Medium UI".
-    pub regular_fill: Hsla,
+    pub regular_fill: Color,
     /// Canonical Clear Liquid Glass fill — high-translucency variant
     /// for media-rich backdrops (Apple: "highly translucent").
-    pub clear_fill: Hsla,
-    pub hover_bg: Hsla,
+    pub clear_fill: Color,
+    pub hover_bg: Color,
 
     // Per-thickness fills (HIG Standard Materials).
     //
@@ -674,20 +676,20 @@ pub struct GlassStyle {
     // are for the controls/navigation layer. Mixing the two violates the
     // HIG layering rule: glass sits above content, content sits above
     // the window background.
-    pub ultra_thin_bg: Hsla,
-    pub thin_bg: Hsla,
+    pub ultra_thin_bg: Color,
+    pub thin_bg: Color,
     /// Regular-thickness standard material. Dark: `#000000 @29%`,
     /// light: `#F6F6F6 @60%`. Used by [`GlassStyle::material_bg`] for
     /// [`MaterialThickness::Regular`] — *not* the Liquid Glass Medium fill.
-    pub medium_standard_bg: Hsla,
-    pub thick_bg: Hsla,
-    pub ultra_thick_bg: Hsla,
+    pub medium_standard_bg: Color,
+    pub thick_bg: Color,
+    pub ultra_thick_bg: Color,
     /// HIG `.bar` / Chrome fill for toolbars, title bars, and tab bars.
     /// Darker/denser than `thin_bg` so labels stay legible when content
     /// scrolls behind the chrome. Dark ≈ `#000 @ 34%`, light ≈ `#F6F6F6
     /// @ 65%`. Consumed by [`GlassStyle::material_bg`] for
     /// [`MaterialThickness::Chrome`].
-    pub chrome_bg: Hsla,
+    pub chrome_bg: Color,
 
     /// Shadow stack for the [`Elevation::Resting`] tier — single 4pt
     /// drop shadow. Controls and toolbar tracks.
@@ -702,7 +704,7 @@ pub struct GlassStyle {
 
     // Window
     pub window_background: gpui::WindowBackgroundAppearance,
-    pub root_bg: Hsla,
+    pub root_bg: Color,
 
     // Labels on glass
     pub labels_dim: GlassLabels,
@@ -727,14 +729,14 @@ pub struct GlassStyle {
     pub accent_tint: GlassTint,
 
     // Glass icon/semantic colors (pastel variants for glass surfaces)
-    pub icon_text: Hsla,
-    pub icon_success: Hsla,
-    pub icon_info: Hsla,
-    pub icon_warning: Hsla,
-    pub icon_error: Hsla,
-    pub icon_ai: Hsla,
-    pub tile_bg: Hsla,
-    pub tile_border: Hsla,
+    pub icon_text: Color,
+    pub icon_success: Color,
+    pub icon_info: Color,
+    pub icon_warning: Color,
+    pub icon_error: Color,
+    pub icon_ai: Color,
+    pub tile_bg: Color,
+    pub tile_border: Color,
 }
 
 impl GlassStyle {
@@ -746,8 +748,8 @@ impl GlassStyle {
     /// per-surface tier.
     pub fn fill(&self, glass: Glass) -> Hsla {
         match glass {
-            Glass::Regular => self.regular_fill,
-            Glass::Clear => self.clear_fill,
+            Glass::Regular => self.regular_fill.into(),
+            Glass::Clear => self.clear_fill.into(),
             Glass::Identity => hsla(0.0, 0.0, 0.0, 0.0),
         }
     }
@@ -805,12 +807,12 @@ impl GlassStyle {
     /// the Liquid Glass `regular_fill`.
     pub fn material_bg(&self, thickness: MaterialThickness) -> Hsla {
         match thickness {
-            MaterialThickness::UltraThin => self.ultra_thin_bg,
-            MaterialThickness::Thin => self.thin_bg,
-            MaterialThickness::Chrome => self.chrome_bg,
-            MaterialThickness::Regular => self.medium_standard_bg,
-            MaterialThickness::Thick => self.thick_bg,
-            MaterialThickness::UltraThick => self.ultra_thick_bg,
+            MaterialThickness::UltraThin => self.ultra_thin_bg.into(),
+            MaterialThickness::Thin => self.thin_bg.into(),
+            MaterialThickness::Chrome => self.chrome_bg.into(),
+            MaterialThickness::Regular => self.medium_standard_bg.into(),
+            MaterialThickness::Thick => self.thick_bg.into(),
+            MaterialThickness::UltraThick => self.ultra_thick_bg.into(),
         }
     }
 }
@@ -976,7 +978,7 @@ fn glass_fill_for(theme: &TahoeTheme, material: GlassMaterial) -> Hsla {
         return theme.glass.accessibility.reduced_transparency_bg;
     }
     if let Some(tint) = material.tint {
-        return tint;
+        return tint.into();
     }
     theme.glass.fill(material.variant)
 }
@@ -1007,7 +1009,7 @@ fn lens_effect_for(
                 blur: BlurEffect {
                     radius: frost,
                     corner_radius,
-                    tint,
+                    tint: tint.into(),
                 },
                 refraction: 1.0,
                 depth: 16.0,
@@ -1024,7 +1026,7 @@ fn lens_effect_for(
             blur: BlurEffect {
                 radius: 6.0,
                 corner_radius,
-                tint,
+                tint: tint.into(),
             },
             refraction: 0.4,
             depth: 4.0,
@@ -1038,7 +1040,7 @@ fn lens_effect_for(
             blur: BlurEffect {
                 radius: 0.0,
                 corner_radius,
-                tint: hsla(0.0, 0.0, 0.0, 0.0),
+                tint: gpui::hsla(0.0, 0.0, 0.0, 0.0).into(),
             },
             refraction: 0.0,
             depth: 0.0,
@@ -1262,12 +1264,14 @@ pub fn compute_shape_radius(
 /// Returns tint background adjusted for ReduceTransparency (alpha × 3, capped at 0.5).
 /// For default mode, returns the original tint background unchanged.
 pub fn accessible_tint_bg(tint: &GlassTint, mode: AccessibilityMode) -> gpui::Hsla {
+    let bg: gpui::Hsla = tint.bg.into();
     if mode.reduce_transparency() {
-        let mut bg = tint.bg;
-        bg.a = (bg.a * 3.0).min(0.5);
-        bg
+        gpui::Hsla {
+            a: (bg.a * 3.0).min(0.5),
+            ..bg
+        }
     } else {
-        tint.bg
+        bg
     }
 }
 
@@ -1551,7 +1555,7 @@ fn scroll_edge(
     style: ScrollEdgeStyle,
     side: ScrollEdgeSide,
 ) -> Div {
-    let bg = theme.background;
+    let bg: Color = theme.background;
 
     // Soft variant: fade across the full height so the transition
     // reads as a gentle smear. Hard variant: confine the fade to the
@@ -1559,35 +1563,31 @@ fn scroll_edge(
     // scroll content nearly at the edge — the closest approximation
     // of HIG's "hard" scroll edge effect using a gradient, since
     // `paint_blur_rect` does not yet accept a variable-radius mask.
-    let (top_color, top_stop, bottom_color, bottom_stop) = match style {
-        ScrollEdgeStyle::Soft => (bg, 0.0, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
-        ScrollEdgeStyle::Hard => (bg, 0.9, hsla(bg.h, bg.s, bg.l, 0.0), 1.0),
+    let (top_stop, bottom_stop) = match style {
+        ScrollEdgeStyle::Soft => (0.0, 1.0),
+        ScrollEdgeStyle::Hard => (0.9, 1.0),
     };
 
-    let (angle, first_stop, second_stop) = match side {
-        ScrollEdgeSide::Top => (
-            180.0,
-            gpui::LinearColorStop {
-                color: top_color,
-                percentage: top_stop,
-            },
-            gpui::LinearColorStop {
-                color: bottom_color,
-                percentage: bottom_stop,
-            },
-        ),
-        ScrollEdgeSide::Bottom => (
-            0.0,
-            gpui::LinearColorStop {
-                color: top_color,
-                percentage: top_stop,
-            },
-            gpui::LinearColorStop {
-                color: bottom_color,
-                percentage: bottom_stop,
-            },
-        ),
+    let (start, end) = match side {
+        ScrollEdgeSide::Top => (UnitPoint::TOP, UnitPoint::BOTTOM),
+        ScrollEdgeSide::Bottom => (UnitPoint::BOTTOM, UnitPoint::TOP),
     };
+
+    let lg = LinearGradient::new(
+        Gradient::new(vec![
+            GradientStop {
+                color: bg,
+                location: top_stop,
+            },
+            GradientStop {
+                color: bg.opacity(0.0),
+                location: bottom_stop,
+            },
+        ]),
+        start,
+        end,
+    );
+    let (angle, stops) = lg.to_gpui_eager();
 
     let base = gpui::div().absolute().left_0().w_full().h(height);
     let positioned = match side {
@@ -1595,7 +1595,7 @@ fn scroll_edge(
         ScrollEdgeSide::Bottom => base.bottom_0(),
     };
 
-    positioned.bg(gpui::linear_gradient(angle, first_stop, second_stop))
+    positioned.bg(gpui::linear_gradient(angle, stops[0], stops[1]))
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1976,6 +1976,7 @@ mod tests {
         lens_effect_for,
     };
     use crate::foundations::accessibility::AccessibilityMode;
+    use crate::foundations::color::Color;
     use crate::foundations::theme::TahoeTheme;
 
     // ── Shape / compute_shape_radius ─────────────────────────────────────
@@ -2106,7 +2107,7 @@ mod tests {
 
     #[test]
     fn glass_material_builder_chain_round_trip() {
-        let color = gpui::hsla(0.6, 0.5, 0.5, 0.5);
+        let color = Color::from_hsla(gpui::hsla(0.6, 0.5, 0.5, 0.5));
         let material = Glass::Clear.interactive(true).tint(Some(color));
         assert_eq!(material.variant, Glass::Clear);
         assert!(material.interactive);
@@ -2125,14 +2126,14 @@ mod tests {
     fn glass_fill_regular_uses_canonical_regular_fill() {
         let theme = TahoeTheme::liquid_glass();
         let bg = glass_fill_for(&theme, Glass::Regular.into());
-        assert_eq!(bg, theme.glass.regular_fill);
+        assert_eq!(bg, gpui::Hsla::from(theme.glass.regular_fill));
     }
 
     #[test]
     fn glass_fill_clear_uses_canonical_clear_fill() {
         let theme = TahoeTheme::liquid_glass();
         let bg = glass_fill_for(&theme, Glass::Clear.into());
-        assert_eq!(bg, theme.glass.clear_fill);
+        assert_eq!(bg, gpui::Hsla::from(theme.glass.clear_fill));
     }
 
     #[test]
@@ -2145,9 +2146,10 @@ mod tests {
     #[test]
     fn glass_fill_honours_material_tint_override() {
         let theme = TahoeTheme::liquid_glass();
-        let tint = gpui::hsla(0.33, 0.7, 0.5, 0.4);
+        let tint_hsla = gpui::hsla(0.33, 0.7, 0.5, 0.4);
+        let tint = Color::from_hsla(tint_hsla);
         let bg = glass_fill_for(&theme, Glass::Regular.tint(Some(tint)));
-        assert_eq!(bg, tint);
+        assert_eq!(bg, tint_hsla);
     }
 
     // ── GlassStyle::fill / accessible_fill ───────────────────────────────
@@ -2155,13 +2157,19 @@ mod tests {
     #[test]
     fn glass_style_fill_regular_matches_regular_fill() {
         let theme = TahoeTheme::liquid_glass();
-        assert_eq!(theme.glass.fill(Glass::Regular), theme.glass.regular_fill);
+        assert_eq!(
+            theme.glass.fill(Glass::Regular),
+            gpui::Hsla::from(theme.glass.regular_fill)
+        );
     }
 
     #[test]
     fn glass_style_fill_clear_matches_clear_fill() {
         let theme = TahoeTheme::liquid_glass();
-        assert_eq!(theme.glass.fill(Glass::Clear), theme.glass.clear_fill);
+        assert_eq!(
+            theme.glass.fill(Glass::Clear),
+            gpui::Hsla::from(theme.glass.clear_fill)
+        );
     }
 
     #[test]
@@ -2547,8 +2555,8 @@ mod tests {
     #[test]
     fn accessible_tint_bg_multiplies_alpha_for_reduce_transparency() {
         let tint = GlassTint {
-            bg: gpui::hsla(0.0, 0.0, 0.0, 0.08),
-            bg_hover: gpui::hsla(0.0, 0.0, 0.0, 0.16),
+            bg: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.08)),
+            bg_hover: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.16)),
         };
         let bg = accessible_tint_bg(&tint, AccessibilityMode::REDUCE_TRANSPARENCY);
         assert!((bg.a - 0.24).abs() < f32::EPSILON);
@@ -2557,8 +2565,8 @@ mod tests {
     #[test]
     fn accessible_tint_bg_returns_original_for_default() {
         let tint = GlassTint {
-            bg: gpui::hsla(0.0, 0.0, 0.0, 0.08),
-            bg_hover: gpui::hsla(0.0, 0.0, 0.0, 0.16),
+            bg: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.08)),
+            bg_hover: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.16)),
         };
         let bg = accessible_tint_bg(&tint, AccessibilityMode::DEFAULT);
         assert!((bg.a - 0.08).abs() < f32::EPSILON);
@@ -2567,8 +2575,8 @@ mod tests {
     #[test]
     fn glass_tints_round_trip_by_name() {
         let mk = |l: f32| GlassTint {
-            bg: gpui::hsla(0.0, 0.0, l, 0.1),
-            bg_hover: gpui::hsla(0.0, 0.0, l, 0.2),
+            bg: Color::from_hsla(gpui::hsla(0.0, 0.0, l, 0.1)),
+            bg_hover: Color::from_hsla(gpui::hsla(0.0, 0.0, l, 0.2)),
         };
         let tints = GlassTints::new(
             mk(0.1),
@@ -2642,12 +2650,12 @@ mod tests {
         let effect = BlurEffect {
             radius: 24.0,
             corner_radius: 12.0,
-            tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+            tint: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.2)),
         };
         let gpui_effect = gpui::BlurEffect::from(&effect);
         assert_eq!(gpui_effect.radius, px(24.0));
         assert_eq!(gpui_effect.kernel_levels, DEFAULT_BLUR_KERNEL_LEVELS);
-        assert_eq!(gpui_effect.tint, effect.tint);
+        assert_eq!(gpui_effect.tint, gpui::Hsla::from(effect.tint));
     }
 
     #[test]
@@ -2657,7 +2665,7 @@ mod tests {
             blur: BlurEffect {
                 radius: 12.0,
                 corner_radius: 16.0,
-                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+                tint: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.2)),
             },
             refraction: 1.0,
             dispersion: 0.25,
@@ -2679,7 +2687,7 @@ mod tests {
             blur: BlurEffect {
                 radius: 12.0,
                 corner_radius: 16.0,
-                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+                tint: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.2)),
             },
             refraction: 1.0,
             dispersion: 0.0,
@@ -2700,7 +2708,7 @@ mod tests {
             blur: BlurEffect {
                 radius: 12.0,
                 corner_radius: 16.0,
-                tint: gpui::hsla(0.0, 0.0, 0.0, 0.2),
+                tint: Color::from_hsla(gpui::hsla(0.0, 0.0, 0.0, 0.2)),
             },
             refraction: 1.0,
             dispersion: 0.0,

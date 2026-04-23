@@ -373,6 +373,78 @@ impl Color {
         self
     }
 
+    // ───── Colour mixing (Phase 5) ──────────────────────────────────────
+
+    /// Perceptual (OKLab) or device (linear-sRGB) interpolation.
+    ///
+    /// Resolves `self` and `other` against the theme, interpolates by `by`
+    /// (clamped to `[0, 1]`), and returns a pre-resolved `Color`.
+    pub fn mix(self, other: Color, by: f32, space: MixColorSpace, cx: &App) -> Color {
+        self.mix_in(other, by, space, &cx.theme().color_environment())
+    }
+
+    /// Same as [`Color::mix`] but resolves against an explicit
+    /// [`ColorEnvironment`] instead of a GPUI `App`.
+    pub fn mix_in(
+        self,
+        other: Color,
+        by: f32,
+        space: MixColorSpace,
+        env: &ColorEnvironment<'_>,
+    ) -> Color {
+        let a = self.resolve_in(env);
+        let b = other.resolve_in(env);
+        let t = if by.is_finite() {
+            by.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let result = match space {
+            MixColorSpace::Perceptual => {
+                let lab_a = super::oklab::srgb_to_oklab([a.red(), a.green(), a.blue()]);
+                let lab_b = super::oklab::srgb_to_oklab([b.red(), b.green(), b.blue()]);
+                let mixed = [
+                    lerp(lab_a[0], lab_b[0], t),
+                    lerp(lab_a[1], lab_b[1], t),
+                    lerp(lab_a[2], lab_b[2], t),
+                ];
+                let srgb = super::oklab::oklab_to_srgb(mixed);
+                ResolvedColor::from_srgb(srgb[0], srgb[1], srgb[2], lerp(a.opacity, b.opacity, t))
+            }
+            MixColorSpace::Device => ResolvedColor::from_linear_srgb(
+                lerp(a.linear_red, b.linear_red, t),
+                lerp(a.linear_green, b.linear_green, t),
+                lerp(a.linear_blue, b.linear_blue, t),
+                lerp(a.opacity, b.opacity, t),
+            ),
+        };
+
+        Color::resolved(result)
+    }
+
+    /// Lighten toward white in OKLab. Equivalent to
+    /// `self.mix(Color::WHITE, amount, MixColorSpace::Perceptual, cx)`.
+    pub fn lighten(self, amount: f32, cx: &App) -> Color {
+        self.lighten_in(amount, &cx.theme().color_environment())
+    }
+
+    /// Darken toward black in OKLab. Equivalent to
+    /// `self.mix(Color::BLACK, amount, MixColorSpace::Perceptual, cx)`.
+    pub fn darken(self, amount: f32, cx: &App) -> Color {
+        self.darken_in(amount, &cx.theme().color_environment())
+    }
+
+    /// Same as [`Color::lighten`] with an explicit [`ColorEnvironment`].
+    pub fn lighten_in(self, amount: f32, env: &ColorEnvironment<'_>) -> Color {
+        self.mix_in(Color::WHITE, amount, MixColorSpace::Perceptual, env)
+    }
+
+    /// Same as [`Color::darken`] with an explicit [`ColorEnvironment`].
+    pub fn darken_in(self, amount: f32, env: &ColorEnvironment<'_>) -> Color {
+        self.mix_in(Color::BLACK, amount, MixColorSpace::Perceptual, env)
+    }
+
     // ───── Resolution ───────────────────────────────────────────────────
 
     /// Resolve this colour using the theme registered as a GPUI global on
@@ -400,7 +472,7 @@ impl Color {
     /// For `Resolved` Colors this reuses the eagerly cached Hsla rather
     /// than round-tripping through `ResolvedColor::to_hsla()`, so
     /// `Hsla::from(Color::from_hsla(x)) == x` byte-for-byte.
-    pub(super) fn try_into_hsla_eager(&self) -> Result<Hsla, &'static str> {
+    pub(crate) fn try_into_hsla_eager(&self) -> Result<Hsla, &'static str> {
         match &self.repr {
             ColorRepr::Literal { space, r, g, b, a } => {
                 let mut h = literal_resolved(*space, *r, *g, *b, *a).to_hsla();
@@ -440,32 +512,36 @@ fn literal_resolved(space: RgbColorSpace, r: f32, g: f32, b: f32, a: f32) -> Res
 fn resolve_semantic(token: SemanticToken, env: &ColorEnvironment<'_>) -> Hsla {
     let sem: &SemanticColors = env.semantic;
     match token {
-        SemanticToken::Label => sem.label,
-        SemanticToken::SecondaryLabel => sem.secondary_label,
-        SemanticToken::TertiaryLabel => sem.tertiary_label,
-        SemanticToken::QuaternaryLabel => sem.quaternary_label,
-        SemanticToken::QuinaryLabel => sem.quinary_label,
-        SemanticToken::SystemBackground => sem.system_background,
-        SemanticToken::SecondarySystemBackground => sem.secondary_system_background,
-        SemanticToken::TertiarySystemBackground => sem.tertiary_system_background,
-        SemanticToken::SystemGroupedBackground => sem.system_grouped_background,
-        SemanticToken::SecondarySystemGroupedBackground => sem.secondary_system_grouped_background,
-        SemanticToken::TertiarySystemGroupedBackground => sem.tertiary_system_grouped_background,
-        SemanticToken::ElevatedSystemBackground => sem.elevated_system_background,
-        SemanticToken::ElevatedSecondarySystemBackground => {
-            sem.elevated_secondary_system_background
+        SemanticToken::Label => sem.label.into(),
+        SemanticToken::SecondaryLabel => sem.secondary_label.into(),
+        SemanticToken::TertiaryLabel => sem.tertiary_label.into(),
+        SemanticToken::QuaternaryLabel => sem.quaternary_label.into(),
+        SemanticToken::QuinaryLabel => sem.quinary_label.into(),
+        SemanticToken::SystemBackground => sem.system_background.into(),
+        SemanticToken::SecondarySystemBackground => sem.secondary_system_background.into(),
+        SemanticToken::TertiarySystemBackground => sem.tertiary_system_background.into(),
+        SemanticToken::SystemGroupedBackground => sem.system_grouped_background.into(),
+        SemanticToken::SecondarySystemGroupedBackground => {
+            sem.secondary_system_grouped_background.into()
         }
-        SemanticToken::SystemFill => sem.system_fill,
-        SemanticToken::SecondarySystemFill => sem.secondary_system_fill,
-        SemanticToken::TertiarySystemFill => sem.tertiary_system_fill,
-        SemanticToken::QuaternarySystemFill => sem.quaternary_system_fill,
-        SemanticToken::QuinarySystemFill => sem.quinary_system_fill,
-        SemanticToken::Separator => sem.separator,
-        SemanticToken::OpaqueSeparator => sem.opaque_separator,
-        SemanticToken::PlaceholderText => sem.placeholder_text,
-        SemanticToken::Link => sem.link,
-        SemanticToken::Info => sem.info,
-        SemanticToken::Ai => sem.ai,
+        SemanticToken::TertiarySystemGroupedBackground => {
+            sem.tertiary_system_grouped_background.into()
+        }
+        SemanticToken::ElevatedSystemBackground => sem.elevated_system_background.into(),
+        SemanticToken::ElevatedSecondarySystemBackground => {
+            sem.elevated_secondary_system_background.into()
+        }
+        SemanticToken::SystemFill => sem.system_fill.into(),
+        SemanticToken::SecondarySystemFill => sem.secondary_system_fill.into(),
+        SemanticToken::TertiarySystemFill => sem.tertiary_system_fill.into(),
+        SemanticToken::QuaternarySystemFill => sem.quaternary_system_fill.into(),
+        SemanticToken::QuinarySystemFill => sem.quinary_system_fill.into(),
+        SemanticToken::Separator => sem.separator.into(),
+        SemanticToken::OpaqueSeparator => sem.opaque_separator.into(),
+        SemanticToken::PlaceholderText => sem.placeholder_text.into(),
+        SemanticToken::Link => sem.link.into(),
+        SemanticToken::Info => sem.info.into(),
+        SemanticToken::Ai => sem.ai.into(),
         SemanticToken::AccentColor => env.accent,
     }
 }
@@ -476,6 +552,10 @@ fn normalize_factor(factor: f32) -> f32 {
     } else {
         1.0
     }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + t * (b - a)
 }
 
 #[cfg(test)]
@@ -555,7 +635,11 @@ mod tests {
             let (palette, semantic, accent) = test_env(appearance);
             let env = ColorEnvironment::new(appearance, accent, &semantic, &palette);
             let got = Color::LABEL.resolve_in(&env).to_hsla();
-            assert_hsla_close(got, semantic.label, &format!("Color::LABEL/{appearance:?}"));
+            assert_hsla_close(
+                got,
+                semantic.label.into(),
+                &format!("Color::LABEL/{appearance:?}"),
+            );
         }
     }
 
@@ -854,5 +938,137 @@ mod tests {
             let back: Hsla = Color::from_hsla(input).into();
             assert_eq!(back, input, "byte-identity roundtrip failed for {input:?}");
         }
+    }
+
+    // ── Phase 5: mix / lighten / darken ──────────────────────────────────
+
+    fn mix_env() -> (SystemPalette, SemanticColors, Hsla) {
+        test_env(Appearance::Dark)
+    }
+
+    #[test]
+    fn perceptual_grey_midpoint_matches_reference() {
+        let (palette, semantic, accent) = mix_env();
+        let env = ColorEnvironment::new(Appearance::Dark, accent, &semantic, &palette);
+        let black = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: 1.0,
+        });
+        let white = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 1.0,
+            a: 1.0,
+        });
+        let mid = black.mix_in(white, 0.5, MixColorSpace::Perceptual, &env);
+        let hsla: Hsla = mid.into();
+        // OKLab L=0.5 maps to sRGB ≈ 0.389 — perceptual midpoint ≠ sRGB midpoint.
+        assert!(
+            (hsla.l - 0.389).abs() < 0.02,
+            "perceptual grey midpoint should be ~0.389, got {}",
+            hsla.l
+        );
+    }
+
+    #[test]
+    fn device_midpoint_equals_naive_linear_average() {
+        let (palette, semantic, accent) = mix_env();
+        let env = ColorEnvironment::new(Appearance::Dark, accent, &semantic, &palette);
+        let a = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 1.0,
+            l: 0.5,
+            a: 1.0,
+        });
+        let b = Color::from_hsla(Hsla {
+            h: 0.333,
+            s: 1.0,
+            l: 0.5,
+            a: 1.0,
+        });
+        let mid = a.mix_in(b, 0.5, MixColorSpace::Device, &env);
+        let resolved = mid.resolve_in(&env);
+        let ra = a.resolve_in(&env);
+        let rb = b.resolve_in(&env);
+        assert!(
+            (resolved.linear_red - (ra.linear_red + rb.linear_red) / 2.0).abs() < 1e-4,
+            "device mix midpoint should equal naive linear average"
+        );
+    }
+
+    #[test]
+    fn mix_commutativity() {
+        let (palette, semantic, accent) = mix_env();
+        let env = ColorEnvironment::new(Appearance::Dark, accent, &semantic, &palette);
+        let a = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 1.0,
+            l: 0.3,
+            a: 1.0,
+        });
+        let b = Color::from_hsla(Hsla {
+            h: 0.6,
+            s: 0.8,
+            l: 0.7,
+            a: 0.5,
+        });
+        let ab = a
+            .mix_in(b, 0.3, MixColorSpace::Perceptual, &env)
+            .resolve_in(&env);
+        let ba = b
+            .mix_in(a, 0.7, MixColorSpace::Perceptual, &env)
+            .resolve_in(&env);
+        assert!(
+            (ab.linear_red - ba.linear_red).abs() < 1e-3,
+            "a.mix(b, 0.3) should ≈ b.mix(a, 0.7)"
+        );
+        assert!(
+            (ab.linear_green - ba.linear_green).abs() < 1e-3,
+            "a.mix(b, 0.3) green should ≈ b.mix(a, 0.7) green"
+        );
+        assert!(
+            (ab.linear_blue - ba.linear_blue).abs() < 1e-3,
+            "a.mix(b, 0.3) blue should ≈ b.mix(a, 0.7) blue"
+        );
+    }
+
+    #[test]
+    fn lighten_moves_toward_white() {
+        let (palette, semantic, accent) = mix_env();
+        let env = ColorEnvironment::new(Appearance::Dark, accent, &semantic, &palette);
+        let dark = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.2,
+            a: 1.0,
+        });
+        let lightened = dark.lighten_in(0.5, &env);
+        let hsla: Hsla = lightened.into();
+        assert!(
+            hsla.l > 0.2,
+            "lighten should increase lightness, got {}",
+            hsla.l
+        );
+    }
+
+    #[test]
+    fn darken_moves_toward_black() {
+        let (palette, semantic, accent) = mix_env();
+        let env = ColorEnvironment::new(Appearance::Dark, accent, &semantic, &palette);
+        let bright = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.8,
+            a: 1.0,
+        });
+        let darkened = bright.darken_in(0.5, &env);
+        let hsla: Hsla = darkened.into();
+        assert!(
+            hsla.l < 0.8,
+            "darken should decrease lightness, got {}",
+            hsla.l
+        );
     }
 }

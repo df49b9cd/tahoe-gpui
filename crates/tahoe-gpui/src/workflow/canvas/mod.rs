@@ -1131,7 +1131,7 @@ impl Render for WorkflowCanvas {
         let edge_color = theme.text_muted;
         let grid_color = theme.border;
         let bg = theme.background;
-        let accent = theme.accent;
+        let accent: gpui::Hsla = theme.accent.into();
         let selection_fill = Hsla { a: 0.15, ..accent };
 
         let pan = self.pan_offset;
@@ -1603,7 +1603,7 @@ impl Render for WorkflowCanvas {
         // alone rather than marked with a "no" glyph to keep the canvas
         // calm during drag.
         if let Some((source_id, source_type, _)) = self.connecting_from.clone() {
-            let accent = theme.accent;
+            let accent: gpui::Hsla = theme.accent.into();
             let border_soft = Hsla { a: 0.4, ..accent };
             let border_strong = accent;
             for node_entity in &self.nodes {

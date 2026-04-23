@@ -31,7 +31,10 @@
 pub mod contrast;
 pub mod environment;
 pub mod gpui_bridge;
+pub mod gradient;
+pub mod oklab;
 pub mod ops;
+pub mod paint;
 pub mod palette;
 pub mod parse;
 pub mod resolved;
@@ -43,7 +46,11 @@ pub mod token;
 
 pub use contrast::{contrast_ratio, meets_contrast};
 pub use environment::ColorEnvironment;
+pub use gradient::{
+    AngularGradient, AnyGradient, Gradient, GradientStop, LinearGradient, RadialGradient, UnitPoint,
+};
 pub use ops::{HslaAlphaExt, darken, fade_out, lighten, opacity, text_on_background, with_alpha};
+pub use paint::Paint;
 pub use palette::{SystemColor, SystemGray, SystemPalette};
 pub use parse::{
     ParseColorError, hex_to_hsla, hex_to_rgba_bytes, hsb_to_hsla, hsla_to_hex, hsla_to_hsb,
