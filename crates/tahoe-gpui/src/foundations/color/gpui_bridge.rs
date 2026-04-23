@@ -17,7 +17,7 @@
 //! .bg(Color::ACCENT.into_hsla(cx))
 //! ```
 
-use gpui::{App, Hsla};
+use gpui::{App, Background, Fill, Hsla};
 
 use super::token::Color;
 
@@ -50,6 +50,28 @@ impl From<Color> for Hsla {
 impl From<Hsla> for Color {
     fn from(h: Hsla) -> Self {
         Color::from_hsla(h)
+    }
+}
+
+/// Bridge to GPUI's `.bg(impl Into<Fill>)` surface. Goes `Color → Hsla →
+/// Fill`, so `.bg(theme.accent)` compiles unchanged after Phase 3's field
+/// swap.
+///
+/// **Panics** on deferred tokens — inherits the panic surface from
+/// `From<Color> for Hsla`. Theme fields are eagerly resolved so this is a
+/// safe bridge for `.bg(theme.X)`; callers with deferred tokens should
+/// resolve explicitly via [`Color::into_hsla`].
+impl From<Color> for Fill {
+    fn from(color: Color) -> Self {
+        Fill::from(Hsla::from(color))
+    }
+}
+
+/// Bridge for `gpui::fill(bounds, …)` — same semantics as `From<Color>
+/// for Fill`.
+impl From<Color> for Background {
+    fn from(color: Color) -> Self {
+        Background::from(Hsla::from(color))
     }
 }
 
