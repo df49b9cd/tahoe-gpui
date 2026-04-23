@@ -9,10 +9,18 @@
 //!
 //! ## Design
 //!
-//! `Color` wraps a private [`ColorRepr`] enum — literal RGBA, named HIG
-//! palette entry, semantic token, pre-resolved value, or a modifier chain
-//! (today only `.opacity()`). The modifier chain is heap-allocated via
-//! [`Arc`] so `Color: Clone` remains cheap.
+//! `Color` is a small `Copy` struct carrying two fields:
+//!
+//! - `repr: ColorRepr` — one of `Literal { … }` / `System(SystemColor)` /
+//!   `SystemGray(SystemGray)` / `Semantic(SemanticToken)` /
+//!   `Resolved(ResolvedColor)`.
+//! - `opacity_multiplier: f32` — multiplicative alpha applied at resolve
+//!   time. `1.0` means "no modification"; `.opacity(0.5).opacity(0.4)`
+//!   composes to `0.2`.
+//!
+//! Keeping `Color` `Copy` is load-bearing for the Phase 3 field swap:
+//! `.bg(theme.accent)` must work without `.clone()` or `&`, and
+//! `theme.accent` is accessed through a shared `&TahoeTheme`.
 //!
 //! Two `Color`s constructed by different paths that *resolve* to the same
 //! pixel value are **not** structurally equal — [`Color`] deliberately
@@ -21,24 +29,22 @@
 //! ## What's in Phase 2
 //!
 //! - Constructors: `rgb`, `rgba`, `white`, `resolved`, `from_hsla`
-//! - Modifiers: `opacity` (multiplicative)
+//! - Modifiers: `opacity` (multiplicative, inline)
 //! - Resolution: `resolve(&App)`, `resolve_in(&ColorEnvironment)`
 //! - Bridge: `into_hsla(&App)` (see `gpui_bridge.rs`)
 //!
 //! ## What's deferred
 //!
 //! - `hex` / `hsb` constructors — Phase 4
-//! - `mix` / `darken` / `lighten` — Phase 5
+//! - `mix` / `darken` / `lighten` — Phase 5 (these will likely need a
+//!   separate richer non-`Copy` type, since mix is a binary operation that
+//!   does not fit an inline multiplier)
 //! - `gradient()` — Phase 6
 //! - `IntoElement for Color` — Phase 7
 
-use std::sync::Arc;
-
 use gpui::{App, Hsla};
 
-use super::{
-    ResolvedColor, RgbColorSpace, SystemColor, SystemGray, environment::ColorEnvironment,
-};
+use super::{ResolvedColor, RgbColorSpace, SystemColor, SystemGray, environment::ColorEnvironment};
 use crate::foundations::theme::{ActiveTheme, SemanticColors};
 
 /// Interpolation space for [`Color::mix`] (Phase 5 — the enum ships now so
@@ -93,9 +99,8 @@ pub enum SemanticToken {
     Ai,
 }
 
-/// Private colour representation. Hidden so the enum can grow new variants
-/// without breaking downstream crates.
-#[derive(Debug, Clone)]
+/// Private colour representation. `Copy` so [`Color`] stays `Copy`.
+#[derive(Debug, Clone, Copy)]
 enum ColorRepr {
     Literal {
         space: RgbColorSpace,
@@ -108,60 +113,60 @@ enum ColorRepr {
     SystemGray(SystemGray),
     Semantic(SemanticToken),
     Resolved(ResolvedColor),
-    Modified(Arc<ColorModifier>),
-}
-
-#[derive(Debug)]
-enum ColorModifier {
-    Opacity { base: Color, factor: f32 },
 }
 
 /// Deferred colour token. Mirrors SwiftUI `Color`.
 ///
-/// Instances are cheap to clone (`Arc` for the modifier chain; variants
-/// otherwise `Copy`-sized). Not paintable until [`Color::resolve`] runs.
-#[derive(Debug, Clone)]
-pub struct Color(ColorRepr);
+/// `Copy` — size is ~28 bytes (tagged union + `opacity_multiplier`).
+/// Not paintable until [`Color::resolve`] runs.
+#[derive(Debug, Clone, Copy)]
+pub struct Color {
+    repr: ColorRepr,
+    /// Multiplicative opacity applied at resolve time. `1.0` = pass-through.
+    /// Callers rarely touch this directly; `.opacity(f)` composes into it
+    /// so the struct stays `Copy`.
+    opacity_multiplier: f32,
+}
 
 impl Color {
     // ───── Named palette (SwiftUI `.red` / `.blue` / …) ─────────────────
-    pub const RED: Color = Color(ColorRepr::System(SystemColor::Red));
-    pub const ORANGE: Color = Color(ColorRepr::System(SystemColor::Orange));
-    pub const YELLOW: Color = Color(ColorRepr::System(SystemColor::Yellow));
-    pub const GREEN: Color = Color(ColorRepr::System(SystemColor::Green));
-    pub const MINT: Color = Color(ColorRepr::System(SystemColor::Mint));
-    pub const TEAL: Color = Color(ColorRepr::System(SystemColor::Teal));
-    pub const CYAN: Color = Color(ColorRepr::System(SystemColor::Cyan));
-    pub const BLUE: Color = Color(ColorRepr::System(SystemColor::Blue));
-    pub const INDIGO: Color = Color(ColorRepr::System(SystemColor::Indigo));
-    pub const PURPLE: Color = Color(ColorRepr::System(SystemColor::Purple));
-    pub const PINK: Color = Color(ColorRepr::System(SystemColor::Pink));
-    pub const BROWN: Color = Color(ColorRepr::System(SystemColor::Brown));
+    pub const RED: Color = Color::from_repr(ColorRepr::System(SystemColor::Red));
+    pub const ORANGE: Color = Color::from_repr(ColorRepr::System(SystemColor::Orange));
+    pub const YELLOW: Color = Color::from_repr(ColorRepr::System(SystemColor::Yellow));
+    pub const GREEN: Color = Color::from_repr(ColorRepr::System(SystemColor::Green));
+    pub const MINT: Color = Color::from_repr(ColorRepr::System(SystemColor::Mint));
+    pub const TEAL: Color = Color::from_repr(ColorRepr::System(SystemColor::Teal));
+    pub const CYAN: Color = Color::from_repr(ColorRepr::System(SystemColor::Cyan));
+    pub const BLUE: Color = Color::from_repr(ColorRepr::System(SystemColor::Blue));
+    pub const INDIGO: Color = Color::from_repr(ColorRepr::System(SystemColor::Indigo));
+    pub const PURPLE: Color = Color::from_repr(ColorRepr::System(SystemColor::Purple));
+    pub const PINK: Color = Color::from_repr(ColorRepr::System(SystemColor::Pink));
+    pub const BROWN: Color = Color::from_repr(ColorRepr::System(SystemColor::Brown));
 
     // ───── HIG gray scale ───────────────────────────────────────────────
-    pub const GRAY: Color = Color(ColorRepr::SystemGray(SystemGray::Gray));
-    pub const GRAY_2: Color = Color(ColorRepr::SystemGray(SystemGray::Gray2));
-    pub const GRAY_3: Color = Color(ColorRepr::SystemGray(SystemGray::Gray3));
-    pub const GRAY_4: Color = Color(ColorRepr::SystemGray(SystemGray::Gray4));
-    pub const GRAY_5: Color = Color(ColorRepr::SystemGray(SystemGray::Gray5));
-    pub const GRAY_6: Color = Color(ColorRepr::SystemGray(SystemGray::Gray6));
+    pub const GRAY: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray));
+    pub const GRAY_2: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray2));
+    pub const GRAY_3: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray3));
+    pub const GRAY_4: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray4));
+    pub const GRAY_5: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray5));
+    pub const GRAY_6: Color = Color::from_repr(ColorRepr::SystemGray(SystemGray::Gray6));
 
     // ───── Black / white / clear (SwiftUI `.black` / `.white` / `.clear`) ─
-    pub const WHITE: Color = Color(ColorRepr::Literal {
+    pub const WHITE: Color = Color::from_repr(ColorRepr::Literal {
         space: RgbColorSpace::Srgb,
         r: 1.0,
         g: 1.0,
         b: 1.0,
         a: 1.0,
     });
-    pub const BLACK: Color = Color(ColorRepr::Literal {
+    pub const BLACK: Color = Color::from_repr(ColorRepr::Literal {
         space: RgbColorSpace::Srgb,
         r: 0.0,
         g: 0.0,
         b: 0.0,
         a: 1.0,
     });
-    pub const CLEAR: Color = Color(ColorRepr::Literal {
+    pub const CLEAR: Color = Color::from_repr(ColorRepr::Literal {
         space: RgbColorSpace::Srgb,
         r: 0.0,
         g: 0.0,
@@ -170,62 +175,75 @@ impl Color {
     });
 
     // ───── Semantic tokens ───────────────────────────────────────────────
-    pub const LABEL: Color = Color(ColorRepr::Semantic(SemanticToken::Label));
-    pub const SECONDARY_LABEL: Color = Color(ColorRepr::Semantic(SemanticToken::SecondaryLabel));
-    pub const TERTIARY_LABEL: Color = Color(ColorRepr::Semantic(SemanticToken::TertiaryLabel));
-    pub const QUATERNARY_LABEL: Color = Color(ColorRepr::Semantic(SemanticToken::QuaternaryLabel));
-    pub const QUINARY_LABEL: Color = Color(ColorRepr::Semantic(SemanticToken::QuinaryLabel));
+    pub const LABEL: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::Label));
+    pub const SECONDARY_LABEL: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::SecondaryLabel));
+    pub const TERTIARY_LABEL: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::TertiaryLabel));
+    pub const QUATERNARY_LABEL: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::QuaternaryLabel));
+    pub const QUINARY_LABEL: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::QuinaryLabel));
 
     pub const SYSTEM_BACKGROUND: Color =
-        Color(ColorRepr::Semantic(SemanticToken::SystemBackground));
-    pub const SECONDARY_SYSTEM_BACKGROUND: Color = Color(ColorRepr::Semantic(
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::SystemBackground));
+    pub const SECONDARY_SYSTEM_BACKGROUND: Color = Color::from_repr(ColorRepr::Semantic(
         SemanticToken::SecondarySystemBackground,
     ));
     pub const TERTIARY_SYSTEM_BACKGROUND: Color =
-        Color(ColorRepr::Semantic(SemanticToken::TertiarySystemBackground));
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::TertiarySystemBackground));
 
     pub const SYSTEM_GROUPED_BACKGROUND: Color =
-        Color(ColorRepr::Semantic(SemanticToken::SystemGroupedBackground));
-    pub const SECONDARY_SYSTEM_GROUPED_BACKGROUND: Color = Color(ColorRepr::Semantic(
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::SystemGroupedBackground));
+    pub const SECONDARY_SYSTEM_GROUPED_BACKGROUND: Color = Color::from_repr(ColorRepr::Semantic(
         SemanticToken::SecondarySystemGroupedBackground,
     ));
-    pub const TERTIARY_SYSTEM_GROUPED_BACKGROUND: Color = Color(ColorRepr::Semantic(
+    pub const TERTIARY_SYSTEM_GROUPED_BACKGROUND: Color = Color::from_repr(ColorRepr::Semantic(
         SemanticToken::TertiarySystemGroupedBackground,
     ));
 
     pub const ELEVATED_SYSTEM_BACKGROUND: Color =
-        Color(ColorRepr::Semantic(SemanticToken::ElevatedSystemBackground));
-    pub const ELEVATED_SECONDARY_SYSTEM_BACKGROUND: Color = Color(ColorRepr::Semantic(
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::ElevatedSystemBackground));
+    pub const ELEVATED_SECONDARY_SYSTEM_BACKGROUND: Color = Color::from_repr(ColorRepr::Semantic(
         SemanticToken::ElevatedSecondarySystemBackground,
     ));
 
-    pub const SYSTEM_FILL: Color = Color(ColorRepr::Semantic(SemanticToken::SystemFill));
+    pub const SYSTEM_FILL: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::SystemFill));
     pub const SECONDARY_SYSTEM_FILL: Color =
-        Color(ColorRepr::Semantic(SemanticToken::SecondarySystemFill));
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::SecondarySystemFill));
     pub const TERTIARY_SYSTEM_FILL: Color =
-        Color(ColorRepr::Semantic(SemanticToken::TertiarySystemFill));
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::TertiarySystemFill));
     pub const QUATERNARY_SYSTEM_FILL: Color =
-        Color(ColorRepr::Semantic(SemanticToken::QuaternarySystemFill));
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::QuaternarySystemFill));
     pub const QUINARY_SYSTEM_FILL: Color =
-        Color(ColorRepr::Semantic(SemanticToken::QuinarySystemFill));
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::QuinarySystemFill));
 
-    pub const SEPARATOR: Color = Color(ColorRepr::Semantic(SemanticToken::Separator));
-    pub const OPAQUE_SEPARATOR: Color = Color(ColorRepr::Semantic(SemanticToken::OpaqueSeparator));
-    pub const PLACEHOLDER_TEXT: Color = Color(ColorRepr::Semantic(SemanticToken::PlaceholderText));
-    pub const LINK: Color = Color(ColorRepr::Semantic(SemanticToken::Link));
-    pub const INFO: Color = Color(ColorRepr::Semantic(SemanticToken::Info));
-    pub const AI: Color = Color(ColorRepr::Semantic(SemanticToken::Ai));
+    pub const SEPARATOR: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::Separator));
+    pub const OPAQUE_SEPARATOR: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::OpaqueSeparator));
+    pub const PLACEHOLDER_TEXT: Color =
+        Color::from_repr(ColorRepr::Semantic(SemanticToken::PlaceholderText));
+    pub const LINK: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::Link));
+    pub const INFO: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::Info));
+    pub const AI: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::Ai));
 
     /// SwiftUI `Color.accentColor` / HIG `tintColor` — resolves to
     /// `theme.accent` (the palette colour chosen via
     /// [`crate::foundations::color::AccentColor`]).
-    pub const ACCENT: Color = Color(ColorRepr::Semantic(SemanticToken::AccentColor));
+    pub const ACCENT: Color = Color::from_repr(ColorRepr::Semantic(SemanticToken::AccentColor));
     /// SwiftUI `Color.primary` — alias for [`Color::LABEL`].
     pub const PRIMARY: Color = Self::LABEL;
     /// SwiftUI `Color.secondary` — alias for [`Color::SECONDARY_LABEL`].
     pub const SECONDARY: Color = Self::SECONDARY_LABEL;
 
     // ───── Constructors ─────────────────────────────────────────────────
+
+    const fn from_repr(repr: ColorRepr) -> Self {
+        Color {
+            repr,
+            opacity_multiplier: 1.0,
+        }
+    }
 
     /// Build an opaque colour from channel values in the given space.
     pub const fn rgb(space: RgbColorSpace, r: f32, g: f32, b: f32) -> Self {
@@ -234,7 +252,7 @@ impl Color {
 
     /// Build a colour from channel values and an explicit alpha.
     pub const fn rgba(space: RgbColorSpace, r: f32, g: f32, b: f32, a: f32) -> Self {
-        Color(ColorRepr::Literal { space, r, g, b, a })
+        Self::from_repr(ColorRepr::Literal { space, r, g, b, a })
     }
 
     /// SwiftUI-style grayscale constructor: `white = lightness` across
@@ -244,10 +262,10 @@ impl Color {
     }
 
     /// Wrap a pre-resolved [`ResolvedColor`] as a `Color`. Used by
-    /// [`Color::from_hsla`] and by `TahoeTheme` builders in Phase 3 when
-    /// the stored value is already concrete.
+    /// [`Color::from_hsla`] and by `TahoeTheme` builders when the stored
+    /// value is already concrete.
     pub const fn resolved(value: ResolvedColor) -> Self {
-        Color(ColorRepr::Resolved(value))
+        Self::from_repr(ColorRepr::Resolved(value))
     }
 
     /// Lift an existing [`gpui::Hsla`] into a `Color`. Eager: performs the
@@ -264,11 +282,13 @@ impl Color {
     /// are treated as `1.0` so a single bad caller cannot poison the
     /// pipeline (parity with
     /// [`crate::foundations::color::opacity`]).
-    pub fn opacity(self, factor: f32) -> Self {
-        Color(ColorRepr::Modified(Arc::new(ColorModifier::Opacity {
-            base: self,
-            factor,
-        })))
+    ///
+    /// Composes multiplicatively: `c.opacity(0.5).opacity(0.4)` resolves
+    /// to the same alpha as `c.opacity(0.2)`.
+    pub fn opacity(mut self, factor: f32) -> Self {
+        self.opacity_multiplier =
+            (self.opacity_multiplier * normalize_factor(factor)).clamp(0.0, 1.0);
+        self
     }
 
     // ───── Resolution ───────────────────────────────────────────────────
@@ -282,33 +302,32 @@ impl Color {
     /// Resolve this colour against an explicit [`ColorEnvironment`]. Used
     /// by tests that don't stand up a GPUI `App`.
     pub fn resolve_in(&self, env: &ColorEnvironment<'_>) -> ResolvedColor {
-        resolve_repr(&self.0, env)
+        let mut base = resolve_repr(&self.repr, env);
+        if self.opacity_multiplier < 1.0 {
+            base.opacity = (base.opacity * self.opacity_multiplier).clamp(0.0, 1.0);
+        }
+        base
     }
 
     // ───── Private helpers used by the GPUI bridge ──────────────────────
 
     /// Try to collapse to an [`Hsla`] without consulting an environment.
-    /// Succeeds on literal / resolved / opacity-of-those; returns `Err`
-    /// carrying a short diagnostic string on any variant that needs an
-    /// environment.
+    /// Succeeds on literal / resolved variants (with `opacity_multiplier`
+    /// applied); returns `Err` on any variant that needs appearance data.
     pub(super) fn try_into_hsla_eager(&self) -> Result<Hsla, &'static str> {
-        match &self.0 {
+        let mut h = match &self.repr {
             ColorRepr::Literal { space, r, g, b, a } => {
-                Ok(literal_resolved(*space, *r, *g, *b, *a).to_hsla())
+                literal_resolved(*space, *r, *g, *b, *a).to_hsla()
             }
-            ColorRepr::Resolved(r) => Ok(r.to_hsla()),
-            ColorRepr::Modified(m) => match m.as_ref() {
-                ColorModifier::Opacity { base, factor } => {
-                    let mut h = base.try_into_hsla_eager()?;
-                    let factor = normalize_factor(*factor);
-                    h.a = (h.a * factor).clamp(0.0, 1.0);
-                    Ok(h)
-                }
-            },
-            ColorRepr::System(_) => Err("Color::SystemColor needs a ColorEnvironment"),
-            ColorRepr::SystemGray(_) => Err("Color::SystemGray needs a ColorEnvironment"),
-            ColorRepr::Semantic(_) => Err("Color::Semantic needs a ColorEnvironment"),
+            ColorRepr::Resolved(r) => r.to_hsla(),
+            ColorRepr::System(_) => return Err("Color::SystemColor needs a ColorEnvironment"),
+            ColorRepr::SystemGray(_) => return Err("Color::SystemGray needs a ColorEnvironment"),
+            ColorRepr::Semantic(_) => return Err("Color::Semantic needs a ColorEnvironment"),
+        };
+        if self.opacity_multiplier < 1.0 {
+            h.a = (h.a * self.opacity_multiplier).clamp(0.0, 1.0);
         }
+        Ok(h)
     }
 }
 
@@ -319,7 +338,6 @@ fn resolve_repr(repr: &ColorRepr, env: &ColorEnvironment<'_>) -> ResolvedColor {
         ColorRepr::SystemGray(sg) => ResolvedColor::from_hsla(sg.resolve(env.appearance)),
         ColorRepr::Semantic(token) => ResolvedColor::from_hsla(resolve_semantic(*token, env)),
         ColorRepr::Resolved(r) => *r,
-        ColorRepr::Modified(m) => apply_modifier(m, env),
     }
 }
 
@@ -363,17 +381,6 @@ fn resolve_semantic(token: SemanticToken, env: &ColorEnvironment<'_>) -> Hsla {
         SemanticToken::Info => sem.info,
         SemanticToken::Ai => sem.ai,
         SemanticToken::AccentColor => env.accent,
-    }
-}
-
-fn apply_modifier(m: &ColorModifier, env: &ColorEnvironment<'_>) -> ResolvedColor {
-    match m {
-        ColorModifier::Opacity { base, factor } => {
-            let mut base = base.resolve_in(env);
-            let factor = normalize_factor(*factor);
-            base.opacity = (base.opacity * factor).clamp(0.0, 1.0);
-            base
-        }
     }
 }
 
@@ -601,7 +608,7 @@ mod tests {
             let (palette, semantic, accent) = test_env(appearance);
             let env = ColorEnvironment::new(appearance, accent, &semantic, &palette);
             for token in tokens {
-                let c = Color(ColorRepr::Semantic(token));
+                let c = Color::from_repr(ColorRepr::Semantic(token));
                 let r = c.resolve_in(&env);
                 assert!(
                     r.linear_red.is_finite()
@@ -646,5 +653,29 @@ mod tests {
         assert!(Color::GRAY_3.try_into_hsla_eager().is_err());
         assert!(Color::ACCENT.try_into_hsla_eager().is_err());
         assert!(Color::LABEL.try_into_hsla_eager().is_err());
+    }
+
+    #[test]
+    fn color_is_copy() {
+        // Phase 3 load-bearing: `.bg(theme.accent)` needs Color to be Copy
+        // so call sites don't have to clone or borrow. Guard the trait
+        // bounds with a const so accidental Arc/Box reintroduction breaks
+        // the build instead of the Phase 3 sweep.
+        const fn assert_copy<T: Copy>() {}
+        assert_copy::<Color>();
+        assert_copy::<ColorRepr>();
+        // A theme field is accessed through `&TahoeTheme`: simulate the
+        // move-out to prove it works.
+        let holder = Color::BLUE;
+        let a = holder;
+        let b = holder; // would fail to compile if Color weren't Copy
+        let _ = (a, b);
+    }
+
+    #[test]
+    fn inline_opacity_multiplier_composes() {
+        // .opacity(0.5).opacity(0.4) → multiplier = 0.2 (same as .opacity(0.2))
+        let c = Color::BLUE.opacity(0.5).opacity(0.4);
+        assert!((c.opacity_multiplier - 0.2).abs() < 1e-6);
     }
 }
