@@ -29,8 +29,8 @@ use std::rc::Rc;
 use crate::callback_types::OnMutCallback;
 use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::{SurfaceContext, glass_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Where the action sheet attaches on screen. Choose
 /// [`Self::BottomDrawer`] on iOS/iPadOS/watchOS and [`Self::Centered`]
@@ -268,7 +268,11 @@ impl RenderOnce for ActionSheet {
         }
 
         let theme = cx.theme();
-        let glass_radius = theme.glass.radius(GlassSize::Medium);
+        // Action-sheet groups use a fixed 34pt radius to match the
+        // Figma Tahoe UI Kit. Using Shape::RoundedRectangle keeps the
+        // corner explicit at the call site now that GlassStyle no
+        // longer exposes per-tier radii.
+        let glass_radius = px(34.0);
         let presentation = self
             .presentation
             .unwrap_or_else(|| ActionSheetPresentation::for_platform(theme.platform));
@@ -394,12 +398,17 @@ fn render_bottom_drawer(
     focus_handle: FocusHandle,
     focus_group: FocusGroup,
 ) -> gpui::AnyElement {
-    // Cancel container.
-    let cancel_group = glass_surface(
-        div().w_full().overflow_hidden().rounded(glass_radius),
+    // Cancel container — Elevated tier (Medium UI fill + ambient + rim).
+    let cancel_group = glass_effect_lens(
         theme,
-        GlassSize::Large,
+        Glass::Regular,
+        Shape::RoundedRectangle(glass_radius),
+        Elevation::Elevated,
+        None,
     )
+    .w_full()
+    .overflow_hidden()
+    .rounded(glass_radius)
     .child(cancel_row);
 
     // Early return when there are no action items.
@@ -420,12 +429,17 @@ fn render_bottom_drawer(
             .into_any_element();
     }
 
-    // Item group container (only reached when items exist).
-    let item_group = glass_surface(
-        div().w_full().overflow_hidden().rounded(glass_radius),
+    // Item group container (only reached when items exist) — Elevated.
+    let item_group = glass_effect_lens(
         theme,
-        GlassSize::Large,
+        Glass::Regular,
+        Shape::RoundedRectangle(glass_radius),
+        Elevation::Elevated,
+        None,
     )
+    .w_full()
+    .overflow_hidden()
+    .rounded(glass_radius)
     .children(item_rows);
 
     // Overall container stacks item group and cancel group with spacing.
@@ -487,11 +501,16 @@ fn render_centered(
     focus_handle: FocusHandle,
     focus_group: FocusGroup,
 ) -> gpui::AnyElement {
-    let mut panel = glass_surface(
-        div().w(px(320.0)).overflow_hidden(),
+    // macOS centered action sheet is a 320pt panel — Elevated tier.
+    let mut panel = glass_effect_lens(
         theme,
-        GlassSize::Large,
+        Glass::Regular,
+        Shape::RoundedRectangle(theme.radius_lg),
+        Elevation::Elevated,
+        None,
     )
+    .w(px(320.0))
+    .overflow_hidden()
     .id(ElementId::from((id.clone(), "panel")))
     .flex()
     .flex_col();

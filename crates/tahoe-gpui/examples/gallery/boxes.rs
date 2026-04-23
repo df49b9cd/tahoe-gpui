@@ -3,8 +3,8 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div};
 
-use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -18,13 +18,12 @@ pub fn render(
 
     // Helper: a box (grouped surface) with optional title
     let titled_box = |id: &'static str, title: &'static str, body: &'static str| {
-        glass_surface(
-            div()
-                .w_full()
-                .overflow_hidden()
-                .rounded(theme.glass.radius(GlassSize::Medium)),
+        glass_effect(
+            div().w_full().overflow_hidden().rounded(theme.radius_lg),
             theme,
-            GlassSize::Medium,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Elevated,
         )
         .id(id)
         .child(
@@ -79,13 +78,12 @@ pub fn render(
         ))
         // Box without title (content only)
         .child(
-            glass_surface(
-                div()
-                    .w_full()
-                    .overflow_hidden()
-                    .rounded(theme.glass.radius(GlassSize::Medium)),
+            glass_effect(
+                div().w_full().overflow_hidden().rounded(theme.radius_lg),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("box-no-title")
             .child(
@@ -101,15 +99,17 @@ pub fn render(
         )
         // Box with border emphasis
         .child(
-            glass_surface(
+            glass_effect(
                 div()
                     .w_full()
                     .overflow_hidden()
-                    .rounded(theme.glass.radius(GlassSize::Medium))
+                    .rounded(theme.radius_lg)
                     .border_1()
                     .border_color(theme.border),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("box-bordered")
             .child(

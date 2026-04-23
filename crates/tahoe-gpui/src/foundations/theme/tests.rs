@@ -1,7 +1,7 @@
 use super::{
-    AccessibilityMode, ActiveTheme, DynamicTypeSize, FontDesign, GlassSize, GlassTintColor,
-    GlassVariant, LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step,
-    contrast_ratio, macos_tracking, meets_contrast,
+    AccessibilityMode, ActiveTheme, DynamicTypeSize, Elevation, FontDesign, Glass, GlassTintColor,
+    LabelLevel, LeadingStyle, TahoeTheme, TextStyle, TextStyledExt, bold_step, contrast_ratio,
+    macos_tracking, meets_contrast,
 };
 use crate::foundations::color::{AccentColor, Appearance};
 use core::prelude::v1::test;
@@ -159,63 +159,52 @@ fn panel_surface_is_semi_transparent() {
 
 #[test]
 fn all_themes_have_glass_tokens() {
-    // Per HIG macOS Tahoe, glass is always present.
-    let _dark = TahoeTheme::dark().glass;
-    let _light = TahoeTheme::light().glass;
-    let _lg = TahoeTheme::liquid_glass().glass;
-    // All three have GlassStyle -- no Option unwrap needed.
-    assert!(f32::from(_dark.small_radius) > 0.0);
-    assert!(f32::from(_light.small_radius) > 0.0);
-    assert!(f32::from(_lg.small_radius) > 0.0);
+    // Per HIG macOS Tahoe, glass is always present — every theme must
+    // populate the canonical Regular + Clear fills so glass surfaces
+    // composite correctly regardless of the theme the caller picked.
+    for theme in [
+        TahoeTheme::dark(),
+        TahoeTheme::light(),
+        TahoeTheme::liquid_glass(),
+    ] {
+        assert!(theme.glass.regular_fill.a > 0.0);
+        assert!(theme.glass.clear_fill.a > 0.0);
+    }
 }
 
 #[test]
-fn glass_bg_is_semi_transparent() {
-    // Every primary glass fill must be translucent: the window-level
+fn glass_regular_fill_is_semi_transparent() {
+    // The primary Regular fill must be translucent: the window-level
     // NSVisualEffectView blur can only show through fractional-alpha fills.
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(
-        glass.small_bg.a > 0.0 && glass.small_bg.a < 1.0,
-        "small_bg should be semi-transparent, got {}",
-        glass.small_bg.a
+        glass.regular_fill.a > 0.0 && glass.regular_fill.a < 1.0,
+        "regular_fill should be semi-transparent, got {}",
+        glass.regular_fill.a
     );
     assert!(
-        glass.medium_bg.a > 0.0 && glass.medium_bg.a < 1.0,
-        "medium_bg should be semi-transparent, got {}",
-        glass.medium_bg.a
-    );
-    assert!(
-        glass.large_bg.a > 0.0 && glass.large_bg.a < 1.0,
-        "large_bg should be semi-transparent, got {}",
-        glass.large_bg.a
+        glass.clear_fill.a > 0.0 && glass.clear_fill.a < 1.0,
+        "clear_fill should be semi-transparent, got {}",
+        glass.clear_fill.a
     );
 }
 
 #[test]
-fn glass_hover_more_opaque_than_base() {
+fn glass_hover_more_opaque_than_clear_fill() {
     // Hover is an additive overlay on the glass surface — it should have
-    // substantial alpha so the hover state is visible. With Figma-accurate
-    // dark fills the base containers already have high opacity, so we verify
-    // hover_bg exceeds the clear fills (the thinnest glass variant).
+    // substantial alpha so the hover state is visible over the Clear
+    // (thinnest) fill.
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(
         glass.hover_bg.a > 0.0,
         "hover_bg should have positive alpha"
     );
     assert!(
-        glass.hover_bg.a > glass.clear_small_bg.a,
-        "hover_bg alpha ({}) should exceed clear_small_bg alpha ({})",
+        glass.hover_bg.a > glass.clear_fill.a,
+        "hover_bg alpha ({}) should exceed clear_fill alpha ({})",
         glass.hover_bg.a,
-        glass.clear_small_bg.a
+        glass.clear_fill.a
     );
-}
-
-#[test]
-fn glass_radius_larger_than_standard_dark() {
-    let glass = TahoeTheme::liquid_glass().glass;
-    let dark = TahoeTheme::dark();
-    assert!(glass.small_radius > dark.radius_lg);
-    assert!((f32::from(glass.medium_radius) - 34.0).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -311,38 +300,80 @@ fn liquid_glass_root_bg_is_semi_transparent() {
 }
 
 #[test]
-fn small_shadow_count() {
+fn resting_shadow_count() {
     let glass = TahoeTheme::liquid_glass().glass;
-    // Per Figma: single drop shadow for all sizes
-    assert_eq!(glass.small_shadows.len(), 1);
+    // Per Figma "Liquid Glass – Small UI": single Y=8 Blur=40 @12% drop
+    // shadow for the Resting tier (controls, toolbars, tab bars).
+    assert_eq!(glass.resting_shadows.len(), 1);
 }
 
 #[test]
-fn large_shadow_count() {
+fn resting_shadow_matches_figma_small_ui() {
+    // Figma Tahoe UI Kit "Liquid Glass – Small UI" pins Resting at:
+    //   Y=8, Blur=40, Spread=0, #000 @ 12% (no rim).
     let glass = TahoeTheme::liquid_glass().glass;
-    // Per Figma: single drop shadow (X:0 Y:8 Blur:40 Spread:0 #000000@12%)
-    assert_eq!(glass.large_shadows.len(), 1);
+    let resting = &glass.resting_shadows[0];
+    assert!((f32::from(resting.offset.y) - 8.0).abs() < f32::EPSILON);
+    assert!((f32::from(resting.blur_radius) - 40.0).abs() < f32::EPSILON);
+    assert!((f32::from(resting.spread_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((resting.color.a - 0.12).abs() < 1e-5);
 }
 
 #[test]
-fn medium_shadow_count() {
+fn floating_shadow_count() {
     let glass = TahoeTheme::liquid_glass().glass;
-    assert_eq!(glass.medium_shadows.len(), 1);
+    // Per Figma: single 40pt drop shadow for Floating tier.
+    assert_eq!(glass.floating_shadows.len(), 1);
 }
 
 #[test]
-fn shadows_scale_by_size() {
+fn elevated_shadow_stack_matches_figma() {
+    // Figma Tahoe UI Kit "BG - Medium UI" uses a two-layer shadow stack:
+    //   1. Ambient  — Y=8, Blur=40, Spread=0, #000 @ 12%
+    //   2. Rim      — Y=0, Blur=0, Spread=1, #000 @ 23%
+    // The rim keeps the panel edge legible against low-contrast backdrops
+    // where the ambient blur fades into the underlying content.
     let glass = TahoeTheme::liquid_glass().glass;
-    let small_blur = f32::from(glass.small_shadows[0].blur_radius);
-    let medium_blur = f32::from(glass.medium_shadows[0].blur_radius);
-    let large_blur = f32::from(glass.large_shadows[0].blur_radius);
+    assert_eq!(glass.elevated_shadows.len(), 2, "expected ambient + rim");
+
+    let ambient = &glass.elevated_shadows[0];
+    assert!((f32::from(ambient.offset.y) - 8.0).abs() < f32::EPSILON);
+    assert!((f32::from(ambient.blur_radius) - 40.0).abs() < f32::EPSILON);
+    assert!((f32::from(ambient.spread_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((ambient.color.a - 0.12).abs() < 1e-5);
+
+    let rim = &glass.elevated_shadows[1];
+    assert!((f32::from(rim.offset.y) - 0.0).abs() < f32::EPSILON);
+    assert!((f32::from(rim.blur_radius) - 0.0).abs() < f32::EPSILON);
+    assert!((f32::from(rim.spread_radius) - 1.0).abs() < f32::EPSILON);
+    assert!((rim.color.a - 0.23).abs() < 1e-5);
+}
+
+#[test]
+fn shadows_scale_by_elevation() {
+    // Figma "Liquid Glass – Small UI" tunes Resting to the same Y=8
+    // Blur=40 @12% ambient that Elevated/Floating use — the elevation
+    // separation comes from Elevated's added 1pt rim and from the lens
+    // frost split (Resting=7, Elevated/Floating=12), not from the drop-
+    // shadow blur itself. Assert the ambient parity here so any future
+    // tune-up keeps the three tiers visually anchored together.
+    let glass = TahoeTheme::liquid_glass().glass;
+    let resting_blur = f32::from(glass.resting_shadows[0].blur_radius);
+    let elevated_blur = f32::from(glass.elevated_shadows[0].blur_radius);
+    let floating_blur = f32::from(glass.floating_shadows[0].blur_radius);
     assert!(
-        small_blur < medium_blur,
-        "small blur ({small_blur}) should be less than medium ({medium_blur})"
+        (resting_blur - elevated_blur).abs() < f32::EPSILON,
+        "resting blur ({resting_blur}) should match elevated ({elevated_blur}) per Figma Small UI"
     );
     assert!(
-        medium_blur < large_blur,
-        "medium blur ({medium_blur}) should be less than large ({large_blur})"
+        (elevated_blur - floating_blur).abs() < f32::EPSILON,
+        "elevated blur ({elevated_blur}) should match floating ({floating_blur}) per Figma Medium UI"
+    );
+    assert_eq!(glass.elevated_shadows.len(), 2, "Elevated has rim layer");
+    assert_eq!(
+        glass.resting_shadows.len(),
+        1,
+        "Resting has no rim per Small UI spec"
     );
 }
 
@@ -487,19 +518,13 @@ fn glass_colors_have_full_alpha() {
 #[test]
 fn glass_variant_is_regular() {
     let glass = TahoeTheme::liquid_glass().glass;
-    assert_eq!(glass.variant, GlassVariant::Regular);
+    assert_eq!(glass.variant, Glass::Regular);
 }
 
 #[test]
-fn glass_clear_fills_semi_transparent() {
+fn glass_clear_fill_is_semi_transparent() {
     let glass = TahoeTheme::liquid_glass().glass;
-    for fill in [
-        glass.clear_small_bg,
-        glass.clear_medium_bg,
-        glass.clear_large_bg,
-    ] {
-        assert!(fill.a > 0.0 && fill.a < 0.3);
-    }
+    assert!(glass.clear_fill.a > 0.0 && glass.clear_fill.a < 0.3);
 }
 
 #[test]
@@ -519,26 +544,23 @@ fn glass_tiles_are_semi_transparent() {
 }
 
 #[test]
-fn glass_bg_respects_variant() {
-    let theme = TahoeTheme::liquid_glass();
-    let glass = theme.glass;
-    // Regular variant returns regular fills
-    let regular = glass.bg(GlassSize::Small);
-    assert_eq!(regular, glass.small_bg);
-    // Clear fills are different from regular
-    let clear = glass.clear_fill(GlassSize::Small);
+fn glass_fill_differs_between_regular_and_clear() {
+    // SwiftUI's `Glass` material split: Regular and Clear each hold a
+    // single canonical fill that must not alias — the two variants are
+    // tunes for different translucency targets (adaptive blur +
+    // luminosity vs. maximum translucency).
+    let glass = TahoeTheme::liquid_glass().glass;
+    let regular = glass.fill(Glass::Regular);
+    let clear = glass.fill(Glass::Clear);
     assert_ne!(regular, clear);
+    assert_eq!(regular, glass.regular_fill);
+    assert_eq!(clear, glass.clear_fill);
 }
 
 #[test]
-fn glass_regular_and_clear_accessors() {
+fn glass_fill_identity_is_transparent() {
     let glass = TahoeTheme::liquid_glass().glass;
-    assert_eq!(glass.regular_bg(GlassSize::Small), glass.small_bg);
-    assert_eq!(glass.regular_bg(GlassSize::Medium), glass.medium_bg);
-    assert_eq!(glass.regular_bg(GlassSize::Large), glass.large_bg);
-    assert_eq!(glass.clear_fill(GlassSize::Small), glass.clear_small_bg);
-    assert_eq!(glass.clear_fill(GlassSize::Medium), glass.clear_medium_bg);
-    assert_eq!(glass.clear_fill(GlassSize::Large), glass.clear_large_bg);
+    assert_eq!(glass.fill(Glass::Identity).a, 0.0);
 }
 
 #[test]
@@ -606,8 +628,10 @@ fn accessibility_mode_default() {
 
 #[test]
 fn liquid_glass_light_has_glass_tokens() {
-    // Glass is always present -- just verify it has valid fields.
-    assert!(f32::from(TahoeTheme::liquid_glass_light().glass.small_radius) > 0.0);
+    // Glass is always present — verify the canonical fills have valid alpha.
+    let glass = TahoeTheme::liquid_glass_light().glass;
+    assert!(glass.regular_fill.a > 0.0);
+    assert!(glass.clear_fill.a > 0.0);
 }
 
 #[test]
@@ -633,24 +657,23 @@ fn liquid_glass_light_root_bg_semi_transparent() {
 }
 
 #[test]
-fn liquid_glass_light_small_bg_semi_transparent() {
-    // Regression for #62: light-mode small_bg must have fractional alpha so
-    // the window-level NSVisualEffectView blur shows through.
+fn liquid_glass_light_regular_fill_semi_transparent() {
+    // Regression for #62: light-mode Regular fill must have fractional
+    // alpha so the window-level NSVisualEffectView blur shows through.
     let glass = TahoeTheme::liquid_glass_light().glass;
     assert!(
-        glass.small_bg.a > 0.0 && glass.small_bg.a < 1.0,
-        "light small_bg should be semi-transparent, got {}",
-        glass.small_bg.a
+        glass.regular_fill.a > 0.0 && glass.regular_fill.a < 1.0,
+        "light regular_fill should be semi-transparent, got {}",
+        glass.regular_fill.a
     );
 }
 
 #[test]
 fn liquid_glass_light_fills_are_white_tinted() {
     let glass = TahoeTheme::liquid_glass_light().glass;
-    // Light glass uses semi-transparent white, not black
-    assert!(glass.small_bg.l > 0.5);
-    assert!(glass.medium_bg.l > 0.5);
-    assert!(glass.large_bg.l > 0.5);
+    // Light glass uses semi-transparent white, not black.
+    assert!(glass.regular_fill.l > 0.5);
+    assert!(glass.clear_fill.l > 0.5);
 }
 
 #[test]
@@ -673,12 +696,75 @@ fn liquid_glass_light_all_tints_semi_transparent() {
 }
 
 #[test]
-fn liquid_glass_light_geometry_matches_dark() {
+fn hc_promotion_raises_glass_fill_alpha() {
+    // HIG §Accessibility Increase Contrast: translucent surfaces step
+    // toward opaque under the flag. `for_appearance_glass_with_a11y`
+    // must rebuild the glass tokens against the HC appearance so the
+    // higher-alpha `regular_fill` / `clear_fill` actually surface.
+    use crate::foundations::accessibility::AccessibilityMode;
+    use gpui::WindowAppearance;
+    let baseline = TahoeTheme::for_appearance_glass(WindowAppearance::Dark).glass;
+    let hc = TahoeTheme::for_appearance_glass_with_a11y(
+        WindowAppearance::Dark,
+        AccessibilityMode::INCREASE_CONTRAST,
+    )
+    .glass;
+    assert!(
+        hc.regular_fill.a > baseline.regular_fill.a,
+        "HC regular_fill alpha {} should exceed baseline {}",
+        hc.regular_fill.a,
+        baseline.regular_fill.a,
+    );
+    assert!(
+        hc.clear_fill.a > baseline.clear_fill.a,
+        "HC clear_fill alpha {} should exceed baseline {}",
+        hc.clear_fill.a,
+        baseline.clear_fill.a,
+    );
+}
+
+#[test]
+fn hc_promotion_preserves_glass_accent_tint() {
+    // The glass constructors set a custom accent on `theme.glass.accent_tint`.
+    // HC promotion rebuilds glass tokens, so the test pins that the
+    // accent override survives the rebuild — losing it would silently
+    // re-introduce the default `Multicolor` blue under HC.
+    use crate::foundations::accessibility::AccessibilityMode;
+    use gpui::WindowAppearance;
+    let baseline = TahoeTheme::for_appearance_glass(WindowAppearance::Dark)
+        .glass
+        .accent_tint
+        .bg;
+    let hc = TahoeTheme::for_appearance_glass_with_a11y(
+        WindowAppearance::Dark,
+        AccessibilityMode::INCREASE_CONTRAST,
+    )
+    .glass
+    .accent_tint
+    .bg;
+    assert_eq!(baseline, hc);
+}
+
+#[test]
+fn liquid_glass_light_shadow_stacks_match_dark() {
+    // Corner radii are per-surface under the new API (Shape on the call
+    // site), so the equivalent parity check is on the shared shadow
+    // stacks — both light and dark themes must agree on the three
+    // Elevation tiers' shadow parameters.
     let dark_glass = TahoeTheme::liquid_glass().glass;
     let light_glass = TahoeTheme::liquid_glass_light().glass;
-    assert_eq!(dark_glass.small_radius, light_glass.small_radius);
-    assert_eq!(dark_glass.medium_radius, light_glass.medium_radius);
-    assert_eq!(dark_glass.large_radius, light_glass.large_radius);
+    assert_eq!(
+        dark_glass.resting_shadows.len(),
+        light_glass.resting_shadows.len()
+    );
+    assert_eq!(
+        dark_glass.elevated_shadows.len(),
+        light_glass.elevated_shadows.len()
+    );
+    assert_eq!(
+        dark_glass.floating_shadows.len(),
+        light_glass.floating_shadows.len()
+    );
 }
 
 #[test]
@@ -726,15 +812,15 @@ fn accessibility_mode_reduce_motion() {
 
 #[test]
 fn reduced_transparency_bg_more_opaque_than_regular() {
-    // Dark small_bg is fully opaque (Figma composite), so compare the
-    // reduced-transparency fallback against medium_bg which uses container
-    // opacity — the fallback should be more opaque to serve its purpose.
+    // The reduced-transparency fallback should be more opaque than the
+    // canonical Regular fill so the accessibility path actually lands
+    // on a solid surface.
     let glass = TahoeTheme::liquid_glass().glass;
     assert!(
-        glass.accessibility.reduced_transparency_bg.a > glass.medium_bg.a,
-        "reduced_transparency_bg alpha ({}) should exceed medium_bg alpha ({})",
+        glass.accessibility.reduced_transparency_bg.a > glass.regular_fill.a,
+        "reduced_transparency_bg alpha ({}) should exceed regular_fill alpha ({})",
         glass.accessibility.reduced_transparency_bg.a,
-        glass.medium_bg.a
+        glass.regular_fill.a
     );
 }
 
@@ -1046,13 +1132,12 @@ fn light_theme_text_on_bg_has_sufficient_contrast() {
     );
 }
 
-// ─── HIG Alignment: GlassVariant::Identity Tests ────────────────────────
+// ─── HIG Alignment: Glass::Identity Tests ───────────────────────────────
 
 #[test]
 fn glass_identity_returns_transparent() {
-    let mut glass = TahoeTheme::liquid_glass().glass;
-    glass.variant = GlassVariant::Identity;
-    let bg = glass.bg(GlassSize::Small);
+    let glass = TahoeTheme::liquid_glass().glass;
+    let bg = glass.fill(Glass::Identity);
     assert!(
         (bg.a - 0.0).abs() < f32::EPSILON,
         "Identity variant should be fully transparent"
@@ -1785,20 +1870,20 @@ fn liquid_glass_info_synced_with_semantic() {
 #[test]
 fn liquid_glass_clear_uses_clear_variant() {
     let theme = TahoeTheme::liquid_glass_clear();
-    assert_eq!(theme.glass.variant, GlassVariant::Clear);
+    assert_eq!(theme.glass.variant, Glass::Clear);
 }
 
 #[test]
 fn liquid_glass_clear_light_uses_clear_variant() {
     let theme = TahoeTheme::liquid_glass_clear_light();
-    assert_eq!(theme.glass.variant, GlassVariant::Clear);
+    assert_eq!(theme.glass.variant, Glass::Clear);
 }
 
 #[test]
-fn clear_fills_more_transparent_than_regular() {
+fn clear_fill_more_transparent_than_regular() {
     let theme = TahoeTheme::liquid_glass();
-    let regular = theme.glass.regular_bg(GlassSize::Small);
-    let clear = theme.glass.clear_fill(GlassSize::Small);
+    let regular = theme.glass.fill(Glass::Regular);
+    let clear = theme.glass.fill(Glass::Clear);
     assert!(
         clear.a < regular.a,
         "Clear should have lower alpha than Regular"
@@ -1941,27 +2026,23 @@ fn spring_easing_monotonic_no_bounce() {
 // --- Phase 10: Blur & Lens Effect Tests ─────────────────────────────────
 
 #[test]
-fn blur_effect_for_glass_size() {
-    use crate::foundations::materials::BlurEffect;
-    let theme = TahoeTheme::dark();
-    let small = BlurEffect::for_glass_size(GlassSize::Small, &theme);
-    let large = BlurEffect::for_glass_size(GlassSize::Large, &theme);
-    assert!(
-        small.radius < large.radius,
-        "Large glass should have more blur"
+fn elevation_shadows_length_resolves_per_tier() {
+    // Resting / Elevated / Floating each resolve to the matching shadow
+    // stack on `GlassStyle` — a single lookup per tier confirms the
+    // `Elevation::shadows` dispatch.
+    let theme = TahoeTheme::liquid_glass();
+    assert_eq!(
+        Elevation::Resting.shadows(&theme).len(),
+        theme.glass.resting_shadows.len()
     );
-    assert!(small.corner_radius > 0.0);
-}
-
-#[test]
-fn lens_effect_liquid_glass_defaults() {
-    use crate::foundations::materials::LensEffect;
-    let theme = TahoeTheme::dark();
-    let lens = LensEffect::liquid_glass(GlassSize::Medium, &theme);
-    assert_eq!(lens.refraction, 1.0);
-    assert_eq!(lens.dispersion, 0.0);
-    assert!(lens.light_intensity > 0.0);
-    assert_eq!(lens.blur.radius, 12.0);
+    assert_eq!(
+        Elevation::Elevated.shadows(&theme).len(),
+        theme.glass.elevated_shadows.len()
+    );
+    assert_eq!(
+        Elevation::Floating.shadows(&theme).len(),
+        theme.glass.floating_shadows.len()
+    );
 }
 
 // ─── HIG Typography v2: font_mono, font_scale, ios_attrs_emphasized ──
@@ -2163,14 +2244,21 @@ fn ios_attrs_emphasized_preserves_size_and_leading() {
 }
 
 #[test]
-fn lens_effect_blur_only_no_refraction() {
-    use crate::foundations::materials::LensEffect;
-    let theme = TahoeTheme::dark();
-    let lens = LensEffect::blur_only(GlassSize::Small, &theme);
-    assert_eq!(lens.refraction, 0.0);
-    assert_eq!(lens.dispersion, 0.0);
-    assert_eq!(lens.light_intensity, 0.0);
-    assert!(lens.blur.radius > 0.0);
+fn glass_effect_blur_no_refraction() {
+    // The blur-only entry point shares its frost with the lens recipe
+    // but skips refraction. Coverage for the (Glass, Elevation) matrix
+    // lives alongside the internal recipes in
+    // `foundations::materials::tests`; this smoke test just confirms the
+    // entry point builds cleanly from a theme module perspective.
+    use crate::foundations::materials::{Shape, glass_effect_blur};
+    let theme = TahoeTheme::liquid_glass();
+    let _: gpui::Div = glass_effect_blur(
+        &theme,
+        Glass::Regular,
+        Shape::Default,
+        Elevation::Elevated,
+        None,
+    );
 }
 
 #[gpui::test]
@@ -2226,4 +2314,30 @@ fn activity_ring_backdrop_is_system_dark_gray_in_every_theme() {
             "{name}: activity_ring_backdrop must be opaque"
         );
     }
+}
+
+// ── Phase 2 — `Color::resolve(&App)` routes through `color_environment` ──
+//
+// Covers the plan's §6.2 check "resolve_in matches resolve via App": that
+// resolving against the App global produces the same pixel value as
+// resolving directly against the theme's `color_environment()`.
+
+#[gpui::test]
+async fn color_resolve_via_app_matches_resolve_in_color_environment(cx: &mut gpui::TestAppContext) {
+    use crate::foundations::color::Color;
+    cx.update(|cx| {
+        cx.set_global(TahoeTheme::dark());
+        let theme = cx.theme();
+        let env = theme.color_environment();
+        // Semantic token (needs env), system palette (needs appearance),
+        // and accent (needs env.accent) — all three branches must match.
+        for color in [Color::LABEL, Color::RED, Color::ACCENT] {
+            let via_app = color.resolve(cx);
+            let via_env = color.resolve_in(&env);
+            assert_eq!(
+                via_app, via_env,
+                "Color::resolve(&App) must match Color::resolve_in(env) for {color:?}"
+            );
+        }
+    });
 }

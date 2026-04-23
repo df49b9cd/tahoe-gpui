@@ -9,7 +9,8 @@
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, SharedString, Window, div, px};
 
@@ -272,20 +273,20 @@ impl RenderOnce for WorkflowControls {
             }
         }
 
-        // Inner bar — semi-transparent surface. With the Liquid Glass theme,
-        // uses Apple shadow-only approach (no border).
-        let glass = &theme.glass;
-        let bar_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
-        let mut bar = div()
-            .flex()
-            .items_center()
-            .gap(theme.spacing_xs)
-            .px(theme.spacing_xs)
-            .py(theme.spacing_xs)
-            .bg(bar_bg)
-            .rounded(theme.radius_full)
-            .shadow(glass.shadows(GlassSize::Small).to_vec());
-        bar = crate::foundations::materials::apply_high_contrast_border(bar, theme);
+        // Inner bar — real Liquid Glass lens composite, capsule shape.
+        let mut bar = glass_effect_lens(
+            theme,
+            Glass::Regular,
+            Shape::Capsule,
+            Elevation::Elevated,
+            None,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing_xs)
+        .px(theme.spacing_xs)
+        .py(theme.spacing_xs)
+        .rounded(theme.radius_full);
 
         if self.orientation == ControlsOrientation::Vertical {
             bar = bar.flex_col();

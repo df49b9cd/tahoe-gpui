@@ -12,8 +12,8 @@ use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, Butt
 use tahoe_gpui::foundations::GlassSurfaceScope;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
-use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
-use tahoe_gpui::foundations::theme::{GlassSize, GlassTint, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{GlassTint, TahoeTheme, TextStyle, TextStyledExt};
 
 struct LiquidGlassGallery;
 
@@ -43,29 +43,29 @@ impl Render for LiquidGlassGallery {
                 .text_color(theme.text)
                 // Header
                 .child(header(theme))
-                // Glass cards section - show Small/Medium/Large side-by-side
+                // Glass cards section - show Resting / Elevated / Floating side-by-side
                 .child(
-                    section("Glass Cards (Small / Medium / Large)", theme).child(
+                    section("Glass Cards (Resting / Elevated / Floating)", theme).child(
                         div()
                             .flex()
                             .gap(px(12.0))
                             .child(glass_card(
-                                "Small",
+                                "Resting",
                                 "Tab bars, toolbars, buttons",
                                 theme,
-                                GlassSize::Small,
+                                Elevation::Resting,
                             ))
                             .child(glass_card(
-                                "Medium",
+                                "Elevated",
                                 "Cards, panels, containers",
                                 theme,
-                                GlassSize::Medium,
+                                Elevation::Elevated,
                             ))
                             .child(glass_card(
-                                "Large",
+                                "Floating",
                                 "Modals, sheets, popovers",
                                 theme,
-                                GlassSize::Large,
+                                Elevation::Floating,
                             )),
                     ),
                 )
@@ -141,14 +141,21 @@ impl Render for LiquidGlassGallery {
 }
 
 fn header(theme: &TahoeTheme) -> Div {
-    let mut el = div()
+    let el = div()
         .flex()
         .flex_col()
         .items_center()
         .p(px(36.0))
         .gap(px(6.0));
 
-    el = glass_surface(el, theme, GlassSize::Large).rounded(px(28.0));
+    let el = glass_effect(
+        el,
+        theme,
+        Glass::Regular,
+        Shape::Default,
+        Elevation::Floating,
+    )
+    .rounded(px(28.0));
 
     el.child(
         div()
@@ -166,10 +173,10 @@ fn header(theme: &TahoeTheme) -> Div {
     )
 }
 
-fn glass_card(title: &str, description: &str, theme: &TahoeTheme, size: GlassSize) -> Div {
-    let mut card = div().flex().flex_col().gap(px(8.0)).p(px(16.0)).flex_1();
+fn glass_card(title: &str, description: &str, theme: &TahoeTheme, elevation: Elevation) -> Div {
+    let card = div().flex().flex_col().gap(px(8.0)).p(px(16.0)).flex_1();
 
-    card = glass_surface(card, theme, size);
+    let card = glass_effect(card, theme, Glass::Regular, Shape::Default, elevation);
 
     card.child(
         div()
@@ -233,7 +240,7 @@ fn tinted_cards(theme: &TahoeTheme) -> Vec<Div> {
     tints
         .into_iter()
         .map(|(label, tint_opt, _bg)| {
-            let mut card = div()
+            let card = div()
                 .flex()
                 .flex_col()
                 .items_center()
@@ -241,11 +248,17 @@ fn tinted_cards(theme: &TahoeTheme) -> Vec<Div> {
                 .p(px(14.0))
                 .flex_1();
 
-            if let Some(tint) = tint_opt {
-                card = tinted_glass_surface(card, theme, tint, GlassSize::Small);
+            let card = if let Some(tint) = tint_opt {
+                glass_effect(
+                    card,
+                    theme,
+                    Glass::Regular.tint(Some(tint.bg)),
+                    Shape::Default,
+                    Elevation::Resting,
+                )
             } else {
-                card = card.bg(_bg).rounded(theme.radius_lg).shadow_lg();
-            }
+                card.bg(_bg).rounded(theme.radius_lg).shadow_lg()
+            };
 
             card.child(
                 div()

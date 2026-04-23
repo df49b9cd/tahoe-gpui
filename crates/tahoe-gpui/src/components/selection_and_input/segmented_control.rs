@@ -5,8 +5,11 @@
 
 use crate::callback_types::{OnUsizeChange, rc_wrap};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::color::compose_black_tint_linear;
+use crate::foundations::materials::{
+    Elevation, GLASS_LAYER_TINT_ALPHA, Glass, apply_focus_ring, apply_high_contrast_border,
+};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div, px};
 
@@ -165,8 +168,9 @@ impl RenderOnce for SegmentedControl {
         // about the "no valid selection" state.
         if self.items.is_empty() {
             let glass = &theme.glass;
-            let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
-            let radius = glass.radius(GlassSize::Small);
+            let base_bg = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
+            let track_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
+            let radius = theme.radius_md;
             return div()
                 .id(self.id)
                 .bg(track_bg)
@@ -182,14 +186,18 @@ impl RenderOnce for SegmentedControl {
             .is_some_and(|h| h.is_focused(window));
 
         let glass = &theme.glass;
-        let track_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+        let base_bg = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
+        // Layer-2 black-tint composite in linear light so the track fill
+        // matches `glass_effect` bit-for-bit. Inline because the track is
+        // `Stateful<Div>` (has `.id()`) and glass helpers take `Div`.
+        let track_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
         // HIG Tahoe/Liquid Glass: selected segments use a distinct elevated
         // fill, not the hover background. Sharing `hover_bg` caused the
         // selection indicator to melt into hover state as soon as the
         // pointer entered another segment (see the HIG Selection & Input audit
         // finding 34).
         let selected_bg = theme.surface;
-        let radius = glass.radius(GlassSize::Small);
+        let radius = theme.radius_md;
 
         // Arrow key navigation: Left/Right move selection (mirrored in RTL).
         let arrow_handler = on_change.clone();
@@ -256,7 +264,7 @@ impl RenderOnce for SegmentedControl {
         // Apply glass shadows (with focus ring when focused and enabled).
         // Disabled controls never render a focus ring — matches
         // `text_field.rs` `show_focus_ring = is_focused && !self.disabled`.
-        let base_shadows = glass.shadows(GlassSize::Small);
+        let base_shadows = Elevation::Resting.shadows(theme);
         let show_focus_ring = focused && !self.disabled;
         track = apply_focus_ring(track, theme, show_focus_ring, base_shadows);
         track = apply_high_contrast_border(track, theme);

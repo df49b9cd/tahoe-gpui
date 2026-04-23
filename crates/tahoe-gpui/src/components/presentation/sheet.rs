@@ -57,9 +57,9 @@ use gpui::{
 use crate::callback_types::OnMutCallback;
 use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
-use crate::foundations::materials::{backdrop_overlay, glass_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, backdrop_overlay, glass_effect_lens};
 use crate::foundations::motion::accessible_transition_animation;
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme};
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -418,20 +418,31 @@ fn render_bottom_drawer(
             },
         );
 
-    // ── Sheet panel (glass surface) ─────────────────────────────────────
-    let top_radius = theme.glass.radius(GlassSize::Large);
+    // ── Sheet panel (Liquid Glass lens composite, Floating tier) ────────
+    // Bottom-drawer sheets are full-viewport overlays — Floating elevation
+    // picks up the largest shadow. Top corners are rounded to 40pt so they
+    // stay concentric with the macOS window chrome per HIG Tahoe (the
+    // pre-refactor `theme.glass.large_radius` value).
+    let top_radius = px(40.0);
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
-    let mut panel = glass_surface(div().w_full().overflow_hidden(), theme, GlassSize::Large)
-        .rounded_t(top_radius)
-        .rounded_b(px(0.0))
-        .id(panel_id)
-        .track_focus(&focus_handle)
-        .flex()
-        .flex_col()
-        .w_full()
-        .h(gpui::relative(height_frac))
-        .child(drag_indicator)
-        .child(scroll_body);
+    let mut panel = glass_effect_lens(
+        theme,
+        Glass::Regular,
+        Shape::RoundedRectangle(top_radius),
+        Elevation::Floating,
+        None,
+    )
+    .overflow_hidden()
+    .rounded_t(top_radius)
+    .rounded_b(px(0.0))
+    .id(panel_id)
+    .track_focus(&focus_handle)
+    .flex()
+    .flex_col()
+    .w_full()
+    .h(gpui::relative(height_frac))
+    .child(drag_indicator)
+    .child(scroll_body);
 
     if let Some(ref handler) = on_dismiss_rc {
         let h = handler.clone();
@@ -506,14 +517,25 @@ fn render_cardlike(
             |el, delta| el.opacity(delta),
         );
 
+    // macOS cardlike sheets are ~400pt dialogs — Elevated tier (Medium UI
+    // fill + ambient 40pt blur + 1pt rim). The bottom-drawer path above
+    // uses Floating for its full-viewport shadow.
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
-    let mut panel = glass_surface(div().w(width).overflow_hidden(), theme, GlassSize::Large)
-        .id(panel_id)
-        .track_focus(&focus_handle)
-        .flex()
-        .flex_col()
-        .max_h(gpui::relative(MACOS_SHEET_MAX_HEIGHT_FRACTION))
-        .child(animated_body);
+    let mut panel = glass_effect_lens(
+        theme,
+        Glass::Regular,
+        Shape::RoundedRectangle(theme.radius_lg),
+        Elevation::Elevated,
+        None,
+    )
+    .w(width)
+    .overflow_hidden()
+    .id(panel_id)
+    .track_focus(&focus_handle)
+    .flex()
+    .flex_col()
+    .max_h(gpui::relative(MACOS_SHEET_MAX_HEIGHT_FRACTION))
+    .child(animated_body);
 
     if let Some(ref handler) = on_dismiss_rc {
         let h = handler.clone();

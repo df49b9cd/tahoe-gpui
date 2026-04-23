@@ -18,8 +18,8 @@ use gpui::{App, ClickEvent, ElementId, KeyDownEvent, SharedString, Window, div, 
 use crate::callback_types::OnMutCallback;
 use crate::foundations::icons::Icon;
 use crate::foundations::icons::IconName;
-use crate::foundations::materials::{SurfaceContext, glass_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// A capsule-shaped search affordance with glass material.
 ///
@@ -91,18 +91,20 @@ impl RenderOnce for SearchBar {
         let icon_size = (TextStyle::Body.attrs().size * 0.9).ceil();
         let has_handler = self.on_activate.is_some();
 
-        let mut bar = glass_surface(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(theme.spacing_sm)
-                .min_h(px(theme.target_size()))
-                .px(theme.spacing_md)
-                .py(theme.spacing_sm),
+        let mut bar = glass_effect_lens(
             theme,
-            GlassSize::Small,
+            Glass::Clear,
+            Shape::Capsule,
+            Elevation::Resting,
+            None,
         )
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(theme.spacing_sm)
+        .min_h(px(theme.target_size()))
+        .px(theme.spacing_md)
+        .py(theme.spacing_sm)
         .rounded(theme.radius_full)
         .id(self.id)
         .debug_selector(|| "search-bar-root".into())

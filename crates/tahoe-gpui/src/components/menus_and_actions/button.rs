@@ -4,8 +4,9 @@ use crate::callback_types::OnClick;
 use crate::components::menus_and_actions::button_like::ButtonLike;
 use crate::components::status::activity_indicator::ActivityIndicator;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::color::{darken, lighten, with_alpha};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::color::{compose_black_tint_linear, darken, lighten, with_alpha};
+use crate::foundations::materials::{Elevation, GLASS_LAYER_TINT_ALPHA, Glass};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     Action, AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, SharedString, Window,
@@ -160,6 +161,45 @@ impl ButtonVariant {
     /// call site.
     pub fn is_glass_surfaced(self) -> bool {
         matches!(self, Self::Glass | Self::GlassProminent)
+    }
+}
+
+/// SwiftUI-aligned `ButtonStyle` marker — implementors map to a
+/// [`ButtonVariant`]. Mirrors the pattern of `.buttonStyle(.glass)` /
+/// `.buttonStyle(.glassProminent)` from SwiftUI's [`ButtonStyle`][apple]
+/// protocol — callers pass `Button::style(GlassButtonStyle)` instead of
+/// reaching into the enum.
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassButtonStyle
+pub trait ButtonStyle {
+    /// The variant this style maps to.
+    fn variant(self) -> ButtonVariant;
+}
+
+/// Marker for SwiftUI's [`GlassButtonStyle`][apple] — Liquid Glass
+/// button. Maps to [`ButtonVariant::Glass`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassButtonStyle
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlassButtonStyle;
+
+impl ButtonStyle for GlassButtonStyle {
+    fn variant(self) -> ButtonVariant {
+        ButtonVariant::Glass
+    }
+}
+
+/// Marker for SwiftUI's [`GlassProminentButtonStyle`][apple] — accent-
+/// tinted Liquid Glass button for primary CTAs. Maps to
+/// [`ButtonVariant::GlassProminent`].
+///
+/// [apple]: https://developer.apple.com/documentation/SwiftUI/GlassProminentButtonStyle
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GlassProminentButtonStyle;
+
+impl ButtonStyle for GlassProminentButtonStyle {
+    fn variant(self) -> ButtonVariant {
+        ButtonVariant::GlassProminent
     }
 }
 
@@ -374,6 +414,16 @@ impl Button {
         self
     }
 
+    /// Adopt a SwiftUI-style button style marker. Mirrors the
+    /// `Button(...).buttonStyle(...)` chain — pass [`GlassButtonStyle`]
+    /// or [`GlassProminentButtonStyle`] (or any caller-defined
+    /// [`ButtonStyle`] impl) to map to a `ButtonVariant` without exposing
+    /// the enum directly.
+    pub fn style(mut self, style: impl ButtonStyle) -> Self {
+        self.variant = style.variant();
+        self
+    }
+
     pub fn size(mut self, size: ButtonSize) -> Self {
         self.size = size;
         self
@@ -382,7 +432,7 @@ impl Button {
     /// Sets the button shape per HIG.
     ///
     /// - `RoundedRectangle` (default): macOS 26 Tahoe Liquid Glass rounded
-    ///   corner (`theme.glass.radius(GlassSize::Small)`). Historical AppKit
+    ///   corner (`theme.radius_md`). Historical AppKit
     ///   push buttons used 6pt; macOS 26 moved to a larger, more rounded
     ///   corner to match the Liquid Glass family.
     /// - `Capsule`: fully rounded ends / pill shape (`theme.radius_full`)
@@ -546,10 +596,13 @@ impl RenderOnce for Button {
                 // fill, NEUTRAL `theme.text` label (not accent -- accent is for
                 // link-style buttons sitting on top of body copy). This keeps
                 // contrast high in both modes and preserves the low-emphasis
-                // affordance: Ghost is the "quiet" sibling of Primary.
+                // affordance: Ghost is the "quiet" sibling of Primary. The
+                // fill goes through the Layer-2 black-tint composite so the
+                // resting colour matches `glass_effect`.
                 let glass = &theme.glass;
+                let base = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
                 (
-                    glass.accessible_bg(GlassSize::Small, theme.accessibility_mode),
+                    compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA),
                     theme.text,
                     transparent_black(),
                     glass.hover_bg,
@@ -574,8 +627,11 @@ impl RenderOnce for Button {
                 (err, theme.text_on_accent, err, hovered)
             }
             ButtonVariant::Glass => {
+                // Layer-2 composite so the Glass variant matches the fill
+                // that `glass_effect` would produce with `Glass::Regular`.
                 let glass = &theme.glass;
-                let fill = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let base = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
+                let fill = compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA);
                 (fill, theme.text, transparent_black(), glass.hover_bg)
             }
             ButtonVariant::GlassProminent => {
@@ -674,7 +730,7 @@ impl RenderOnce for Button {
                     if self.round || is_glass_variant {
                         theme.radius_full
                     } else {
-                        theme.glass.radius(GlassSize::Small)
+                        theme.radius_md
                     }
                 }
             }
@@ -776,7 +832,7 @@ impl RenderOnce for Button {
                 | ButtonVariant::Cancel
         );
         let mut base: Vec<BoxShadow> = if is_glass_variant {
-            theme.glass.shadows(GlassSize::Small).to_vec()
+            Elevation::Resting.shadows(theme).to_vec()
         } else {
             Vec::new()
         };
@@ -908,7 +964,9 @@ impl RenderOnce for Button {
 
 #[cfg(test)]
 mod tests {
-    use super::{Button, ButtonSize, ButtonVariant};
+    use super::{
+        Button, ButtonSize, ButtonStyle, ButtonVariant, GlassButtonStyle, GlassProminentButtonStyle,
+    };
     use core::prelude::v1::test;
     use gpui::InteractiveElement;
     use gpui::div;
@@ -934,6 +992,19 @@ mod tests {
     #[test]
     fn button_variant_default() {
         assert_eq!(ButtonVariant::default(), ButtonVariant::Primary);
+    }
+
+    #[test]
+    fn glass_button_style_marker_maps_to_glass_variant() {
+        assert_eq!(GlassButtonStyle.variant(), ButtonVariant::Glass);
+    }
+
+    #[test]
+    fn glass_prominent_button_style_marker_maps_to_glass_prominent_variant() {
+        assert_eq!(
+            GlassProminentButtonStyle.variant(),
+            ButtonVariant::GlassProminent,
+        );
     }
 
     #[test]

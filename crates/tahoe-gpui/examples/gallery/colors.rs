@@ -4,8 +4,10 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, Hsla, Window, div, px};
 
-use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::color::gradient::LinearGradient;
+use tahoe_gpui::foundations::color::{Color, Gradient, GradientStop, MixColorSpace, UnitPoint};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -154,32 +156,51 @@ pub fn render(
             div()
                 .flex()
                 .gap(theme.spacing_md)
-                .child(fill_swatch(sem.system_fill, "Primary", theme))
-                .child(fill_swatch(sem.secondary_system_fill, "Secondary", theme))
-                .child(fill_swatch(sem.tertiary_system_fill, "Tertiary", theme))
-                .child(fill_swatch(sem.quaternary_system_fill, "Quaternary", theme))
-                .child(fill_swatch(sem.quinary_system_fill, "Quinary", theme)),
+                .child(fill_swatch(sem.system_fill.into(), "Primary", theme))
+                .child(fill_swatch(
+                    sem.secondary_system_fill.into(),
+                    "Secondary",
+                    theme,
+                ))
+                .child(fill_swatch(
+                    sem.tertiary_system_fill.into(),
+                    "Tertiary",
+                    theme,
+                ))
+                .child(fill_swatch(
+                    sem.quaternary_system_fill.into(),
+                    "Quaternary",
+                    theme,
+                ))
+                .child(fill_swatch(
+                    sem.quinary_system_fill.into(),
+                    "Quinary",
+                    theme,
+                )),
         )
         .child(section_header("Text (5 levels)", theme))
         .child(
             div()
                 .flex()
                 .gap(theme.spacing_md)
-                .child(text_swatch(sem.label, "Primary", theme))
-                .child(text_swatch(sem.secondary_label, "Secondary", theme))
-                .child(text_swatch(sem.tertiary_label, "Tertiary", theme))
-                .child(text_swatch(sem.quaternary_label, "Quaternary", theme))
-                .child(text_swatch(sem.quinary_label, "Quinary", theme)),
+                .child(text_swatch(sem.label.into(), "Primary", theme))
+                .child(text_swatch(sem.secondary_label.into(), "Secondary", theme))
+                .child(text_swatch(sem.tertiary_label.into(), "Tertiary", theme))
+                .child(text_swatch(
+                    sem.quaternary_label.into(),
+                    "Quaternary",
+                    theme,
+                ))
+                .child(text_swatch(sem.quinary_label.into(), "Quinary", theme)),
         )
         .child(section_header("Vibrant Glass Labels (Dim)", theme))
         .child(
-            glass_surface(
-                div()
-                    .w_full()
-                    .rounded(theme.glass.radius(GlassSize::Medium))
-                    .overflow_hidden(),
+            glass_effect(
+                div().w_full().rounded(theme.radius_lg).overflow_hidden(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("vibrant-dim")
             .child(
@@ -188,27 +209,27 @@ pub fn render(
                     .gap(theme.spacing_md)
                     .p(theme.spacing_md)
                     .child(text_swatch(
-                        theme.glass.labels_dim.primary,
+                        theme.glass.labels_dim.primary.into(),
                         "Primary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_dim.secondary,
+                        theme.glass.labels_dim.secondary.into(),
                         "Secondary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_dim.tertiary,
+                        theme.glass.labels_dim.tertiary.into(),
                         "Tertiary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_dim.quaternary,
+                        theme.glass.labels_dim.quaternary.into(),
                         "Quaternary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_dim.quinary,
+                        theme.glass.labels_dim.quinary.into(),
                         "Quinary",
                         theme,
                     )),
@@ -216,13 +237,12 @@ pub fn render(
         )
         .child(section_header("Vibrant Glass Labels (Bright)", theme))
         .child(
-            glass_surface(
-                div()
-                    .w_full()
-                    .rounded(theme.glass.radius(GlassSize::Medium))
-                    .overflow_hidden(),
+            glass_effect(
+                div().w_full().rounded(theme.radius_lg).overflow_hidden(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("vibrant-bright")
             .child(
@@ -231,31 +251,224 @@ pub fn render(
                     .gap(theme.spacing_md)
                     .p(theme.spacing_md)
                     .child(text_swatch(
-                        theme.glass.labels_bright.primary,
+                        theme.glass.labels_bright.primary.into(),
                         "Primary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_bright.secondary,
+                        theme.glass.labels_bright.secondary.into(),
                         "Secondary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_bright.tertiary,
+                        theme.glass.labels_bright.tertiary.into(),
                         "Tertiary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_bright.quaternary,
+                        theme.glass.labels_bright.quaternary.into(),
                         "Quaternary",
                         theme,
                     ))
                     .child(text_swatch(
-                        theme.glass.labels_bright.quinary,
+                        theme.glass.labels_bright.quinary.into(),
                         "Quinary",
                         theme,
                     )),
             ),
+        )
+        .child(section_header("Color Mixing (OKLab)", theme))
+        .child(
+            div()
+                .flex()
+                .gap(theme.spacing_md)
+                .child(swatch(p.red, "Red", theme))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .size(px(48.0))
+                                .rounded_full()
+                                .bg(Color::from_hsla(p.red).mix(
+                                    Color::from_hsla(p.blue),
+                                    0.5,
+                                    MixColorSpace::Perceptual,
+                                    cx,
+                                )),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("50%"),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .size(px(48.0))
+                                .rounded_full()
+                                .bg(Color::from_hsla(p.red).mix(
+                                    Color::from_hsla(p.blue),
+                                    0.3,
+                                    MixColorSpace::Perceptual,
+                                    cx,
+                                )),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("30%"),
+                        ),
+                )
+                .child(swatch(p.blue, "Blue", theme)),
+        )
+        .child(section_header("Opacity Modifier", theme))
+        .child(
+            div()
+                .flex()
+                .gap(theme.spacing_md)
+                .child(swatch(p.red, "100%", theme))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .size(px(48.0))
+                                .rounded_full()
+                                .bg(Color::from_hsla(p.red).opacity(0.75)),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("75%"),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .size(px(48.0))
+                                .rounded_full()
+                                .bg(Color::from_hsla(p.red).opacity(0.5)),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("50%"),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .size(px(48.0))
+                                .rounded_full()
+                                .bg(Color::from_hsla(p.red).opacity(0.25)),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("25%"),
+                        ),
+                ),
+        )
+        .child(section_header("Gradient from Color", theme))
+        .child(
+            div()
+                .flex()
+                .gap(theme.spacing_md)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child({
+                            let c = Color::from_hsla(p.blue);
+                            let grad = c.gradient();
+                            match &grad {
+                                tahoe_gpui::foundations::color::AnyGradient::Linear(lg) => {
+                                    let (angle, stops) = lg.to_gpui_eager();
+                                    div()
+                                        .w(px(120.0))
+                                        .h(px(48.0))
+                                        .rounded(px(6.0))
+                                        .bg(gpui::linear_gradient(angle, stops[0], stops[1]))
+                                }
+                                _ => div(),
+                            }
+                        })
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("Blue"),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child({
+                            let lg = LinearGradient::new(
+                                Gradient::new(vec![
+                                    GradientStop {
+                                        color: Color::from_hsla(p.red),
+                                        location: 0.0,
+                                    },
+                                    GradientStop {
+                                        color: Color::from_hsla(p.purple),
+                                        location: 0.5,
+                                    },
+                                    GradientStop {
+                                        color: Color::from_hsla(p.blue),
+                                        location: 1.0,
+                                    },
+                                ]),
+                                UnitPoint::LEADING,
+                                UnitPoint::TRAILING,
+                            );
+                            let (angle, stops) = lg.to_gpui_eager();
+                            div()
+                                .w(px(120.0))
+                                .h(px(48.0))
+                                .rounded(px(6.0))
+                                .bg(gpui::linear_gradient(angle, stops[0], stops[1]))
+                        })
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(theme.text_muted)
+                                .child("Red→Purple→Blue"),
+                        ),
+                ),
         )
         .into_any_element()
 }

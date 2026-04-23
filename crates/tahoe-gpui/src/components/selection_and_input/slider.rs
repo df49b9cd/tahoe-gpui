@@ -11,7 +11,8 @@ use gpui::{
 
 use crate::callback_types::OnF32Change;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::materials::Glass;
+use crate::foundations::theme::ActiveTheme;
 use crate::ids::next_element_id;
 
 /// Slider axis orientation. HIG `NSSlider.sliderType = .linear` with
@@ -506,10 +507,10 @@ impl Render for Slider {
         let track_color = self.track_color.unwrap_or_else(|| {
             theme
                 .glass
-                .accessible_bg(GlassSize::Small, theme.accessibility_mode)
+                .accessible_fill(Glass::Regular, theme.accessibility_mode)
         });
         let natural_radius = px(f32::from(self.height) / 2.0);
-        let radius = natural_radius.min(theme.glass.radius(GlassSize::Small));
+        let radius = natural_radius.min(theme.radius_md);
         let thumb_radius = px(f32::from(self.thumb_size) / 2.0);
 
         // Expand the hit area to at least the platform's default control

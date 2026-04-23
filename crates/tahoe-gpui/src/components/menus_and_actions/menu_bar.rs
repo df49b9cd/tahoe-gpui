@@ -49,10 +49,11 @@ use gpui::{
 use crate::callback_types::rc_wrap;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::layout::{DROPDOWN_MAX_HEIGHT, MENU_MIN_WIDTH};
-use crate::foundations::materials::glass_surface;
-use crate::foundations::materials::{apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, apply_focus_ring, apply_high_contrast_border, glass_effect_lens,
+};
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// A single menu in the menu bar.
 pub struct Menu {
@@ -338,13 +339,12 @@ impl RenderOnce for MenuBar {
             });
         }
 
-        // Glass surface
-        {
-            let glass = &theme.glass;
-            bar = bar.bg(glass.accessible_bg(GlassSize::Small, theme.accessibility_mode));
-            bar = apply_focus_ring(bar, theme, focused, glass.shadows(GlassSize::Small));
-            bar = apply_high_contrast_border(bar, theme);
-        }
+        // Focus ring + a11y border sit on the stateful bar; the Liquid
+        // Glass lens composite is layered behind the bar in a relative
+        // wrapper below so the bar itself stays `Stateful<Div>` for focus
+        // handling.
+        bar = apply_focus_ring(bar, theme, focused, Elevation::Resting.shadows(theme));
+        bar = apply_high_contrast_border(bar, theme);
 
         // Render menu titles
         let mut open_content: Option<AnyElement> = None;
@@ -400,29 +400,50 @@ impl RenderOnce for MenuBar {
             }
         }
 
+        // Wrap the stateful bar in a relative parent that layers a
+        // Glass::Clear lens composite behind it. Clear keeps the material
+        // translucent enough that always-visible chrome doesn't dominate.
+        // The wrapper becomes the overlay's trigger so `AnchoredOverlay`
+        // anchors the dropdown to the bar's bottom edge.
+        let bar_with_lens = div()
+            .relative()
+            .child(
+                glass_effect_lens(
+                    theme,
+                    Glass::Clear,
+                    Shape::RoundedRectangle(theme.radius_lg),
+                    Elevation::Resting,
+                    None,
+                )
+                .absolute()
+                .left_0()
+                .top_0()
+                .w_full()
+                .h(px(theme.target_size())),
+            )
+            .child(bar);
+
         // ── Overlay-anchored menu content ───────────────────────────────────
-        // The bar is the overlay's trigger; the dropdown anchors below
-        // its bottom-left. `.offset(point(open_offset, 0))` shifts the
-        // dropdown horizontally to sit under the activating title —
-        // `AnchoredOverlay::offset` is free-form (sign honoured as
-        // given) so it is the right semantics for a title-index-driven
-        // horizontal nudge. Vertical gap is zero (menu dropdown meets
-        // the bar flush), matching the previous `.top(target_size)`
-        // placement.
-        let mut overlay = AnchoredOverlay::new(ElementId::Name("menu-bar-overlay".into()), bar)
-            .anchor(OverlayAnchor::BelowLeft)
-            .offset(point(open_offset, px(0.0)));
+        // `.offset(point(open_offset, 0))` shifts the dropdown horizontally
+        // to sit under the activating title; vertical gap is zero so the
+        // dropdown meets the bar flush.
+        let mut overlay =
+            AnchoredOverlay::new(ElementId::Name("menu-bar-overlay".into()), bar_with_lens)
+                .anchor(OverlayAnchor::BelowLeft)
+                .offset(point(open_offset, px(0.0)));
 
         if let Some(content) = open_content {
-            let dropdown = glass_surface(
-                div()
-                    .min_w(px(MENU_MIN_WIDTH))
-                    .max_h(px(DROPDOWN_MAX_HEIGHT))
-                    .flex()
-                    .flex_col(),
+            let dropdown = glass_effect_lens(
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
             )
+            .min_w(px(MENU_MIN_WIDTH))
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .flex()
+            .flex_col()
             .debug_selector(|| "menu-bar-dropdown".into())
             .child(content);
             overlay = overlay.content(dropdown);

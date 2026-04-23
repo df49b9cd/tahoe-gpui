@@ -46,8 +46,10 @@ use crate::components::selection_and_input::segmented_control::{SegmentItem, Seg
 use crate::components::selection_and_input::text_field::TextField;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{SurfaceContext, glass_surface, resolve_focused};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, SurfaceContext, glass_effect, glass_effect_lens, resolve_focused,
+};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// A controlled search field with suggestion dropdown per HIG.
 ///
@@ -458,11 +460,17 @@ impl RenderOnce for SearchField {
         // Glass-styled capsule container with focusable
         let suggestions_id = ElementId::from((self.id.clone(), "suggestions"));
         let focused = resolve_focused(self.focus_handle.as_ref(), window, self.focused);
-        let mut input_surface = glass_surface(input_row, theme, GlassSize::Small)
-            .rounded(theme.radius_full)
-            .id(self.id.clone())
-            .debug_selector(|| "search-field-input".into())
-            .focusable();
+        let mut input_surface = glass_effect(
+            input_row,
+            theme,
+            Glass::Regular,
+            Shape::Capsule,
+            Elevation::Resting,
+        )
+        .rounded(theme.radius_full)
+        .id(self.id.clone())
+        .debug_selector(|| "search-field-input".into())
+        .focusable();
 
         if let Some(ref handle) = self.focus_handle {
             input_surface = input_surface.track_focus(handle);
@@ -589,20 +597,24 @@ impl RenderOnce for SearchField {
             let on_toggle = on_toggle_rc.clone();
             let list_suggestion_values = suggestion_values.clone();
 
-            let list_div = div()
-                .absolute()
-                .left_0()
-                .top(theme.dropdown_top())
-                .w_full()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .max_h(px(DROPDOWN_MAX_HEIGHT));
-
-            let mut list = glass_surface(list_div, theme, GlassSize::Medium)
-                .id(suggestions_id)
-                .debug_selector(|| "search-field-suggestions".into())
-                .focusable();
+            let mut list = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
+            )
+            .absolute()
+            .left_0()
+            .top(theme.dropdown_top())
+            .w_full()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .id(suggestions_id)
+            .debug_selector(|| "search-field-suggestions".into())
+            .focusable();
 
             // Keyboard nav: Up/Down/Enter/Home/End/Escape.
             let key_on_toggle = on_toggle.clone();

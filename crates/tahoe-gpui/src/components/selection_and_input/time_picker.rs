@@ -13,9 +13,11 @@ use gpui::{
 use crate::callback_types::{OnTimeChange, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{apply_standard_control_styling, glass_surface};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, apply_standard_control_styling, glass_effect_lens,
+};
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -424,7 +426,7 @@ impl RenderOnce for TimePicker {
             trigger = trigger.track_focus(handle);
         }
 
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         trigger = trigger
             .hover(|style| style.cursor_pointer())
@@ -727,13 +729,15 @@ impl RenderOnce for TimePicker {
             // ── Dropdown ───────────────────────────────────────────────────
             let dropdown_content = div().flex().flex_col().p(theme.spacing_sm).child(columns);
 
-            let mut dropdown = glass_surface(
-                div()
-                    .w(px(if use_24h { 136.0 } else { 188.0 }))
-                    .overflow_hidden(),
+            let mut dropdown = glass_effect_lens(
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
             )
+            .w(px(if use_24h { 136.0 } else { 188.0 }))
+            .overflow_hidden()
             .id(ElementId::from((self.id.clone(), "dropdown")))
             .debug_selector(|| "time-picker-dropdown".into())
             .focusable();
@@ -1081,7 +1085,12 @@ fn build_time_wheel(
     if let Some(handle) = focus_handle {
         wrapper = wrapper.track_focus(handle);
     }
-    wrapper = apply_standard_control_styling(wrapper, theme, GlassSize::Small, focused);
+    wrapper = apply_standard_control_styling(
+        wrapper,
+        theme,
+        Shape::RoundedRectangle(theme.radius_md),
+        focused,
+    );
 
     let has_ampm = !use_24h;
     let hour_rows = if use_24h { 24 } else { 12 };

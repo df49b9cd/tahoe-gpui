@@ -1,7 +1,7 @@
 //! Sidebar component with Liquid Glass styling.
 //!
 //! HIG sidebar: an inset glass panel where content flows behind it.
-//! Uses `GlassSize::Medium`.
+//! Uses [`Glass::Regular`] at [`Elevation::Elevated`].
 //!
 //! This module also exposes:
 //!
@@ -27,7 +27,9 @@ use gpui::{
 use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
-use crate::foundations::materials::{SurfaceContext, apply_focus_ring, resolve_focused};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, SurfaceContext, apply_focus_ring, glass_effect_lens, resolve_focused,
+};
 use crate::foundations::right_to_left::apply_flex_row_direction;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
@@ -45,7 +47,7 @@ pub enum SidebarPosition {
 /// A sidebar component with glass morphism styling.
 ///
 /// When the glass theme is active, renders as an inset glass panel using
-/// `GlassSize::Medium`. Otherwise falls back to surface/border tokens.
+/// [`Glass::Regular`] at [`Elevation::Elevated`]. Otherwise falls back to surface/border tokens.
 ///
 /// Use [`SidebarPosition`] in parent layout to determine placement (left/right).
 ///
@@ -198,56 +200,40 @@ impl RenderOnce for Sidebar {
             .max(px(SIDEBAR_MIN_WIDTH));
         let width = if self.collapsed { px(0.0) } else { base_width };
 
-        // Per macOS Tahoe System Settings: the sidebar is a flat, borderless,
-        // shadowless panel with a subtle tinted background. Apply just the
-        // glass background fill with a thin trailing border.
-        let glass = &theme.glass;
-        let bg = glass.accessible_bg(
-            crate::foundations::theme::GlassSize::Medium,
-            theme.accessibility_mode,
-        );
-
-        // Finding 24 in the Zed cross-reference audit: when the host supplies a
-        // `background_extension` colour we composite it *below* the
-        // glass fill so the HIG "content extends beneath the sidebar"
-        // visual intent is preserved. Without GPUI render-to-texture
-        // the extension is a flat fill, not a live-sampled mirror, but
-        // the effect — content visible beneath the glass — is
-        // achievable by the caller passing the dominant content tone.
+        // HIG navigation-and-search.md:204: sidebars float above content in
+        // the Liquid Glass layer. We paint a real dual-Kawase lens composite
+        // so the refracted/blurred content behind the sidebar reads through.
         //
-        // Composition: `Hsla::blend` would be cleaner but GPUI does not
-        // expose a blend helper; instead we set the extension as the
-        // `background-color` and overlay `bg` at its existing alpha —
-        // the semi-transparent glass fill lets the extension tint show
-        // through at the glass's native opacity.
-        let base_bg = match self.background_extension {
-            Some(ext) => {
-                // Render the extension solid, then the glass fill on
-                // top at its existing (translucent) alpha. Because
-                // Div::bg takes a single Hsla, stack them via a layered
-                // approach: underlay the extension via the outer
-                // element's bg, then add a glass overlay via an inset
-                // child below.
-                ext
-            }
-            None => bg,
-        };
-
+        // Finding 24 in the Zed cross-reference audit: when the host supplies
+        // a `background_extension` colour we composite it *below* the lens
+        // so the HIG "content extends beneath the sidebar" intent is
+        // preserved. The extension sits on the outer fill; the lens canvas
+        // overlays it and refracts whatever the renderer samples from the
+        // framebuffer below.
         let mut el = div()
+            .relative()
             .flex()
             .flex_col()
             .h_full()
             .w(width)
-            .bg(base_bg)
             .id(self.id.clone());
 
-        // When the extension is set, overlay the glass fill as an
-        // absolutely-positioned sibling of the children so the
-        // translucent glass colour sits above the extension without
-        // consuming the layout slot the children need.
-        if self.background_extension.is_some() {
-            el = el.child(div().absolute().inset_0().bg(bg).into_any_element());
+        if let Some(ext) = self.background_extension {
+            el = el.bg(ext);
         }
+
+        // Paint the lens as the first child so flow children render above it.
+        el = el.child(
+            glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
+            )
+            .absolute()
+            .inset_0(),
+        );
 
         // Floating overlays drop the trailing hairline so content is
         // visible beneath the glass; inset sidebars keep the separator for

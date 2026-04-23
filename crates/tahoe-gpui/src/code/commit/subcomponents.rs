@@ -8,7 +8,7 @@ use crate::components::content::badge::Badge;
 use crate::components::layout_and_organization::FlexHeader;
 use crate::components::menus_and_actions::copy_button::CopyButton;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::theme::{ActiveTheme, HslaAlphaExt, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, Entity, FontWeight, SharedString, Window, div, px};
 

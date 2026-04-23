@@ -3,8 +3,8 @@
 //! GPUI's `.tooltip()` requires `AnyView`, so we provide a small
 //! `TooltipView` Render impl and a convenience `Tooltip` wrapper.
 
-use crate::foundations::materials::{SurfaceContext, glass_or_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{AnyElement, AnyView, App, ElementId, SharedString, Window, div};
 
@@ -34,29 +34,31 @@ impl Render for TooltipView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        // Tooltips are Small-glass surfaces — relatively translucent,
-        // so readability is most consistent when the label uses the
-        // `GlassBright` vibrancy palette (primary level), which is
-        // tuned for high contrast against translucent surfaces in both
-        // light and dark appearance. Previously we used `GlassDim`
-        // which could fail WCAG AA on dark backgrounds.
-        let mut el = div()
-            .px(theme.spacing_sm)
-            .py(theme.spacing_xs)
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(theme.spacing_sm)
-            .text_style(TextStyle::Caption1, theme)
-            .text_color(theme.label_color(SurfaceContext::GlassBright));
+        // Tooltips use Apple's Glass::Clear — highly translucent, so the
+        // media behind stays visible. Readability is tuned via the
+        // `GlassBright` vibrancy palette (primary level).
+        let mut el = glass_effect_lens(
+            theme,
+            Glass::Clear,
+            Shape::RoundedRectangle(theme.radius_md),
+            Elevation::Resting,
+            None,
+        )
+        .px(theme.spacing_sm)
+        .py(theme.spacing_xs)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(theme.spacing_sm)
+        .text_style(TextStyle::Caption1, theme)
+        .text_color(theme.label_color(SurfaceContext::GlassBright));
 
         el = el.child(div().child(self.text.clone()));
 
         if let Some(binding) = self.key_binding.clone() {
             // Keybinding chip uses the secondary label hierarchy so it
             // reads as an annotation rather than competing with the
-            // primary label. Matches Zed's visual weight: the chip
-            // appears quieter than the main text but stays legible.
+            // primary label.
             el = el.child(
                 div()
                     .text_color(crate::foundations::materials::resolve_label(
@@ -68,7 +70,7 @@ impl Render for TooltipView {
             );
         }
 
-        glass_or_surface(el, theme, GlassSize::Small)
+        el
     }
 }
 

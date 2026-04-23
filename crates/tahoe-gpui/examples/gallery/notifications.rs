@@ -7,8 +7,8 @@ use gpui::{AnyElement, Context, FontWeight, Window, div, px};
 
 use tahoe_gpui::components::content::avatar::Avatar;
 use tahoe_gpui::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
-use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -20,10 +20,12 @@ pub fn render(
     let theme = cx.global::<TahoeTheme>().clone();
     let theme = &theme;
 
-    let banner = glass_surface(
+    let banner = glass_effect(
         div().w(px(360.0)).overflow_hidden(),
         theme,
-        GlassSize::Medium,
+        Glass::Regular,
+        Shape::Default,
+        Elevation::Elevated,
     )
     .flex()
     .flex_col();

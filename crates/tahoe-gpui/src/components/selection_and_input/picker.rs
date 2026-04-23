@@ -12,10 +12,10 @@ use crate::foundations::accessibility::{
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    apply_focus_ring, apply_standard_control_styling, glass_surface,
+    Elevation, Glass, Shape, apply_focus_ring, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent, SharedString, Window,
@@ -571,8 +571,8 @@ impl RenderOnce for Picker {
             }
             wheel = wheel.bg(theme
                 .glass
-                .accessible_bg(GlassSize::Small, theme.accessibility_mode));
-            wheel = wheel.rounded(theme.glass.radius(GlassSize::Small));
+                .accessible_fill(Glass::Regular, theme.accessibility_mode));
+            wheel = wheel.rounded(theme.radius_md);
 
             // Up/Down cycles through the list.
             let key_change = on_change.clone();
@@ -926,7 +926,7 @@ impl RenderOnce for Picker {
         }
 
         // Glass-styled trigger surface.
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         trigger = trigger
             .hover(|style| style.cursor_pointer())
@@ -976,19 +976,28 @@ impl RenderOnce for Picker {
             let item_values: Vec<SharedString> =
                 flat_items.iter().map(|i| i.value.clone()).collect();
 
-            // ── Dropdown list ───────────────────────────────────────────────
+            // ── Dropdown list (Liquid Glass lens) ───────────────────────────
             // Inline mode renders the list flow-positioned directly below
             // the trigger (no max-height clamp, full width of the
             // container). Menu mode is wrapped in `AnchoredOverlay` at
-            // assembly time — the list body just carries the max-height
-            // and the glass surface; positioning is owned by the overlay.
-            let mut list_container = div().flex().flex_col().overflow_hidden();
+            // assembly time — the list body carries the max-height and
+            // the lens surface; positioning is owned by the overlay.
+            let mut list = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .flex_col()
+            .overflow_hidden();
             if style == PickerStyle::Inline {
-                list_container = list_container.w_full();
+                list = list.w_full();
             } else {
-                list_container = list_container.max_h(px(DROPDOWN_MAX_HEIGHT));
+                list = list.max_h(px(DROPDOWN_MAX_HEIGHT));
             }
-            let mut list = glass_surface(list_container, theme, GlassSize::Medium)
+            let mut list = list
                 .id(ElementId::from((self.id.clone(), "dropdown")))
                 .debug_selector(|| "picker-dropdown".into())
                 .focusable();

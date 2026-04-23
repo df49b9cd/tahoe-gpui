@@ -18,14 +18,14 @@ test-support = ["gpui/test-support", "dep:image"]
 [dependencies]
 # GPUI framework from Zed.
 #
-# We track the git repo at the `v0.231.1-pre` tag rather than
-# crates.io `gpui = "0.2.2"` because the published crate is a much
-# older snapshot of the same version number — it is missing APIs we
-# rely on (`SvgRenderer::render_single_frame`, `ScrollStrategy::Nearest`,
-# `PinchEvent` / `on_pinch`, `UniformListScrollHandle::scroll_to_bottom`,
-# the three-argument `FocusHandle::focus(window, cx)`, etc.). Upgrade
-# in lock-step with any `gpui_platform` / `gpui_macros` dev-deps below.
-gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre" }
+# Temporarily tracks the `df49b9cd/zed` fork's
+# `tahoe-gpui/blur-primitive` branch (PR df49b9cd/zed#1) while the
+# `Primitive::BlurRect` / `Primitive::LensRect` addition
+# (`paint_blur_rect` / `paint_lens_rect`) bakes upstream. When
+# `zed-industries/zed` merges those primitives we rebase back to a
+# tagged release. Upgrade in lock-step with the `gpui_platform`
+# dev-dep below.
+gpui = { version = "0.2.2", git = "https://github.com/df49b9cd/zed", branch = "tahoe-gpui/blur-primitive" }
 
 # Markdown auto-completion
 mdstitch = { version = "0.1.0", path = "../mdstitch" }
@@ -76,9 +76,10 @@ rustc-hash = "2"
 # Fast integer-to-string conversion for line number rendering.
 itoa = "1"
 
-# Structured diagnostics for dev-only warnings (e.g. the materials.rs
-# blur/lens fallback). Transitively present via GPUI's `ztracing`, so the
-# direct dep adds no extra compile cost.
+# Structured diagnostics for dev-only warnings (Markdown highlight
+# failures, image load errors, paint-time contract violations).
+# Transitively present via GPUI's `ztracing`, so the direct dep adds no
+# extra compile cost.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # Optional
@@ -91,8 +92,8 @@ objc2 = "0.6"
 
 [dev-dependencies]
 proptest = { workspace = true }
-gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["test-support"] }
-gpui_platform = { version = "0.1.0", git = "https://github.com/zed-industries/zed", tag = "v0.231.1-pre", features = ["font-kit"] }
+gpui = { version = "0.2.2", git = "https://github.com/df49b9cd/zed", branch = "tahoe-gpui/blur-primitive", features = ["test-support"] }
+gpui_platform = { version = "0.1.0", git = "https://github.com/df49b9cd/zed", branch = "tahoe-gpui/blur-primitive", features = ["font-kit"] }
 
 # ── Examples ────────────────────────────────────────────────────────────────
 

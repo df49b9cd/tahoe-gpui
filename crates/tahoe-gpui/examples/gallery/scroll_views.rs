@@ -7,9 +7,10 @@ use gpui::{AnyElement, Context, Window, div, px};
 
 use tahoe_gpui::components::presentation::scroll_view::{ScrollAxis, ScrollView};
 use tahoe_gpui::foundations::materials::{
-    SCROLL_EDGE_HEIGHT, ScrollEdgeStyle, glass_surface, scroll_edge_bottom, scroll_edge_top,
+    Elevation, Glass, SCROLL_EDGE_HEIGHT, ScrollEdgeStyle, Shape, glass_effect, scroll_edge_bottom,
+    scroll_edge_top,
 };
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -73,10 +74,12 @@ pub fn render(
                     .child(name),
             )
             .child(
-                glass_surface(
+                glass_effect(
                     div().w(px(220.0)).h(px(220.0)).relative().overflow_hidden(),
                     theme,
-                    GlassSize::Medium,
+                    Glass::Regular,
+                    Shape::Default,
+                    Elevation::Elevated,
                 )
                 .child(inner)
                 .child(scroll_edge_top(theme, SCROLL_EDGE_HEIGHT, style))
@@ -135,9 +138,10 @@ pub fn render(
                 .text_color(theme.text_muted)
                 .child(
                     "Soft fades the content out gradually; Hard keeps content \
-                     legible up to the edge then drops abruptly. Until GPUI ships \
-                     a backdrop-blur primitive both fall back to a colour-fade \
-                     gradient.",
+                     legible up to the edge then drops abruptly. Both use a \
+                     colour-fade gradient today; a future upgrade will use \
+                     `paint_blur_rect` with a variable-radius mask for the \
+                     HIG-correct scroll-edge blur.",
                 ),
         )
         .child(

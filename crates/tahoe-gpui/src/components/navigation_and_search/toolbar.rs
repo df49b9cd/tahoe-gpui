@@ -70,8 +70,8 @@ use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
 };
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{SurfaceContext, glass_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// How the toolbar is laid out against surrounding content.
 ///
@@ -302,26 +302,25 @@ impl RenderOnce for Toolbar {
             .gap(theme.spacing_sm)
             .children(trailing_children);
 
-        // Assemble the bar with glass surface. Floating style uses a
-        // deeper glass size (`Medium`) so the hover-above-content shadow
-        // reads; inline stays `Small`.
-        let size = match self.style {
-            ToolbarStyle::Inline => GlassSize::Small,
-            ToolbarStyle::Floating => GlassSize::Medium,
+        // Assemble the bar with a real Liquid Glass lens composite.
+        // Floating style uses a Regular/Elevated pill (full Figma lens
+        // params); Inline stays Clear/Resting so the render-pass cost of
+        // the always-visible chrome is bounded.
+        let (glass, shape, elevation) = match self.style {
+            ToolbarStyle::Inline => (
+                Glass::Clear,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Resting,
+            ),
+            ToolbarStyle::Floating => (Glass::Regular, Shape::Capsule, Elevation::Elevated),
         };
 
-        let mut bar_inner = div()
+        let mut bar = glass_effect_lens(theme, glass, shape, elevation, None)
             .min_h(px(theme.target_size()))
             .px(theme.spacing_md)
             .flex()
             .flex_row()
-            .items_center();
-
-        if self.style == ToolbarStyle::Floating {
-            bar_inner = bar_inner.rounded(theme.radius_full);
-        }
-
-        let mut bar = glass_surface(bar_inner, theme, size)
+            .items_center()
             .id(self.id)
             .child(leading_group)
             .child(title_el)

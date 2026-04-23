@@ -40,9 +40,9 @@ pub use super::layout::{
 
 // Material types — canonical definitions in `super::materials`
 pub use super::materials::{
-    BlurEffect, ElevationIndex, GlassContainer, GlassLabels, GlassRole, GlassSize, GlassStyle,
-    GlassTint, GlassTintColor, GlassTints, GlassVariant, LensEffect, MaterialThickness,
-    SCROLL_EDGE_HEIGHT, SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, StandardMaterial,
+    BlurEffect, Elevation, ElevationIndex, Glass, GlassContainer, GlassLabels, GlassMaterial,
+    GlassRole, GlassStyle, GlassTint, GlassTintColor, GlassTints, LensEffect, MaterialThickness,
+    SCROLL_EDGE_HEIGHT, SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, Shape, StandardMaterial,
     SurfaceContext,
 };
 
@@ -296,9 +296,10 @@ pub struct TahoeTheme {
     /// uses `WindowBackgroundAppearance::Blurred` (NSVisualEffectView) — set
     /// via [`Self::apply_in_window`] or by passing `theme.glass.window_background`
     /// in `WindowOptions` — this fill is translucent to the **desktop wallpaper
-    /// behind the window**, not to sibling GPUI elements inside it. GPUI
-    /// exposes no per-element backdrop blur; see
-    /// [`crate::foundations::materials::glass_surface`] for the full caveat.
+    /// behind the window**, not to sibling GPUI elements inside it. For
+    /// per-element backdrop blur against sibling content, use
+    /// [`crate::foundations::materials::glass_blur_surface`] or
+    /// [`crate::foundations::materials::glass_lens_surface`].
     pub panel_surface: Hsla,
 
     // ─── Liquid Glass ────────────────────────────────────────────────────────
@@ -440,6 +441,22 @@ impl TahoeTheme {
         Self::with_accent(appearance, AccentColor::default())
     }
 
+    /// Borrow this theme as a [`crate::foundations::color::ColorEnvironment`].
+    ///
+    /// The environment is the minimal read-only view the deferred
+    /// [`crate::foundations::color::Color`] token needs to resolve. Used by
+    /// `Color::resolve(&App)` internally and available to callers that want
+    /// to resolve a `Color` without going through a GPUI context (e.g. unit
+    /// tests).
+    pub fn color_environment(&self) -> crate::foundations::color::ColorEnvironment<'_> {
+        crate::foundations::color::ColorEnvironment::new(
+            self.appearance,
+            self.accent,
+            &self.semantic,
+            &self.palette,
+        )
+    }
+
     /// Create a theme with a specific accent color.
     pub fn with_accent(appearance: Appearance, accent_color: AccentColor) -> Self {
         let palette = SystemPalette::new(appearance);
@@ -481,11 +498,12 @@ impl TahoeTheme {
             // default and high-contrast appearances.
             selected_bg: Self::selected_bg_for(accent, is_dark),
             text_on_accent: text_colors.text_on_accent,
-            overlay_bg: if is_dark {
-                hsla(0.0, 0.0, 0.0, 0.5)
-            } else {
-                hsla(0.0, 0.0, 0.0, 0.3)
-            },
+            // Modal dim scrim. Figma Tahoe UI Kit: `#000000 @ 20%` for
+            // both light and dark — the scrim is a flat tint, not a
+            // blur-plus-tint (the modal's own lens composite handles the
+            // backdrop refraction). Single alpha across appearances matches
+            // the kit.
+            overlay_bg: hsla(0.0, 0.0, 0.0, 0.20),
 
             spacing_xs: spacing.xs,
             spacing_sm: spacing.sm,
@@ -748,49 +766,49 @@ impl TahoeTheme {
             (dark_text, light_text)
         };
 
-        // Per-size surface fills (Figma Tahoe UI Kit).
+        // Canonical Liquid Glass fills (Figma Tahoe UI Kit, collapsed to
+        // one fill per Glass variant — SwiftUI's `Glass` type is material
+        // identity, not a per-surface tier).
         //
-        // Dark:
-        //   Small:  #CCCCCC@50% + #000000@60% + #FFFFFF@6% composite → L≈0.17, a=0.80
-        //   Medium: #CCCCCC@100% + #000000@67% + #FFFFFF@3% with 67% container opacity
-        //   Large:  #CCCCCC@100% + #000000@85% + #FFFFFF@3% with 67% container opacity
+        // `regular_fill`: Figma "BG - Medium UI" — dark #CCCCCC@100% +
+        //   #000000@67% + #FFFFFF@3% at 67% container opacity; light
+        //   #F5F5F5@67% + #262626.
+        // `clear_fill`: lightest Clear tier — matches Apple's "highly
+        //   translucent" description for media-rich backdrops.
         //
-        // Light:
-        //   Small:  #F7F7F7 + #FFFFFF@50% + #333333 → near-white, translucent (α ≈ 0.85)
-        //   Medium: #F5F5F5@67% + #262626 → translucent white (backdrop blur)
-        //   Large:  #FAFAFA@80% + #262626
-        // Clear-variant fills differ by size per Adopting Liquid Glass:
-        // smaller controls receive a lighter fill, larger panels a heavier
-        // fill, so the media-rich backdrop reads differently at each depth
-        // level. Values target Figma Tahoe UI Kit clear tokens.
-        let (small_bg, medium_bg, large_bg, hover_bg, root_bg) = if is_dark {
+        // High-contrast variants raise the fill alpha so text on glass
+        // stays legible without the standard vibrancy compositing. Apple
+        // documents this in HIG §Accessibility "Increase Contrast":
+        // translucent surfaces step toward opaque under the flag.
+        let (regular_fill, clear_fill, hover_bg, root_bg) = if is_dark {
+            if is_hc {
+                (
+                    hsla(0.0, 0.0, 0.20, 0.92),
+                    hsla(0.0, 0.0, 1.0, 0.20),
+                    hsla(0.0, 0.0, 0.0, 0.60),
+                    hsla(0.0, 0.0, 0.0, 0.95),
+                )
+            } else {
+                (
+                    hsla(0.0, 0.0, 0.28, 0.67),
+                    hsla(0.0, 0.0, 1.0, 0.09),
+                    hsla(0.0, 0.0, 0.0, 0.50),
+                    hsla(0.0, 0.0, 0.0, 0.80),
+                )
+            }
+        } else if is_hc {
             (
-                hsla(0.0, 0.0, 0.17, 0.80),
-                hsla(0.0, 0.0, 0.28, 0.67),
-                hsla(0.0, 0.0, 0.13, 0.67),
-                hsla(0.0, 0.0, 0.0, 0.50),
-                hsla(0.0, 0.0, 0.0, 0.80),
+                hsla(0.0, 0.0, 0.97, 0.92),
+                hsla(0.0, 0.0, 1.0, 0.55),
+                hsla(0.0, 0.0, 0.0, 0.10),
+                hsla(0.0, 0.0, 1.0, 1.0),
             )
         } else {
             (
-                hsla(0.0, 0.0, 0.969, 0.85),
                 hsla(0.0, 0.0, 0.961, 0.67),
-                hsla(0.0, 0.0, 0.98, 0.80),
+                hsla(0.0, 0.0, 1.0, 0.32),
                 hsla(0.0, 0.0, 0.0, 0.04),
                 hsla(0.0, 0.0, 1.0, 0.95),
-            )
-        };
-        let (clear_small_bg, clear_medium_bg, clear_large_bg) = if is_dark {
-            (
-                hsla(0.0, 0.0, 1.0, 0.09),
-                hsla(0.0, 0.0, 1.0, 0.12),
-                hsla(0.0, 0.0, 1.0, 0.17),
-            )
-        } else {
-            (
-                hsla(0.0, 0.0, 1.0, 0.32),
-                hsla(0.0, 0.0, 1.0, 0.40),
-                hsla(0.0, 0.0, 1.0, 0.48),
             )
         };
 
@@ -836,11 +854,18 @@ impl TahoeTheme {
             blur_radius: px(blur),
             spread_radius: px(0.),
         };
-        let (small_shadow_a, medium_shadow_a, large_shadow_a, medium_shadow_y) = if is_dark {
-            (0.06, 0.10, 0.12, 4.0)
-        } else {
-            (0.04, 0.06, 0.10, 3.0)
+        // Rim shadow: 1pt spread, zero blur — the Figma Tahoe UI Kit uses a
+        // second shadow layer with these parameters to give every panel a
+        // crisp 1pt edge definition that survives rendering on arbitrary
+        // backgrounds. Applied on top of the ambient shadow so the edge
+        // reads even when the ambient is diffused by a light backdrop.
+        let rim_shadow = |alpha: f32| BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, alpha),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
         };
+        let large_shadow_a = if is_dark { 0.12 } else { 0.10 };
 
         // Colored tints share a canonical hue/saturation per color, with
         // per-appearance alpha and a couple of hue/saturation tweaks for
@@ -910,13 +935,9 @@ impl TahoeTheme {
         };
 
         let mut glass = GlassStyle {
-            variant: GlassVariant::Regular,
-            small_bg,
-            medium_bg,
-            large_bg,
-            clear_small_bg,
-            clear_medium_bg,
-            clear_large_bg,
+            variant: Glass::Regular,
+            regular_fill,
+            clear_fill,
             hover_bg,
             ultra_thin_bg,
             thin_bg,
@@ -924,16 +945,20 @@ impl TahoeTheme {
             thick_bg,
             ultra_thick_bg,
             chrome_bg,
-            small_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
-            medium_shadows: vec![shadow(medium_shadow_y, 16.0, medium_shadow_a)],
-            large_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
-            small_radius: px(20.0),
-            medium_radius: px(34.0),
-            // Large panels (sheets, alerts, modals) sit on a slightly bigger
-            // radius than Medium so their rounded corners stay concentric
-            // with macOS 26 window chrome (system window corners ≈ 12–14pt
-            // outer → ~40pt inner panel). See Figma Tahoe UI Kit.
-            large_radius: px(40.0),
+            // Resting (toolbars, tab bars, small controls) per Figma Tahoe
+            // UI Kit "Liquid Glass – Small UI": ambient Y=8 Blur=40 @12%
+            // (no rim). HIG §Materials notes Liquid Glass is "thinner /
+            // lighter frost" on small elements; the soft 40 pt ambient
+            // anchors the surface without adding visual weight.
+            resting_shadows: vec![shadow(8.0, 40.0, 0.12)],
+            // Elevated (alerts, dialogs, ≤400pt panels) per the Figma
+            // Tahoe UI Kit "BG - Medium UI": an ambient shadow
+            // (Y=8, Blur=40, #000 @ 12%) plus a 1pt rim (#000 @ 23%) for
+            // edge definition. The rim keeps the panel legible against
+            // low-contrast backdrops where the ambient blur fades into
+            // the underlying content.
+            elevated_shadows: vec![shadow(8.0, 40.0, 0.12), rim_shadow(0.23)],
+            floating_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
             // macOS 26 ships `WindowBackgroundAppearance::Blurred` via
             // NSVisualEffectView. Linux and Windows GPUI backends fall back
             // to opaque silently, which produces incorrect rendering unless
@@ -1444,21 +1469,21 @@ impl TahoeTheme {
 
     /// Liquid Glass Clear theme (dark variant).
     ///
-    /// Uses `GlassVariant::Clear` for higher transparency -- suitable for
+    /// Uses [`Glass::Clear`] for higher transparency — suitable for
     /// media-rich content per HIG.
     pub fn liquid_glass_clear() -> Self {
         let mut theme = Self::liquid_glass();
-        theme.glass.variant = GlassVariant::Clear;
+        theme.glass.variant = Glass::Clear;
         theme.glass.preference = LiquidGlassPreference::Clear;
         theme
     }
 
     /// Liquid Glass Clear theme (light variant).
     ///
-    /// Uses `GlassVariant::Clear` for higher transparency on a light background.
+    /// Uses [`Glass::Clear`] for higher transparency on a light background.
     pub fn liquid_glass_clear_light() -> Self {
         let mut theme = Self::liquid_glass_light();
-        theme.glass.variant = GlassVariant::Clear;
+        theme.glass.variant = Glass::Clear;
         theme.glass.preference = LiquidGlassPreference::Clear;
         theme
     }
@@ -1540,13 +1565,11 @@ impl TahoeTheme {
     /// [`AccessibilityMode::INCREASE_CONTRAST`](crate::foundations::accessibility::AccessibilityMode::INCREASE_CONTRAST)
     /// without additional plumbing.
     ///
-    /// Note: when HC is requested this helper currently only swaps
-    /// `theme.appearance` and `theme.palette` to the HC variant. The glass
-    /// surface / accent / semantic tokens produced by [`Self::liquid_glass`]
-    /// and [`Self::liquid_glass_light`] do not yet have HC-adjusted
-    /// counterparts in the library, so `is_high_contrast()` will return true
-    /// but most glass surfaces remain visually unchanged. Adding HC-adjusted
-    /// glass design tokens is tracked as a follow-up.
+    /// When HC is requested, `Self::build_glass` produces higher-alpha
+    /// `regular_fill` / `clear_fill` and a stronger label palette so glass
+    /// surfaces step toward opaque per HIG §Accessibility "Increase
+    /// Contrast"; `apply_glass_border_by_elevation` already drops the
+    /// specular 1pt rim under the flag.
     pub fn for_appearance_glass_with_a11y(
         appearance: WindowAppearance,
         mode: crate::foundations::accessibility::AccessibilityMode,
@@ -1560,6 +1583,18 @@ impl TahoeTheme {
             };
             theme.appearance = hc_appearance;
             theme.palette = SystemPalette::new(hc_appearance);
+            // Rebuild glass tokens against the HC appearance so the
+            // higher-alpha fills + stronger label palette wired up in
+            // `build_glass` actually surface here. Preserve the
+            // glass-theme accent override (the existing glass
+            // constructors set their own accent) so HC promotion does
+            // not regress the glass colour pipeline.
+            let preserved_accent = theme.glass.accent_tint.bg;
+            theme.glass = Self::build_glass(hc_appearance, &theme.palette, preserved_accent);
+            theme.glass.accent_tint = GlassTint {
+                bg: preserved_accent,
+                bg_hover: crate::foundations::color::lighten(preserved_accent, 0.08),
+            };
         }
         theme.accessibility_mode = mode;
         theme

@@ -12,10 +12,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, Window, div, px};
 
 use tahoe_gpui::foundations::icons::{GlassIconTile, GlassTileTint, IconName};
-use tahoe_gpui::foundations::materials::{
-    GlassTintColor, accent_tinted_glass_surface, tinted_glass_surface,
-};
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, GlassTintColor, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -47,7 +45,7 @@ pub fn render(
 
     let tint_card = |color: GlassTintColor, name: &'static str| {
         let tint = theme.glass.tints.get(color);
-        tinted_glass_surface(
+        glass_effect(
             div()
                 .w(px(110.0))
                 .h(px(72.0))
@@ -55,8 +53,9 @@ pub fn render(
                 .items_center()
                 .justify_center(),
             theme,
-            tint,
-            GlassSize::Small,
+            Glass::Regular.tint(Some(tint.bg)),
+            Shape::Default,
+            Elevation::Resting,
         )
         .child(
             div()
@@ -128,7 +127,7 @@ pub fn render(
                 ),
         )
         .child(
-            accent_tinted_glass_surface(
+            glass_effect(
                 div()
                     .w(px(360.0))
                     .h(px(96.0))
@@ -136,7 +135,9 @@ pub fn render(
                     .items_center()
                     .justify_center(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular.tint(Some(theme.glass.accent_tint.bg)),
+                Shape::Default,
+                Elevation::Resting,
             )
             .child(
                 div()

@@ -14,9 +14,9 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, FontWeight, Pixels, SharedString, Window, div, px};
 
-use crate::foundations::materials::{SurfaceContext, glass_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
 use crate::foundations::right_to_left::apply_flex_row_direction;
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// iOS-style navigation bar primitive.
 ///
@@ -126,12 +126,17 @@ impl RenderOnce for NavigationBarIOS {
             .child(leading_el)
             .child(trailing_el);
 
-        // ── Bar surface ───────────────────────────────────────────────────
-        glass_surface(
-            div().relative().h(bar_height).px(theme.spacing_md),
+        // ── Bar surface — Clear Liquid Glass lens composite, Resting tier ─
+        glass_effect_lens(
             theme,
-            GlassSize::Small,
+            Glass::Clear,
+            Shape::RoundedRectangle(theme.radius_lg),
+            Elevation::Resting,
+            None,
         )
+        .relative()
+        .h(bar_height)
+        .px(theme.spacing_md)
         .id(self.id)
         .child(title_layer)
         .child(controls_layer)

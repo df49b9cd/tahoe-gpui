@@ -7,7 +7,8 @@
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, ClickEvent, ElementId, SharedString, Window, div};
 
@@ -97,38 +98,26 @@ impl WorkflowToolbar {
 
 impl RenderOnce for WorkflowToolbar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        // Capture theme tokens as owned values so we can mutably borrow `cx`
-        // while building the action buttons below (Button::new takes &mut App).
-        let (spacing_sm, spacing_md, spacing_xs, bar_bg, shadows, increase_contrast, hc_border) = {
+        // Build the Liquid Glass lens composite up front — HIG Toolbars on
+        // macOS 26 call for the real refractive surface, not a fill.
+        // Owned values so we can mutably borrow `cx` while building the
+        // action buttons below (Button::new takes &mut App).
+        let (spacing_xs, bar) = {
             let theme = cx.theme();
-            (
-                theme.spacing_sm,
-                theme.spacing_md,
-                theme.spacing_xs,
-                // Liquid Glass material, per HIG Toolbars on macOS 26.
-                // `accessible_bg` respects `reduce_transparency` and
-                // high-contrast preferences so the bar stays legible
-                // across a11y modes.
-                theme
-                    .glass
-                    .accessible_bg(GlassSize::Medium, theme.accessibility_mode),
-                theme.glass.shadows(GlassSize::Medium).to_vec(),
-                theme.accessibility_mode.increase_contrast(),
-                theme.glass.accessibility.high_contrast_border,
+            let bar = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
             )
-        };
-
-        let mut bar = div()
             .flex()
             .items_center()
-            .gap(spacing_sm)
-            .px(spacing_md)
-            .py(spacing_sm)
-            .bg(bar_bg)
-            .shadow(shadows);
-        if increase_contrast {
-            bar = bar.border_1().border_color(hc_border);
-        }
+            .gap(theme.spacing_sm)
+            .px(theme.spacing_md)
+            .py(theme.spacing_sm);
+            (theme.spacing_xs, bar)
+        };
 
         // Sort actions into their anatomy sections. Stable partition keeps
         // the within-section order the caller supplied.

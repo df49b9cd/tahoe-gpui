@@ -9,7 +9,9 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, Hsla, Pixels, Window, div, px};
 
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::color::compose_black_tint_linear;
+use crate::foundations::materials::{Elevation, GLASS_LAYER_TINT_ALPHA, Glass};
+use crate::foundations::theme::ActiveTheme;
 
 /// A grouped row of buttons rendered as a cohesive segmented unit.
 ///
@@ -71,14 +73,16 @@ impl RenderOnce for ButtonGroup {
         let theme = cx.theme();
         let gap = self.gap.unwrap_or(px(0.0));
         let glass = &theme.glass;
-        let bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
-        let radius = glass.radius(GlassSize::Small);
-        let shadows = glass.shadows(GlassSize::Small).to_vec();
+        let base_bg = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
+        // Layer-2 black-tint composite in linear light so the fill matches
+        // `glass_effect` bit-for-bit. Applied inline because the container
+        // is `Stateful<Div>` (has `.id()`) and glass helpers take `Div`.
+        let bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
+        let radius = theme.radius_md;
+        let shadows = Elevation::Resting.shadows(theme).to_vec();
 
         // Outer element: paints the glass background/shadow behind the row
-        // but does NOT clip, so child focus rings remain visible. We
-        // replicate `glass_surface`'s styling manually rather than via
-        // `glass_surface()` because that helper calls `.overflow_hidden()`.
+        // but does NOT clip, so child focus rings remain visible.
         let mut outer = div()
             .id(self.id)
             .relative()

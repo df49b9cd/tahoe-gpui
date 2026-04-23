@@ -51,7 +51,7 @@
 //! `None`.
 
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, Corner, Element, ElementId, GlobalElementId,
+    Anchor, AnyElement, App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, Pixels, Point, Size, Style, Window, anchored,
     deferred, div, point, prelude::*, px,
 };
@@ -161,24 +161,24 @@ impl OverlayAnchor {
     }
 
     /// Which corner of the overlay box is the anchor point.
-    fn anchor_corner(self) -> Corner {
+    fn anchor_corner(self) -> Anchor {
         match self {
-            Self::BelowLeft => Corner::TopLeft,
-            Self::BelowRight => Corner::TopRight,
-            Self::AboveLeft => Corner::BottomLeft,
-            Self::AboveRight => Corner::BottomRight,
-            Self::WindowPoint(_) => Corner::TopLeft,
+            Self::BelowLeft => Anchor::TopLeft,
+            Self::BelowRight => Anchor::TopRight,
+            Self::AboveLeft => Anchor::BottomLeft,
+            Self::AboveRight => Anchor::BottomRight,
+            Self::WindowPoint(_) => Anchor::TopLeft,
         }
     }
 
     /// Which corner of the trigger the overlay attaches to. Not applicable
     /// for `WindowPoint`, which carries its own window-absolute point.
-    fn attach_corner(self) -> Option<Corner> {
+    fn attach_corner(self) -> Option<Anchor> {
         Some(match self {
-            Self::BelowLeft => Corner::BottomLeft,
-            Self::BelowRight => Corner::BottomRight,
-            Self::AboveLeft => Corner::TopLeft,
-            Self::AboveRight => Corner::TopRight,
+            Self::BelowLeft => Anchor::BottomLeft,
+            Self::BelowRight => Anchor::BottomRight,
+            Self::AboveLeft => Anchor::TopLeft,
+            Self::AboveRight => Anchor::TopRight,
             Self::WindowPoint(_) => return None,
         })
     }
@@ -716,20 +716,20 @@ mod tests {
         clamp_snap_margin, realise_anchor, resolve_anchor_point,
     };
     use core::prelude::v1::test;
-    use gpui::{AnyElement, Bounds, Corner, ElementId, IntoElement, Pixels, div, point, px, size};
+    use gpui::{Anchor, AnyElement, Bounds, ElementId, IntoElement, Pixels, div, point, px, size};
 
     #[test]
     fn anchor_corner_mapping() {
-        assert_eq!(OverlayAnchor::BelowLeft.anchor_corner(), Corner::TopLeft);
-        assert_eq!(OverlayAnchor::BelowRight.anchor_corner(), Corner::TopRight);
-        assert_eq!(OverlayAnchor::AboveLeft.anchor_corner(), Corner::BottomLeft);
+        assert_eq!(OverlayAnchor::BelowLeft.anchor_corner(), Anchor::TopLeft);
+        assert_eq!(OverlayAnchor::BelowRight.anchor_corner(), Anchor::TopRight);
+        assert_eq!(OverlayAnchor::AboveLeft.anchor_corner(), Anchor::BottomLeft);
         assert_eq!(
             OverlayAnchor::AboveRight.anchor_corner(),
-            Corner::BottomRight
+            Anchor::BottomRight
         );
         assert_eq!(
             OverlayAnchor::WindowPoint(point(px(10.0), px(20.0))).anchor_corner(),
-            Corner::TopLeft,
+            Anchor::TopLeft,
         );
     }
 
@@ -737,19 +737,19 @@ mod tests {
     fn attach_corner_mapping() {
         assert_eq!(
             OverlayAnchor::BelowLeft.attach_corner(),
-            Some(Corner::BottomLeft)
+            Some(Anchor::BottomLeft)
         );
         assert_eq!(
             OverlayAnchor::BelowRight.attach_corner(),
-            Some(Corner::BottomRight)
+            Some(Anchor::BottomRight)
         );
         assert_eq!(
             OverlayAnchor::AboveLeft.attach_corner(),
-            Some(Corner::TopLeft)
+            Some(Anchor::TopLeft)
         );
         assert_eq!(
             OverlayAnchor::AboveRight.attach_corner(),
-            Some(Corner::TopRight)
+            Some(Anchor::TopRight)
         );
         assert_eq!(
             OverlayAnchor::WindowPoint(point(px(10.0), px(20.0))).attach_corner(),

@@ -9,6 +9,8 @@ Thanks for your interest in contributing! This document covers the development w
 - **cargo-deny** (optional, for dependency audits) — `cargo install cargo-deny`.
 - macOS 14+ is recommended for running the examples (GPUI's platform support is most mature on Apple Silicon).
 
+> **Note on GPUI dependency** — `crates/tahoe-gpui/Cargo.toml` temporarily tracks the `df49b9cd/zed` fork's `tahoe-gpui/blur-primitive` branch (PR [df49b9cd/zed#1](https://github.com/df49b9cd/zed/pull/1)) for the `Primitive::BlurRect` / `Primitive::LensRect` entry points. Cargo resolves this over the network automatically; no local checkout required. When the primitives merge upstream, `crates/tahoe-gpui/Cargo.toml` rebases back to a tagged release.
+
 ## Repository layout
 
 ```

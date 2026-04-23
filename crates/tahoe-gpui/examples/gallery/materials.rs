@@ -9,8 +9,10 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div, px};
 
-use tahoe_gpui::foundations::materials::{MaterialThickness, glass_surface, glass_surface_thick};
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{
+    Elevation, Glass, MaterialThickness, Shape, glass_effect,
+};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -32,13 +34,13 @@ pub fn render(
 
     // Glass samples sit directly on the window root (no intermediate bg)
     // so the macOS window blur shows through the semi-transparent fills.
-    let glass_size_card = |size: GlassSize, name: &'static str| {
+    let glass_elevation_card = |elevation: Elevation, name: &'static str| {
         div()
             .flex()
             .flex_col()
             .items_center()
             .child(
-                glass_surface(
+                glass_effect(
                     div()
                         .w(px(100.0))
                         .h(px(70.0))
@@ -53,7 +55,9 @@ pub fn render(
                                 .child(name),
                         ),
                     theme,
-                    size,
+                    Glass::Regular,
+                    Shape::Default,
+                    elevation,
                 )
                 .into_any_element(),
             )
@@ -67,26 +71,23 @@ pub fn render(
             .flex_col()
             .items_center()
             .child(
-                glass_surface_thick(
-                    div()
-                        .w(px(100.0))
-                        .h(px(70.0))
-                        .rounded(px(14.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(theme.text)
-                                .child(pct),
-                        ),
-                    theme,
-                    thickness,
-                    GlassSize::Medium,
-                )
-                .into_any_element(),
+                gpui::div()
+                    .w(px(100.0))
+                    .h(px(70.0))
+                    .rounded(px(14.0))
+                    .bg(theme.glass.material_bg(thickness))
+                    .shadow(Elevation::Elevated.shadows(theme).to_vec())
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.text)
+                            .child(pct),
+                    )
+                    .into_any_element(),
             )
             .child(label(name))
     };
@@ -120,30 +121,30 @@ pub fn render(
                      Move this window over a colorful wallpaper to see the translucency.",
                 ),
         )
-        // ── Surface sizes ────────────────────────────────────────
+        // ── Surface elevations ────────────────────────────────────
         .child(
             div()
                 .pt(theme.spacing_md)
                 .text_style_emphasized(TextStyle::Headline, theme)
                 .text_color(theme.text)
-                .child("Liquid Glass surface sizes"),
+                .child("Liquid Glass surface elevations"),
         )
         .child(
             div()
                 .text_style(TextStyle::Subheadline, theme)
                 .text_color(theme.text_muted)
                 .child(
-                    "Small for toolbars and buttons. Medium for sidebars and cards. \
-                     Large for sheets and modals. Each has a different shadow intensity.",
+                    "Resting for toolbars and buttons. Elevated for sidebars and cards. \
+                     Floating for sheets and modals. Each has a different shadow intensity.",
                 ),
         )
         .child(
             div()
                 .flex()
                 .gap(theme.spacing_lg)
-                .child(glass_size_card(GlassSize::Small, "Small"))
-                .child(glass_size_card(GlassSize::Medium, "Medium"))
-                .child(glass_size_card(GlassSize::Large, "Large")),
+                .child(glass_elevation_card(Elevation::Resting, "Resting"))
+                .child(glass_elevation_card(Elevation::Elevated, "Elevated"))
+                .child(glass_elevation_card(Elevation::Floating, "Floating")),
         )
         // ── Material thickness ───────────────────────────────────
         .child(

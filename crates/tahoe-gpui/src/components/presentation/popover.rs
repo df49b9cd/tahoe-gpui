@@ -60,9 +60,10 @@
 //! [`AccessibleExt::with_accessibility`]: crate::foundations::accessibility::AccessibleExt::with_accessibility
 
 use crate::foundations::layout::POPOVER_MAX_WIDTH;
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
 use crate::foundations::motion::accessible_transition_animation;
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, AnyElement, App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, Window,
@@ -228,17 +229,18 @@ impl RenderOnce for Popover {
         overlay = overlay.gap(theme.spacing_xs);
 
         if self.is_open {
-            // Popovers are mid-layer overlay surfaces: one depth level above
-            // content, one below sheets/modals. `Large` (34pt radius, 40pt
-            // shadow blur) is reserved for full-screen sheets and alerts;
-            // applying it to a narrow popover bleeds the shadow into
-            // adjacent content and flattens the depth hierarchy.
+            // Popovers are Elevated tier — one depth level above content,
+            // one below full-screen sheets (Floating).
             let max_w = self.max_width.unwrap_or(px(POPOVER_MAX_WIDTH));
-            let mut content_div = crate::foundations::materials::glass_surface(
-                div().overflow_hidden().max_w(max_w),
+            let mut content_div = glass_effect_lens(
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
             )
+            .overflow_hidden()
+            .max_w(max_w)
             .id(ElementId::Name("popover-content-surface".into()))
             .debug_selector(|| "popover-content".into());
 
@@ -287,7 +289,7 @@ impl RenderOnce for Popover {
             let arrow_enabled = self.arrow;
             let arrow_bg = theme
                 .glass
-                .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+                .accessible_fill(Glass::Regular, theme.accessibility_mode);
             let spacing_sm = theme.spacing_sm;
             let accessibility = theme.accessibility_mode;
             let motion = theme.glass.motion;

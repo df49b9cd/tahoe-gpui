@@ -38,8 +38,10 @@ use gpui::{
 use crate::callback_types::{OnMutCallback, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::{INSPECTOR_PANEL_WIDTH, MACOS_PANEL_TITLE_BAR_HEIGHT};
-use crate::foundations::materials::{backdrop_overlay, glass_surface, glass_surface_hud};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, backdrop_overlay, glass_effect_lens, glass_surface_hud,
+};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Default panel width, backed by the shared layout token
 /// [`INSPECTOR_PANEL_WIDTH`] (320 pt — Apple macOS inspector convention).
@@ -261,12 +263,12 @@ impl RenderOnce for Panel {
         // ── Backdrop ────────────────────────────────────────────────────────
         // HIG `#panels`: inspector / dashboard / text-style panels dim the
         // window behind them; Tool and HUD panels do not (the underlying
-        // content stays interactive). We route the dimmed path through the
-        // shared `backdrop_overlay` helper, which today tints with
-        // `theme.overlay_bg` and, once GPUI ships `paint_blur_rect()`,
-        // automatically applies Liquid Glass backdrop blur. Non-dimming
-        // variants render a transparent positioned div so click-outside
-        // dismiss still lands without a visible scrim.
+        // content stays interactive). The dimmed path routes through the
+        // shared `backdrop_overlay` helper, which composites a dual-Kawase
+        // backdrop blur via `Window::paint_blur_rect` on top of
+        // `theme.overlay_bg`. Non-dimming variants render a transparent
+        // positioned div so click-outside dismiss still lands without a
+        // visible scrim.
         let backdrop = if dims_backdrop {
             backdrop_overlay(theme)
         } else {
@@ -367,14 +369,32 @@ impl RenderOnce for Panel {
         }
 
         // ── Panel surface (glass) ───────────────────────────────────────────
-        // HUD panels route through `glass_surface_hud` so the dark tint +
-        // light-text recipe matches every other HUD surface in the crate.
+        // Non-HUD panels use Elevated tier (Medium UI fill + ambient + rim);
+        // HUD panels keep `glass_surface_hud` for the dark tint + light-text
+        // recipe that matches other HUD surfaces.
         let panel_id = ElementId::from((self.id.clone(), "panel"));
         let panel_body = div().w(width).h_full().flex().flex_col();
         let mut panel = if is_hud {
-            glass_surface_hud(panel_body, theme, GlassSize::Large).id(panel_id)
+            glass_surface_hud(
+                panel_body,
+                theme,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+            )
+            .id(panel_id)
         } else {
-            glass_surface(panel_body, theme, GlassSize::Large).id(panel_id)
+            glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::RoundedRectangle(theme.radius_lg),
+                Elevation::Elevated,
+                None,
+            )
+            .w(width)
+            .h_full()
+            .flex()
+            .flex_col()
+            .id(panel_id)
         };
 
         if let Some(bar) = title_bar {

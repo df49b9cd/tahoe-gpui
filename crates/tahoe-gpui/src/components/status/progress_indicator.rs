@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{AnimatedIcon, Icon, IconAnimation, IconName};
-use crate::foundations::materials::{GlassSize, glass_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
@@ -268,11 +268,15 @@ impl RenderOnce for ProgressIndicator {
         }
 
         if glass_enabled {
-            glass_surface(
-                div().p(theme.spacing_sm).child(container),
+            glass_effect_lens(
                 theme,
-                GlassSize::Small,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Resting,
+                None,
             )
+            .p(theme.spacing_sm)
+            .child(container)
             .into_any_element()
         } else {
             container.into_any_element()
