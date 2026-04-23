@@ -100,7 +100,7 @@ pub enum SemanticToken {
 }
 
 /// Private colour representation. `Copy` so [`Color`] stays `Copy`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ColorRepr {
     Literal {
         space: RgbColorSpace,
@@ -117,8 +117,30 @@ enum ColorRepr {
 
 /// Deferred colour token. Mirrors SwiftUI `Color`.
 ///
-/// `Copy` — size is ~28 bytes (tagged union + `opacity_multiplier`).
-/// Not paintable until [`Color::resolve`] runs.
+/// `Copy` — size is ~44 bytes (tagged union + `opacity_multiplier` +
+/// cached `Hsla` for [`Deref`]). Not paintable until [`Color::resolve`]
+/// runs *unless* the colour is already pre-resolved.
+///
+/// ## Eager cache & `Deref<Target = Hsla>`
+///
+/// `Color` keeps a cached `Hsla` alongside the token identity so that
+/// pre-resolved colours (built via [`Color::from_hsla`] or
+/// [`Color::resolved`]) auto-deref to their Hsla channel fields. This
+/// makes `theme.accent.l`, `theme.text.a`, `.bg(theme.background)` all
+/// compile without explicit `.into()` / `Hsla::from(...)` wrapping — the
+/// Phase-3 field swap stays source-compatible for bare field access.
+///
+/// **Deferred tokens panic on `Deref`**, matching the contract of
+/// [`From<Color> for Hsla`]. If you hold a `Color::RED` / `Color::LABEL`
+/// / `Color::ACCENT` / etc., call [`Color::into_hsla`] or
+/// [`Color::resolve`] before reading channel fields.
+///
+/// **PartialEq is structural**, not semantic: two `Color`s are equal iff
+/// they were constructed from the same variant with the same parameters.
+/// `Color::RED == Color::from_hsla(systemRed)` is **false** even though
+/// both resolve to the same pixel — `Color::RED` is a deferred `System`
+/// token, `Color::from_hsla` is a pre-resolved literal. For value-
+/// equality, compare `.resolve(cx)` outputs.
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
     repr: ColorRepr,
@@ -126,6 +148,49 @@ pub struct Color {
     /// Callers rarely touch this directly; `.opacity(f)` composes into it
     /// so the struct stays `Copy`.
     opacity_multiplier: f32,
+    /// Cached gamma-encoded sRGB Hsla for pre-resolved colours (from
+    /// [`Color::from_hsla`] / [`Color::resolved`] / resolve). For
+    /// deferred variants (`System` / `SystemGray` / `Semantic` /
+    /// const-built `Literal`) this is a sentinel — `Deref` checks `repr`
+    /// first and panics before the sentinel is ever read.
+    cached: Hsla,
+}
+
+impl PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        // Structural equality over the token-identity fields. The `cached`
+        // Hsla is derived from `repr`, so comparing it would be redundant.
+        self.repr == other.repr && self.opacity_multiplier == other.opacity_multiplier
+    }
+}
+
+/// Sentinel Hsla stored in `cached` when the Color is a deferred token
+/// that hasn't been resolved yet. `Deref` panics before this is
+/// observed — callers never see it.
+const DEFERRED_CACHE_SENTINEL: Hsla = Hsla {
+    h: 0.0,
+    s: 0.0,
+    l: 0.0,
+    a: 0.0,
+};
+
+impl std::ops::Deref for Color {
+    type Target = Hsla;
+
+    fn deref(&self) -> &Hsla {
+        match &self.repr {
+            ColorRepr::Resolved(_) => &self.cached,
+            ColorRepr::System(_) | ColorRepr::SystemGray(_) | ColorRepr::Semantic(_) => panic!(
+                "deferred Color cannot be dereferenced without a ColorEnvironment — \
+                 use `Color::resolve(cx)` or `Color::into_hsla(cx)` first."
+            ),
+            ColorRepr::Literal { .. } => panic!(
+                "literal Color built via `Color::rgb / rgba / white` has no cached \
+                 Hsla — use `Color::from_hsla(hsla(...))` instead, or call \
+                 `.resolve(cx)` / `.into_hsla(cx)`."
+            ),
+        }
+    }
 }
 
 impl Color {
@@ -238,10 +303,15 @@ impl Color {
 
     // ───── Constructors ─────────────────────────────────────────────────
 
+    /// Const constructor for token-identity variants where the Hsla
+    /// cache cannot be computed at compile time. The cache is filled
+    /// with [`DEFERRED_CACHE_SENTINEL`] and `Deref` panics before the
+    /// sentinel is read.
     const fn from_repr(repr: ColorRepr) -> Self {
         Color {
             repr,
             opacity_multiplier: 1.0,
+            cached: DEFERRED_CACHE_SENTINEL,
         }
     }
 
@@ -261,18 +331,26 @@ impl Color {
         Self::rgba(RgbColorSpace::Srgb, lightness, lightness, lightness, alpha)
     }
 
-    /// Wrap a pre-resolved [`ResolvedColor`] as a `Color`. Used by
-    /// [`Color::from_hsla`] and by `TahoeTheme` builders when the stored
-    /// value is already concrete.
-    pub const fn resolved(value: ResolvedColor) -> Self {
-        Self::from_repr(ColorRepr::Resolved(value))
+    /// Wrap a pre-resolved [`ResolvedColor`] as a `Color`. The returned
+    /// Color caches `value.to_hsla()` so [`Deref`] and the GPUI bridge
+    /// are cheap on the result.
+    pub fn resolved(value: ResolvedColor) -> Self {
+        Color {
+            repr: ColorRepr::Resolved(value),
+            opacity_multiplier: 1.0,
+            cached: value.to_hsla(),
+        }
     }
 
-    /// Lift an existing [`gpui::Hsla`] into a `Color`. Eager: performs the
-    /// `Hsla → ResolvedColor` conversion at construction time, so
-    /// [`Color::into_hsla`] is cheap on the result.
+    /// Lift an existing [`gpui::Hsla`] into a `Color`. Eager: caches the
+    /// Hsla on the struct so `Deref` returns it directly without any
+    /// `Hsla → ResolvedColor → Hsla` round-trip drift.
     pub fn from_hsla(h: Hsla) -> Self {
-        Self::resolved(ResolvedColor::from_hsla(h))
+        Color {
+            repr: ColorRepr::Resolved(ResolvedColor::from_hsla(h)),
+            opacity_multiplier: 1.0,
+            cached: h,
+        }
     }
 
     // ───── Modifiers ────────────────────────────────────────────────────
@@ -284,10 +362,14 @@ impl Color {
     /// [`crate::foundations::color::opacity`]).
     ///
     /// Composes multiplicatively: `c.opacity(0.5).opacity(0.4)` resolves
-    /// to the same alpha as `c.opacity(0.2)`.
+    /// to the same alpha as `c.opacity(0.2)`. Also updates the cached
+    /// Hsla's alpha so `Deref` observes the post-multiplier value.
     pub fn opacity(mut self, factor: f32) -> Self {
-        self.opacity_multiplier =
-            (self.opacity_multiplier * normalize_factor(factor)).clamp(0.0, 1.0);
+        let f = normalize_factor(factor);
+        self.opacity_multiplier = (self.opacity_multiplier * f).clamp(0.0, 1.0);
+        if matches!(self.repr, ColorRepr::Resolved(_)) {
+            self.cached.a = (self.cached.a * f).clamp(0.0, 1.0);
+        }
         self
     }
 
@@ -314,20 +396,24 @@ impl Color {
     /// Try to collapse to an [`Hsla`] without consulting an environment.
     /// Succeeds on literal / resolved variants (with `opacity_multiplier`
     /// applied); returns `Err` on any variant that needs appearance data.
+    ///
+    /// For `Resolved` Colors this reuses the eagerly cached Hsla rather
+    /// than round-tripping through `ResolvedColor::to_hsla()`, so
+    /// `Hsla::from(Color::from_hsla(x)) == x` byte-for-byte.
     pub(super) fn try_into_hsla_eager(&self) -> Result<Hsla, &'static str> {
-        let mut h = match &self.repr {
+        match &self.repr {
             ColorRepr::Literal { space, r, g, b, a } => {
-                literal_resolved(*space, *r, *g, *b, *a).to_hsla()
+                let mut h = literal_resolved(*space, *r, *g, *b, *a).to_hsla();
+                if self.opacity_multiplier < 1.0 {
+                    h.a = (h.a * self.opacity_multiplier).clamp(0.0, 1.0);
+                }
+                Ok(h)
             }
-            ColorRepr::Resolved(r) => r.to_hsla(),
-            ColorRepr::System(_) => return Err("Color::SystemColor needs a ColorEnvironment"),
-            ColorRepr::SystemGray(_) => return Err("Color::SystemGray needs a ColorEnvironment"),
-            ColorRepr::Semantic(_) => return Err("Color::Semantic needs a ColorEnvironment"),
-        };
-        if self.opacity_multiplier < 1.0 {
-            h.a = (h.a * self.opacity_multiplier).clamp(0.0, 1.0);
+            ColorRepr::Resolved(_) => Ok(self.cached),
+            ColorRepr::System(_) => Err("Color::SystemColor needs a ColorEnvironment"),
+            ColorRepr::SystemGray(_) => Err("Color::SystemGray needs a ColorEnvironment"),
+            ColorRepr::Semantic(_) => Err("Color::Semantic needs a ColorEnvironment"),
         }
-        Ok(h)
     }
 }
 
@@ -677,5 +763,96 @@ mod tests {
         // .opacity(0.5).opacity(0.4) → multiplier = 0.2 (same as .opacity(0.2))
         let c = Color::BLUE.opacity(0.5).opacity(0.4);
         assert!((c.opacity_multiplier - 0.2).abs() < 1e-6);
+    }
+
+    // ── Deref<Target = Hsla> ────────────────────────────────────────────
+
+    #[test]
+    fn deref_exposes_cached_hsla_fields_on_from_hsla() {
+        let h = Hsla {
+            h: 0.25,
+            s: 0.7,
+            l: 0.6,
+            a: 0.8,
+        };
+        let c = Color::from_hsla(h);
+        // Direct field access via auto-deref (this is the Phase 3 ergonomics
+        // the cache is load-bearing for).
+        assert_eq!(c.h, 0.25);
+        assert_eq!(c.s, 0.7);
+        assert_eq!(c.l, 0.6);
+        assert_eq!(c.a, 0.8);
+    }
+
+    #[test]
+    fn deref_alpha_reflects_opacity_modifier() {
+        // `.opacity(f)` also updates the cached Hsla alpha so Deref
+        // observes the post-multiplier value consistently with Hsla::from.
+        let c = Color::from_hsla(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 1.0,
+            a: 1.0,
+        })
+        .opacity(0.5);
+        assert!((c.a - 0.5).abs() < 1e-6);
+        assert!((Hsla::from(c).a - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    #[should_panic(expected = "deferred Color cannot be dereferenced")]
+    fn deref_panics_on_system_variant() {
+        let _ = Color::RED.l;
+    }
+
+    #[test]
+    #[should_panic(expected = "deferred Color cannot be dereferenced")]
+    fn deref_panics_on_semantic_variant() {
+        let _ = Color::ACCENT.a;
+    }
+
+    #[test]
+    #[should_panic(expected = "deferred Color cannot be dereferenced")]
+    fn deref_panics_on_system_gray_variant() {
+        let _ = Color::GRAY_3.l;
+    }
+
+    #[test]
+    #[should_panic(expected = "literal Color built via")]
+    fn deref_panics_on_literal_const_variant() {
+        // Color::WHITE is a const Literal — no cached Hsla. Callers who
+        // want channel values on a literal must go through `from_hsla`.
+        let _ = Color::WHITE.l;
+    }
+
+    #[test]
+    fn into_hsla_eager_returns_cached_value_byte_identical() {
+        // The plan's §5 invariant: `Hsla::from(Color::from_hsla(x)) == x`
+        // byte-for-byte, not 1e-4-close. With the cache this is a direct
+        // copy, no round-trip drift.
+        let cases = [
+            Hsla {
+                h: 0.123,
+                s: 0.456,
+                l: 0.789,
+                a: 0.321,
+            },
+            Hsla {
+                h: 0.0,
+                s: 1.0,
+                l: 0.5,
+                a: 1.0,
+            },
+            Hsla {
+                h: 0.999,
+                s: 0.001,
+                l: 0.99,
+                a: 0.5,
+            },
+        ];
+        for input in cases {
+            let back: Hsla = Color::from_hsla(input).into();
+            assert_eq!(back, input, "byte-identity roundtrip failed for {input:?}");
+        }
     }
 }
