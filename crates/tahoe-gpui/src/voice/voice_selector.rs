@@ -16,7 +16,7 @@ use gpui::{
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::presentation::modal::Modal;
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{GlassSize, glass_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 
@@ -837,10 +837,10 @@ impl Render for VoiceSelectorView {
             match self.variant {
                 VoiceSelectorVariant::Dropdown => {
                     // Liquid Glass surface for the floating dropdown to
-                    // match macOS 26 Tahoe HIG. Falls back to the
-                    // translucent fill + shadows used by glass_surface on
-                    // non-glass themes.
-                    let glass_panel = glass_surface(
+                    // match macOS 26 Tahoe HIG. Falls back to the translucent
+                    // fill + shadows used by `glass_effect` on non-glass
+                    // themes.
+                    let glass_panel = glass_effect(
                         div()
                             .absolute()
                             .top_full()
@@ -850,7 +850,9 @@ impl Render for VoiceSelectorView {
                             .max_h(px(400.0))
                             .overflow_hidden(),
                         theme,
-                        GlassSize::Medium,
+                        Glass::Regular,
+                        Shape::Default,
+                        Elevation::Elevated,
                     );
                     let dropdown = glass_panel
                         .id("voice-selector-dropdown")

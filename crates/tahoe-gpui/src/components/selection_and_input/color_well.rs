@@ -15,10 +15,10 @@ use gpui::{
 use crate::callback_types::{OnHslaChange, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{
-    LensEffect, apply_focus_ring, apply_high_contrast_border, glass_lens_surface,
+    Elevation, Glass, Shape, apply_focus_ring, apply_high_contrast_border, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Swatch size inside the dropdown grid (32x32pt).
 const SWATCH_SIZE: f32 = 32.0;
@@ -413,12 +413,7 @@ impl RenderOnce for ColorWell {
                 .bg(self.color),
         };
 
-        trigger = apply_focus_ring(
-            trigger,
-            theme,
-            focused,
-            theme.glass.shadows(GlassSize::Small),
-        );
+        trigger = apply_focus_ring(trigger, theme, focused, Elevation::Resting.shadows(theme));
         trigger = apply_high_contrast_border(trigger, theme);
 
         if let Some(handler) = toggle_for_trigger {
@@ -456,16 +451,21 @@ impl RenderOnce for ColorWell {
             let grid_gap = theme.spacing_xs;
             let grid_padding = theme.spacing_sm;
 
-            let grid_effect = LensEffect::liquid_glass(GlassSize::Small, theme);
-            let mut grid = glass_lens_surface(theme, &grid_effect, GlassSize::Small)
-                .flex()
-                .flex_wrap()
-                .gap(grid_gap)
-                .p(grid_padding)
-                .overflow_hidden()
-                .id(ElementId::from((self.id.clone(), "palette")))
-                .debug_selector(|| "color-well-palette".into())
-                .focusable();
+            let mut grid = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .flex_wrap()
+            .gap(grid_gap)
+            .p(grid_padding)
+            .overflow_hidden()
+            .id(ElementId::from((self.id.clone(), "palette")))
+            .debug_selector(|| "color-well-palette".into())
+            .focusable();
 
             // Set a fixed width: 6 swatches + 5 gaps + 2*padding
             let grid_width = (SWATCH_SIZE * GRID_COLUMNS as f32)

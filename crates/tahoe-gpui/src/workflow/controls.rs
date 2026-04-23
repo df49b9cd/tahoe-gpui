@@ -9,8 +9,8 @@
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{LensEffect, glass_lens_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, SharedString, Window, div, px};
 
@@ -273,18 +273,20 @@ impl RenderOnce for WorkflowControls {
             }
         }
 
-        // Inner bar — real Liquid Glass lens composite. Capsule radius via
-        // `theme.radius_full`; push into `effect.blur.corner_radius` so the
-        // lens canvas rounds to match the wrapper.
-        let mut effect = LensEffect::liquid_glass(GlassSize::Small, theme);
-        effect.blur.corner_radius = f32::from(theme.radius_full);
-        let mut bar = glass_lens_surface(theme, &effect, GlassSize::Small)
-            .flex()
-            .items_center()
-            .gap(theme.spacing_xs)
-            .px(theme.spacing_xs)
-            .py(theme.spacing_xs)
-            .rounded(theme.radius_full);
+        // Inner bar — real Liquid Glass lens composite, capsule shape.
+        let mut bar = glass_effect_lens(
+            theme,
+            Glass::Regular,
+            Shape::Capsule,
+            Elevation::Elevated,
+            None,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing_xs)
+        .px(theme.spacing_xs)
+        .py(theme.spacing_xs)
+        .rounded(theme.radius_full);
 
         if self.orientation == ControlsOrientation::Vertical {
             bar = bar.flex_col();

@@ -25,8 +25,8 @@ pub use crate::foundations::layout::{
 };
 pub use crate::foundations::right_to_left::{IconDirection, icon_direction};
 pub use crate::foundations::theme::{
-    ActiveTheme, FontDesign, GlassSize, LabelLevel, LeadingStyle, SurfaceContext, TahoeTheme,
-    TextStyle, TextStyledExt,
+    ActiveTheme, Elevation, FontDesign, Glass, LabelLevel, LeadingStyle, Shape, SurfaceContext,
+    TahoeTheme, TextStyle, TextStyledExt,
 };
 
 // ── Components > Content ───────────────────────────────────────────────────

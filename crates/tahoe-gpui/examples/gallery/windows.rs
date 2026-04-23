@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, Window, div, px};
 
 use tahoe_gpui::components::presentation::window::WindowStyle;
-use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -65,13 +65,15 @@ pub fn render(
                 .child(dot(gpui::hsla(0.0, 0.6, 0.55, 1.0))),
         };
 
-        glass_surface(
+        glass_effect(
             div()
                 .w(px(280.0))
                 .overflow_hidden()
                 .rounded(theme.radius_lg),
             theme,
-            GlassSize::Medium,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Elevated,
         )
         .child(
             div()

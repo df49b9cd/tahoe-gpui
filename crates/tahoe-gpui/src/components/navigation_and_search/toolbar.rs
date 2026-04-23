@@ -70,8 +70,8 @@ use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupMode,
 };
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// How the toolbar is laid out against surrounding content.
 ///
@@ -303,23 +303,15 @@ impl RenderOnce for Toolbar {
             .children(trailing_children);
 
         // Assemble the bar with a real Liquid Glass lens composite.
-        // Floating style uses a deeper glass size (`Medium`) with the full
-        // Figma lens params; Inline stays `Small` with a subtle lens so the
-        // render-pass cost of the always-visible chrome is bounded.
-        let size = match self.style {
-            ToolbarStyle::Inline => GlassSize::Small,
-            ToolbarStyle::Floating => GlassSize::Medium,
+        // Floating style uses a Regular/Elevated pill (full Figma lens
+        // params); Inline stays Clear/Resting so the render-pass cost of
+        // the always-visible chrome is bounded.
+        let (glass, shape, elevation) = match self.style {
+            ToolbarStyle::Inline => (Glass::Clear, Shape::Default, Elevation::Resting),
+            ToolbarStyle::Floating => (Glass::Regular, Shape::Capsule, Elevation::Elevated),
         };
 
-        let mut effect = match self.style {
-            ToolbarStyle::Inline => LensEffect::subtle(size, theme),
-            ToolbarStyle::Floating => LensEffect::liquid_glass(size, theme),
-        };
-        if self.style == ToolbarStyle::Floating {
-            effect.blur.corner_radius = f32::from(theme.radius_full);
-        }
-
-        let mut bar = glass_lens_surface(theme, &effect, size)
+        let mut bar = glass_effect_lens(theme, glass, shape, elevation, None)
             .min_h(px(theme.target_size()))
             .px(theme.spacing_md)
             .flex()

@@ -760,9 +760,8 @@ impl Render for TokenField {
                 .rounded(theme.radius_md)
                 .overflow_hidden()
                 .shadow(
-                    theme
-                        .glass
-                        .shadows(crate::foundations::theme::GlassSize::Medium)
+                    crate::foundations::materials::Elevation::Elevated
+                        .shadows(theme)
                         .to_vec(),
                 )
                 .on_mouse_down_out(cx.listener(|this, _event: &MouseDownEvent, _window, cx| {

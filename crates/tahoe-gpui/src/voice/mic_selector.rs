@@ -18,7 +18,7 @@ use crate::callback_types::{OnStrChange, OnToggle};
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
-use crate::foundations::materials::{GlassSize, glass_surface};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect};
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use crate::ids::next_element_id;
 
@@ -451,10 +451,10 @@ impl Render for MicSelectorView {
         // Dropdown
         if is_open {
             // On macOS 26 Tahoe the HIG calls out Liquid Glass for floating
-            // panels like this dropdown. `glass_surface` degrades cleanly on
+            // panels like this dropdown. `glass_effect` degrades cleanly on
             // non-glass themes by falling back to the same translucent fill
             // + shadows the previous implementation used directly.
-            let glass_panel = glass_surface(
+            let glass_panel = glass_effect(
                 div()
                     .absolute()
                     .top_full()
@@ -465,7 +465,9 @@ impl Render for MicSelectorView {
                     .flex_col()
                     .overflow_hidden(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             );
             let mut dropdown =
                 glass_panel

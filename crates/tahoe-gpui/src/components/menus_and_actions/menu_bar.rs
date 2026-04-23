@@ -53,7 +53,7 @@ use crate::foundations::materials::{
     Elevation, Glass, Shape, apply_focus_ring, apply_high_contrast_border, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// A single menu in the menu bar.
 pub struct Menu {
@@ -343,7 +343,7 @@ impl RenderOnce for MenuBar {
         // Glass lens composite is layered behind the bar in a relative
         // wrapper below so the bar itself stays `Stateful<Div>` for focus
         // handling.
-        bar = apply_focus_ring(bar, theme, focused, theme.glass.shadows(GlassSize::Small));
+        bar = apply_focus_ring(bar, theme, focused, Elevation::Resting.shadows(theme));
         bar = apply_high_contrast_border(bar, theme);
 
         // Render menu titles

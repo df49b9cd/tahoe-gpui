@@ -4,8 +4,8 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, Hsla, Window, div, px};
 
-use tahoe_gpui::foundations::materials::glass_surface;
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 use crate::ComponentGallery;
 
@@ -173,13 +173,12 @@ pub fn render(
         )
         .child(section_header("Vibrant Glass Labels (Dim)", theme))
         .child(
-            glass_surface(
-                div()
-                    .w_full()
-                    .rounded(theme.glass.radius(GlassSize::Medium))
-                    .overflow_hidden(),
+            glass_effect(
+                div().w_full().rounded(theme.radius_lg).overflow_hidden(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("vibrant-dim")
             .child(
@@ -216,13 +215,12 @@ pub fn render(
         )
         .child(section_header("Vibrant Glass Labels (Bright)", theme))
         .child(
-            glass_surface(
-                div()
-                    .w_full()
-                    .rounded(theme.glass.radius(GlassSize::Medium))
-                    .overflow_hidden(),
+            glass_effect(
+                div().w_full().rounded(theme.radius_lg).overflow_hidden(),
                 theme,
-                GlassSize::Medium,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
             )
             .id("vibrant-bright")
             .child(

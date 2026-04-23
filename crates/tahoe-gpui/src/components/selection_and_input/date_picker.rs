@@ -13,10 +13,10 @@ use crate::callback_types::{OnDateNavigate, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::CONTENT_MARGIN;
 use crate::foundations::materials::{
-    LensEffect, apply_standard_control_styling, glass_lens_surface,
+    Elevation, Glass, Shape, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Calendar day-cell size for the `Compact` popover style (in points).
 /// The popover calendar is visually denser than the inline `Graphical`
@@ -442,7 +442,7 @@ impl RenderOnce for DatePicker {
             .px(theme.spacing_md)
             .cursor_pointer();
 
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         if let Some(handle) = self.focus_handle.as_ref() {
             trigger = trigger.track_focus(handle);
@@ -819,13 +819,18 @@ impl RenderOnce for DatePicker {
                 .child(dow_row)
                 .child(grid);
 
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN))
-                .overflow_hidden()
-                .id(ElementId::from((self.id.clone(), "dropdown")))
-                .debug_selector(|| "date-picker-dropdown".into())
-                .focusable();
+            let mut dropdown = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .w(px(cell_size * DATE_GRID_COLUMNS + CONTENT_MARGIN))
+            .overflow_hidden()
+            .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "date-picker-dropdown".into())
+            .focusable();
 
             // Keyboard nav: Arrow keys + Enter + Escape on calendar.
             let key_on_toggle = on_toggle.clone();
@@ -1224,7 +1229,7 @@ fn build_inline_calendar(
         .child(dow_row)
         .child(grid);
 
-    wrapper = apply_standard_control_styling(wrapper, theme, GlassSize::Small, focused);
+    wrapper = apply_standard_control_styling(wrapper, theme, Shape::Default, focused);
     if let Some(handle) = focus_handle.as_ref() {
         wrapper = wrapper.track_focus(handle);
     }

@@ -2,9 +2,8 @@
 
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::text_on_background;
-use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::materials::apply_high_contrast_border;
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::materials::{Elevation, apply_focus_ring, apply_high_contrast_border};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     AnimationExt, App, ElementId, FocusHandle, Hsla, KeyDownEvent, SharedString, Window, div, px,
@@ -244,7 +243,7 @@ impl RenderOnce for Toggle {
             .rounded(track_height)
             .bg(track_bg)
             .flex_shrink_0()
-            .shadow(theme.glass.shadows(GlassSize::Small).to_vec())
+            .shadow(Elevation::Resting.shadows(theme).to_vec())
             .child(thumb);
 
         // Border: off-state uses a visible hairline; on-state uses a

@@ -420,10 +420,10 @@ fn render_bottom_drawer(
 
     // ── Sheet panel (Liquid Glass lens composite, Floating tier) ────────
     // Bottom-drawer sheets are full-viewport overlays — Floating elevation
-    // picks up the largest shadow. Top corners are rounded to
-    // `theme.glass.large_radius` so they stay concentric with the macOS
-    // window chrome per HIG Tahoe.
-    let top_radius = theme.glass.large_radius;
+    // picks up the largest shadow. Top corners are rounded to 40pt so they
+    // stay concentric with the macOS window chrome per HIG Tahoe (the
+    // pre-refactor `theme.glass.large_radius` value).
+    let top_radius = px(40.0);
     let panel_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "panel".into());
     let mut panel = glass_effect_lens(
         theme,

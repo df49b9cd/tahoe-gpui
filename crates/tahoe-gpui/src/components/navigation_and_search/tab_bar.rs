@@ -26,10 +26,10 @@ use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, A
 use crate::foundations::color::compose_black_tint_linear;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::{
-    GLASS_LAYER_TINT_ALPHA, LensEffect, SurfaceContext, apply_focus_ring,
-    apply_high_contrast_border, glass_lens_surface,
+    Elevation, GLASS_LAYER_TINT_ALPHA, Glass, Shape, SurfaceContext, apply_focus_ring,
+    apply_high_contrast_border, glass_effect_lens,
 };
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ElementId, FocusHandle, FontWeight, KeyDownEvent, SharedString, Window, div,
@@ -488,12 +488,9 @@ impl RenderOnce for TabBar {
                 // shadow slice for segmented/floating.
                 tab = match style {
                     TabBarStyle::Document => apply_focus_ring(tab, theme, tab_focused, &[]),
-                    TabBarStyle::Segmented | TabBarStyle::Floating => apply_focus_ring(
-                        tab,
-                        theme,
-                        tab_focused,
-                        theme.glass.shadows(GlassSize::Small),
-                    ),
+                    TabBarStyle::Segmented | TabBarStyle::Floating => {
+                        apply_focus_ring(tab, theme, tab_focused, Elevation::Resting.shadows(theme))
+                    }
                 };
 
                 if let Some(ref handler) = on_change {
@@ -569,19 +566,19 @@ impl RenderOnce for TabBar {
             }
             TabBarStyle::Segmented => {
                 // Segmented track: inline Layer-2 composited fill so the
-                // tint matches `glass_surface` without forcing a
-                // render-pass break (Phase B: the track is always-visible
-                // inline chrome, not a floating overlay).
+                // tint matches `glass_effect` without forcing a render-pass
+                // break (the track is always-visible inline chrome, not a
+                // floating overlay).
                 let glass = &theme.glass;
-                let base_bg = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let base_bg = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
                 let composited = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
+                let resting_shadows = Elevation::Resting.shadows(theme);
                 tab_bar = tab_bar
                     .bg(composited)
-                    .rounded(glass.radius(GlassSize::Small))
-                    .shadow(glass.shadows(GlassSize::Small).to_vec())
+                    .rounded(theme.radius_md)
+                    .shadow(resting_shadows.to_vec())
                     .overflow_hidden();
-                tab_bar =
-                    apply_focus_ring(tab_bar, theme, focused, glass.shadows(GlassSize::Small));
+                tab_bar = apply_focus_ring(tab_bar, theme, focused, resting_shadows);
                 tab_bar = apply_high_contrast_border(tab_bar, theme);
                 tab_bar.into_any_element()
             }
@@ -590,22 +587,22 @@ impl RenderOnce for TabBar {
                 // that layers a real Liquid Glass lens composite behind the
                 // tabs so the content scrolling under the bar refracts
                 // through.
-                let mut effect = LensEffect::liquid_glass(GlassSize::Small, theme);
-                effect.blur.corner_radius = f32::from(theme.radius_full);
                 tab_bar = tab_bar.rounded(theme.radius_full).overflow_hidden();
-                tab_bar = apply_focus_ring(
-                    tab_bar,
-                    theme,
-                    focused,
-                    theme.glass.shadows(GlassSize::Small),
-                );
+                tab_bar =
+                    apply_focus_ring(tab_bar, theme, focused, Elevation::Elevated.shadows(theme));
                 tab_bar = apply_high_contrast_border(tab_bar, theme);
                 div()
                     .relative()
                     .child(
-                        glass_lens_surface(theme, &effect, GlassSize::Small)
-                            .absolute()
-                            .inset_0(),
+                        glass_effect_lens(
+                            theme,
+                            Glass::Regular,
+                            Shape::Capsule,
+                            Elevation::Elevated,
+                            None,
+                        )
+                        .absolute()
+                        .inset_0(),
                     )
                     .child(tab_bar)
                     .into_any_element()

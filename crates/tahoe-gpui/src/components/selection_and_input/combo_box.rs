@@ -9,10 +9,10 @@ use crate::components::menus_and_actions::popup_button::OnHighlight;
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    LensEffect, apply_standard_control_styling, glass_lens_surface,
+    Elevation, Glass, Shape, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     App, ElementId, FocusHandle, KeyDownEvent, MouseDownEvent, SharedString, Window, div, px,
@@ -300,7 +300,7 @@ impl RenderOnce for ComboBox {
         }
 
         // Glass-styled trigger surface (matches TextField / Picker styling).
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         if disabled {
             trigger = trigger.opacity(0.5).cursor_default();
@@ -352,16 +352,21 @@ impl RenderOnce for ComboBox {
             // from the lens surface's rounded corners so the row-level
             // inset-pill hover background doesn't visually run into
             // the rounded edge.
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .flex()
-                .flex_col()
-                .py(theme.spacing_xs)
-                .max_h(px(DROPDOWN_MAX_HEIGHT))
-                .id(ElementId::from((self.id.clone(), "dropdown")))
-                .overflow_y_scroll()
-                .debug_selector(|| "combo-box-dropdown".into())
-                .focusable();
+            let mut list = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .flex_col()
+            .py(theme.spacing_xs)
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .id(ElementId::from((self.id.clone(), "dropdown")))
+            .overflow_y_scroll()
+            .debug_selector(|| "combo-box-dropdown".into())
+            .focusable();
 
             // Keyboard navigation + type-to-filter: up/down/enter/escape + printable chars.
             list = list.on_key_down(move |event: &KeyDownEvent, window, cx| {

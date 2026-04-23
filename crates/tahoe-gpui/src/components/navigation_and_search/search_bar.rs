@@ -18,8 +18,8 @@ use gpui::{App, ClickEvent, ElementId, KeyDownEvent, SharedString, Window, div, 
 use crate::callback_types::OnMutCallback;
 use crate::foundations::icons::Icon;
 use crate::foundations::icons::IconName;
-use crate::foundations::materials::{LensEffect, SurfaceContext, glass_lens_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// A capsule-shaped search affordance with glass material.
 ///
@@ -91,30 +91,34 @@ impl RenderOnce for SearchBar {
         let icon_size = (TextStyle::Body.attrs().size * 0.9).ceil();
         let has_handler = self.on_activate.is_some();
 
-        let mut effect = LensEffect::subtle(GlassSize::Small, theme);
-        effect.blur.corner_radius = f32::from(theme.radius_full);
-        let mut bar = glass_lens_surface(theme, &effect, GlassSize::Small)
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(theme.spacing_sm)
-            .min_h(px(theme.target_size()))
-            .px(theme.spacing_md)
-            .py(theme.spacing_sm)
-            .rounded(theme.radius_full)
-            .id(self.id)
-            .debug_selector(|| "search-bar-root".into())
-            .child(
-                Icon::new(IconName::Search)
-                    .size(icon_size)
-                    .color(theme.secondary_label_color(SurfaceContext::GlassDim)),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::Body, theme)
-                    .text_color(text_color)
-                    .child(display_text),
-            );
+        let mut bar = glass_effect_lens(
+            theme,
+            Glass::Clear,
+            Shape::Capsule,
+            Elevation::Resting,
+            None,
+        )
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(theme.spacing_sm)
+        .min_h(px(theme.target_size()))
+        .px(theme.spacing_md)
+        .py(theme.spacing_sm)
+        .rounded(theme.radius_full)
+        .id(self.id)
+        .debug_selector(|| "search-bar-root".into())
+        .child(
+            Icon::new(IconName::Search)
+                .size(icon_size)
+                .color(theme.secondary_label_color(SurfaceContext::GlassDim)),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Body, theme)
+                .text_color(text_color)
+                .child(display_text),
+        );
 
         if let Some(handler) = self.on_activate {
             let handler = std::rc::Rc::new(handler);

@@ -287,11 +287,9 @@ impl RenderOnce for Popover {
             // content-builder closure (invoked later from `prepaint`) has
             // no lingering borrow on `cx`.
             let arrow_enabled = self.arrow;
-            let arrow_bg = if theme.accessibility_mode.reduce_transparency() {
-                theme.glass.accessibility.reduced_transparency_bg
-            } else {
-                theme.glass.medium_bg
-            };
+            let arrow_bg = theme
+                .glass
+                .accessible_fill(Glass::Regular, theme.accessibility_mode);
             let spacing_sm = theme.spacing_sm;
             let accessibility = theme.accessibility_mode;
             let motion = theme.glass.motion;

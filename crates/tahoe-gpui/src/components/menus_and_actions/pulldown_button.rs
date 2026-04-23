@@ -22,10 +22,10 @@ use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::keyboard_shortcuts::MenuShortcut;
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    LensEffect, SurfaceContext, apply_standard_control_styling, glass_lens_surface,
+    Elevation, Glass, Shape, SurfaceContext, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Callback invoked when keyboard highlight changes in a [`PulldownButton`] dropdown.
 pub type OnHighlight = Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>;
@@ -313,7 +313,7 @@ impl RenderOnce for PulldownButton {
 
         // Glass-styled trigger surface (suppressed when `borderless`).
         if !borderless {
-            trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+            trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
         }
 
         if disabled {
@@ -399,15 +399,20 @@ impl RenderOnce for PulldownButton {
             let highlighted = self.highlighted_index;
             let on_highlight = self.on_highlight.map(Rc::new);
 
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .max_h(px(DROPDOWN_MAX_HEIGHT))
-                .id(ElementId::from((self.id.clone(), "dropdown")))
-                .debug_selector(|| "pulldown-button-dropdown".into())
-                .focusable();
+            let mut list = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "pulldown-button-dropdown".into())
+            .focusable();
 
             // Keyboard navigation in the open dropdown (mirrors PopupButton).
             let key_toggle = on_toggle.clone();

@@ -1,7 +1,7 @@
 //! Sidebar component with Liquid Glass styling.
 //!
 //! HIG sidebar: an inset glass panel where content flows behind it.
-//! Uses `GlassSize::Medium`.
+//! Uses [`Glass::Regular`] at [`Elevation::Elevated`].
 //!
 //! This module also exposes:
 //!
@@ -28,10 +28,9 @@ use crate::callback_types::{OnClick, OnToggle};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::SIDEBAR_MIN_WIDTH;
 use crate::foundations::materials::{
-    LensEffect, SurfaceContext, apply_focus_ring, glass_lens_surface, resolve_focused,
+    Elevation, Glass, Shape, SurfaceContext, apply_focus_ring, glass_effect_lens, resolve_focused,
 };
 use crate::foundations::right_to_left::apply_flex_row_direction;
-use crate::foundations::theme::GlassSize;
 use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 type OnResize = Option<Box<dyn Fn(Pixels, &mut Window, &mut App) + 'static>>;
@@ -48,7 +47,7 @@ pub enum SidebarPosition {
 /// A sidebar component with glass morphism styling.
 ///
 /// When the glass theme is active, renders as an inset glass panel using
-/// `GlassSize::Medium`. Otherwise falls back to surface/border tokens.
+/// [`Glass::Regular`] at [`Elevation::Elevated`]. Otherwise falls back to surface/border tokens.
 ///
 /// Use [`SidebarPosition`] in parent layout to determine placement (left/right).
 ///
@@ -211,8 +210,6 @@ impl RenderOnce for Sidebar {
         // preserved. The extension sits on the outer fill; the lens canvas
         // overlays it and refracts whatever the renderer samples from the
         // framebuffer below.
-        let lens_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-
         let mut el = div()
             .relative()
             .flex()
@@ -227,9 +224,15 @@ impl RenderOnce for Sidebar {
 
         // Paint the lens as the first child so flow children render above it.
         el = el.child(
-            glass_lens_surface(theme, &lens_effect, GlassSize::Medium)
-                .absolute()
-                .inset_0(),
+            glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .absolute()
+            .inset_0(),
         );
 
         // Floating overlays drop the trailing hairline so content is

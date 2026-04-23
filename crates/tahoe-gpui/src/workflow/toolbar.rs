@@ -7,8 +7,8 @@
 
 use crate::components::menus_and_actions::button::{Button, ButtonSize, ButtonVariant};
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{LensEffect, glass_lens_surface};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::materials::{Elevation, Glass, Shape, glass_effect_lens};
+use crate::foundations::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{App, ClickEvent, ElementId, SharedString, Window, div};
 
@@ -104,13 +104,18 @@ impl RenderOnce for WorkflowToolbar {
         // action buttons below (Button::new takes &mut App).
         let (spacing_xs, bar) = {
             let theme = cx.theme();
-            let effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let bar = glass_lens_surface(theme, &effect, GlassSize::Medium)
-                .flex()
-                .items_center()
-                .gap(theme.spacing_sm)
-                .px(theme.spacing_md)
-                .py(theme.spacing_sm);
+            let bar = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .items_center()
+            .gap(theme.spacing_sm)
+            .px(theme.spacing_md)
+            .py(theme.spacing_sm);
             (theme.spacing_xs, bar)
         };
 

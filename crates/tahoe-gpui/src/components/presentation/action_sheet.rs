@@ -30,7 +30,7 @@ use crate::callback_types::OnMutCallback;
 use crate::foundations::accessibility::{FocusGroup, FocusGroupMode};
 use crate::foundations::layout::Platform;
 use crate::foundations::materials::{Elevation, Glass, Shape, SurfaceContext, glass_effect_lens};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Where the action sheet attaches on screen. Choose
 /// [`Self::BottomDrawer`] on iOS/iPadOS/watchOS and [`Self::Centered`]
@@ -268,7 +268,11 @@ impl RenderOnce for ActionSheet {
         }
 
         let theme = cx.theme();
-        let glass_radius = theme.glass.radius(GlassSize::Medium);
+        // Action-sheet groups use a fixed 34pt radius to match the
+        // Figma Tahoe UI Kit. Using Shape::RoundedRectangle keeps the
+        // corner explicit at the call site now that GlassStyle no
+        // longer exposes per-tier radii.
+        let glass_radius = px(34.0);
         let presentation = self
             .presentation
             .unwrap_or_else(|| ActionSheetPresentation::for_platform(theme.platform));

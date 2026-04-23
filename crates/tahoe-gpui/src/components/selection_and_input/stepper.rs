@@ -8,8 +8,8 @@ use crate::foundations::accessibility::{
     AccessibilityProps, AccessibilityRole, AccessibleExt, FocusGroup, FocusGroupExt,
 };
 use crate::foundations::icons::{Icon, IconName};
-use crate::foundations::materials::{apply_focus_ring, apply_standard_control_styling};
-use crate::foundations::theme::{ActiveTheme, GlassSize};
+use crate::foundations::materials::{Shape, apply_focus_ring, apply_standard_control_styling};
+use crate::foundations::theme::ActiveTheme;
 
 /// A compact +/- stepper control per Human Interface Guidelines.
 ///
@@ -444,7 +444,7 @@ impl RenderOnce for Stepper {
             .child(plus_btn);
 
         let mut container =
-            apply_standard_control_styling(row, theme, GlassSize::Small, capsule_focused)
+            apply_standard_control_styling(row, theme, Shape::Default, capsule_focused)
                 .rounded(capsule_radius)
                 .overflow_hidden()
                 .id(id);

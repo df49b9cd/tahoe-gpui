@@ -22,8 +22,8 @@ use tahoe_gpui::components::status::progress_indicator::ProgressIndicator;
 use tahoe_gpui::foundations::GlassSurfaceScope;
 use tahoe_gpui::foundations::icons::{Icon, IconName};
 use tahoe_gpui::foundations::materials::GlassTintColor;
-use tahoe_gpui::foundations::materials::{glass_surface, tinted_glass_surface};
-use tahoe_gpui::foundations::theme::{GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use tahoe_gpui::foundations::materials::{Elevation, Glass, Shape, glass_effect};
+use tahoe_gpui::foundations::theme::{TahoeTheme, TextStyle, TextStyledExt};
 
 // ─── Static Data ─────────────────────────────────────────────────────────────
 
@@ -255,9 +255,15 @@ impl GlassMessenger {
             .px(px(20.0))
             .py(px(12.0));
 
-        header = glass_surface(header, theme, GlassSize::Small)
-            .border_b_1()
-            .border_color(gpui::hsla(0.0, 0.0, 1.0, 0.08));
+        header = glass_effect(
+            header,
+            theme,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Resting,
+        )
+        .border_b_1()
+        .border_color(gpui::hsla(0.0, 0.0, 1.0, 0.08));
 
         header
             .child(
@@ -289,9 +295,15 @@ impl GlassMessenger {
             .p(px(10.0))
             .gap(px(6.0));
 
-        sidebar = glass_surface(sidebar, theme, GlassSize::Small)
-            .border_r_1()
-            .border_color(gpui::hsla(0.0, 0.0, 1.0, 0.08));
+        sidebar = glass_effect(
+            sidebar,
+            theme,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Resting,
+        )
+        .border_r_1()
+        .border_color(gpui::hsla(0.0, 0.0, 1.0, 0.08));
 
         // Section label
         sidebar = sidebar.child(
@@ -316,7 +328,7 @@ impl GlassMessenger {
                 .gap(px(8.0))
                 .px(px(8.0))
                 .py(px(6.0))
-                .rounded(theme.glass.radius(GlassSize::Small))
+                .rounded(theme.radius_md)
                 .cursor_pointer()
                 .when(is_selected, |el| el.bg(theme.glass.hover_bg))
                 .hover(|el| el.bg(theme.glass.hover_bg))
@@ -395,14 +407,22 @@ impl GlassMessenger {
             let mut bubble = div().flex().flex_col().gap(px(4.0)).p(px(12.0));
 
             if is_user {
-                bubble = tinted_glass_surface(
+                let tint = theme.glass.tints.get(GlassTintColor::Blue).bg;
+                bubble = glass_effect(
                     bubble,
                     theme,
-                    theme.glass.tints.get(GlassTintColor::Blue),
-                    GlassSize::Small,
+                    Glass::Regular.tint(Some(tint)),
+                    Shape::Default,
+                    Elevation::Resting,
                 );
             } else {
-                bubble = glass_surface(bubble, theme, GlassSize::Small);
+                bubble = glass_effect(
+                    bubble,
+                    theme,
+                    Glass::Regular,
+                    Shape::Default,
+                    Elevation::Resting,
+                );
             }
 
             // Role label
@@ -561,7 +581,13 @@ impl GlassMessenger {
             .px(px(8.0))
             .py(px(4.0));
 
-        bar = glass_surface(bar, theme, GlassSize::Small);
+        bar = glass_effect(
+            bar,
+            theme,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Resting,
+        );
 
         bar.child(attach_popover)
             .child(input)
@@ -669,7 +695,13 @@ impl GlassMessenger {
             .child(ProgressIndicator::new(0.3));
 
         let mut card = div().flex().flex_col().gap(px(8.0)).p(px(16.0)).m(px(16.0));
-        card = glass_surface(card, theme, GlassSize::Large);
+        card = glass_effect(
+            card,
+            theme,
+            Glass::Regular,
+            Shape::Default,
+            Elevation::Floating,
+        );
 
         card.child(model_section)
             .child(streaming_row)

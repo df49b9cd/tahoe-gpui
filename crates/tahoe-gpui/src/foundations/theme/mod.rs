@@ -40,9 +40,9 @@ pub use super::layout::{
 
 // Material types — canonical definitions in `super::materials`
 pub use super::materials::{
-    BlurEffect, ElevationIndex, GlassContainer, GlassLabels, GlassRole, GlassSize, GlassStyle,
-    GlassTint, GlassTintColor, GlassTints, GlassVariant, LensEffect, MaterialThickness,
-    SCROLL_EDGE_HEIGHT, SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, StandardMaterial,
+    BlurEffect, Elevation, ElevationIndex, Glass, GlassContainer, GlassLabels, GlassMaterial,
+    GlassRole, GlassStyle, GlassTint, GlassTintColor, GlassTints, LensEffect, MaterialThickness,
+    SCROLL_EDGE_HEIGHT, SCROLL_EDGE_HEIGHT_COMPACT, ScrollEdgeStyle, Shape, StandardMaterial,
     SurfaceContext,
 };
 
@@ -750,49 +750,28 @@ impl TahoeTheme {
             (dark_text, light_text)
         };
 
-        // Per-size surface fills (Figma Tahoe UI Kit).
+        // Canonical Liquid Glass fills (Figma Tahoe UI Kit, collapsed to
+        // one fill per Glass variant — SwiftUI's `Glass` type is material
+        // identity, not a per-surface tier).
         //
-        // Dark:
-        //   Small:  #CCCCCC@50% + #000000@60% + #FFFFFF@6% composite → L≈0.17, a=0.80
-        //   Medium: #CCCCCC@100% + #000000@67% + #FFFFFF@3% with 67% container opacity
-        //   Large:  #CCCCCC@100% + #000000@85% + #FFFFFF@3% with 67% container opacity
-        //
-        // Light:
-        //   Small:  #F7F7F7 + #FFFFFF@50% + #333333 → near-white, translucent (α ≈ 0.85)
-        //   Medium: #F5F5F5@67% + #262626 → translucent white (backdrop blur)
-        //   Large:  #FAFAFA@80% + #262626
-        // Clear-variant fills differ by size per Adopting Liquid Glass:
-        // smaller controls receive a lighter fill, larger panels a heavier
-        // fill, so the media-rich backdrop reads differently at each depth
-        // level. Values target Figma Tahoe UI Kit clear tokens.
-        let (small_bg, medium_bg, large_bg, hover_bg, root_bg) = if is_dark {
+        // `regular_fill`: Figma "BG - Medium UI" — dark #CCCCCC@100% +
+        //   #000000@67% + #FFFFFF@3% at 67% container opacity; light
+        //   #F5F5F5@67% + #262626.
+        // `clear_fill`: lightest Clear tier — matches Apple's "highly
+        //   translucent" description for media-rich backdrops.
+        let (regular_fill, clear_fill, hover_bg, root_bg) = if is_dark {
             (
-                hsla(0.0, 0.0, 0.17, 0.80),
                 hsla(0.0, 0.0, 0.28, 0.67),
-                hsla(0.0, 0.0, 0.13, 0.67),
+                hsla(0.0, 0.0, 1.0, 0.09),
                 hsla(0.0, 0.0, 0.0, 0.50),
                 hsla(0.0, 0.0, 0.0, 0.80),
             )
         } else {
             (
-                hsla(0.0, 0.0, 0.969, 0.85),
                 hsla(0.0, 0.0, 0.961, 0.67),
-                hsla(0.0, 0.0, 0.98, 0.80),
+                hsla(0.0, 0.0, 1.0, 0.32),
                 hsla(0.0, 0.0, 0.0, 0.04),
                 hsla(0.0, 0.0, 1.0, 0.95),
-            )
-        };
-        let (clear_small_bg, clear_medium_bg, clear_large_bg) = if is_dark {
-            (
-                hsla(0.0, 0.0, 1.0, 0.09),
-                hsla(0.0, 0.0, 1.0, 0.12),
-                hsla(0.0, 0.0, 1.0, 0.17),
-            )
-        } else {
-            (
-                hsla(0.0, 0.0, 1.0, 0.32),
-                hsla(0.0, 0.0, 1.0, 0.40),
-                hsla(0.0, 0.0, 1.0, 0.48),
             )
         };
 
@@ -919,13 +898,9 @@ impl TahoeTheme {
         };
 
         let mut glass = GlassStyle {
-            variant: GlassVariant::Regular,
-            small_bg,
-            medium_bg,
-            large_bg,
-            clear_small_bg,
-            clear_medium_bg,
-            clear_large_bg,
+            variant: Glass::Regular,
+            regular_fill,
+            clear_fill,
             hover_bg,
             ultra_thin_bg,
             thin_bg,
@@ -933,21 +908,15 @@ impl TahoeTheme {
             thick_bg,
             ultra_thick_bg,
             chrome_bg,
-            small_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
-            // Medium UI (alerts, dialogs, ≤400pt panels) per the Figma
-            // Tahoe UI Kit: an ambient shadow (Y=8, Blur=40, #000 @ 12%)
-            // plus a 1pt rim (#000 @ 23%) for edge definition. The rim
-            // keeps the panel legible against low-contrast backdrops
-            // where the ambient blur fades into the underlying content.
-            medium_shadows: vec![shadow(8.0, 40.0, 0.12), rim_shadow(0.23)],
-            large_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
-            small_radius: px(20.0),
-            medium_radius: px(34.0),
-            // Large panels (sheets, alerts, modals) sit on a slightly bigger
-            // radius than Medium so their rounded corners stay concentric
-            // with macOS 26 window chrome (system window corners ≈ 12–14pt
-            // outer → ~40pt inner panel). See Figma Tahoe UI Kit.
-            large_radius: px(40.0),
+            resting_shadows: vec![shadow(1.0, 4.0, small_shadow_a)],
+            // Elevated (alerts, dialogs, ≤400pt panels) per the Figma
+            // Tahoe UI Kit "BG - Medium UI": an ambient shadow
+            // (Y=8, Blur=40, #000 @ 12%) plus a 1pt rim (#000 @ 23%) for
+            // edge definition. The rim keeps the panel legible against
+            // low-contrast backdrops where the ambient blur fades into
+            // the underlying content.
+            elevated_shadows: vec![shadow(8.0, 40.0, 0.12), rim_shadow(0.23)],
+            floating_shadows: vec![shadow(8.0, 40.0, large_shadow_a)],
             // macOS 26 ships `WindowBackgroundAppearance::Blurred` via
             // NSVisualEffectView. Linux and Windows GPUI backends fall back
             // to opaque silently, which produces incorrect rendering unless
@@ -1458,21 +1427,21 @@ impl TahoeTheme {
 
     /// Liquid Glass Clear theme (dark variant).
     ///
-    /// Uses `GlassVariant::Clear` for higher transparency -- suitable for
+    /// Uses [`Glass::Clear`] for higher transparency — suitable for
     /// media-rich content per HIG.
     pub fn liquid_glass_clear() -> Self {
         let mut theme = Self::liquid_glass();
-        theme.glass.variant = GlassVariant::Clear;
+        theme.glass.variant = Glass::Clear;
         theme.glass.preference = LiquidGlassPreference::Clear;
         theme
     }
 
     /// Liquid Glass Clear theme (light variant).
     ///
-    /// Uses `GlassVariant::Clear` for higher transparency on a light background.
+    /// Uses [`Glass::Clear`] for higher transparency on a light background.
     pub fn liquid_glass_clear_light() -> Self {
         let mut theme = Self::liquid_glass_light();
-        theme.glass.variant = GlassVariant::Clear;
+        theme.glass.variant = Glass::Clear;
         theme.glass.preference = LiquidGlassPreference::Clear;
         theme
     }

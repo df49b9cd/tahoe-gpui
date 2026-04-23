@@ -28,10 +28,10 @@ use crate::foundations::accessibility::{AccessibilityProps, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    LensEffect, apply_standard_control_styling, glass_lens_surface,
+    Elevation, Glass, Shape, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Callback invoked when keyboard highlight changes in a [`PopupButton`] dropdown.
 pub type OnHighlight = Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>;
@@ -249,7 +249,7 @@ impl RenderOnce for PopupButton {
         }
 
         // Glass-styled trigger surface.
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         if disabled {
             trigger = trigger.opacity(0.5).cursor_default();
@@ -298,15 +298,20 @@ impl RenderOnce for PopupButton {
                 .collect();
             let on_highlight = self.on_highlight.map(Rc::new);
 
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut list = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .max_h(px(DROPDOWN_MAX_HEIGHT))
-                .id(ElementId::from((self.id.clone(), "dropdown")))
-                .debug_selector(|| "popup-button-dropdown".into())
-                .focusable();
+            let mut list = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .max_h(px(DROPDOWN_MAX_HEIGHT))
+            .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "popup-button-dropdown".into())
+            .focusable();
 
             // Keyboard navigation: arrow keys, Home/End, Enter, Escape, type-ahead.
             let key_toggle = on_toggle.clone();

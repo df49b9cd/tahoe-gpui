@@ -14,10 +14,10 @@ use crate::callback_types::{OnTimeChange, OnToggle, rc_wrap};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::layout::DROPDOWN_MAX_HEIGHT;
 use crate::foundations::materials::{
-    LensEffect, apply_standard_control_styling, glass_lens_surface,
+    Elevation, Glass, Shape, apply_standard_control_styling, glass_effect_lens,
 };
 use crate::foundations::overlay::{AnchoredOverlay, OverlayAnchor};
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -426,7 +426,7 @@ impl RenderOnce for TimePicker {
             trigger = trigger.track_focus(handle);
         }
 
-        trigger = apply_standard_control_styling(trigger, theme, GlassSize::Small, focused);
+        trigger = apply_standard_control_styling(trigger, theme, Shape::Default, focused);
 
         trigger = trigger
             .hover(|style| style.cursor_pointer())
@@ -729,13 +729,18 @@ impl RenderOnce for TimePicker {
             // ── Dropdown ───────────────────────────────────────────────────
             let dropdown_content = div().flex().flex_col().p(theme.spacing_sm).child(columns);
 
-            let dropdown_effect = LensEffect::liquid_glass(GlassSize::Medium, theme);
-            let mut dropdown = glass_lens_surface(theme, &dropdown_effect, GlassSize::Medium)
-                .w(px(if use_24h { 136.0 } else { 188.0 }))
-                .overflow_hidden()
-                .id(ElementId::from((self.id.clone(), "dropdown")))
-                .debug_selector(|| "time-picker-dropdown".into())
-                .focusable();
+            let mut dropdown = glass_effect_lens(
+                theme,
+                Glass::Regular,
+                Shape::Default,
+                Elevation::Elevated,
+                None,
+            )
+            .w(px(if use_24h { 136.0 } else { 188.0 }))
+            .overflow_hidden()
+            .id(ElementId::from((self.id.clone(), "dropdown")))
+            .debug_selector(|| "time-picker-dropdown".into())
+            .focusable();
 
             // Keyboard nav: Up/Down/Left/Right/Enter/Escape.
             let key_on_toggle = on_toggle.clone();
@@ -1080,7 +1085,7 @@ fn build_time_wheel(
     if let Some(handle) = focus_handle {
         wrapper = wrapper.track_focus(handle);
     }
-    wrapper = apply_standard_control_styling(wrapper, theme, GlassSize::Small, focused);
+    wrapper = apply_standard_control_styling(wrapper, theme, Shape::Default, focused);
 
     let has_ampm = !use_24h;
     let hour_rows = if use_24h { 24 } else { 12 };

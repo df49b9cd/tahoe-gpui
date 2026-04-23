@@ -27,9 +27,10 @@ use crate::callback_types::{OnMutCallback, OnStringChange};
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::icons::{Icon, IconName};
 use crate::foundations::materials::apply_focus_ring;
-use crate::foundations::materials::apply_high_contrast_border;
-use crate::foundations::materials::glass_surface;
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{
+    Elevation, Glass, Shape, apply_high_contrast_border, glass_effect,
+};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Default size for the image well (80x80pt).
 const DEFAULT_SIZE: Pixels = px(80.0);
@@ -359,7 +360,7 @@ impl RenderOnce for ImageWell {
             );
 
             if is_interactive {
-                inner = inner.shadow(theme.glass.shadows(GlassSize::Small).to_vec());
+                inner = inner.shadow(Elevation::Resting.shadows(theme).to_vec());
                 inner = apply_high_contrast_border(inner, theme);
             } else {
                 inner = inner.border_1().border_color(theme.border);
@@ -367,7 +368,13 @@ impl RenderOnce for ImageWell {
         } else {
             // Placeholder state: dashed-style surface with the Image icon.
             if is_interactive {
-                inner = glass_surface(inner, theme, GlassSize::Small);
+                inner = glass_effect(
+                    inner,
+                    theme,
+                    Glass::Regular,
+                    Shape::Default,
+                    Elevation::Resting,
+                );
             } else {
                 inner = inner
                     .bg(theme.surface)

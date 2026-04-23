@@ -5,8 +5,8 @@ use crate::components::menus_and_actions::button_like::ButtonLike;
 use crate::components::status::activity_indicator::ActivityIndicator;
 use crate::foundations::accessibility::{AccessibilityProps, AccessibilityRole, AccessibleExt};
 use crate::foundations::color::{compose_black_tint_linear, darken, lighten, with_alpha};
-use crate::foundations::materials::GLASS_LAYER_TINT_ALPHA;
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::materials::{Elevation, GLASS_LAYER_TINT_ALPHA, Glass};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 use gpui::prelude::*;
 use gpui::{
     Action, AnyElement, App, BoxShadow, ClickEvent, ElementId, FocusHandle, SharedString, Window,
@@ -383,7 +383,7 @@ impl Button {
     /// Sets the button shape per HIG.
     ///
     /// - `RoundedRectangle` (default): macOS 26 Tahoe Liquid Glass rounded
-    ///   corner (`theme.glass.radius(GlassSize::Small)`). Historical AppKit
+    ///   corner (`theme.radius_md`). Historical AppKit
     ///   push buttons used 6pt; macOS 26 moved to a larger, more rounded
     ///   corner to match the Liquid Glass family.
     /// - `Capsule`: fully rounded ends / pill shape (`theme.radius_full`)
@@ -549,9 +549,9 @@ impl RenderOnce for Button {
                 // contrast high in both modes and preserves the low-emphasis
                 // affordance: Ghost is the "quiet" sibling of Primary. The
                 // fill goes through the Layer-2 black-tint composite so the
-                // resting colour matches `glass_surface`.
+                // resting colour matches `glass_effect`.
                 let glass = &theme.glass;
-                let base = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let base = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
                 (
                     compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA),
                     theme.text,
@@ -579,9 +579,9 @@ impl RenderOnce for Button {
             }
             ButtonVariant::Glass => {
                 // Layer-2 composite so the Glass variant matches the fill
-                // that `glass_surface` would produce at this size.
+                // that `glass_effect` would produce with `Glass::Regular`.
                 let glass = &theme.glass;
-                let base = glass.accessible_bg(GlassSize::Small, theme.accessibility_mode);
+                let base = glass.accessible_fill(Glass::Regular, theme.accessibility_mode);
                 let fill = compose_black_tint_linear(base, GLASS_LAYER_TINT_ALPHA);
                 (fill, theme.text, transparent_black(), glass.hover_bg)
             }
@@ -681,7 +681,7 @@ impl RenderOnce for Button {
                     if self.round || is_glass_variant {
                         theme.radius_full
                     } else {
-                        theme.glass.radius(GlassSize::Small)
+                        theme.radius_md
                     }
                 }
             }
@@ -783,7 +783,7 @@ impl RenderOnce for Button {
                 | ButtonVariant::Cancel
         );
         let mut base: Vec<BoxShadow> = if is_glass_variant {
-            theme.glass.shadows(GlassSize::Small).to_vec()
+            Elevation::Resting.shadows(theme).to_vec()
         } else {
             Vec::new()
         };

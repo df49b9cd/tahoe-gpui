@@ -41,9 +41,9 @@ use crate::foundations::accessibility::{
 };
 use crate::foundations::color::{compose_black_tint_linear, with_alpha};
 use crate::foundations::materials::{
-    GLASS_LAYER_TINT_ALPHA, GlassRole, apply_focus_ring, resolve_focused,
+    Elevation, GLASS_LAYER_TINT_ALPHA, Glass, GlassRole, apply_focus_ring, resolve_focused,
 };
-use crate::foundations::theme::{ActiveTheme, GlassSize, TahoeTheme, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TahoeTheme, TextStyle, TextStyledExt};
 
 /// Visual style for a [`List`].
 ///
@@ -61,8 +61,9 @@ pub enum ListStyle {
     /// Grouped with rounded inset cards. Matches
     /// `UICollectionLayoutListConfiguration.Appearance.insetGrouped`.
     Inset,
-    /// Source-list variant with a Liquid Glass (`GlassSize::Medium`)
-    /// background. Selected rows tint with `theme.accent`; the
+    /// Source-list variant with a Liquid Glass ([`Glass::Regular`] at
+    /// [`Elevation::Elevated`]) background. Selected rows tint with
+    /// `theme.accent`; the
     /// keyboard-focused row draws a 2pt accent outline via the standard
     /// focus-ring token. Intended for navigator / sidebar panes.
     Sidebar,
@@ -393,23 +394,24 @@ impl RenderOnce for List {
             }
             ListStyle::Sidebar => {
                 // Liquid Glass source-list surface (`GlassRole::Navigation`,
-                // `GlassSize::Medium`) — matches the HIG sidebar material.
-                // Inline composition (rather than `glass_surface`) keeps the
-                // container's `Stateful<Div>` type, but still routes the base
-                // fill through the Layer-2 black-tint composite in linear-
-                // light so the visual result matches `glass_surface`.
+                // Regular fill at Elevated tier) — matches the HIG sidebar
+                // material. Inline composition (rather than `glass_effect`)
+                // keeps the container's `Stateful<Div>` type, but still
+                // routes the base fill through the Layer-2 black-tint
+                // composite in linear-light so the visual result matches
+                // `glass_effect`.
                 debug_assert!(
                     GlassRole::Navigation.permits_liquid_glass(),
                     "source-list is navigation-layer — permitted"
                 );
                 let base_bg = theme
                     .glass
-                    .accessible_bg(GlassSize::Medium, theme.accessibility_mode);
+                    .accessible_fill(Glass::Regular, theme.accessibility_mode);
                 let glass_bg = compose_black_tint_linear(base_bg, GLASS_LAYER_TINT_ALPHA);
                 container = container
                     .bg(glass_bg)
-                    .rounded(theme.glass.radius(GlassSize::Medium))
-                    .shadow(theme.glass.shadows(GlassSize::Medium).to_vec());
+                    .rounded(theme.radius_lg)
+                    .shadow(Elevation::Elevated.shadows(theme).to_vec());
             }
             ListStyle::Bordered => {
                 // 1pt `separator` hairline + rounded corners. Background

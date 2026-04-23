@@ -41,7 +41,7 @@ use crate::foundations::layout::{INSPECTOR_PANEL_WIDTH, MACOS_PANEL_TITLE_BAR_HE
 use crate::foundations::materials::{
     Elevation, Glass, Shape, backdrop_overlay, glass_effect_lens, glass_surface_hud,
 };
-use crate::foundations::theme::{ActiveTheme, GlassSize, TextStyle, TextStyledExt};
+use crate::foundations::theme::{ActiveTheme, TextStyle, TextStyledExt};
 
 /// Default panel width, backed by the shared layout token
 /// [`INSPECTOR_PANEL_WIDTH`] (320 pt — Apple macOS inspector convention).
@@ -375,7 +375,7 @@ impl RenderOnce for Panel {
         let panel_id = ElementId::from((self.id.clone(), "panel"));
         let panel_body = div().w(width).h_full().flex().flex_col();
         let mut panel = if is_hud {
-            glass_surface_hud(panel_body, theme, GlassSize::Large).id(panel_id)
+            glass_surface_hud(panel_body, theme, Shape::Default, Elevation::Elevated).id(panel_id)
         } else {
             glass_effect_lens(
                 theme,
